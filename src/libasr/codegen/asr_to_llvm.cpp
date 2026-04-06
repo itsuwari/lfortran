@@ -1354,6 +1354,26 @@ public:
         return builder->CreateCall(fn, {str, len});
     }
 
+    llvm::Value* lfortran_str_adjust(llvm::Value* str, llvm::Value* len, bool left_adjust)
+    {
+        std::string runtime_func_name = left_adjust
+            ? "_lfortran_str_adjustl_alloc"
+            : "_lfortran_str_adjustr_alloc";
+        llvm::Function *fn = module->getFunction(runtime_func_name);
+        if (!fn) {
+            llvm::FunctionType *function_type = llvm::FunctionType::get(
+                    character_type, {
+                        character_type,
+                        character_type,
+                        llvm::Type::getInt64Ty(context)
+                    }, false);
+            fn = llvm::Function::Create(function_type,
+                    llvm::Function::ExternalLinkage, runtime_func_name, module.get());
+        }
+        llvm::Value* allocator = llvm_utils->get_allocator(module.get());
+        return builder->CreateCall(fn, {allocator, str, len});
+    }
+
     llvm::Value* lfortran_str_find_set(llvm::Value* str, llvm::Value* str_len,
                                        llvm::Value* set, llvm::Value* set_len,
                                        llvm::Value* back)
@@ -3733,6 +3753,19 @@ public:
                 llvm::Value *trimmed_len = lfortran_str_len_trim(str_data, str_len);
                 tmp = llvm_utils->create_stringView(
                     ASRUtils::get_string_type(x.m_type), str_data, trimmed_len, "stringTrim_view");
+                break;
+            }
+            case ASRUtils::IntrinsicElementalFunctions::Adjustl:
+            case ASRUtils::IntrinsicElementalFunctions::Adjustr: {
+                llvm::Value *str_data, *str_len;
+                std::tie(str_data, str_len) = get_string_data_and_length(x.m_args[0]);
+                tmp = lfortran_str_adjust(str_data, str_len,
+                    x.m_intrinsic_id == static_cast<int64_t>(ASRUtils::IntrinsicElementalFunctions::Adjustl));
+                tmp = llvm_utils->create_string_descriptor(tmp, str_len,
+                    x.m_intrinsic_id == static_cast<int64_t>(ASRUtils::IntrinsicElementalFunctions::Adjustl)
+                        ? "stringAdjustl_desc"
+                        : "stringAdjustr_desc");
+                strings_to_be_deallocated.push_back(al, tmp);
                 break;
             }
             case ASRUtils::IntrinsicElementalFunctions::StringConcat: {

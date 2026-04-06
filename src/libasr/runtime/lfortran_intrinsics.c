@@ -4723,6 +4723,43 @@ LFORTRAN_API int64_t _lfortran_str_len_trim(char* s, int64_t len)
     return len;
 }
 
+LFORTRAN_API char* _lfortran_str_adjustl_alloc(lfortran_allocator_t* al, char* s, int64_t len)
+{
+    int64_t first_non_space = 0;
+    char* result = (char*)ALLOCATOR_ALLOC(al, MAX(len, 1));
+    while (first_non_space < len && s[first_non_space] == ' ') {
+        first_non_space++;
+    }
+    if (first_non_space < len) {
+        int64_t shifted_len = len - first_non_space;
+        memcpy(result, s + first_non_space, shifted_len);
+        memset(result + shifted_len, ' ', first_non_space);
+    } else if (len > 0) {
+        memset(result, ' ', len);
+    }
+    return result;
+}
+
+LFORTRAN_API char* _lfortran_str_adjustr_alloc(lfortran_allocator_t* al, char* s, int64_t len)
+{
+    int64_t last_non_space = len - 1;
+    char* result = (char*)ALLOCATOR_ALLOC(al, MAX(len, 1));
+    while (last_non_space >= 0 && s[last_non_space] == ' ') {
+        last_non_space--;
+    }
+    if (last_non_space >= 0) {
+        int64_t leading_spaces = len - 1 - last_non_space;
+        if (leading_spaces > 0) {
+            memset(result, ' ', leading_spaces);
+        }
+        memcpy(result + leading_spaces, s, last_non_space + 1);
+    }
+    if (len > 0 && last_non_space < 0) {
+        memset(result, ' ', len);
+    }
+    return result;
+}
+
 LFORTRAN_API int64_t _lfortran_str_find_set(char* str, int64_t str_len, char* set, int64_t set_len, bool back)
 {
     if (back) {
