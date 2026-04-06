@@ -142,16 +142,14 @@ class ExprStmtDuplicator: public ASR::BaseExprStmtDuplicator<ExprStmtDuplicator>
 
 static inline ASR::symbol_t *symbol_get_past_external(ASR::symbol_t *f)
 {
-    if (f && f->type == ASR::symbolType::ExternalSymbol) {
+    while (f && f->type == ASR::symbolType::ExternalSymbol) {
         ASR::ExternalSymbol_t *e = ASR::down_cast<ASR::ExternalSymbol_t>(f);
-        if( e->m_external == nullptr ) {
+        if (e->m_external == nullptr) {
             return nullptr;
         }
-        LCOMPILERS_ASSERT(!ASR::is_a<ASR::ExternalSymbol_t>(*e->m_external));
-        return e->m_external;
-    } else {
-        return f;
+        f = e->m_external;
     }
+    return f;
 }
 
 static inline ASR::symbol_t* symbol_get_past_StructMethodDeclaration(ASR::symbol_t* f){
@@ -247,13 +245,14 @@ static inline ASR::Function_t* get_function(ASR::symbol_t* x)
 
 static inline const ASR::symbol_t *symbol_get_past_external(const ASR::symbol_t *f)
 {
-    if (f->type == ASR::symbolType::ExternalSymbol) {
+    while (f && f->type == ASR::symbolType::ExternalSymbol) {
         ASR::ExternalSymbol_t *e = ASR::down_cast<ASR::ExternalSymbol_t>(f);
-        LCOMPILERS_ASSERT(!ASR::is_a<ASR::ExternalSymbol_t>(*e->m_external));
-        return e->m_external;
-    } else {
-        return f;
+        if (e->m_external == nullptr) {
+            return nullptr;
+        }
+        f = e->m_external;
     }
+    return f;
 }
 
 static inline ASR::ttype_t *type_get_past_pointer(ASR::ttype_t *f)

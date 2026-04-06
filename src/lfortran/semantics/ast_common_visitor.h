@@ -11780,7 +11780,7 @@ public:
             ASR::Struct_t *der_type;
             if (ASR::is_a<ASR::ExternalSymbol_t>(*derived_type)) {
                 ASR::ExternalSymbol_t* der_ext = ASR::down_cast<ASR::ExternalSymbol_t>(derived_type);
-                ASR::symbol_t* der_sym = der_ext->m_external;
+                ASR::symbol_t* der_sym = ASRUtils::symbol_get_past_external(derived_type);
                 if (der_sym == nullptr) {
                     diag.add(Diagnostic("'" + std::string(der_ext->m_name) + "' isn't a Derived or Union type.",
                         Level::Error, Stage::Semantic, {Label("", {loc})}));
