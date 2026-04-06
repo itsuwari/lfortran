@@ -3219,6 +3219,65 @@ public:
         tmp = builder->CreateFSub(exp, one);
     }
 
+    llvm::Value* create_trig_intrinsic(llvm::Intrinsic::ID intrinsic_id, llvm::Value *item) {
+#if LLVM_VERSION_MAJOR >= 12
+        return builder->CreateUnaryIntrinsic(intrinsic_id, item);
+#elif LLVM_VERSION_MAJOR >= 8
+        llvm::Type *item_type = item->getType();
+        return builder->CreateIntrinsic(intrinsic_id, {item_type}, {item});
+#else
+        llvm::Type *item_type = item->getType();
+        llvm::Function *fn = llvm::Intrinsic::getDeclaration(module.get(),
+            intrinsic_id, {item_type});
+        return builder->CreateCall(fn, {item});
+#endif
+    }
+
+    llvm::Value* lfortran_complex_unary_intrinsic(llvm::Value* item,
+                                                  const std::string &runtime_func_name,
+                                                  llvm::Type* complex_type) {
+        item = convert_complex_vector_to_struct(item, complex_type);
+        llvm::Function *fn = module->getFunction(runtime_func_name);
+        if (!fn) {
+            llvm::FunctionType *function_type = llvm::FunctionType::get(
+                complex_type, {complex_type}, false);
+            fn = llvm::Function::Create(function_type,
+                llvm::Function::ExternalLinkage, runtime_func_name, module.get());
+        }
+        llvm::Value *result = builder->CreateCall(fn, {item});
+        return convert_complex_vector_to_struct(result, complex_type);
+    }
+
+    void generate_Sin(ASR::expr_t* m_arg) {
+        this->visit_expr_wrapper(m_arg, true);
+        llvm::Value *item = tmp;
+        llvm::Type *item_type = item->getType();
+        if (item_type->isFloatingPointTy()) {
+            tmp = create_trig_intrinsic(llvm::Intrinsic::sin, item);
+        } else if (item_type == complex_type_4) {
+            tmp = lfortran_complex_unary_intrinsic(item, "_lfortran_csin", complex_type_4);
+        } else if (item_type == complex_type_8) {
+            tmp = lfortran_complex_unary_intrinsic(item, "_lfortran_zsin", complex_type_8);
+        } else {
+            throw CodeGenError("sin() expects real or complex arguments", m_arg->base.loc);
+        }
+    }
+
+    void generate_Cos(ASR::expr_t* m_arg) {
+        this->visit_expr_wrapper(m_arg, true);
+        llvm::Value *item = tmp;
+        llvm::Type *item_type = item->getType();
+        if (item_type->isFloatingPointTy()) {
+            tmp = create_trig_intrinsic(llvm::Intrinsic::cos, item);
+        } else if (item_type == complex_type_4) {
+            tmp = lfortran_complex_unary_intrinsic(item, "_lfortran_ccos", complex_type_4);
+        } else if (item_type == complex_type_8) {
+            tmp = lfortran_complex_unary_intrinsic(item, "_lfortran_zcos", complex_type_8);
+        } else {
+            throw CodeGenError("cos() expects real or complex arguments", m_arg->base.loc);
+        }
+    }
+
     void generate_Abs(ASR::expr_t* m_arg) {
         this->visit_expr_wrapper(m_arg, true);
         llvm::Value *item = tmp;
@@ -3674,6 +3733,14 @@ public:
                     }
                 }
                 break ;
+            }
+            case ASRUtils::IntrinsicElementalFunctions::Sin: {
+                generate_Sin(x.m_args[0]);
+                break;
+            }
+            case ASRUtils::IntrinsicElementalFunctions::Cos: {
+                generate_Cos(x.m_args[0]);
+                break;
             }
             case ASRUtils::IntrinsicElementalFunctions::FlipSign: {
                 Vec<ASR::call_arg_t> args;
