@@ -4041,9 +4041,172 @@ public:
     }
 
     void visit_IntrinsicArrayFunction(const ASR::IntrinsicArrayFunction_t &x) {
-        throw CodeGenError("LLVM visit_IntrinsicArrayFunction() not implemented for " +
-            ASRUtils::get_array_intrinsic_name(static_cast<int64_t>(x.m_arr_intrinsic_id)),
-            x.base.base.loc);
+        if (x.m_value) {
+            visit_expr_wrapper(x.m_value, true);
+            return;
+        }
+
+        auto get_array_reduction_input = [&](ASR::expr_t* array_expr,
+                llvm::Value*& array_data, llvm::Value*& num_elements,
+                llvm::Type*& elem_type, llvm::Value*& owned_copy) {
+            ASR::ttype_t* array_expr_type = ASRUtils::expr_type(array_expr);
+            llvm::Type* array_type = llvm_utils->get_type_from_ttype_t_util(
+                array_expr,
+                ASRUtils::type_get_past_allocatable(
+                    ASRUtils::type_get_past_pointer(array_expr_type)),
+                module.get());
+            elem_type = llvm_utils->get_el_type(
+                array_expr, ASRUtils::extract_type(array_expr_type), module.get());
+
+            int64_t ptr_loads_copy = ptr_loads;
+            ptr_loads = 2 - LLVM::is_llvm_pointer(*array_expr_type);
+            visit_expr_wrapper(array_expr);
+            ptr_loads = ptr_loads_copy;
+
+            if (ASR::is_a<ASR::StructInstanceMember_t>(*array_expr)) {
+                tmp = llvm_utils->CreateLoad2(array_type->getPointerTo(), tmp);
+            }
+
+            llvm::Value* llvm_array = tmp;
+            llvm::Type* index_type = arr_descr->get_index_type();
+            int index_kind = index_type->getIntegerBitWidth() / 8;
+            ASR::array_physical_typeType physical_type = ASRUtils::extract_physical_type(array_expr_type);
+            if (physical_type == ASR::array_physical_typeType::StringArraySinglePointer) {
+                if (ASRUtils::is_fixed_size_array(array_expr_type)) {
+                    physical_type = ASR::array_physical_typeType::FixedSizeArray;
+                } else {
+                    physical_type = ASR::array_physical_typeType::DescriptorArray;
+                }
+            }
+
+            owned_copy = nullptr;
+            switch (physical_type) {
+                case ASR::array_physical_typeType::AssumedRankArray:
+                case ASR::array_physical_typeType::DescriptorArray: {
+                    num_elements = arr_descr->get_array_size(array_type, llvm_array, nullptr, index_kind);
+                    int rank = ASRUtils::extract_n_dims_from_ttype(array_expr_type);
+                    owned_copy = arr_descr->create_contiguous_copy_from_descriptor(
+                        array_type, llvm_array, elem_type, rank, module.get());
+                    array_data = owned_copy;
+                    break;
+                }
+                case ASR::array_physical_typeType::FixedSizeArray:
+                case ASR::array_physical_typeType::SIMDArray: {
+                    int64_t fixed_size = ASRUtils::get_fixed_size_of_array(array_expr_type);
+                    num_elements = llvm::ConstantInt::get(index_type, fixed_size);
+                    array_data = llvm_utils->create_gep2(array_type, llvm_array, 0);
+                    break;
+                }
+                default: {
+                    throw CodeGenError("LLVM array reduction backend is not implemented for array physical type `" +
+                        ASRUtils::get_type_code(array_expr_type) + "`", x.base.base.loc);
+                }
+            }
+        };
+
+        auto generate_AnyAll = [&](bool init_value, bool use_and) {
+            if (x.m_overload_id != 0) {
+                throw CodeGenError("LLVM array reduction backend only implements the scalar form of `" +
+                    ASRUtils::get_array_intrinsic_name(static_cast<int64_t>(x.m_arr_intrinsic_id)) + "`",
+                    x.base.base.loc);
+            }
+
+            llvm::Value *array_data = nullptr, *num_elements = nullptr, *owned_copy = nullptr;
+            llvm::Type* elem_type = nullptr;
+            get_array_reduction_input(x.m_args[0], array_data, num_elements, elem_type, owned_copy);
+
+            llvm::Type* index_type = arr_descr->get_index_type();
+            llvm::AllocaInst* idx = llvm_utils->CreateAlloca(index_type, nullptr, "array_reduce_idx");
+            builder->CreateStore(llvm::ConstantInt::get(index_type, 0), idx);
+
+            llvm::AllocaInst* accum = llvm_utils->CreateAlloca(llvm::Type::getInt1Ty(context), nullptr, "array_reduce_accum");
+            builder->CreateStore(llvm::ConstantInt::get(llvm::Type::getInt1Ty(context), init_value ? 1 : 0), accum);
+
+            llvm_utils->create_loop(use_and ? "array_all" : "array_any", [&]() {
+                llvm::Value* i = llvm_utils->CreateLoad2(index_type, idx);
+                return builder->CreateICmpSLT(i, num_elements);
+            }, [&]() {
+                llvm::Value* i = llvm_utils->CreateLoad2(index_type, idx);
+                llvm::Value* elem = llvm_utils->CreateLoad2(elem_type,
+                    llvm_utils->create_ptr_gep2(elem_type, array_data, i));
+                llvm::Value* elem_i1 = llvm_utils->to_i1(elem);
+                llvm::Value* old_accum = llvm_utils->CreateLoad2(llvm::Type::getInt1Ty(context), accum);
+                llvm::Value* new_accum = use_and
+                    ? builder->CreateAnd(old_accum, elem_i1)
+                    : builder->CreateOr(old_accum, elem_i1);
+                builder->CreateStore(new_accum, accum);
+                builder->CreateStore(
+                    builder->CreateAdd(i, llvm::ConstantInt::get(index_type, 1)), idx);
+            });
+
+            llvm::Value* result_i1 = llvm_utils->CreateLoad2(llvm::Type::getInt1Ty(context), accum);
+            int result_kind = ASRUtils::extract_kind_from_ttype_t(x.m_type);
+            tmp = builder->CreateZExt(result_i1, llvm_utils->getIntType(result_kind));
+
+            if (owned_copy) {
+                llvm_utils->lfortran_free_nocheck(owned_copy);
+            }
+        };
+
+        auto generate_Count = [&]() {
+            if (x.m_overload_id != 0) {
+                throw CodeGenError("LLVM array reduction backend only implements the scalar form of `count`",
+                    x.base.base.loc);
+            }
+
+            llvm::Value *array_data = nullptr, *num_elements = nullptr, *owned_copy = nullptr;
+            llvm::Type* elem_type = nullptr;
+            get_array_reduction_input(x.m_args[0], array_data, num_elements, elem_type, owned_copy);
+
+            llvm::Type* index_type = arr_descr->get_index_type();
+            llvm::Type* result_type = llvm_utils->getIntType(
+                ASRUtils::extract_kind_from_ttype_t(x.m_type));
+            llvm::AllocaInst* idx = llvm_utils->CreateAlloca(index_type, nullptr, "count_idx");
+            builder->CreateStore(llvm::ConstantInt::get(index_type, 0), idx);
+
+            llvm::AllocaInst* count = llvm_utils->CreateAlloca(result_type, nullptr, "count_accum");
+            builder->CreateStore(llvm::ConstantInt::get(result_type, 0), count);
+
+            llvm_utils->create_loop("array_count", [&]() {
+                llvm::Value* i = llvm_utils->CreateLoad2(index_type, idx);
+                return builder->CreateICmpSLT(i, num_elements);
+            }, [&]() {
+                llvm::Value* i = llvm_utils->CreateLoad2(index_type, idx);
+                llvm::Value* elem = llvm_utils->CreateLoad2(elem_type,
+                    llvm_utils->create_ptr_gep2(elem_type, array_data, i));
+                llvm::Value* elem_i1 = llvm_utils->to_i1(elem);
+                llvm::Value* old_count = llvm_utils->CreateLoad2(result_type, count);
+                llvm::Value* increment = builder->CreateZExt(elem_i1, result_type);
+                builder->CreateStore(builder->CreateAdd(old_count, increment), count);
+                builder->CreateStore(
+                    builder->CreateAdd(i, llvm::ConstantInt::get(index_type, 1)), idx);
+            });
+
+            tmp = llvm_utils->CreateLoad2(result_type, count);
+            if (owned_copy) {
+                llvm_utils->lfortran_free_nocheck(owned_copy);
+            }
+        };
+
+        switch (static_cast<ASRUtils::IntrinsicArrayFunctions>(x.m_arr_intrinsic_id)) {
+            case ASRUtils::IntrinsicArrayFunctions::Any: {
+                generate_AnyAll(false, false);
+                break;
+            }
+            case ASRUtils::IntrinsicArrayFunctions::All: {
+                generate_AnyAll(true, true);
+                break;
+            }
+            case ASRUtils::IntrinsicArrayFunctions::Count: {
+                generate_Count();
+                break;
+            }
+            default: {
+                throw CodeGenError("LLVM visit_IntrinsicArrayFunction() not implemented for " +
+                    ASRUtils::get_array_intrinsic_name(static_cast<int64_t>(x.m_arr_intrinsic_id)),
+                    x.base.base.loc);
+            }
+        }
     }
 
     void visit_IntrinsicImpureFunction(const ASR::IntrinsicImpureFunction_t &x) {
