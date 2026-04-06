@@ -4274,6 +4274,57 @@ public:
             }
         };
 
+        auto generate_Sum = [&]() {
+            if (x.m_overload_id != 0) {
+                throw CodeGenError("LLVM array reduction backend only implements the scalar form of `sum`",
+                    x.base.base.loc);
+            }
+
+            llvm::Value *array_data = nullptr, *num_elements = nullptr, *owned_copy = nullptr;
+            llvm::Type* elem_type = nullptr;
+            get_array_reduction_input(x.m_args[0], array_data, num_elements, elem_type, owned_copy);
+
+            llvm::Type* index_type = arr_descr->get_index_type();
+            llvm::Type* result_type = llvm_utils->get_type_from_ttype_t_util(
+                x.m_args[0], x.m_type, module.get());
+            llvm::AllocaInst* idx = llvm_utils->CreateAlloca(index_type, nullptr, "sum_idx");
+            builder->CreateStore(llvm::ConstantInt::get(index_type, 0), idx);
+
+            llvm::AllocaInst* sum = llvm_utils->CreateAlloca(result_type, nullptr, "sum_accum");
+            builder->CreateStore(llvm::Constant::getNullValue(result_type), sum);
+
+            llvm_utils->create_loop("array_sum", [&]() {
+                llvm::Value* i = llvm_utils->CreateLoad2(index_type, idx);
+                return builder->CreateICmpSLT(i, num_elements);
+            }, [&]() {
+                llvm::Value* i = llvm_utils->CreateLoad2(index_type, idx);
+                llvm::Value* elem = llvm_utils->CreateLoad2(elem_type,
+                    llvm_utils->create_ptr_gep2(elem_type, array_data, i));
+                llvm::Value* old_sum = llvm_utils->CreateLoad2(result_type, sum);
+                llvm::Value* new_sum = nullptr;
+                if (result_type->isIntegerTy()) {
+                    new_sum = builder->CreateAdd(old_sum, elem);
+                } else if (result_type->isFloatingPointTy()) {
+                    new_sum = builder->CreateFAdd(old_sum, elem);
+                } else if (result_type == complex_type_4) {
+                    new_sum = lfortran_complex_bin_op(old_sum, elem, "_lfortran_complex_add_32", complex_type_4);
+                } else if (result_type == complex_type_8) {
+                    new_sum = lfortran_complex_bin_op(old_sum, elem, "_lfortran_complex_add_64", complex_type_8);
+                } else {
+                    throw CodeGenError("LLVM array reduction backend only implements numeric scalar `sum`",
+                        x.base.base.loc);
+                }
+                builder->CreateStore(new_sum, sum);
+                builder->CreateStore(
+                    builder->CreateAdd(i, llvm::ConstantInt::get(index_type, 1)), idx);
+            });
+
+            tmp = llvm_utils->CreateLoad2(result_type, sum);
+            if (owned_copy) {
+                llvm_utils->lfortran_free_nocheck(owned_copy);
+            }
+        };
+
         switch (static_cast<ASRUtils::IntrinsicArrayFunctions>(x.m_arr_intrinsic_id)) {
             case ASRUtils::IntrinsicArrayFunctions::Any: {
                 generate_AnyAll(false, false);
@@ -4285,6 +4336,10 @@ public:
             }
             case ASRUtils::IntrinsicArrayFunctions::Count: {
                 generate_Count();
+                break;
+            }
+            case ASRUtils::IntrinsicArrayFunctions::Sum: {
+                generate_Sum();
                 break;
             }
             default: {
