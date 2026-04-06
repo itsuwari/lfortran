@@ -4325,6 +4325,308 @@ public:
             }
         };
 
+        auto get_array_matmul_input = [&](ASR::expr_t* array_expr,
+                llvm::Value*& array_data, std::vector<llvm::Value*>& extents,
+                llvm::Type*& elem_type, llvm::Value*& owned_copy) {
+            ASR::ttype_t* array_expr_type = ASRUtils::expr_type(array_expr);
+            ASR::ttype_t* array_desc_type = ASRUtils::type_get_past_allocatable(
+                ASRUtils::type_get_past_pointer(array_expr_type));
+            llvm::Type* array_type = llvm_utils->get_type_from_ttype_t_util(
+                array_expr, array_desc_type, module.get());
+            elem_type = llvm_utils->get_el_type(
+                array_expr, ASRUtils::extract_type(array_expr_type), module.get());
+
+            int64_t ptr_loads_copy = ptr_loads;
+            ptr_loads = 2 - LLVM::is_llvm_pointer(*array_expr_type);
+            visit_expr_wrapper(array_expr);
+            ptr_loads = ptr_loads_copy;
+
+            if (ASR::is_a<ASR::StructInstanceMember_t>(*array_expr)) {
+                tmp = llvm_utils->CreateLoad2(array_type->getPointerTo(), tmp);
+            }
+
+            llvm::Value* llvm_array = tmp;
+            llvm::Type* index_type = arr_descr->get_index_type();
+            ASR::array_physical_typeType physical_type = ASRUtils::extract_physical_type(array_expr_type);
+            if (physical_type == ASR::array_physical_typeType::StringArraySinglePointer) {
+                if (ASRUtils::is_fixed_size_array(array_expr_type)) {
+                    physical_type = ASR::array_physical_typeType::FixedSizeArray;
+                } else {
+                    physical_type = ASR::array_physical_typeType::DescriptorArray;
+                }
+            }
+
+            int rank = ASRUtils::extract_n_dims_from_ttype(array_expr_type);
+            extents.clear();
+            extents.reserve(rank);
+            owned_copy = nullptr;
+
+            switch (physical_type) {
+                case ASR::array_physical_typeType::AssumedRankArray:
+                case ASR::array_physical_typeType::DescriptorArray: {
+                    llvm::Value* dim_des_array = arr_descr->get_pointer_to_dimension_descriptor_array(
+                        array_type, llvm_array, true);
+                    for (int dim = 0; dim < rank; dim++) {
+                        llvm::Value* dim_desc = arr_descr->get_pointer_to_dimension_descriptor(
+                            dim_des_array,
+                            llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), dim));
+                        extents.push_back(arr_descr->get_dimension_size(dim_desc, true));
+                    }
+                    owned_copy = arr_descr->create_contiguous_copy_from_descriptor(
+                        array_type, llvm_array, elem_type, rank, module.get());
+                    array_data = owned_copy;
+                    break;
+                }
+                case ASR::array_physical_typeType::FixedSizeArray:
+                case ASR::array_physical_typeType::SIMDArray: {
+                    array_data = llvm_utils->create_gep2(array_type, llvm_array, 0);
+                    ASR::dimension_t* dims = nullptr;
+                    int n_dims = ASRUtils::extract_dimensions_from_ttype(array_expr_type, dims);
+                    LCOMPILERS_ASSERT(n_dims == rank);
+                    for (int dim = 0; dim < rank; dim++) {
+                        int64_t dim_extent = -1;
+                        bool ok = ASRUtils::extract_value(dims[dim].m_length, dim_extent);
+                        if (!ok) {
+                            throw CodeGenError("LLVM `matmul` backend only implements fixed-size arrays with compile-time extents",
+                                x.base.base.loc);
+                        }
+                        extents.push_back(llvm::ConstantInt::get(index_type, dim_extent));
+                    }
+                    break;
+                }
+                default: {
+                    throw CodeGenError("LLVM `matmul` backend is not implemented for array physical type `" +
+                        ASRUtils::get_type_code(array_expr_type) + "`", x.base.base.loc);
+                }
+            }
+        };
+
+        auto generate_MatMul = [&]() {
+            if (x.m_overload_id < 1 || x.m_overload_id > 3) {
+                throw CodeGenError("LLVM `matmul` backend only implements matrix/vector overloads 1, 2, and 3",
+                    x.base.base.loc);
+            }
+
+            llvm::Value *lhs_data = nullptr, *rhs_data = nullptr;
+            llvm::Type *lhs_elem_type = nullptr, *rhs_elem_type = nullptr;
+            llvm::Value *lhs_owned_copy = nullptr, *rhs_owned_copy = nullptr;
+            std::vector<llvm::Value*> lhs_extents, rhs_extents;
+            get_array_matmul_input(x.m_args[0], lhs_data, lhs_extents, lhs_elem_type, lhs_owned_copy);
+            get_array_matmul_input(x.m_args[1], rhs_data, rhs_extents, rhs_elem_type, rhs_owned_copy);
+
+            if (!(lhs_elem_type->isIntegerTy() || lhs_elem_type->isFloatingPointTy()) ||
+                    !(rhs_elem_type->isIntegerTy() || rhs_elem_type->isFloatingPointTy())) {
+                throw CodeGenError("LLVM `matmul` backend currently supports only integer and real arrays",
+                    x.base.base.loc);
+            }
+
+            ASR::ttype_t* result_array_type = ASRUtils::type_get_past_allocatable(
+                ASRUtils::type_get_past_pointer(x.m_type));
+            llvm::Type* result_desc_type = llvm_utils->get_type_from_ttype_t_util(
+                x.m_args[0], result_array_type, module.get());
+            ASR::ttype_t* result_elem_asr_type = ASRUtils::extract_type(result_array_type);
+            llvm::Type* result_elem_type = llvm_utils->get_el_type(
+                x.m_args[0], result_elem_asr_type, module.get());
+            if (!(result_elem_type->isIntegerTy() || result_elem_type->isFloatingPointTy())) {
+                throw CodeGenError("LLVM `matmul` backend currently supports only integer and real result arrays",
+                    x.base.base.loc);
+            }
+
+            llvm::Type* index_type = arr_descr->get_index_type();
+            llvm::Value* dim_m = nullptr;
+            llvm::Value* dim_k = nullptr;
+            llvm::Value* dim_n = nullptr;
+            llvm::Value* result_size = nullptr;
+            int result_rank = 2;
+
+            switch (x.m_overload_id) {
+                case 1: {
+                    LCOMPILERS_ASSERT(lhs_extents.size() == 1 && rhs_extents.size() == 2);
+                    dim_k = lhs_extents[0];
+                    dim_n = rhs_extents[1];
+                    result_size = dim_n;
+                    result_rank = 1;
+                    break;
+                }
+                case 2: {
+                    LCOMPILERS_ASSERT(lhs_extents.size() == 2 && rhs_extents.size() == 1);
+                    dim_m = lhs_extents[0];
+                    dim_k = lhs_extents[1];
+                    result_size = dim_m;
+                    result_rank = 1;
+                    break;
+                }
+                case 3: {
+                    LCOMPILERS_ASSERT(lhs_extents.size() == 2 && rhs_extents.size() == 2);
+                    dim_m = lhs_extents[0];
+                    dim_k = lhs_extents[1];
+                    dim_n = rhs_extents[1];
+                    result_size = builder->CreateMul(dim_m, dim_n);
+                    break;
+                }
+            }
+
+            llvm::Value* result_desc = arr_descr->create_descriptor_alloca(result_desc_type, "matmul_result");
+            arr_descr->fill_dimension_descriptor(result_desc_type, result_desc, result_rank);
+            builder->CreateStore(
+                llvm::ConstantInt::get(context, llvm::APInt(index_type->getIntegerBitWidth(), 0)),
+                arr_descr->get_offset(result_desc_type, result_desc, false));
+
+            llvm::Value* result_dim_des = arr_descr->get_pointer_to_dimension_descriptor_array(
+                result_desc_type, result_desc, true);
+            llvm::Value* result_dim0 = arr_descr->get_pointer_to_dimension_descriptor(
+                result_dim_des, llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), 0));
+            builder->CreateStore(llvm::ConstantInt::get(index_type, 1),
+                arr_descr->get_lower_bound(result_dim0, false));
+            builder->CreateStore(result_size,
+                arr_descr->get_dimension_size(result_dim0, false));
+            builder->CreateStore(llvm::ConstantInt::get(index_type, 1),
+                arr_descr->get_stride(result_dim0, false));
+            if (result_rank == 2) {
+                llvm::Value* result_dim1 = arr_descr->get_pointer_to_dimension_descriptor(
+                    result_dim_des, llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), 1));
+                builder->CreateStore(llvm::ConstantInt::get(index_type, 1),
+                    arr_descr->get_lower_bound(result_dim1, false));
+                builder->CreateStore(dim_n,
+                    arr_descr->get_dimension_size(result_dim1, false));
+                builder->CreateStore(dim_m,
+                    arr_descr->get_stride(result_dim1, false));
+                builder->CreateStore(dim_m,
+                    arr_descr->get_dimension_size(result_dim0, false));
+            }
+
+            llvm::AllocaInst* result_data = llvm_utils->CreateAlloca(result_elem_type, result_size, "matmul_data");
+            builder->CreateStore(result_data, arr_descr->get_pointer_to_data(result_desc_type, result_desc));
+            llvm::DataLayout data_layout(module->getDataLayout());
+            uint64_t elem_size = data_layout.getTypeAllocSize(result_elem_type);
+            set_cfi_descriptor_fields(result_desc_type, result_desc, result_elem_asr_type, elem_size, x.m_type);
+
+            auto cast_numeric_to_result = [&](llvm::Value* value, llvm::Type* src_type) -> llvm::Value* {
+                if (src_type == result_elem_type) {
+                    return value;
+                }
+                if (result_elem_type->isIntegerTy()) {
+                    if (!src_type->isIntegerTy()) {
+                        throw CodeGenError("LLVM `matmul` backend does not implement non-integer to integer result casts",
+                            x.base.base.loc);
+                    }
+                    return builder->CreateIntCast(value, result_elem_type, true);
+                }
+                if (result_elem_type->isFloatingPointTy()) {
+                    if (src_type->isIntegerTy()) {
+                        return builder->CreateSIToFP(value, result_elem_type);
+                    }
+                    if (src_type->isFloatingPointTy()) {
+                        return builder->CreateFPCast(value, result_elem_type);
+                    }
+                }
+                throw CodeGenError("LLVM `matmul` backend encountered an unsupported numeric cast",
+                    x.base.base.loc);
+            };
+
+            auto create_numeric_mul = [&](llvm::Value* lhs, llvm::Value* rhs) -> llvm::Value* {
+                if (result_elem_type->isIntegerTy()) {
+                    return builder->CreateMul(lhs, rhs);
+                }
+                if (result_elem_type->isFloatingPointTy()) {
+                    return builder->CreateFMul(lhs, rhs);
+                }
+                throw CodeGenError("LLVM `matmul` backend encountered an unsupported numeric multiply",
+                    x.base.base.loc);
+            };
+
+            auto create_numeric_add = [&](llvm::Value* lhs, llvm::Value* rhs) -> llvm::Value* {
+                if (result_elem_type->isIntegerTy()) {
+                    return builder->CreateAdd(lhs, rhs);
+                }
+                if (result_elem_type->isFloatingPointTy()) {
+                    return builder->CreateFAdd(lhs, rhs);
+                }
+                throw CodeGenError("LLVM `matmul` backend encountered an unsupported numeric add",
+                    x.base.base.loc);
+            };
+
+            llvm::AllocaInst* idx_i = llvm_utils->CreateAlloca(index_type, nullptr, "matmul_i");
+            llvm::AllocaInst* idx_j = llvm_utils->CreateAlloca(index_type, nullptr, "matmul_j");
+            llvm::AllocaInst* idx_k = llvm_utils->CreateAlloca(index_type, nullptr, "matmul_k");
+            llvm::AllocaInst* accum = llvm_utils->CreateAlloca(result_elem_type, nullptr, "matmul_accum");
+
+            builder->CreateStore(llvm::ConstantInt::get(index_type, 0), idx_i);
+            llvm_utils->create_loop("matmul_outer", [&]() {
+                llvm::Value* i = llvm_utils->CreateLoad2(index_type, idx_i);
+                llvm::Value* limit = (x.m_overload_id == 1) ? dim_n : dim_m;
+                return builder->CreateICmpSLT(i, limit);
+            }, [&]() {
+                builder->CreateStore(llvm::ConstantInt::get(index_type, 0), idx_j);
+                llvm_utils->create_loop("matmul_mid", [&]() {
+                    llvm::Value* j = llvm_utils->CreateLoad2(index_type, idx_j);
+                    llvm::Value* limit = (x.m_overload_id == 3) ? dim_n :
+                        llvm::ConstantInt::get(index_type, 1);
+                    return builder->CreateICmpSLT(j, limit);
+                }, [&]() {
+                    builder->CreateStore(llvm::Constant::getNullValue(result_elem_type), accum);
+                    builder->CreateStore(llvm::ConstantInt::get(index_type, 0), idx_k);
+                    llvm_utils->create_loop("matmul_inner", [&]() {
+                        llvm::Value* k = llvm_utils->CreateLoad2(index_type, idx_k);
+                        return builder->CreateICmpSLT(k, dim_k);
+                    }, [&]() {
+                        llvm::Value* i = llvm_utils->CreateLoad2(index_type, idx_i);
+                        llvm::Value* j = llvm_utils->CreateLoad2(index_type, idx_j);
+                        llvm::Value* k = llvm_utils->CreateLoad2(index_type, idx_k);
+
+                        llvm::Value* lhs_offset = nullptr;
+                        llvm::Value* rhs_offset = nullptr;
+                        if (x.m_overload_id == 3) {
+                            lhs_offset = builder->CreateAdd(i, builder->CreateMul(k, dim_m));
+                            rhs_offset = builder->CreateAdd(k, builder->CreateMul(j, dim_k));
+                        } else if (x.m_overload_id == 1) {
+                            lhs_offset = k;
+                            rhs_offset = builder->CreateAdd(k, builder->CreateMul(i, dim_k));
+                        } else {
+                            lhs_offset = builder->CreateAdd(i, builder->CreateMul(k, dim_m));
+                            rhs_offset = k;
+                        }
+
+                        llvm::Value* lhs_val = llvm_utils->CreateLoad2(lhs_elem_type,
+                            llvm_utils->create_ptr_gep2(lhs_elem_type, lhs_data, lhs_offset));
+                        llvm::Value* rhs_val = llvm_utils->CreateLoad2(rhs_elem_type,
+                            llvm_utils->create_ptr_gep2(rhs_elem_type, rhs_data, rhs_offset));
+                        lhs_val = cast_numeric_to_result(lhs_val, lhs_elem_type);
+                        rhs_val = cast_numeric_to_result(rhs_val, rhs_elem_type);
+                        llvm::Value* prod = create_numeric_mul(lhs_val, rhs_val);
+                        llvm::Value* old_accum = llvm_utils->CreateLoad2(result_elem_type, accum);
+                        builder->CreateStore(create_numeric_add(old_accum, prod), accum);
+                        builder->CreateStore(builder->CreateAdd(k, llvm::ConstantInt::get(index_type, 1)), idx_k);
+                    });
+
+                    llvm::Value* i = llvm_utils->CreateLoad2(index_type, idx_i);
+                    llvm::Value* j = llvm_utils->CreateLoad2(index_type, idx_j);
+                    llvm::Value* result_offset = nullptr;
+                    if (x.m_overload_id == 3) {
+                        result_offset = builder->CreateAdd(i, builder->CreateMul(j, dim_m));
+                    } else {
+                        result_offset = i;
+                    }
+                    builder->CreateStore(
+                        llvm_utils->CreateLoad2(result_elem_type, accum),
+                        llvm_utils->create_ptr_gep2(result_elem_type, result_data, result_offset));
+                    builder->CreateStore(builder->CreateAdd(j, llvm::ConstantInt::get(index_type, 1)), idx_j);
+                });
+                builder->CreateStore(
+                    builder->CreateAdd(llvm_utils->CreateLoad2(index_type, idx_i),
+                        llvm::ConstantInt::get(index_type, 1)),
+                    idx_i);
+            });
+
+            if (lhs_owned_copy) {
+                llvm_utils->lfortran_free_nocheck(lhs_owned_copy);
+            }
+            if (rhs_owned_copy) {
+                llvm_utils->lfortran_free_nocheck(rhs_owned_copy);
+            }
+            tmp = result_desc;
+        };
+
         switch (static_cast<ASRUtils::IntrinsicArrayFunctions>(x.m_arr_intrinsic_id)) {
             case ASRUtils::IntrinsicArrayFunctions::Any: {
                 generate_AnyAll(false, false);
@@ -4340,6 +4642,10 @@ public:
             }
             case ASRUtils::IntrinsicArrayFunctions::Sum: {
                 generate_Sum();
+                break;
+            }
+            case ASRUtils::IntrinsicArrayFunctions::MatMul: {
+                generate_MatMul();
                 break;
             }
             default: {
