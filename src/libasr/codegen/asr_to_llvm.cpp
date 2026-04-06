@@ -3330,6 +3330,21 @@ public:
         }
     }
 
+    void generate_Log(ASR::expr_t* m_arg) {
+        this->visit_expr_wrapper(m_arg, true);
+        llvm::Value *item = tmp;
+        llvm::Type *item_type = item->getType();
+        if (item_type->isFloatingPointTy()) {
+            tmp = create_unary_fp_intrinsic(llvm::Intrinsic::log, item);
+        } else if (item_type == complex_type_4) {
+            tmp = lfortran_complex_unary_intrinsic(item, "_lfortran_clog", complex_type_4);
+        } else if (item_type == complex_type_8) {
+            tmp = lfortran_complex_unary_intrinsic(item, "_lfortran_zlog", complex_type_8);
+        } else {
+            throw CodeGenError("log() expects real or complex arguments", m_arg->base.loc);
+        }
+    }
+
     void generate_Sqrt(ASR::expr_t* m_arg) {
         this->visit_expr_wrapper(m_arg, true);
         llvm::Value *item = tmp;
@@ -3871,6 +3886,10 @@ public:
             }
             case ASRUtils::IntrinsicElementalFunctions::Acos: {
                 generate_Acos(x.m_args[0]);
+                break;
+            }
+            case ASRUtils::IntrinsicElementalFunctions::Log: {
+                generate_Log(x.m_args[0]);
                 break;
             }
             case ASRUtils::IntrinsicElementalFunctions::Sqrt: {
