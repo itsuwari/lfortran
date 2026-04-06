@@ -4681,10 +4681,34 @@ public:
 
             ASR::ttype_t* result_array_type = ASRUtils::type_get_past_allocatable(
                 ASRUtils::type_get_past_pointer(x.m_type));
-            ASR::array_physical_typeType result_physical_type =
+            ASR::array_physical_typeType original_result_physical_type =
                 ASRUtils::extract_physical_type(result_array_type);
+            ASR::array_physical_typeType result_physical_type =
+                original_result_physical_type;
+            if (result_physical_type == ASR::array_physical_typeType::StringArraySinglePointer) {
+                if (ASRUtils::is_fixed_size_array(result_array_type)) {
+                    result_physical_type = ASR::array_physical_typeType::FixedSizeArray;
+                } else {
+                    result_physical_type = ASR::array_physical_typeType::DescriptorArray;
+                }
+            } else if (result_physical_type == ASR::array_physical_typeType::ISODescriptorArray) {
+                result_physical_type = ASR::array_physical_typeType::DescriptorArray;
+            } else if (result_physical_type != ASR::array_physical_typeType::DescriptorArray &&
+                       result_physical_type != ASR::array_physical_typeType::AssumedRankArray &&
+                       result_physical_type != ASR::array_physical_typeType::FixedSizeArray &&
+                       result_physical_type != ASR::array_physical_typeType::SIMDArray &&
+                       !ASRUtils::is_fixed_size_array(result_array_type)) {
+                result_physical_type = ASR::array_physical_typeType::DescriptorArray;
+            }
+            ASR::ttype_t* result_storage_asr_type = result_array_type;
+            if (result_physical_type == ASR::array_physical_typeType::DescriptorArray &&
+                    original_result_physical_type != ASR::array_physical_typeType::DescriptorArray) {
+                result_storage_asr_type = ASRUtils::duplicate_type(
+                    al, result_array_type, nullptr,
+                    ASR::array_physical_typeType::DescriptorArray, true);
+            }
             llvm::Type* result_storage_type = llvm_utils->get_type_from_ttype_t_util(
-                x.m_args[0], result_array_type, module.get());
+                x.m_args[0], result_storage_asr_type, module.get());
             llvm::Type* result_elem_type = llvm_utils->get_el_type(
                 x.m_args[0], ASRUtils::extract_type(result_array_type), module.get());
 
@@ -5359,10 +5383,34 @@ public:
 
             ASR::ttype_t* result_array_type = ASRUtils::type_get_past_allocatable(
                 ASRUtils::type_get_past_pointer(x.m_type));
-            ASR::array_physical_typeType result_physical_type =
+            ASR::array_physical_typeType original_result_physical_type =
                 ASRUtils::extract_physical_type(result_array_type);
+            ASR::array_physical_typeType result_physical_type =
+                original_result_physical_type;
+            if (result_physical_type == ASR::array_physical_typeType::StringArraySinglePointer) {
+                if (ASRUtils::is_fixed_size_array(result_array_type)) {
+                    result_physical_type = ASR::array_physical_typeType::FixedSizeArray;
+                } else {
+                    result_physical_type = ASR::array_physical_typeType::DescriptorArray;
+                }
+            } else if (result_physical_type == ASR::array_physical_typeType::ISODescriptorArray) {
+                result_physical_type = ASR::array_physical_typeType::DescriptorArray;
+            } else if (result_physical_type != ASR::array_physical_typeType::DescriptorArray &&
+                       result_physical_type != ASR::array_physical_typeType::AssumedRankArray &&
+                       result_physical_type != ASR::array_physical_typeType::FixedSizeArray &&
+                       result_physical_type != ASR::array_physical_typeType::SIMDArray &&
+                       !ASRUtils::is_fixed_size_array(result_array_type)) {
+                result_physical_type = ASR::array_physical_typeType::DescriptorArray;
+            }
+            ASR::ttype_t* result_storage_asr_type = result_array_type;
+            if (result_physical_type == ASR::array_physical_typeType::DescriptorArray &&
+                    original_result_physical_type != ASR::array_physical_typeType::DescriptorArray) {
+                result_storage_asr_type = ASRUtils::duplicate_type(
+                    al, result_array_type, nullptr,
+                    ASR::array_physical_typeType::DescriptorArray, true);
+            }
             llvm::Type* result_storage_type = llvm_utils->get_type_from_ttype_t_util(
-                x.m_args[0], result_array_type, module.get());
+                x.m_args[0], result_storage_asr_type, module.get());
             llvm::Type* result_elem_type = llvm_utils->get_el_type(
                 x.m_args[0], ASRUtils::extract_type(result_array_type), module.get());
             llvm::Type* index_type = arr_descr->get_index_type();
@@ -5587,10 +5635,34 @@ public:
 
             ASR::ttype_t* result_array_type = ASRUtils::type_get_past_allocatable(
                 ASRUtils::type_get_past_pointer(x.m_type));
-            ASR::array_physical_typeType result_physical_type =
+            ASR::array_physical_typeType original_result_physical_type =
                 ASRUtils::extract_physical_type(result_array_type);
+            ASR::array_physical_typeType result_physical_type =
+                original_result_physical_type;
+            if (result_physical_type == ASR::array_physical_typeType::StringArraySinglePointer) {
+                if (ASRUtils::is_fixed_size_array(result_array_type)) {
+                    result_physical_type = ASR::array_physical_typeType::FixedSizeArray;
+                } else {
+                    result_physical_type = ASR::array_physical_typeType::DescriptorArray;
+                }
+            } else if (result_physical_type == ASR::array_physical_typeType::ISODescriptorArray) {
+                result_physical_type = ASR::array_physical_typeType::DescriptorArray;
+            } else if (result_physical_type != ASR::array_physical_typeType::DescriptorArray &&
+                       result_physical_type != ASR::array_physical_typeType::AssumedRankArray &&
+                       result_physical_type != ASR::array_physical_typeType::FixedSizeArray &&
+                       result_physical_type != ASR::array_physical_typeType::SIMDArray &&
+                       !ASRUtils::is_fixed_size_array(result_array_type)) {
+                result_physical_type = ASR::array_physical_typeType::DescriptorArray;
+            }
+            ASR::ttype_t* result_storage_asr_type = result_array_type;
+            if (result_physical_type == ASR::array_physical_typeType::DescriptorArray &&
+                    original_result_physical_type != ASR::array_physical_typeType::DescriptorArray) {
+                result_storage_asr_type = ASRUtils::duplicate_type(
+                    al, result_array_type, nullptr,
+                    ASR::array_physical_typeType::DescriptorArray, true);
+            }
             llvm::Type* result_storage_type = llvm_utils->get_type_from_ttype_t_util(
-                x.m_args[0], result_array_type, module.get());
+                x.m_args[0], result_storage_asr_type, module.get());
             llvm::Type* result_elem_type = llvm_utils->get_el_type(
                 x.m_args[0], ASRUtils::extract_type(result_array_type), module.get());
             if (source_elem_type != result_elem_type) {
@@ -5717,10 +5789,34 @@ public:
 
             ASR::ttype_t* result_array_type = ASRUtils::type_get_past_allocatable(
                 ASRUtils::type_get_past_pointer(x.m_type));
-            ASR::array_physical_typeType result_physical_type =
+            ASR::array_physical_typeType original_result_physical_type =
                 ASRUtils::extract_physical_type(result_array_type);
+            ASR::array_physical_typeType result_physical_type =
+                original_result_physical_type;
+            if (result_physical_type == ASR::array_physical_typeType::StringArraySinglePointer) {
+                if (ASRUtils::is_fixed_size_array(result_array_type)) {
+                    result_physical_type = ASR::array_physical_typeType::FixedSizeArray;
+                } else {
+                    result_physical_type = ASR::array_physical_typeType::DescriptorArray;
+                }
+            } else if (result_physical_type == ASR::array_physical_typeType::ISODescriptorArray) {
+                result_physical_type = ASR::array_physical_typeType::DescriptorArray;
+            } else if (result_physical_type != ASR::array_physical_typeType::DescriptorArray &&
+                       result_physical_type != ASR::array_physical_typeType::AssumedRankArray &&
+                       result_physical_type != ASR::array_physical_typeType::FixedSizeArray &&
+                       result_physical_type != ASR::array_physical_typeType::SIMDArray &&
+                       !ASRUtils::is_fixed_size_array(result_array_type)) {
+                result_physical_type = ASR::array_physical_typeType::DescriptorArray;
+            }
+            ASR::ttype_t* result_storage_asr_type = result_array_type;
+            if (result_physical_type == ASR::array_physical_typeType::DescriptorArray &&
+                    original_result_physical_type != ASR::array_physical_typeType::DescriptorArray) {
+                result_storage_asr_type = ASRUtils::duplicate_type(
+                    al, result_array_type, nullptr,
+                    ASR::array_physical_typeType::DescriptorArray, true);
+            }
             llvm::Type* result_storage_type = llvm_utils->get_type_from_ttype_t_util(
-                x.m_args[0], result_array_type, module.get());
+                x.m_args[0], result_storage_asr_type, module.get());
             llvm::Type* result_elem_type = llvm_utils->get_el_type(
                 x.m_args[0], ASRUtils::extract_type(result_array_type), module.get());
             llvm::Type* index_type = arr_descr->get_index_type();
