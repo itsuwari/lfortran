@@ -223,6 +223,9 @@ LFORTRAN_API char* _lfortran_strrepeat_c_alloc(lfortran_allocator_t* al, char* s
 LFORTRAN_API char* _lfortran_strcat_alloc(lfortran_allocator_t* al, char* s1, int64_t s1_len, char* s2, int64_t s2_len);
 LFORTRAN_API void _lfortran_strcpy_alloc(lfortran_allocator_t* al, char** lhs, int64_t* lhs_len, bool is_lhs_allocatable, bool is_lhs_deferred, char* rhs, int64_t rhs_len);
 LFORTRAN_API int64_t _lfortran_str_len(char* s);
+LFORTRAN_API int64_t _lfortran_str_len_trim(char* s, int64_t len);
+LFORTRAN_API int64_t _lfortran_str_find_set(char* str, int64_t str_len, char* set, int64_t set_len, bool back);
+LFORTRAN_API int64_t _lfortran_str_index(char* str, int64_t str_len, char* substr, int64_t substr_len, bool back);
 LFORTRAN_API int _lfortran_str_ord(char** s);
 LFORTRAN_API int _lfortran_str_ord_c(char* s);
 LFORTRAN_API char* _lfortran_str_chr_alloc(lfortran_allocator_t* al, uint8_t c);

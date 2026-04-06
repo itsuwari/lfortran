@@ -1338,6 +1338,64 @@ public:
         return builder->CreateCall(fn, {str});
     }
 
+    llvm::Value* lfortran_str_len_trim(llvm::Value* str, llvm::Value* len)
+    {
+        std::string runtime_func_name = "_lfortran_str_len_trim";
+        llvm::Function *fn = module->getFunction(runtime_func_name);
+        if (!fn) {
+            llvm::FunctionType *function_type = llvm::FunctionType::get(
+                    llvm::Type::getInt64Ty(context), {
+                        character_type,
+                        llvm::Type::getInt64Ty(context)
+                    }, false);
+            fn = llvm::Function::Create(function_type,
+                    llvm::Function::ExternalLinkage, runtime_func_name, module.get());
+        }
+        return builder->CreateCall(fn, {str, len});
+    }
+
+    llvm::Value* lfortran_str_find_set(llvm::Value* str, llvm::Value* str_len,
+                                       llvm::Value* set, llvm::Value* set_len,
+                                       llvm::Value* back)
+    {
+        std::string runtime_func_name = "_lfortran_str_find_set";
+        llvm::Function *fn = module->getFunction(runtime_func_name);
+        if (!fn) {
+            llvm::FunctionType *function_type = llvm::FunctionType::get(
+                    llvm::Type::getInt64Ty(context), {
+                        character_type,
+                        llvm::Type::getInt64Ty(context),
+                        character_type,
+                        llvm::Type::getInt64Ty(context),
+                        llvm::Type::getInt1Ty(context)
+                    }, false);
+            fn = llvm::Function::Create(function_type,
+                    llvm::Function::ExternalLinkage, runtime_func_name, module.get());
+        }
+        return builder->CreateCall(fn, {str, str_len, set, set_len, back});
+    }
+
+    llvm::Value* lfortran_str_index(llvm::Value* str, llvm::Value* str_len,
+                                    llvm::Value* substr, llvm::Value* substr_len,
+                                    llvm::Value* back)
+    {
+        std::string runtime_func_name = "_lfortran_str_index";
+        llvm::Function *fn = module->getFunction(runtime_func_name);
+        if (!fn) {
+            llvm::FunctionType *function_type = llvm::FunctionType::get(
+                    llvm::Type::getInt64Ty(context), {
+                        character_type,
+                        llvm::Type::getInt64Ty(context),
+                        character_type,
+                        llvm::Type::getInt64Ty(context),
+                        llvm::Type::getInt1Ty(context)
+                    }, false);
+            fn = llvm::Function::Create(function_type,
+                    llvm::Function::ExternalLinkage, runtime_func_name, module.get());
+        }
+        return builder->CreateCall(fn, {str, str_len, substr, substr_len, back});
+    }
+
     llvm::Value* lfortran_str_to_int(llvm::Value* str)
     {
         std::string runtime_func_name = "_lfortran_str_to_int";
@@ -3164,20 +3222,38 @@ public:
         }
     }
 
-    void generate_Floor(ASR::expr_t* m_arg, ASR::ttype_t* return_type) {
-        this->visit_expr_wrapper(m_arg, true);
-        llvm::Value *item = tmp;
+    llvm::Value* create_floor_intrinsic(llvm::Value *item) {
 #if LLVM_VERSION_MAJOR >= 12
-        llvm::Value *rounded = builder->CreateUnaryIntrinsic(llvm::Intrinsic::floor, item);
+        return builder->CreateUnaryIntrinsic(llvm::Intrinsic::floor, item);
 #elif LLVM_VERSION_MAJOR >= 8
         llvm::Type *item_type = item->getType();
-        llvm::Value *rounded = builder->CreateIntrinsic(llvm::Intrinsic::floor, {item_type}, {item});
+        return builder->CreateIntrinsic(llvm::Intrinsic::floor, {item_type}, {item});
 #else
         llvm::Type *item_type = item->getType();
         llvm::Function *fn = llvm::Intrinsic::getDeclaration(module.get(),
             llvm::Intrinsic::floor, {item_type});
-        llvm::Value *rounded = builder->CreateCall(fn, {item});
+        return builder->CreateCall(fn, {item});
 #endif
+    }
+
+    llvm::Value* create_ceil_intrinsic(llvm::Value *item) {
+#if LLVM_VERSION_MAJOR >= 12
+        return builder->CreateUnaryIntrinsic(llvm::Intrinsic::ceil, item);
+#elif LLVM_VERSION_MAJOR >= 8
+        llvm::Type *item_type = item->getType();
+        return builder->CreateIntrinsic(llvm::Intrinsic::ceil, {item_type}, {item});
+#else
+        llvm::Type *item_type = item->getType();
+        llvm::Function *fn = llvm::Intrinsic::getDeclaration(module.get(),
+            llvm::Intrinsic::ceil, {item_type});
+        return builder->CreateCall(fn, {item});
+#endif
+    }
+
+    void generate_Floor(ASR::expr_t* m_arg, ASR::ttype_t* return_type) {
+        this->visit_expr_wrapper(m_arg, true);
+        llvm::Value *item = tmp;
+        llvm::Value *rounded = create_floor_intrinsic(item);
         int a_kind = ASRUtils::extract_kind_from_ttype_t(return_type);
         tmp = builder->CreateFPToSI(rounded, llvm_utils->getIntType(a_kind));
     }
@@ -3185,19 +3261,128 @@ public:
     void generate_Ceiling(ASR::expr_t* m_arg, ASR::ttype_t* return_type) {
         this->visit_expr_wrapper(m_arg, true);
         llvm::Value *item = tmp;
-#if LLVM_VERSION_MAJOR >= 12
-        llvm::Value *rounded = builder->CreateUnaryIntrinsic(llvm::Intrinsic::ceil, item);
-#elif LLVM_VERSION_MAJOR >= 8
-        llvm::Type *item_type = item->getType();
-        llvm::Value *rounded = builder->CreateIntrinsic(llvm::Intrinsic::ceil, {item_type}, {item});
-#else
-        llvm::Type *item_type = item->getType();
-        llvm::Function *fn = llvm::Intrinsic::getDeclaration(module.get(),
-            llvm::Intrinsic::ceil, {item_type});
-        llvm::Value *rounded = builder->CreateCall(fn, {item});
-#endif
+        llvm::Value *rounded = create_ceil_intrinsic(item);
         int a_kind = ASRUtils::extract_kind_from_ttype_t(return_type);
         tmp = builder->CreateFPToSI(rounded, llvm_utils->getIntType(a_kind));
+    }
+
+    void generate_Mod(ASR::expr_t* left_arg, ASR::expr_t* right_arg) {
+        this->visit_expr_wrapper(left_arg, true);
+        llvm::Value *left_val = tmp;
+        this->visit_expr_wrapper(right_arg, true);
+        llvm::Value *right_val = tmp;
+        llvm::Type *item_type = left_val->getType();
+        if (item_type->isFloatingPointTy()) {
+            tmp = builder->CreateFRem(left_val, right_val);
+        } else if (item_type->isIntegerTy()) {
+            tmp = builder->CreateSRem(left_val, right_val);
+        } else {
+            throw CodeGenError("mod() expects integer or real arguments", left_arg->base.loc);
+        }
+    }
+
+    void generate_Modulo(ASR::expr_t* left_arg, ASR::expr_t* right_arg) {
+        this->visit_expr_wrapper(left_arg, true);
+        llvm::Value *left_val = tmp;
+        this->visit_expr_wrapper(right_arg, true);
+        llvm::Value *right_val = tmp;
+        llvm::Type *item_type = left_val->getType();
+        if (item_type->isFloatingPointTy()) {
+            llvm::Value *quot = builder->CreateFDiv(left_val, right_val);
+            llvm::Value *floor_quot = create_floor_intrinsic(quot);
+            tmp = builder->CreateFSub(left_val, builder->CreateFMul(right_val, floor_quot));
+        } else if (item_type->isIntegerTy()) {
+            llvm::Value *rem = builder->CreateSRem(left_val, right_val);
+            llvm::Value *zero = llvm::ConstantInt::get(item_type, 0);
+            llvm::Value *rem_nonzero = builder->CreateICmpNE(rem, zero);
+            llvm::Value *rem_negative = builder->CreateICmpSLT(rem, zero);
+            llvm::Value *rhs_negative = builder->CreateICmpSLT(right_val, zero);
+            llvm::Value *sign_diff = builder->CreateXor(rem_negative, rhs_negative);
+            llvm::Value *needs_adjust = builder->CreateAnd(rem_nonzero, sign_diff);
+            llvm::Value *adjusted = builder->CreateAdd(rem, right_val);
+            tmp = builder->CreateSelect(needs_adjust, adjusted, rem);
+        } else {
+            throw CodeGenError("modulo() expects integer or real arguments", left_arg->base.loc);
+        }
+    }
+
+    void generate_StringFindSet(ASR::expr_t* str_arg, ASR::expr_t* set_arg,
+                                ASR::expr_t* back_arg, ASR::ttype_t* return_type) {
+        llvm::Value *str_data, *str_len;
+        llvm::Value *set_data, *set_len;
+        std::tie(str_data, str_len) = get_string_data_and_length(str_arg);
+        std::tie(set_data, set_len) = get_string_data_and_length(set_arg);
+        this->visit_expr_wrapper(back_arg, true);
+        llvm::Value *back = llvm_utils->to_i1(tmp);
+        tmp = lfortran_str_find_set(str_data, str_len, set_data, set_len, back);
+        tmp = llvm_utils->convert_kind(tmp,
+            llvm::Type::getIntNTy(context,
+                ASRUtils::extract_kind_from_ttype_t(return_type) * 8));
+    }
+
+    void generate_SubstrIndex(ASR::expr_t* str_arg, ASR::expr_t* substr_arg,
+                              ASR::expr_t* back_arg, ASR::ttype_t* return_type) {
+        llvm::Value *str_data, *str_len;
+        llvm::Value *substr_data, *substr_len;
+        std::tie(str_data, str_len) = get_string_data_and_length(str_arg);
+        std::tie(substr_data, substr_len) = get_string_data_and_length(substr_arg);
+        this->visit_expr_wrapper(back_arg, true);
+        llvm::Value *back = llvm_utils->to_i1(tmp);
+        tmp = lfortran_str_index(str_data, str_len, substr_data, substr_len, back);
+        tmp = llvm_utils->convert_kind(tmp,
+            llvm::Type::getIntNTy(context,
+                ASRUtils::extract_kind_from_ttype_t(return_type) * 8));
+    }
+
+    void generate_Int(ASR::expr_t* arg, ASR::ttype_t* return_type) {
+        this->visit_expr_wrapper(arg, true);
+        llvm::Value *value = tmp;
+        llvm::Type *target_type = llvm_utils->getIntType(
+            ASRUtils::extract_kind_from_ttype_t(return_type));
+        llvm::Type *value_type = value->getType();
+        if (value_type->isIntegerTy()) {
+            tmp = llvm_utils->convert_kind(value, target_type);
+        } else if (value_type->isFloatingPointTy()) {
+            tmp = builder->CreateFPToSI(value, target_type);
+        } else if (value_type->isStructTy()) {
+            llvm::Value *real_part = complex_re(value, value_type);
+            tmp = builder->CreateFPToSI(real_part, target_type);
+        } else {
+            throw CodeGenError("int() expects integer, real, or complex argument", arg->base.loc);
+        }
+    }
+
+    void generate_Real(ASR::expr_t* arg, ASR::ttype_t* return_type) {
+        this->visit_expr_wrapper(arg, true);
+        llvm::Value *value = tmp;
+        int a_kind = ASRUtils::extract_kind_from_ttype_t(return_type);
+        llvm::Type *target_type = llvm_utils->getFPType(a_kind, false);
+        llvm::Type *value_type = value->getType();
+        if (value_type->isIntegerTy()) {
+            tmp = builder->CreateSIToFP(value, target_type);
+        } else if (value_type->isFloatingPointTy()) {
+            if (value_type == target_type) {
+                tmp = value;
+            } else if (value_type->getPrimitiveSizeInBits() < target_type->getPrimitiveSizeInBits()) {
+                tmp = builder->CreateFPExt(value, target_type);
+            } else {
+                tmp = builder->CreateFPTrunc(value, target_type);
+            }
+        } else if (value_type->isStructTy()) {
+            llvm::Value *real_part = complex_re(value, value_type);
+            llvm::Type *real_type = real_part->getType();
+            if (real_type == target_type) {
+                tmp = real_part;
+            } else if (real_type->getPrimitiveSizeInBits() < target_type->getPrimitiveSizeInBits()) {
+                tmp = builder->CreateFPExt(real_part, target_type);
+            } else {
+                tmp = builder->CreateFPTrunc(real_part, target_type);
+            }
+        } else if (value_type->isIntOrIntVectorTy()) {
+            tmp = builder->CreateUIToFP(value, target_type);
+        } else {
+            throw CodeGenError("real() expects integer, real, or complex argument", arg->base.loc);
+        }
     }
 
     void generate_MinMax(ASR::expr_t** m_args, size_t n_args, bool is_max) {
@@ -3509,6 +3694,116 @@ public:
                 generate_Abs(x.m_args[0]);
                 break;
             }
+            case ASRUtils::IntrinsicElementalFunctions::Mod: {
+                generate_Mod(x.m_args[0], x.m_args[1]);
+                break;
+            }
+            case ASRUtils::IntrinsicElementalFunctions::Modulo: {
+                generate_Modulo(x.m_args[0], x.m_args[1]);
+                break;
+            }
+            case ASRUtils::IntrinsicElementalFunctions::StringFindSet: {
+                generate_StringFindSet(x.m_args[0], x.m_args[1], x.m_args[2], x.m_type);
+                break;
+            }
+            case ASRUtils::IntrinsicElementalFunctions::SubstrIndex: {
+                generate_SubstrIndex(x.m_args[0], x.m_args[1], x.m_args[2], x.m_type);
+                break;
+            }
+            case ASRUtils::IntrinsicElementalFunctions::Int: {
+                generate_Int(x.m_args[0], x.m_type);
+                break;
+            }
+            case ASRUtils::IntrinsicElementalFunctions::Real: {
+                generate_Real(x.m_args[0], x.m_type);
+                break;
+            }
+            case ASRUtils::IntrinsicElementalFunctions::StringLenTrim: {
+                llvm::Value *str_data, *str_len;
+                std::tie(str_data, str_len) = get_string_data_and_length(x.m_args[0]);
+                tmp = lfortran_str_len_trim(str_data, str_len);
+                tmp = llvm_utils->convert_kind(tmp,
+                    llvm::Type::getIntNTy(context,
+                        ASRUtils::extract_kind_from_ttype_t(x.m_type) * 8));
+                break;
+            }
+            case ASRUtils::IntrinsicElementalFunctions::StringTrim: {
+                llvm::Value *str_data, *str_len;
+                std::tie(str_data, str_len) = get_string_data_and_length(x.m_args[0]);
+                llvm::Value *trimmed_len = lfortran_str_len_trim(str_data, str_len);
+                tmp = llvm_utils->create_stringView(
+                    ASRUtils::get_string_type(x.m_type), str_data, trimmed_len, "stringTrim_view");
+                break;
+            }
+            case ASRUtils::IntrinsicElementalFunctions::StringConcat: {
+                llvm::Value *left_val {}, *left_len {};
+                llvm::Value *right_val {}, *right_len {};
+                std::tie(left_val, left_len) = get_string_data_and_length(x.m_args[0]);
+                std::tie(right_val, right_len) = get_string_data_and_length(x.m_args[1]);
+                tmp = lfortran_strConcat(left_val, left_len, right_val, right_len);
+                tmp = llvm_utils->create_string_descriptor(tmp,
+                    builder->CreateAdd(left_len, right_len), "strConcat_desc");
+                strings_to_be_deallocated.push_back(al, tmp);
+                break;
+            }
+            case ASRUtils::IntrinsicElementalFunctions::Repeat: {
+                llvm::Value *left_val {}, *left_len {};
+                std::tie(left_val, left_len) = get_string_data_and_length(x.m_args[0]);
+                this->visit_expr_load_wrapper(x.m_args[1], 1, true);
+                llvm::Value *right_val = tmp;
+                tmp = lfortran_strrepeat(left_val, right_val);
+                right_val = llvm_utils->convert_kind(right_val, llvm::Type::getInt64Ty(context));
+                tmp = llvm_utils->create_string_descriptor(tmp,
+                    builder->CreateMul(left_len, right_val), "strRepeat_desc");
+                strings_to_be_deallocated.push_back(al, tmp);
+                break;
+            }
+            case ASRUtils::IntrinsicElementalFunctions::Ichar: {
+                this->visit_expr_wrapper(x.m_args[0], true);
+                llvm::Value *c = llvm_utils->get_string_data(ASRUtils::get_string_type(x.m_args[0]), tmp);
+                std::string runtime_func_name = "_lfortran_ichar";
+                llvm::Function *fn = module->getFunction(runtime_func_name);
+                if (!fn) {
+                    llvm::FunctionType *function_type = llvm::FunctionType::get(
+                        llvm::Type::getInt32Ty(context), {
+                            llvm::Type::getInt8Ty(context)->getPointerTo()
+                        }, false);
+                    fn = llvm::Function::Create(function_type,
+                            llvm::Function::ExternalLinkage, runtime_func_name, module.get());
+                }
+                tmp = builder->CreateCall(fn, {c});
+                if (ASRUtils::extract_kind_from_ttype_t(x.m_type) == 8) {
+                    tmp = builder->CreateSExt(tmp, llvm_utils->getIntType(8));
+                }
+                break;
+            }
+            case ASRUtils::IntrinsicElementalFunctions::Iachar: {
+                this->visit_expr_load_wrapper(x.m_args[0], 0);
+                llvm::Value *c = llvm_utils->get_string_data(ASRUtils::get_string_type(x.m_args[0]), tmp);
+                std::string runtime_func_name = "_lfortran_iachar";
+                llvm::Function *fn = module->getFunction(runtime_func_name);
+                if (!fn) {
+                    llvm::FunctionType *function_type = llvm::FunctionType::get(
+                        llvm::Type::getInt32Ty(context), {
+                            llvm::Type::getInt8Ty(context)->getPointerTo()
+                        }, false);
+                    fn = llvm::Function::Create(function_type,
+                            llvm::Function::ExternalLinkage, runtime_func_name, module.get());
+                }
+                tmp = builder->CreateCall(fn, {c});
+                if (ASRUtils::extract_kind_from_ttype_t(x.m_type) == 8) {
+                    tmp = builder->CreateSExt(tmp, llvm_utils->getIntType(8));
+                }
+                break;
+            }
+            case ASRUtils::IntrinsicElementalFunctions::Char:
+            case ASRUtils::IntrinsicElementalFunctions::Achar: {
+                this->visit_expr_load_wrapper(x.m_args[0], 1, true);
+                tmp = lfortran_str_chr(tmp);
+                tmp = llvm_utils->create_string_descriptor(tmp,
+                    llvm::ConstantInt::get(context, llvm::APInt(64, 1)), "stringChr_desc");
+                break;
+            }
             case ASRUtils::IntrinsicElementalFunctions::Floor: {
                 generate_Floor(x.m_args[0], x.m_type);
                 break;
@@ -3713,8 +4008,9 @@ public:
     }
 
     void visit_IntrinsicArrayFunction(const ASR::IntrinsicArrayFunction_t &x) {
-        throw LCompilersException("LLVM visit_IntrinsicArrayFunction() not implemented for " +
-            ASRUtils::get_array_intrinsic_name(static_cast<int64_t>(x.m_arr_intrinsic_id)));
+        throw CodeGenError("LLVM visit_IntrinsicArrayFunction() not implemented for " +
+            ASRUtils::get_array_intrinsic_name(static_cast<int64_t>(x.m_arr_intrinsic_id)),
+            x.base.base.loc);
     }
 
     void visit_IntrinsicImpureFunction(const ASR::IntrinsicImpureFunction_t &x) {
@@ -12559,6 +12855,29 @@ public:
         llvm::Value *right = tmp;
         load_non_array_non_character_pointers(x.m_left, ASRUtils::expr_type(x.m_left), left);
         load_non_array_non_character_pointers(x.m_right, ASRUtils::expr_type(x.m_right), right);
+        if (left->getType() != right->getType() &&
+                left->getType()->isIntegerTy() && right->getType()->isIntegerTy()) {
+            unsigned left_bits = left->getType()->getIntegerBitWidth();
+            unsigned right_bits = right->getType()->getIntegerBitWidth();
+            llvm::Type *common_type = llvm::Type::getIntNTy(
+                context, std::max(left_bits, right_bits));
+            if (left_bits < right_bits) {
+                left = builder->CreateSExt(left, common_type);
+            } else if (right_bits < left_bits) {
+                right = builder->CreateSExt(right, common_type);
+            }
+        }
+        if (left->getType() != right->getType() ||
+                !left->getType()->isIntOrIntVectorTy() ||
+                !right->getType()->isIntOrIntVectorTy()) {
+            std::string left_type_str, right_type_str;
+            llvm::raw_string_ostream left_os(left_type_str);
+            llvm::raw_string_ostream right_os(right_type_str);
+            left->getType()->print(left_os);
+            right->getType()->print(right_os);
+            throw CodeGenError("Integer compare operand type mismatch: left=" +
+                left_os.str() + ", right=" + right_os.str(), x.base.base.loc);
+        }
         switch (x.m_op) {
             case (ASR::cmpopType::Eq) : {
                 tmp = builder->CreateICmpEQ(left, right);

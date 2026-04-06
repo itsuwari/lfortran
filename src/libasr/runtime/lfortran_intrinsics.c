@@ -4715,6 +4715,60 @@ LFORTRAN_API int64_t _lfortran_str_len(char* s)
     return strlen(s);
 }
 
+LFORTRAN_API int64_t _lfortran_str_len_trim(char* s, int64_t len)
+{
+    while (len > 0 && s[len - 1] == ' ') {
+        len--;
+    }
+    return len;
+}
+
+LFORTRAN_API int64_t _lfortran_str_find_set(char* str, int64_t str_len, char* set, int64_t set_len, bool back)
+{
+    if (back) {
+        for (int64_t i = str_len - 1; i >= 0; i--) {
+            for (int64_t j = 0; j < set_len; j++) {
+                if (str[i] == set[j]) {
+                    return i + 1;
+                }
+            }
+        }
+    } else {
+        for (int64_t i = 0; i < str_len; i++) {
+            for (int64_t j = 0; j < set_len; j++) {
+                if (str[i] == set[j]) {
+                    return i + 1;
+                }
+            }
+        }
+    }
+    return 0;
+}
+
+LFORTRAN_API int64_t _lfortran_str_index(char* str, int64_t str_len, char* substr, int64_t substr_len, bool back)
+{
+    if (substr_len == 0) {
+        return back ? str_len : (str_len > 0 ? 1 : 0);
+    }
+    if (substr_len > str_len) {
+        return 0;
+    }
+    if (back) {
+        for (int64_t i = str_len - substr_len; i >= 0; i--) {
+            if (memcmp(str + i, substr, substr_len) == 0) {
+                return i + 1;
+            }
+        }
+    } else {
+        for (int64_t i = 0; i <= str_len - substr_len; i++) {
+            if (memcmp(str + i, substr, substr_len) == 0) {
+                return i + 1;
+            }
+        }
+    }
+    return 0;
+}
+
 LFORTRAN_API int _lfortran_str_to_int(char** s)
 {
     char *ptr;
