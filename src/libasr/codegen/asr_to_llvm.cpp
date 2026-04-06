@@ -3299,6 +3299,192 @@ public:
         }
     }
 
+    void generate_Tanh(ASR::expr_t* m_arg) {
+        this->visit_expr_wrapper(m_arg, true);
+        llvm::Value *item = tmp;
+        llvm::Type *item_type = item->getType();
+        if (item_type == llvm::Type::getFloatTy(context)) {
+            llvm::Function *fn = module->getFunction("_lfortran_stanh");
+            if (!fn) {
+                llvm::FunctionType *function_type = llvm::FunctionType::get(
+                    item_type, {item_type}, false);
+                fn = llvm::Function::Create(function_type,
+                    llvm::Function::ExternalLinkage, "_lfortran_stanh", module.get());
+            }
+            tmp = builder->CreateCall(fn, {item});
+        } else if (item_type == llvm::Type::getDoubleTy(context)) {
+            llvm::Function *fn = module->getFunction("_lfortran_dtanh");
+            if (!fn) {
+                llvm::FunctionType *function_type = llvm::FunctionType::get(
+                    item_type, {item_type}, false);
+                fn = llvm::Function::Create(function_type,
+                    llvm::Function::ExternalLinkage, "_lfortran_dtanh", module.get());
+            }
+            tmp = builder->CreateCall(fn, {item});
+        } else if (item_type == complex_type_4) {
+            tmp = lfortran_complex_unary_intrinsic(item, "_lfortran_ctanh", complex_type_4);
+        } else if (item_type == complex_type_8) {
+            tmp = lfortran_complex_unary_intrinsic(item, "_lfortran_ztanh", complex_type_8);
+        } else {
+            throw CodeGenError("tanh() expects real or complex arguments", m_arg->base.loc);
+        }
+    }
+
+    void generate_Sinh(ASR::expr_t* m_arg) {
+        this->visit_expr_wrapper(m_arg, true);
+        llvm::Value *item = tmp;
+        llvm::Type *item_type = item->getType();
+        if (item_type == llvm::Type::getFloatTy(context)) {
+            llvm::Function *fn = module->getFunction("_lfortran_ssinh");
+            if (!fn) {
+                llvm::FunctionType *function_type = llvm::FunctionType::get(
+                    item_type, {item_type}, false);
+                fn = llvm::Function::Create(function_type,
+                    llvm::Function::ExternalLinkage, "_lfortran_ssinh", module.get());
+            }
+            tmp = builder->CreateCall(fn, {item});
+        } else if (item_type == llvm::Type::getDoubleTy(context)) {
+            llvm::Function *fn = module->getFunction("_lfortran_dsinh");
+            if (!fn) {
+                llvm::FunctionType *function_type = llvm::FunctionType::get(
+                    item_type, {item_type}, false);
+                fn = llvm::Function::Create(function_type,
+                    llvm::Function::ExternalLinkage, "_lfortran_dsinh", module.get());
+            }
+            tmp = builder->CreateCall(fn, {item});
+        } else if (item_type == complex_type_4) {
+            tmp = lfortran_complex_unary_intrinsic(item, "_lfortran_csinh", complex_type_4);
+        } else if (item_type == complex_type_8) {
+            tmp = lfortran_complex_unary_intrinsic(item, "_lfortran_zsinh", complex_type_8);
+        } else {
+            throw CodeGenError("sinh() expects real or complex arguments", m_arg->base.loc);
+        }
+    }
+
+    void generate_Cosh(ASR::expr_t* m_arg) {
+        this->visit_expr_wrapper(m_arg, true);
+        llvm::Value *item = tmp;
+        llvm::Type *item_type = item->getType();
+        if (item_type == llvm::Type::getFloatTy(context)) {
+            llvm::Function *fn = module->getFunction("_lfortran_scosh");
+            if (!fn) {
+                llvm::FunctionType *function_type = llvm::FunctionType::get(
+                    item_type, {item_type}, false);
+                fn = llvm::Function::Create(function_type,
+                    llvm::Function::ExternalLinkage, "_lfortran_scosh", module.get());
+            }
+            tmp = builder->CreateCall(fn, {item});
+        } else if (item_type == llvm::Type::getDoubleTy(context)) {
+            llvm::Function *fn = module->getFunction("_lfortran_dcosh");
+            if (!fn) {
+                llvm::FunctionType *function_type = llvm::FunctionType::get(
+                    item_type, {item_type}, false);
+                fn = llvm::Function::Create(function_type,
+                    llvm::Function::ExternalLinkage, "_lfortran_dcosh", module.get());
+            }
+            tmp = builder->CreateCall(fn, {item});
+        } else if (item_type == complex_type_4) {
+            tmp = lfortran_complex_unary_intrinsic(item, "_lfortran_ccosh", complex_type_4);
+        } else if (item_type == complex_type_8) {
+            tmp = lfortran_complex_unary_intrinsic(item, "_lfortran_zcosh", complex_type_8);
+        } else {
+            throw CodeGenError("cosh() expects real or complex arguments", m_arg->base.loc);
+        }
+    }
+
+    void generate_Asinh(ASR::expr_t* m_arg) {
+        this->visit_expr_wrapper(m_arg, true);
+        llvm::Value *item = tmp;
+        llvm::Type *item_type = item->getType();
+        if (item_type == llvm::Type::getFloatTy(context)) {
+            llvm::Function *fn = module->getFunction("_lfortran_sasinh");
+            if (!fn) {
+                llvm::FunctionType *function_type = llvm::FunctionType::get(
+                    item_type, {item_type}, false);
+                fn = llvm::Function::Create(function_type,
+                    llvm::Function::ExternalLinkage, "_lfortran_sasinh", module.get());
+            }
+            tmp = builder->CreateCall(fn, {item});
+        } else if (item_type == llvm::Type::getDoubleTy(context)) {
+            llvm::Function *fn = module->getFunction("_lfortran_dasinh");
+            if (!fn) {
+                llvm::FunctionType *function_type = llvm::FunctionType::get(
+                    item_type, {item_type}, false);
+                fn = llvm::Function::Create(function_type,
+                    llvm::Function::ExternalLinkage, "_lfortran_dasinh", module.get());
+            }
+            tmp = builder->CreateCall(fn, {item});
+        } else if (item_type == complex_type_4) {
+            tmp = lfortran_complex_unary_intrinsic(item, "_lfortran_casinh", complex_type_4);
+        } else if (item_type == complex_type_8) {
+            tmp = lfortran_complex_unary_intrinsic(item, "_lfortran_zasinh", complex_type_8);
+        } else {
+            throw CodeGenError("asinh() expects real or complex arguments", m_arg->base.loc);
+        }
+    }
+
+    void generate_Acosh(ASR::expr_t* m_arg) {
+        this->visit_expr_wrapper(m_arg, true);
+        llvm::Value *item = tmp;
+        llvm::Type *item_type = item->getType();
+        if (item_type == llvm::Type::getFloatTy(context)) {
+            llvm::Function *fn = module->getFunction("_lfortran_sacosh");
+            if (!fn) {
+                llvm::FunctionType *function_type = llvm::FunctionType::get(
+                    item_type, {item_type}, false);
+                fn = llvm::Function::Create(function_type,
+                    llvm::Function::ExternalLinkage, "_lfortran_sacosh", module.get());
+            }
+            tmp = builder->CreateCall(fn, {item});
+        } else if (item_type == llvm::Type::getDoubleTy(context)) {
+            llvm::Function *fn = module->getFunction("_lfortran_dacosh");
+            if (!fn) {
+                llvm::FunctionType *function_type = llvm::FunctionType::get(
+                    item_type, {item_type}, false);
+                fn = llvm::Function::Create(function_type,
+                    llvm::Function::ExternalLinkage, "_lfortran_dacosh", module.get());
+            }
+            tmp = builder->CreateCall(fn, {item});
+        } else if (item_type == complex_type_4) {
+            tmp = lfortran_complex_unary_intrinsic(item, "_lfortran_cacosh", complex_type_4);
+        } else if (item_type == complex_type_8) {
+            tmp = lfortran_complex_unary_intrinsic(item, "_lfortran_zacosh", complex_type_8);
+        } else {
+            throw CodeGenError("acosh() expects real or complex arguments", m_arg->base.loc);
+        }
+    }
+
+    void generate_Atanh(ASR::expr_t* m_arg) {
+        this->visit_expr_wrapper(m_arg, true);
+        llvm::Value *item = tmp;
+        llvm::Type *item_type = item->getType();
+        if (item_type == llvm::Type::getFloatTy(context)) {
+            llvm::Function *fn = module->getFunction("_lfortran_satanh");
+            if (!fn) {
+                llvm::FunctionType *function_type = llvm::FunctionType::get(
+                    item_type, {item_type}, false);
+                fn = llvm::Function::Create(function_type,
+                    llvm::Function::ExternalLinkage, "_lfortran_satanh", module.get());
+            }
+            tmp = builder->CreateCall(fn, {item});
+        } else if (item_type == llvm::Type::getDoubleTy(context)) {
+            llvm::Function *fn = module->getFunction("_lfortran_datanh");
+            if (!fn) {
+                llvm::FunctionType *function_type = llvm::FunctionType::get(
+                    item_type, {item_type}, false);
+                fn = llvm::Function::Create(function_type,
+                    llvm::Function::ExternalLinkage, "_lfortran_datanh", module.get());
+            }
+            tmp = builder->CreateCall(fn, {item});
+        } else if (item_type == complex_type_4) {
+            tmp = lfortran_complex_unary_intrinsic(item, "_lfortran_catanh", complex_type_4);
+        } else if (item_type == complex_type_8) {
+            tmp = lfortran_complex_unary_intrinsic(item, "_lfortran_zatanh", complex_type_8);
+        } else {
+            throw CodeGenError("atanh() expects real or complex arguments", m_arg->base.loc);
+        }
+    }
+
     void generate_Acos(ASR::expr_t* m_arg) {
         this->visit_expr_wrapper(m_arg, true);
         llvm::Value *item = tmp;
@@ -3934,12 +4120,36 @@ public:
                 generate_Sin(x.m_args[0]);
                 break;
             }
+            case ASRUtils::IntrinsicElementalFunctions::Sinh: {
+                generate_Sinh(x.m_args[0]);
+                break;
+            }
             case ASRUtils::IntrinsicElementalFunctions::Cos: {
                 generate_Cos(x.m_args[0]);
                 break;
             }
+            case ASRUtils::IntrinsicElementalFunctions::Cosh: {
+                generate_Cosh(x.m_args[0]);
+                break;
+            }
+            case ASRUtils::IntrinsicElementalFunctions::Tanh: {
+                generate_Tanh(x.m_args[0]);
+                break;
+            }
             case ASRUtils::IntrinsicElementalFunctions::Acos: {
                 generate_Acos(x.m_args[0]);
+                break;
+            }
+            case ASRUtils::IntrinsicElementalFunctions::Asinh: {
+                generate_Asinh(x.m_args[0]);
+                break;
+            }
+            case ASRUtils::IntrinsicElementalFunctions::Acosh: {
+                generate_Acosh(x.m_args[0]);
+                break;
+            }
+            case ASRUtils::IntrinsicElementalFunctions::Atanh: {
+                generate_Atanh(x.m_args[0]);
                 break;
             }
             case ASRUtils::IntrinsicElementalFunctions::Log: {
