@@ -815,9 +815,12 @@ static inline ASR::abiType expr_abi(ASR::expr_t* e) {
         case ASR::exprType::ArrayPhysicalCast: {
             return ASRUtils::expr_abi(ASR::down_cast<ASR::ArrayPhysicalCast_t>(e)->m_arg);
         }
+        case ASR::exprType::ArrayConstant:
+        case ASR::exprType::ArrayConstructor: {
+            return ASR::abiType::Source;
+        }
         default:
-            throw LCompilersException(std::string("Cannot extract the ABI of ") +
-                "ASR::exprType::" + std::to_string(e->type) + " expression.");
+            return ASR::abiType::Source;
     }
 }
 

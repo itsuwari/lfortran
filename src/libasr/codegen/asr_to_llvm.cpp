@@ -3299,6 +3299,37 @@ public:
         }
     }
 
+    void generate_Acos(ASR::expr_t* m_arg) {
+        this->visit_expr_wrapper(m_arg, true);
+        llvm::Value *item = tmp;
+        llvm::Type *item_type = item->getType();
+        if (item_type == llvm::Type::getFloatTy(context)) {
+            llvm::Function *fn = module->getFunction("_lfortran_sacos");
+            if (!fn) {
+                llvm::FunctionType *function_type = llvm::FunctionType::get(
+                    item_type, {item_type}, false);
+                fn = llvm::Function::Create(function_type,
+                    llvm::Function::ExternalLinkage, "_lfortran_sacos", module.get());
+            }
+            tmp = builder->CreateCall(fn, {item});
+        } else if (item_type == llvm::Type::getDoubleTy(context)) {
+            llvm::Function *fn = module->getFunction("_lfortran_dacos");
+            if (!fn) {
+                llvm::FunctionType *function_type = llvm::FunctionType::get(
+                    item_type, {item_type}, false);
+                fn = llvm::Function::Create(function_type,
+                    llvm::Function::ExternalLinkage, "_lfortran_dacos", module.get());
+            }
+            tmp = builder->CreateCall(fn, {item});
+        } else if (item_type == complex_type_4) {
+            tmp = lfortran_complex_unary_intrinsic(item, "_lfortran_cacos", complex_type_4);
+        } else if (item_type == complex_type_8) {
+            tmp = lfortran_complex_unary_intrinsic(item, "_lfortran_zacos", complex_type_8);
+        } else {
+            throw CodeGenError("acos() expects real or complex arguments", m_arg->base.loc);
+        }
+    }
+
     void generate_Sqrt(ASR::expr_t* m_arg) {
         this->visit_expr_wrapper(m_arg, true);
         llvm::Value *item = tmp;
@@ -3312,6 +3343,40 @@ public:
         } else {
             throw CodeGenError("sqrt() expects real or complex arguments", m_arg->base.loc);
         }
+    }
+
+    void generate_Merge(ASR::expr_t* tsource_arg, ASR::expr_t* fsource_arg, ASR::expr_t* mask_arg,
+                        ASR::ttype_t* return_type_asr) {
+        this->visit_expr_wrapper(tsource_arg, true);
+        llvm::Value *tsource = tmp;
+        this->visit_expr_wrapper(fsource_arg, true);
+        llvm::Value *fsource = tmp;
+        this->visit_expr_wrapper(mask_arg, true);
+        llvm::Value *mask = llvm_utils->to_i1(tmp);
+
+        llvm::Type* result_type = llvm_utils->get_type_from_ttype_t_util(
+            tsource_arg, ASRUtils::extract_type(return_type_asr), module.get());
+        if (tsource->getType() != result_type) {
+            if (tsource->getType()->isIntegerTy() && result_type->isIntegerTy()) {
+                tsource = builder->CreateIntCast(tsource, result_type, true);
+            } else if (tsource->getType()->isFloatingPointTy() && result_type->isFloatingPointTy()) {
+                tsource = builder->CreateFPCast(tsource, result_type);
+            } else {
+                throw CodeGenError("merge() true-source type does not match the return type",
+                    tsource_arg->base.loc);
+            }
+        }
+        if (fsource->getType() != result_type) {
+            if (fsource->getType()->isIntegerTy() && result_type->isIntegerTy()) {
+                fsource = builder->CreateIntCast(fsource, result_type, true);
+            } else if (fsource->getType()->isFloatingPointTy() && result_type->isFloatingPointTy()) {
+                fsource = builder->CreateFPCast(fsource, result_type);
+            } else {
+                throw CodeGenError("merge() false-source type does not match the return type",
+                    fsource_arg->base.loc);
+            }
+        }
+        tmp = builder->CreateSelect(mask, tsource, fsource);
     }
 
     void generate_Abs(ASR::expr_t* m_arg) {
@@ -3804,8 +3869,16 @@ public:
                 generate_Cos(x.m_args[0]);
                 break;
             }
+            case ASRUtils::IntrinsicElementalFunctions::Acos: {
+                generate_Acos(x.m_args[0]);
+                break;
+            }
             case ASRUtils::IntrinsicElementalFunctions::Sqrt: {
                 generate_Sqrt(x.m_args[0]);
+                break;
+            }
+            case ASRUtils::IntrinsicElementalFunctions::Merge: {
+                generate_Merge(x.m_args[0], x.m_args[1], x.m_args[2], x.m_type);
                 break;
             }
             case ASRUtils::IntrinsicElementalFunctions::FlipSign: {
@@ -4231,6 +4304,29 @@ public:
                     array_data = owned_copy;
                     break;
                 }
+                case ASR::array_physical_typeType::PointerArray:
+                case ASR::array_physical_typeType::UnboundedPointerArray: {
+                    ASR::dimension_t* dims = nullptr;
+                    int n_dims = ASRUtils::extract_dimensions_from_ttype(array_expr_type, dims);
+                    num_elements = llvm::ConstantInt::get(index_type, 1);
+                    int ptr_loads_copy = ptr_loads;
+                    ptr_loads = 2;
+                    for (int dim = 0; dim < n_dims; dim++) {
+                        if (!dims[dim].m_length) {
+                            throw CodeGenError("LLVM array reduction backend requires explicit extents for pointer arrays",
+                                x.base.base.loc);
+                        }
+                        load_array_size_deep_copy(dims[dim].m_length);
+                        llvm::Value* dim_len = tmp;
+                        if (dim_len->getType() != index_type) {
+                            dim_len = builder->CreateSExtOrTrunc(dim_len, index_type);
+                        }
+                        num_elements = builder->CreateMul(num_elements, dim_len);
+                    }
+                    ptr_loads = ptr_loads_copy;
+                    array_data = llvm_array;
+                    break;
+                }
                 case ASR::array_physical_typeType::FixedSizeArray:
                 case ASR::array_physical_typeType::SIMDArray: {
                     int64_t fixed_size = ASRUtils::get_fixed_size_of_array(array_expr_type);
@@ -4380,6 +4476,76 @@ public:
             }
         };
 
+        auto generate_Product = [&]() {
+            if (x.m_overload_id != 0) {
+                throw CodeGenError("LLVM array reduction backend only implements the scalar form of `product`",
+                    x.base.base.loc);
+            }
+
+            llvm::Value *array_data = nullptr, *num_elements = nullptr, *owned_copy = nullptr;
+            llvm::Type* elem_type = nullptr;
+            get_array_reduction_input(x.m_args[0], array_data, num_elements, elem_type, owned_copy);
+
+            llvm::Type* index_type = arr_descr->get_index_type();
+            llvm::Type* result_type = llvm_utils->get_type_from_ttype_t_util(
+                x.m_args[0], x.m_type, module.get());
+            llvm::AllocaInst* idx = llvm_utils->CreateAlloca(index_type, nullptr, "product_idx");
+            builder->CreateStore(llvm::ConstantInt::get(index_type, 0), idx);
+
+            llvm::AllocaInst* product = llvm_utils->CreateAlloca(result_type, nullptr, "product_accum");
+            llvm::Value* init_value = nullptr;
+            if (result_type->isIntegerTy()) {
+                init_value = llvm::ConstantInt::get(result_type, 1);
+            } else if (result_type->isFloatingPointTy()) {
+                init_value = llvm::ConstantFP::get(result_type, 1.0);
+            } else if (result_type == complex_type_4) {
+                init_value = llvm::ConstantStruct::get(complex_type_4, {
+                    llvm::ConstantFP::get(llvm::Type::getFloatTy(context), 1.0f),
+                    llvm::ConstantFP::get(llvm::Type::getFloatTy(context), 0.0f)
+                });
+            } else if (result_type == complex_type_8) {
+                init_value = llvm::ConstantStruct::get(complex_type_8, {
+                    llvm::ConstantFP::get(llvm::Type::getDoubleTy(context), 1.0),
+                    llvm::ConstantFP::get(llvm::Type::getDoubleTy(context), 0.0)
+                });
+            } else {
+                throw CodeGenError("LLVM array reduction backend only implements numeric scalar `product`",
+                    x.base.base.loc);
+            }
+            builder->CreateStore(init_value, product);
+
+            llvm_utils->create_loop("array_product", [&]() {
+                llvm::Value* i = llvm_utils->CreateLoad2(index_type, idx);
+                return builder->CreateICmpSLT(i, num_elements);
+            }, [&]() {
+                llvm::Value* i = llvm_utils->CreateLoad2(index_type, idx);
+                llvm::Value* elem = llvm_utils->CreateLoad2(elem_type,
+                    llvm_utils->create_ptr_gep2(elem_type, array_data, i));
+                llvm::Value* old_product = llvm_utils->CreateLoad2(result_type, product);
+                llvm::Value* new_product = nullptr;
+                if (result_type->isIntegerTy()) {
+                    new_product = builder->CreateMul(old_product, elem);
+                } else if (result_type->isFloatingPointTy()) {
+                    new_product = builder->CreateFMul(old_product, elem);
+                } else if (result_type == complex_type_4) {
+                    new_product = lfortran_complex_bin_op(old_product, elem, "_lfortran_complex_mul_32", complex_type_4);
+                } else if (result_type == complex_type_8) {
+                    new_product = lfortran_complex_bin_op(old_product, elem, "_lfortran_complex_mul_64", complex_type_8);
+                } else {
+                    throw CodeGenError("LLVM array reduction backend only implements numeric scalar `product`",
+                        x.base.base.loc);
+                }
+                builder->CreateStore(new_product, product);
+                builder->CreateStore(
+                    builder->CreateAdd(i, llvm::ConstantInt::get(index_type, 1)), idx);
+            });
+
+            tmp = llvm_utils->CreateLoad2(result_type, product);
+            if (owned_copy) {
+                llvm_utils->lfortran_free_nocheck(owned_copy);
+            }
+        };
+
         auto generate_MinMaxVal = [&](bool is_max) {
             if (x.m_overload_id != 0) {
                 throw CodeGenError("LLVM array reduction backend only implements the scalar form of `" +
@@ -4449,6 +4615,381 @@ public:
             if (owned_copy) {
                 llvm_utils->lfortran_free_nocheck(owned_copy);
             }
+        };
+
+        auto generate_Norm2 = [&]() {
+            if (x.m_overload_id != 0) {
+                throw CodeGenError("LLVM array reduction backend only implements the scalar form of `norm2`",
+                    x.base.base.loc);
+            }
+
+            llvm::Value *array_data = nullptr, *num_elements = nullptr, *owned_copy = nullptr;
+            llvm::Type* elem_type = nullptr;
+            get_array_reduction_input(x.m_args[0], array_data, num_elements, elem_type, owned_copy);
+
+            llvm::Type* index_type = arr_descr->get_index_type();
+            llvm::Type* result_type = llvm_utils->get_type_from_ttype_t_util(
+                x.m_args[0], x.m_type, module.get());
+            if (!result_type->isFloatingPointTy()) {
+                throw CodeGenError("LLVM array reduction backend only implements floating-point scalar `norm2`",
+                    x.base.base.loc);
+            }
+
+            llvm::AllocaInst* idx = llvm_utils->CreateAlloca(index_type, nullptr, "norm2_idx");
+            builder->CreateStore(llvm::ConstantInt::get(index_type, 0), idx);
+
+            llvm::AllocaInst* accum = llvm_utils->CreateAlloca(result_type, nullptr, "norm2_accum");
+            builder->CreateStore(llvm::ConstantFP::get(result_type, 0.0), accum);
+
+            llvm_utils->create_loop("array_norm2", [&]() {
+                llvm::Value* i = llvm_utils->CreateLoad2(index_type, idx);
+                return builder->CreateICmpSLT(i, num_elements);
+            }, [&]() {
+                llvm::Value* i = llvm_utils->CreateLoad2(index_type, idx);
+                llvm::Value* elem = llvm_utils->CreateLoad2(elem_type,
+                    llvm_utils->create_ptr_gep2(elem_type, array_data, i));
+                if (elem_type->isIntegerTy()) {
+                    elem = builder->CreateSIToFP(elem, result_type);
+                } else if (elem_type->isFloatingPointTy() && elem_type != result_type) {
+                    elem = builder->CreateFPCast(elem, result_type);
+                } else if (!elem_type->isFloatingPointTy()) {
+                    throw CodeGenError("LLVM array reduction backend only implements integer/real scalar `norm2`",
+                        x.base.base.loc);
+                }
+                llvm::Value* sq = builder->CreateFMul(elem, elem);
+                llvm::Value* old_accum = llvm_utils->CreateLoad2(result_type, accum);
+                builder->CreateStore(builder->CreateFAdd(old_accum, sq), accum);
+                builder->CreateStore(
+                    builder->CreateAdd(i, llvm::ConstantInt::get(index_type, 1)), idx);
+            });
+
+            llvm::Value* sumsq = llvm_utils->CreateLoad2(result_type, accum);
+            tmp = create_unary_fp_intrinsic(llvm::Intrinsic::sqrt, sumsq);
+            if (owned_copy) {
+                llvm_utils->lfortran_free_nocheck(owned_copy);
+            }
+        };
+
+        auto generate_DotProduct = [&]() {
+            if (x.m_overload_id != 1) {
+                throw CodeGenError("LLVM array reduction backend only implements the vector form of `dot_product`",
+                    x.base.base.loc);
+            }
+
+            llvm::Value *lhs_data = nullptr, *lhs_num_elements = nullptr, *lhs_owned_copy = nullptr;
+            llvm::Value *rhs_data = nullptr, *rhs_num_elements = nullptr, *rhs_owned_copy = nullptr;
+            llvm::Type *lhs_elem_type = nullptr, *rhs_elem_type = nullptr;
+            get_array_reduction_input(x.m_args[0], lhs_data, lhs_num_elements, lhs_elem_type, lhs_owned_copy);
+            get_array_reduction_input(x.m_args[1], rhs_data, rhs_num_elements, rhs_elem_type, rhs_owned_copy);
+
+            llvm::Type* index_type = arr_descr->get_index_type();
+            llvm::Type* result_type = llvm_utils->get_type_from_ttype_t_util(
+                x.m_args[0], x.m_type, module.get());
+            llvm::AllocaInst* idx = llvm_utils->CreateAlloca(index_type, nullptr, "dot_product_idx");
+            builder->CreateStore(llvm::ConstantInt::get(index_type, 0), idx);
+
+            auto cleanup_copies = [&]() {
+                if (lhs_owned_copy) {
+                    llvm_utils->lfortran_free_nocheck(lhs_owned_copy);
+                }
+                if (rhs_owned_copy) {
+                    llvm_utils->lfortran_free_nocheck(rhs_owned_copy);
+                }
+            };
+
+            auto cast_to_integer = [&](llvm::Value* val) -> llvm::Value* {
+                if (!val->getType()->isIntegerTy()) {
+                    throw CodeGenError("LLVM array reduction backend only implements integer scalar `dot_product` for integer vectors",
+                        x.base.base.loc);
+                }
+                if (val->getType() == result_type) {
+                    return val;
+                }
+                return builder->CreateIntCast(val, result_type, true);
+            };
+
+            auto cast_to_real = [&](llvm::Value* val) -> llvm::Value* {
+                if (val->getType()->isIntegerTy()) {
+                    return builder->CreateSIToFP(val, result_type);
+                }
+                if (val->getType()->isFloatingPointTy()) {
+                    if (val->getType() == result_type) {
+                        return val;
+                    }
+                    return builder->CreateFPCast(val, result_type);
+                }
+                throw CodeGenError("LLVM array reduction backend only implements real scalar `dot_product` for integer/real vectors",
+                    x.base.base.loc);
+            };
+
+            auto cast_to_complex = [&](llvm::Value* val) -> llvm::Value* {
+                if (val->getType() == result_type) {
+                    return val;
+                }
+                llvm::Type* source_complex_type = nullptr;
+                if (val->getType() == complex_type_4 || val->getType() == complex_type_8) {
+                    source_complex_type = val->getType();
+                } else {
+                    throw CodeGenError("LLVM array reduction backend only implements complex scalar `dot_product` for complex vectors",
+                        x.base.base.loc);
+                }
+                llvm::Type* target_fp_type = result_type == complex_type_8
+                    ? llvm::Type::getDoubleTy(context)
+                    : llvm::Type::getFloatTy(context);
+                llvm::Value* re = complex_re(val, source_complex_type);
+                llvm::Value* im = complex_im(val, source_complex_type);
+                if (re->getType() != target_fp_type) {
+                    re = builder->CreateFPCast(re, target_fp_type);
+                }
+                if (im->getType() != target_fp_type) {
+                    im = builder->CreateFPCast(im, target_fp_type);
+                }
+                return complex_from_floats(re, im, result_type);
+            };
+
+            if (ASRUtils::is_logical(*x.m_type)) {
+                llvm::AllocaInst* accum = llvm_utils->CreateAlloca(
+                    llvm::Type::getInt1Ty(context), nullptr, "dot_product_accum");
+                builder->CreateStore(llvm::ConstantInt::getFalse(context), accum);
+
+                llvm_utils->create_loop("array_dot_product_logical", [&]() {
+                    llvm::Value* i = llvm_utils->CreateLoad2(index_type, idx);
+                    return builder->CreateICmpSLT(i, lhs_num_elements);
+                }, [&]() {
+                    llvm::Value* i = llvm_utils->CreateLoad2(index_type, idx);
+                    llvm::Value* lhs = llvm_utils->CreateLoad2(lhs_elem_type,
+                        llvm_utils->create_ptr_gep2(lhs_elem_type, lhs_data, i));
+                    llvm::Value* rhs = llvm_utils->CreateLoad2(rhs_elem_type,
+                        llvm_utils->create_ptr_gep2(rhs_elem_type, rhs_data, i));
+                    llvm::Value* term = builder->CreateAnd(
+                        llvm_utils->to_i1(lhs), llvm_utils->to_i1(rhs));
+                    llvm::Value* old_accum = llvm_utils->CreateLoad2(
+                        llvm::Type::getInt1Ty(context), accum);
+                    builder->CreateStore(builder->CreateOr(old_accum, term), accum);
+                    builder->CreateStore(
+                        builder->CreateAdd(i, llvm::ConstantInt::get(index_type, 1)), idx);
+                });
+
+                tmp = builder->CreateZExt(
+                    llvm_utils->CreateLoad2(llvm::Type::getInt1Ty(context), accum),
+                    result_type);
+                cleanup_copies();
+                return;
+            }
+
+            llvm::AllocaInst* accum = llvm_utils->CreateAlloca(result_type, nullptr, "dot_product_accum");
+            builder->CreateStore(llvm::Constant::getNullValue(result_type), accum);
+
+            llvm_utils->create_loop("array_dot_product", [&]() {
+                llvm::Value* i = llvm_utils->CreateLoad2(index_type, idx);
+                return builder->CreateICmpSLT(i, lhs_num_elements);
+            }, [&]() {
+                llvm::Value* i = llvm_utils->CreateLoad2(index_type, idx);
+                llvm::Value* lhs = llvm_utils->CreateLoad2(lhs_elem_type,
+                    llvm_utils->create_ptr_gep2(lhs_elem_type, lhs_data, i));
+                llvm::Value* rhs = llvm_utils->CreateLoad2(rhs_elem_type,
+                    llvm_utils->create_ptr_gep2(rhs_elem_type, rhs_data, i));
+                llvm::Value* old_accum = llvm_utils->CreateLoad2(result_type, accum);
+                llvm::Value* new_accum = nullptr;
+
+                if (ASRUtils::is_integer(*x.m_type)) {
+                    lhs = cast_to_integer(lhs);
+                    rhs = cast_to_integer(rhs);
+                    new_accum = builder->CreateAdd(old_accum, builder->CreateMul(lhs, rhs));
+                } else if (ASRUtils::is_real(*x.m_type)) {
+                    lhs = cast_to_real(lhs);
+                    rhs = cast_to_real(rhs);
+                    new_accum = builder->CreateFAdd(old_accum, builder->CreateFMul(lhs, rhs));
+                } else if (ASRUtils::is_complex(*x.m_type)) {
+                    lhs = cast_to_complex(lhs);
+                    rhs = cast_to_complex(rhs);
+                    llvm::Value* conj_lhs = complex_from_floats(
+                        complex_re(lhs, result_type),
+                        builder->CreateFNeg(complex_im(lhs, result_type)),
+                        result_type);
+                    llvm::Value* product = nullptr;
+                    if (result_type == complex_type_4) {
+                        product = lfortran_complex_bin_op(
+                            conj_lhs, rhs, "_lfortran_complex_mul_32", complex_type_4);
+                        new_accum = lfortran_complex_bin_op(
+                            old_accum, product, "_lfortran_complex_add_32", complex_type_4);
+                    } else if (result_type == complex_type_8) {
+                        product = lfortran_complex_bin_op(
+                            conj_lhs, rhs, "_lfortran_complex_mul_64", complex_type_8);
+                        new_accum = lfortran_complex_bin_op(
+                            old_accum, product, "_lfortran_complex_add_64", complex_type_8);
+                    } else {
+                        throw CodeGenError("LLVM array reduction backend only implements kind-4 and kind-8 complex scalar `dot_product`",
+                            x.base.base.loc);
+                    }
+                } else {
+                    throw CodeGenError("LLVM array reduction backend only implements numeric/logical scalar `dot_product`",
+                        x.base.base.loc);
+                }
+
+                builder->CreateStore(new_accum, accum);
+                builder->CreateStore(
+                    builder->CreateAdd(i, llvm::ConstantInt::get(index_type, 1)), idx);
+            });
+
+            tmp = llvm_utils->CreateLoad2(result_type, accum);
+            cleanup_copies();
+        };
+
+        auto generate_Shape = [&]() {
+            if (x.m_overload_id != 0) {
+                throw CodeGenError("LLVM array backend only implements the default form of `shape`",
+                    x.base.base.loc);
+            }
+
+            ASR::ttype_t* source_expr_type = ASRUtils::expr_type(x.m_args[0]);
+            ASR::ttype_t* source_array_type = ASRUtils::type_get_past_allocatable(
+                ASRUtils::type_get_past_pointer(source_expr_type));
+            llvm::Type* source_storage_type = llvm_utils->get_type_from_ttype_t_util(
+                x.m_args[0], source_array_type, module.get());
+
+            int64_t ptr_loads_copy = ptr_loads;
+            ptr_loads = 2 - LLVM::is_llvm_pointer(*source_expr_type);
+            visit_expr_wrapper(x.m_args[0]);
+            ptr_loads = ptr_loads_copy;
+            if (ASR::is_a<ASR::StructInstanceMember_t>(*x.m_args[0])) {
+                tmp = llvm_utils->CreateLoad2(source_storage_type->getPointerTo(), tmp);
+            }
+            llvm::Value* source_array = tmp;
+
+            ASR::array_physical_typeType source_physical_type =
+                ASRUtils::extract_physical_type(source_expr_type);
+            if (source_physical_type == ASR::array_physical_typeType::StringArraySinglePointer) {
+                if (ASRUtils::is_fixed_size_array(source_expr_type)) {
+                    source_physical_type = ASR::array_physical_typeType::FixedSizeArray;
+                } else {
+                    source_physical_type = ASR::array_physical_typeType::DescriptorArray;
+                }
+            }
+
+            ASR::ttype_t* result_array_type = ASRUtils::type_get_past_allocatable(
+                ASRUtils::type_get_past_pointer(x.m_type));
+            ASR::array_physical_typeType result_physical_type =
+                ASRUtils::extract_physical_type(result_array_type);
+            llvm::Type* result_storage_type = llvm_utils->get_type_from_ttype_t_util(
+                x.m_args[0], result_array_type, module.get());
+            llvm::Type* result_elem_type = llvm_utils->get_el_type(
+                x.m_args[0], ASRUtils::extract_type(result_array_type), module.get());
+            llvm::Type* index_type = arr_descr->get_index_type();
+
+            llvm::Value* source_rank = nullptr;
+            llvm::Value* source_dim_des = nullptr;
+            std::vector<llvm::Value*> static_extents;
+            ASR::dimension_t* source_dims = nullptr;
+            int compile_time_rank = ASRUtils::extract_dimensions_from_ttype(source_expr_type, source_dims);
+
+            switch (source_physical_type) {
+                case ASR::array_physical_typeType::DescriptorArray:
+                case ASR::array_physical_typeType::AssumedRankArray: {
+                    source_rank = builder->CreateSExtOrTrunc(
+                        arr_descr->get_rank(source_storage_type, source_array, false), index_type);
+                    source_dim_des = arr_descr->get_pointer_to_dimension_descriptor_array(
+                        source_storage_type, source_array, true);
+                    break;
+                }
+                case ASR::array_physical_typeType::FixedSizeArray:
+                case ASR::array_physical_typeType::SIMDArray:
+                case ASR::array_physical_typeType::PointerArray:
+                case ASR::array_physical_typeType::UnboundedPointerArray: {
+                    source_rank = llvm::ConstantInt::get(index_type, compile_time_rank);
+                    static_extents.reserve(compile_time_rank);
+                    for (int dim = 0; dim < compile_time_rank; dim++) {
+                        int64_t extent = -1;
+                        if (!source_dims[dim].m_length ||
+                                !ASRUtils::extract_value(source_dims[dim].m_length, extent)) {
+                            throw CodeGenError("LLVM `shape` backend requires compile-time extents for non-descriptor arrays",
+                                x.base.base.loc);
+                        }
+                        static_extents.push_back(llvm::ConstantInt::get(index_type, extent));
+                    }
+                    break;
+                }
+                default: {
+                    throw CodeGenError("LLVM `shape` backend is not implemented for array physical type `" +
+                        ASRUtils::get_type_code(source_expr_type) + "`", x.base.base.loc);
+                }
+            }
+
+            llvm::Value* result_handle = nullptr;
+            llvm::Value* result_data = nullptr;
+            if (result_physical_type == ASR::array_physical_typeType::DescriptorArray ||
+                    result_physical_type == ASR::array_physical_typeType::AssumedRankArray) {
+                llvm::Value* result_desc = arr_descr->create_descriptor_alloca(
+                    result_storage_type, "shape_result");
+                arr_descr->fill_dimension_descriptor(result_storage_type, result_desc, 1);
+                arr_descr->set_rank(result_storage_type, result_desc,
+                    llvm::ConstantInt::get(context, llvm::APInt(32, 1)));
+                builder->CreateStore(
+                    llvm::ConstantInt::get(context, llvm::APInt(index_type->getIntegerBitWidth(), 0)),
+                    arr_descr->get_offset(result_storage_type, result_desc, false));
+
+                llvm::Value* result_dim_des = arr_descr->get_pointer_to_dimension_descriptor_array(
+                    result_storage_type, result_desc, true);
+                llvm::Value* result_dim0 = arr_descr->get_pointer_to_dimension_descriptor(
+                    result_dim_des, llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), 0));
+                builder->CreateStore(llvm::ConstantInt::get(index_type, 1),
+                    arr_descr->get_lower_bound(result_dim0, false));
+                builder->CreateStore(source_rank,
+                    arr_descr->get_dimension_size(result_dim0, false));
+                builder->CreateStore(llvm::ConstantInt::get(index_type, 1),
+                    arr_descr->get_stride(result_dim0, false));
+
+                llvm::AllocaInst* result_desc_data = llvm_utils->CreateAlloca(
+                    result_elem_type, source_rank, "shape_data");
+                builder->CreateStore(result_desc_data,
+                    arr_descr->get_pointer_to_data(result_storage_type, result_desc));
+                llvm::DataLayout data_layout(module->getDataLayout());
+                uint64_t elem_size = data_layout.getTypeAllocSize(result_elem_type);
+                set_cfi_descriptor_fields(result_storage_type, result_desc,
+                    ASRUtils::extract_type(result_array_type), elem_size, x.m_type);
+                result_handle = result_desc;
+                result_data = result_desc_data;
+            } else if (result_physical_type == ASR::array_physical_typeType::FixedSizeArray ||
+                       result_physical_type == ASR::array_physical_typeType::SIMDArray) {
+                llvm::Value* result_array = llvm_utils->CreateAlloca(
+                    result_storage_type, nullptr, "shape_result");
+                result_handle = result_array;
+                result_data = llvm_utils->create_gep2(result_storage_type, result_array, 0);
+            } else {
+                throw CodeGenError("LLVM `shape` backend is not implemented for result physical type `" +
+                    ASRUtils::get_type_code(result_array_type) + "`", x.base.base.loc);
+            }
+
+            auto store_extent = [&](llvm::Value* out_index, llvm::Value* extent) {
+                llvm::Value* cast_extent = builder->CreateSExtOrTrunc(extent, result_elem_type);
+                builder->CreateStore(cast_extent,
+                    llvm_utils->create_ptr_gep2(result_elem_type, result_data, out_index));
+            };
+
+            if (source_dim_des) {
+                llvm::AllocaInst* idx = llvm_utils->CreateAlloca(index_type, nullptr, "shape_idx");
+                builder->CreateStore(llvm::ConstantInt::get(index_type, 0), idx);
+                llvm_utils->create_loop("array_shape", [&]() {
+                    llvm::Value* i = llvm_utils->CreateLoad2(index_type, idx);
+                    return builder->CreateICmpSLT(i, source_rank);
+                }, [&]() {
+                    llvm::Value* i = llvm_utils->CreateLoad2(index_type, idx);
+                    llvm::Value* dim_idx = builder->CreateSExtOrTrunc(
+                        i, llvm::Type::getInt32Ty(context));
+                    llvm::Value* dim_desc = arr_descr->get_pointer_to_dimension_descriptor(
+                        source_dim_des, dim_idx);
+                    llvm::Value* extent = arr_descr->get_dimension_size(dim_desc, true);
+                    store_extent(i, extent);
+                    builder->CreateStore(
+                        builder->CreateAdd(i, llvm::ConstantInt::get(index_type, 1)), idx);
+                });
+            } else {
+                for (size_t dim = 0; dim < static_extents.size(); dim++) {
+                    store_extent(llvm::ConstantInt::get(index_type, dim), static_extents[dim]);
+                }
+            }
+
+            tmp = result_handle;
         };
 
         auto get_array_matmul_input = [&](ASR::expr_t* array_expr,
@@ -4525,6 +5066,158 @@ public:
                         ASRUtils::get_type_code(array_expr_type) + "`", x.base.base.loc);
                 }
             }
+        };
+
+        auto generate_Spread = [&]() {
+            if (!(x.m_overload_id == 2 || x.m_overload_id == -1)) {
+                throw CodeGenError("LLVM `spread` backend only implements array and scalar-source overloads",
+                    x.base.base.loc);
+            }
+
+            llvm::Value* source_data = nullptr;
+            llvm::Type* source_elem_type = nullptr;
+            llvm::Value* source_owned_copy = nullptr;
+            std::vector<llvm::Value*> source_extents;
+            get_array_matmul_input(x.m_args[0], source_data, source_extents, source_elem_type, source_owned_copy);
+
+            visit_expr_wrapper(x.m_args[1], true);
+            llvm::Value* dim_val = builder->CreateSExtOrTrunc(tmp, arr_descr->get_index_type());
+            visit_expr_wrapper(x.m_args[2], true);
+            llvm::Value* ncopies = builder->CreateSExtOrTrunc(tmp, arr_descr->get_index_type());
+
+            ASR::ttype_t* result_array_type = ASRUtils::type_get_past_allocatable(
+                ASRUtils::type_get_past_pointer(x.m_type));
+            ASR::array_physical_typeType result_physical_type =
+                ASRUtils::extract_physical_type(result_array_type);
+            llvm::Type* result_storage_type = llvm_utils->get_type_from_ttype_t_util(
+                x.m_args[0], result_array_type, module.get());
+            llvm::Type* result_elem_type = llvm_utils->get_el_type(
+                x.m_args[0], ASRUtils::extract_type(result_array_type), module.get());
+            llvm::Type* index_type = arr_descr->get_index_type();
+            int result_rank = ASRUtils::extract_n_dims_from_ttype(result_array_type);
+
+            if (source_elem_type != result_elem_type) {
+                throw CodeGenError("LLVM `spread` backend requires matching source/result element types",
+                    x.base.base.loc);
+            }
+
+            std::vector<llvm::Value*> result_extents;
+            result_extents.reserve(result_rank);
+            if (x.m_overload_id == -1) {
+                LCOMPILERS_ASSERT(result_rank == 1);
+                result_extents.push_back(ncopies);
+            } else {
+                LCOMPILERS_ASSERT(result_rank == static_cast<int>(source_extents.size()) + 1);
+                for (int dim = 0; dim < result_rank; dim++) {
+                    llvm::Value* dim_index = llvm::ConstantInt::get(index_type, dim + 1);
+                    llvm::Value* at_dim = builder->CreateICmpEQ(dim_index, dim_val);
+                    llvm::Value* before_dim = builder->CreateICmpSLT(dim_index, dim_val);
+                    int safe_before_idx = std::min(dim, static_cast<int>(source_extents.size()) - 1);
+                    int safe_after_idx = std::max(dim - 1, 0);
+                    llvm::Value* source_extent = builder->CreateSelect(before_dim,
+                        source_extents[safe_before_idx],
+                        source_extents[safe_after_idx]);
+                    llvm::Value* result_extent = builder->CreateSelect(at_dim, ncopies, source_extent);
+                    result_extents.push_back(result_extent);
+                }
+            }
+
+            llvm::Value* result_size = llvm::ConstantInt::get(index_type, 1);
+            for (llvm::Value* extent : result_extents) {
+                result_size = builder->CreateMul(result_size, extent);
+            }
+
+            llvm::Value* result_handle = nullptr;
+            llvm::Value* result_data = nullptr;
+            if (result_physical_type == ASR::array_physical_typeType::DescriptorArray ||
+                    result_physical_type == ASR::array_physical_typeType::AssumedRankArray) {
+                llvm::Value* result_desc = arr_descr->create_descriptor_alloca(
+                    result_storage_type, "spread_result");
+                arr_descr->fill_dimension_descriptor(result_storage_type, result_desc, result_rank);
+                builder->CreateStore(
+                    llvm::ConstantInt::get(context, llvm::APInt(index_type->getIntegerBitWidth(), 0)),
+                    arr_descr->get_offset(result_storage_type, result_desc, false));
+
+                llvm::Value* result_dim_des = arr_descr->get_pointer_to_dimension_descriptor_array(
+                    result_storage_type, result_desc, true);
+                llvm::Value* stride = llvm::ConstantInt::get(index_type, 1);
+                for (int dim = 0; dim < result_rank; dim++) {
+                    llvm::Value* dim_desc = arr_descr->get_pointer_to_dimension_descriptor(
+                        result_dim_des, llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), dim));
+                    builder->CreateStore(llvm::ConstantInt::get(index_type, 1),
+                        arr_descr->get_lower_bound(dim_desc, false));
+                    builder->CreateStore(result_extents[dim],
+                        arr_descr->get_dimension_size(dim_desc, false));
+                    builder->CreateStore(stride,
+                        arr_descr->get_stride(dim_desc, false));
+                    stride = builder->CreateMul(stride, result_extents[dim]);
+                }
+
+                llvm::AllocaInst* result_desc_data = llvm_utils->CreateAlloca(
+                    result_elem_type, result_size, "spread_data");
+                builder->CreateStore(result_desc_data,
+                    arr_descr->get_pointer_to_data(result_storage_type, result_desc));
+                llvm::DataLayout data_layout(module->getDataLayout());
+                uint64_t elem_size = data_layout.getTypeAllocSize(result_elem_type);
+                set_cfi_descriptor_fields(result_storage_type, result_desc,
+                    ASRUtils::extract_type(result_array_type), elem_size, x.m_type);
+                result_handle = result_desc;
+                result_data = result_desc_data;
+            } else if (result_physical_type == ASR::array_physical_typeType::FixedSizeArray ||
+                       result_physical_type == ASR::array_physical_typeType::SIMDArray) {
+                llvm::Value* result_array = llvm_utils->CreateAlloca(
+                    result_storage_type, nullptr, "spread_result");
+                result_handle = result_array;
+                result_data = llvm_utils->create_gep2(result_storage_type, result_array, 0);
+            } else {
+                throw CodeGenError("LLVM `spread` backend is not implemented for result physical type `" +
+                    ASRUtils::get_type_code(result_array_type) + "`", x.base.base.loc);
+            }
+
+            llvm::AllocaInst* out_idx = llvm_utils->CreateAlloca(index_type, nullptr, "spread_out_idx");
+            builder->CreateStore(llvm::ConstantInt::get(index_type, 0), out_idx);
+            llvm_utils->create_loop("array_spread", [&]() {
+                llvm::Value* i = llvm_utils->CreateLoad2(index_type, out_idx);
+                return builder->CreateICmpSLT(i, result_size);
+            }, [&]() {
+                llvm::Value* linear_idx = llvm_utils->CreateLoad2(index_type, out_idx);
+                llvm::Value* temp_idx = linear_idx;
+                llvm::Value* source_offset = llvm::ConstantInt::get(index_type, 0);
+                llvm::Value* source_stride = llvm::ConstantInt::get(index_type, 1);
+
+                if (x.m_overload_id != -1) {
+                    for (int dim = 0; dim < result_rank; dim++) {
+                        llvm::Value* coord = builder->CreateSRem(temp_idx, result_extents[dim]);
+                        temp_idx = builder->CreateSDiv(temp_idx, result_extents[dim]);
+                        llvm::Value* dim_index = llvm::ConstantInt::get(index_type, dim + 1);
+                        llvm::Value* after_inserted = builder->CreateICmpSGT(dim_index, dim_val);
+                        llvm::Value* at_inserted = builder->CreateICmpEQ(dim_index, dim_val);
+                        llvm::Value* should_use = builder->CreateNot(at_inserted);
+                        llvm::Value* old_stride = source_stride;
+                        int safe_before_idx = std::min(dim, static_cast<int>(source_extents.size()) - 1);
+                        int safe_after_idx = std::max(dim - 1, 0);
+                        llvm::Value* source_extent = builder->CreateSelect(after_inserted,
+                            source_extents[safe_after_idx], source_extents[safe_before_idx]);
+                        llvm::Value* contrib = builder->CreateMul(coord, old_stride);
+                        source_offset = builder->CreateSelect(should_use,
+                            builder->CreateAdd(source_offset, contrib), source_offset);
+                        source_stride = builder->CreateSelect(should_use,
+                            builder->CreateMul(old_stride, source_extent), old_stride);
+                    }
+                }
+
+                llvm::Value* elem = llvm_utils->CreateLoad2(result_elem_type,
+                    llvm_utils->create_ptr_gep2(result_elem_type, source_data, source_offset));
+                builder->CreateStore(elem,
+                    llvm_utils->create_ptr_gep2(result_elem_type, result_data, linear_idx));
+                builder->CreateStore(
+                    builder->CreateAdd(linear_idx, llvm::ConstantInt::get(index_type, 1)), out_idx);
+            });
+
+            if (source_owned_copy) {
+                llvm_utils->lfortran_free_nocheck(source_owned_copy);
+            }
+            tmp = result_handle;
         };
 
         auto generate_MatMul = [&]() {
@@ -4788,12 +5481,32 @@ public:
                 generate_Sum();
                 break;
             }
+            case ASRUtils::IntrinsicArrayFunctions::Product: {
+                generate_Product();
+                break;
+            }
             case ASRUtils::IntrinsicArrayFunctions::MaxVal: {
                 generate_MinMaxVal(true);
                 break;
             }
             case ASRUtils::IntrinsicArrayFunctions::MinVal: {
                 generate_MinMaxVal(false);
+                break;
+            }
+            case ASRUtils::IntrinsicArrayFunctions::Norm2: {
+                generate_Norm2();
+                break;
+            }
+            case ASRUtils::IntrinsicArrayFunctions::Shape: {
+                generate_Shape();
+                break;
+            }
+            case ASRUtils::IntrinsicArrayFunctions::Spread: {
+                generate_Spread();
+                break;
+            }
+            case ASRUtils::IntrinsicArrayFunctions::DotProduct: {
+                generate_DotProduct();
                 break;
             }
             case ASRUtils::IntrinsicArrayFunctions::MatMul: {
