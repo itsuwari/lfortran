@@ -1,5 +1,6 @@
 #include "libasr/assert.h"
 #include "libasr/string_utils.h"
+#include "libasr/pass/intrinsic_array_function_registry.h"
 #include <iostream>
 #include <llvm/IR/Value.h>
 #include <memory>
@@ -3163,6 +3164,42 @@ public:
         }
     }
 
+    void generate_Floor(ASR::expr_t* m_arg, ASR::ttype_t* return_type) {
+        this->visit_expr_wrapper(m_arg, true);
+        llvm::Value *item = tmp;
+#if LLVM_VERSION_MAJOR >= 12
+        llvm::Value *rounded = builder->CreateUnaryIntrinsic(llvm::Intrinsic::floor, item);
+#elif LLVM_VERSION_MAJOR >= 8
+        llvm::Type *item_type = item->getType();
+        llvm::Value *rounded = builder->CreateIntrinsic(llvm::Intrinsic::floor, {item_type}, {item});
+#else
+        llvm::Type *item_type = item->getType();
+        llvm::Function *fn = llvm::Intrinsic::getDeclaration(module.get(),
+            llvm::Intrinsic::floor, {item_type});
+        llvm::Value *rounded = builder->CreateCall(fn, {item});
+#endif
+        int a_kind = ASRUtils::extract_kind_from_ttype_t(return_type);
+        tmp = builder->CreateFPToSI(rounded, llvm_utils->getIntType(a_kind));
+    }
+
+    void generate_Ceiling(ASR::expr_t* m_arg, ASR::ttype_t* return_type) {
+        this->visit_expr_wrapper(m_arg, true);
+        llvm::Value *item = tmp;
+#if LLVM_VERSION_MAJOR >= 12
+        llvm::Value *rounded = builder->CreateUnaryIntrinsic(llvm::Intrinsic::ceil, item);
+#elif LLVM_VERSION_MAJOR >= 8
+        llvm::Type *item_type = item->getType();
+        llvm::Value *rounded = builder->CreateIntrinsic(llvm::Intrinsic::ceil, {item_type}, {item});
+#else
+        llvm::Type *item_type = item->getType();
+        llvm::Function *fn = llvm::Intrinsic::getDeclaration(module.get(),
+            llvm::Intrinsic::ceil, {item_type});
+        llvm::Value *rounded = builder->CreateCall(fn, {item});
+#endif
+        int a_kind = ASRUtils::extract_kind_from_ttype_t(return_type);
+        tmp = builder->CreateFPToSI(rounded, llvm_utils->getIntType(a_kind));
+    }
+
     void generate_MinMax(ASR::expr_t** m_args, size_t n_args, bool is_max) {
         LCOMPILERS_ASSERT(n_args >= 2);
         this->visit_expr_wrapper(m_args[0], true);
@@ -3472,6 +3509,14 @@ public:
                 generate_Abs(x.m_args[0]);
                 break;
             }
+            case ASRUtils::IntrinsicElementalFunctions::Floor: {
+                generate_Floor(x.m_args[0], x.m_type);
+                break;
+            }
+            case ASRUtils::IntrinsicElementalFunctions::Ceiling: {
+                generate_Ceiling(x.m_args[0], x.m_type);
+                break;
+            }
             case ASRUtils::IntrinsicElementalFunctions::Max: {
                 generate_MinMax(x.m_args, x.n_args, true);
                 break;
@@ -3665,6 +3710,11 @@ public:
                         "the compile-time value is not available", x.base.base.loc);
             }
         }
+    }
+
+    void visit_IntrinsicArrayFunction(const ASR::IntrinsicArrayFunction_t &x) {
+        throw LCompilersException("LLVM visit_IntrinsicArrayFunction() not implemented for " +
+            ASRUtils::get_array_intrinsic_name(static_cast<int64_t>(x.m_arr_intrinsic_id)));
     }
 
     void visit_IntrinsicImpureFunction(const ASR::IntrinsicImpureFunction_t &x) {
