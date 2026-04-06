@@ -3372,6 +3372,33 @@ public:
         }
     }
 
+    void generate_Erfc(ASR::expr_t* m_arg) {
+        this->visit_expr_wrapper(m_arg, true);
+        llvm::Value *item = tmp;
+        llvm::Type *item_type = item->getType();
+        if (item_type == llvm::Type::getFloatTy(context)) {
+            llvm::Function *fn = module->getFunction("_lfortran_serfc");
+            if (!fn) {
+                llvm::FunctionType *function_type = llvm::FunctionType::get(
+                    item_type, {item_type}, false);
+                fn = llvm::Function::Create(function_type,
+                    llvm::Function::ExternalLinkage, "_lfortran_serfc", module.get());
+            }
+            tmp = builder->CreateCall(fn, {item});
+        } else if (item_type == llvm::Type::getDoubleTy(context)) {
+            llvm::Function *fn = module->getFunction("_lfortran_derfc");
+            if (!fn) {
+                llvm::FunctionType *function_type = llvm::FunctionType::get(
+                    item_type, {item_type}, false);
+                fn = llvm::Function::Create(function_type,
+                    llvm::Function::ExternalLinkage, "_lfortran_derfc", module.get());
+            }
+            tmp = builder->CreateCall(fn, {item});
+        } else {
+            throw CodeGenError("erfc() expects real arguments", m_arg->base.loc);
+        }
+    }
+
     void generate_Sqrt(ASR::expr_t* m_arg) {
         this->visit_expr_wrapper(m_arg, true);
         llvm::Value *item = tmp;
@@ -3921,6 +3948,10 @@ public:
             }
             case ASRUtils::IntrinsicElementalFunctions::Erf: {
                 generate_Erf(x.m_args[0]);
+                break;
+            }
+            case ASRUtils::IntrinsicElementalFunctions::Erfc: {
+                generate_Erfc(x.m_args[0]);
                 break;
             }
             case ASRUtils::IntrinsicElementalFunctions::Sqrt: {
