@@ -4667,6 +4667,155 @@ public:
             }
         };
 
+        auto generate_MinMaxLoc = [&](bool is_max) {
+            if (!(x.m_overload_id == 2 || x.m_overload_id == 3) || ASRUtils::is_array(x.m_type)) {
+                throw CodeGenError("LLVM array reduction backend only implements the scalar dim=1 form of `" +
+                    ASRUtils::get_array_intrinsic_name(static_cast<int64_t>(x.m_arr_intrinsic_id)) + "`",
+                    x.base.base.loc);
+            }
+
+            int dim_value = 0;
+            if (!ASRUtils::extract_value(ASRUtils::expr_value(x.m_args[1]), dim_value) || dim_value != 1) {
+                throw CodeGenError("LLVM array reduction backend only implements dim=1 for scalar `" +
+                    ASRUtils::get_array_intrinsic_name(static_cast<int64_t>(x.m_arr_intrinsic_id)) + "`",
+                    x.base.base.loc);
+            }
+
+            llvm::Value *array_data = nullptr, *num_elements = nullptr, *owned_copy = nullptr;
+            llvm::Type* elem_type = nullptr;
+            get_array_reduction_input(x.m_args[0], array_data, num_elements, elem_type, owned_copy);
+
+            llvm::Value *mask_data = nullptr, *mask_num_elements = nullptr, *mask_owned_copy = nullptr;
+            llvm::Type* mask_elem_type = nullptr;
+            bool has_mask = x.m_overload_id == 3;
+            if (has_mask) {
+                get_array_reduction_input(x.m_args[2], mask_data, mask_num_elements, mask_elem_type, mask_owned_copy);
+            }
+
+            auto cleanup_copies = [&]() {
+                if (owned_copy) {
+                    llvm_utils->lfortran_free_nocheck(owned_copy);
+                }
+                if (mask_owned_copy) {
+                    llvm_utils->lfortran_free_nocheck(mask_owned_copy);
+                }
+            };
+
+            if (!(elem_type->isIntegerTy() || elem_type->isFloatingPointTy())) {
+                cleanup_copies();
+                throw CodeGenError("LLVM array reduction backend only implements numeric scalar `" +
+                    ASRUtils::get_array_intrinsic_name(static_cast<int64_t>(x.m_arr_intrinsic_id)) + "`",
+                    x.base.base.loc);
+            }
+
+            llvm::Type* index_type = arr_descr->get_index_type();
+            llvm::Type* result_type = llvm_utils->get_type_from_ttype_t_util(
+                x.m_args[0], x.m_type, module.get());
+            llvm::AllocaInst* idx = llvm_utils->CreateAlloca(index_type, nullptr,
+                is_max ? "maxloc_idx" : "minloc_idx");
+            llvm::AllocaInst* best_idx = llvm_utils->CreateAlloca(index_type, nullptr,
+                is_max ? "maxloc_best_idx" : "minloc_best_idx");
+            llvm::AllocaInst* found = llvm_utils->CreateAlloca(llvm::Type::getInt1Ty(context), nullptr,
+                is_max ? "maxloc_found" : "minloc_found");
+            llvm::AllocaInst* best_val = llvm_utils->CreateAlloca(elem_type, nullptr,
+                is_max ? "maxloc_best_val" : "minloc_best_val");
+
+            builder->CreateStore(llvm::ConstantInt::get(index_type, 0), idx);
+            builder->CreateStore(llvm::ConstantInt::get(index_type, 0), best_idx);
+            builder->CreateStore(llvm::ConstantInt::getFalse(context), found);
+
+            llvm::Value* back_value = llvm::ConstantInt::getFalse(context);
+            if (x.m_args[4]) {
+                visit_expr_wrapper(x.m_args[4]);
+                back_value = llvm_utils->to_i1(tmp);
+            }
+
+            llvm_utils->create_loop(is_max ? "array_maxloc" : "array_minloc", [&]() {
+                llvm::Value* i = llvm_utils->CreateLoad2(index_type, idx);
+                return builder->CreateICmpSLT(i, num_elements);
+            }, [&]() {
+                llvm::Function* current_fn = builder->GetInsertBlock()->getParent();
+                llvm::Value* i = llvm_utils->CreateLoad2(index_type, idx);
+                llvm::Value* advance_idx = builder->CreateAdd(i, llvm::ConstantInt::get(index_type, 1));
+                llvm::Value* include_elem = llvm::ConstantInt::getTrue(context);
+                if (has_mask) {
+                    llvm::Value* mask_elem = llvm_utils->CreateLoad2(mask_elem_type,
+                        llvm_utils->create_ptr_gep2(mask_elem_type, mask_data, i));
+                    include_elem = llvm_utils->to_i1(mask_elem);
+                }
+
+                llvm::BasicBlock* skip_bb = llvm::BasicBlock::Create(context,
+                    is_max ? "maxloc.skip" : "minloc.skip", current_fn);
+                llvm::BasicBlock* body_bb = llvm::BasicBlock::Create(context,
+                    is_max ? "maxloc.body" : "minloc.body", current_fn);
+                llvm::BasicBlock* init_bb = llvm::BasicBlock::Create(context,
+                    is_max ? "maxloc.init" : "minloc.init", current_fn);
+                llvm::BasicBlock* compare_bb = llvm::BasicBlock::Create(context,
+                    is_max ? "maxloc.compare" : "minloc.compare", current_fn);
+                llvm::BasicBlock* update_bb = llvm::BasicBlock::Create(context,
+                    is_max ? "maxloc.update" : "minloc.update", current_fn);
+                llvm::BasicBlock* merge_bb = llvm::BasicBlock::Create(context,
+                    is_max ? "maxloc.merge" : "minloc.merge", current_fn);
+
+                builder->CreateCondBr(include_elem, body_bb, skip_bb);
+
+                builder->SetInsertPoint(skip_bb);
+                builder->CreateStore(advance_idx, idx);
+                builder->CreateBr(merge_bb);
+
+                builder->SetInsertPoint(body_bb);
+                llvm::Value* elem = llvm_utils->CreateLoad2(elem_type,
+                    llvm_utils->create_ptr_gep2(elem_type, array_data, i));
+                llvm::Value* found_val = llvm_utils->CreateLoad2(llvm::Type::getInt1Ty(context), found);
+                builder->CreateCondBr(found_val, compare_bb, init_bb);
+
+                builder->SetInsertPoint(init_bb);
+                builder->CreateStore(elem, best_val);
+                builder->CreateStore(i, best_idx);
+                builder->CreateStore(llvm::ConstantInt::getTrue(context), found);
+                builder->CreateStore(advance_idx, idx);
+                builder->CreateBr(merge_bb);
+
+                builder->SetInsertPoint(compare_bb);
+                llvm::Value* old_best = llvm_utils->CreateLoad2(elem_type, best_val);
+                llvm::Value* better = nullptr;
+                llvm::Value* equal = nullptr;
+                if (elem_type->isIntegerTy()) {
+                    better = is_max
+                        ? builder->CreateICmpSGT(elem, old_best)
+                        : builder->CreateICmpSLT(elem, old_best);
+                    equal = builder->CreateICmpEQ(elem, old_best);
+                } else {
+                    better = is_max
+                        ? builder->CreateFCmpOGT(elem, old_best)
+                        : builder->CreateFCmpOLT(elem, old_best);
+                    equal = builder->CreateFCmpOEQ(elem, old_best);
+                }
+                llvm::Value* should_update = builder->CreateOr(
+                    better, builder->CreateAnd(equal, back_value));
+                builder->CreateCondBr(should_update, update_bb, merge_bb);
+
+                builder->SetInsertPoint(update_bb);
+                builder->CreateStore(elem, best_val);
+                builder->CreateStore(i, best_idx);
+                builder->CreateStore(advance_idx, idx);
+                builder->CreateBr(merge_bb);
+
+                builder->SetInsertPoint(merge_bb);
+                if (!merge_bb->getTerminator()) {
+                    builder->CreateStore(advance_idx, idx);
+                }
+            });
+
+            llvm::Value* found_val = llvm_utils->CreateLoad2(llvm::Type::getInt1Ty(context), found);
+            llvm::Value* best_idx_val = llvm_utils->CreateLoad2(index_type, best_idx);
+            llvm::Value* one_based = builder->CreateAdd(best_idx_val, llvm::ConstantInt::get(index_type, 1));
+            llvm::Value* zero = llvm::ConstantInt::get(index_type, 0);
+            llvm::Value* result_idx = builder->CreateSelect(found_val, one_based, zero);
+            tmp = builder->CreateIntCast(result_idx, result_type, true);
+            cleanup_copies();
+        };
+
         auto generate_Norm2 = [&]() {
             if (x.m_overload_id != 0) {
                 throw CodeGenError("LLVM array reduction backend only implements the scalar form of `norm2`",
@@ -4929,7 +5078,7 @@ public:
 
             llvm::Value* source_rank = nullptr;
             llvm::Value* source_dim_des = nullptr;
-            std::vector<llvm::Value*> static_extents;
+            std::vector<llvm::Value*> source_extents;
             ASR::dimension_t* source_dims = nullptr;
             int compile_time_rank = ASRUtils::extract_dimensions_from_ttype(source_expr_type, source_dims);
 
@@ -4947,16 +5096,23 @@ public:
                 case ASR::array_physical_typeType::PointerArray:
                 case ASR::array_physical_typeType::UnboundedPointerArray: {
                     source_rank = llvm::ConstantInt::get(index_type, compile_time_rank);
-                    static_extents.reserve(compile_time_rank);
+                    source_extents.reserve(compile_time_rank);
+                    int64_t ptr_loads_copy = ptr_loads;
+                    ptr_loads = 2;
                     for (int dim = 0; dim < compile_time_rank; dim++) {
-                        int64_t extent = -1;
-                        if (!source_dims[dim].m_length ||
-                                !ASRUtils::extract_value(source_dims[dim].m_length, extent)) {
-                            throw CodeGenError("LLVM `shape` backend requires compile-time extents for non-descriptor arrays",
+                        if (!source_dims[dim].m_length) {
+                            ptr_loads = ptr_loads_copy;
+                            throw CodeGenError("LLVM `shape` backend requires explicit extents for non-descriptor arrays",
                                 x.base.base.loc);
                         }
-                        static_extents.push_back(llvm::ConstantInt::get(index_type, extent));
+                        load_array_size_deep_copy(source_dims[dim].m_length);
+                        llvm::Value* extent = tmp;
+                        if (extent->getType() != index_type) {
+                            extent = builder->CreateSExtOrTrunc(extent, index_type);
+                        }
+                        source_extents.push_back(extent);
                     }
+                    ptr_loads = ptr_loads_copy;
                     break;
                 }
                 default: {
@@ -5034,8 +5190,8 @@ public:
                         builder->CreateAdd(i, llvm::ConstantInt::get(index_type, 1)), idx);
                 });
             } else {
-                for (size_t dim = 0; dim < static_extents.size(); dim++) {
-                    store_extent(llvm::ConstantInt::get(index_type, dim), static_extents[dim]);
+                for (size_t dim = 0; dim < source_extents.size(); dim++) {
+                    store_extent(llvm::ConstantInt::get(index_type, dim), source_extents[dim]);
                 }
             }
 
@@ -5541,6 +5697,14 @@ public:
             }
             case ASRUtils::IntrinsicArrayFunctions::MinVal: {
                 generate_MinMaxVal(false);
+                break;
+            }
+            case ASRUtils::IntrinsicArrayFunctions::MaxLoc: {
+                generate_MinMaxLoc(true);
+                break;
+            }
+            case ASRUtils::IntrinsicArrayFunctions::MinLoc: {
+                generate_MinMaxLoc(false);
                 break;
             }
             case ASRUtils::IntrinsicArrayFunctions::Norm2: {
