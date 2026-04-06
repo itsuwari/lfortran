@@ -5274,6 +5274,139 @@ public:
             }
         };
 
+        auto generate_Transpose = [&]() {
+            if (x.m_overload_id != 2) {
+                throw CodeGenError("LLVM `transpose` backend only implements overload 2",
+                    x.base.base.loc);
+            }
+
+            llvm::Value* source_data = nullptr;
+            llvm::Type* source_elem_type = nullptr;
+            llvm::Value* source_owned_copy = nullptr;
+            std::vector<llvm::Value*> source_extents;
+            get_array_matmul_input(x.m_args[0], source_data, source_extents, source_elem_type, source_owned_copy);
+
+            if (source_extents.size() != 2) {
+                if (source_owned_copy) {
+                    llvm_utils->lfortran_free_nocheck(source_owned_copy);
+                }
+                throw CodeGenError("LLVM `transpose` backend only implements rank-2 arrays",
+                    x.base.base.loc);
+            }
+
+            ASR::ttype_t* result_array_type = ASRUtils::type_get_past_allocatable(
+                ASRUtils::type_get_past_pointer(x.m_type));
+            ASR::array_physical_typeType result_physical_type =
+                ASRUtils::extract_physical_type(result_array_type);
+            llvm::Type* result_storage_type = llvm_utils->get_type_from_ttype_t_util(
+                x.m_args[0], result_array_type, module.get());
+            llvm::Type* result_elem_type = llvm_utils->get_el_type(
+                x.m_args[0], ASRUtils::extract_type(result_array_type), module.get());
+            if (source_elem_type != result_elem_type) {
+                if (source_owned_copy) {
+                    llvm_utils->lfortran_free_nocheck(source_owned_copy);
+                }
+                throw CodeGenError("LLVM `transpose` backend requires matching source/result element types",
+                    x.base.base.loc);
+            }
+
+            llvm::Type* index_type = arr_descr->get_index_type();
+            llvm::Value* dim_m = source_extents[0];
+            llvm::Value* dim_n = source_extents[1];
+            llvm::Value* result_size = builder->CreateMul(dim_m, dim_n);
+
+            llvm::Value* result_handle = nullptr;
+            llvm::Value* result_data = nullptr;
+            if (result_physical_type == ASR::array_physical_typeType::DescriptorArray ||
+                    result_physical_type == ASR::array_physical_typeType::AssumedRankArray) {
+                llvm::Value* result_desc = arr_descr->create_descriptor_alloca(
+                    result_storage_type, "transpose_result");
+                arr_descr->fill_dimension_descriptor(result_storage_type, result_desc, 2);
+                arr_descr->set_rank(result_storage_type, result_desc,
+                    llvm::ConstantInt::get(context, llvm::APInt(32, 2)));
+                builder->CreateStore(
+                    llvm::ConstantInt::get(context, llvm::APInt(index_type->getIntegerBitWidth(), 0)),
+                    arr_descr->get_offset(result_storage_type, result_desc, false));
+
+                llvm::Value* result_dim_des = arr_descr->get_pointer_to_dimension_descriptor_array(
+                    result_storage_type, result_desc, true);
+                llvm::Value* result_dim0 = arr_descr->get_pointer_to_dimension_descriptor(
+                    result_dim_des, llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), 0));
+                builder->CreateStore(llvm::ConstantInt::get(index_type, 1),
+                    arr_descr->get_lower_bound(result_dim0, false));
+                builder->CreateStore(dim_n,
+                    arr_descr->get_dimension_size(result_dim0, false));
+                builder->CreateStore(llvm::ConstantInt::get(index_type, 1),
+                    arr_descr->get_stride(result_dim0, false));
+
+                llvm::Value* result_dim1 = arr_descr->get_pointer_to_dimension_descriptor(
+                    result_dim_des, llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), 1));
+                builder->CreateStore(llvm::ConstantInt::get(index_type, 1),
+                    arr_descr->get_lower_bound(result_dim1, false));
+                builder->CreateStore(dim_m,
+                    arr_descr->get_dimension_size(result_dim1, false));
+                builder->CreateStore(dim_n,
+                    arr_descr->get_stride(result_dim1, false));
+
+                llvm::AllocaInst* result_desc_data = llvm_utils->CreateAlloca(
+                    result_elem_type, result_size, "transpose_data");
+                builder->CreateStore(result_desc_data,
+                    arr_descr->get_pointer_to_data(result_storage_type, result_desc));
+                llvm::DataLayout data_layout(module->getDataLayout());
+                uint64_t elem_size = data_layout.getTypeAllocSize(result_elem_type);
+                set_cfi_descriptor_fields(result_storage_type, result_desc,
+                    ASRUtils::extract_type(result_array_type), elem_size, x.m_type);
+                result_handle = result_desc;
+                result_data = result_desc_data;
+            } else if (result_physical_type == ASR::array_physical_typeType::FixedSizeArray ||
+                       result_physical_type == ASR::array_physical_typeType::SIMDArray) {
+                llvm::Value* result_array = llvm_utils->CreateAlloca(
+                    result_storage_type, nullptr, "transpose_result");
+                result_handle = result_array;
+                result_data = llvm_utils->create_gep2(result_storage_type, result_array, 0);
+            } else {
+                if (source_owned_copy) {
+                    llvm_utils->lfortran_free_nocheck(source_owned_copy);
+                }
+                throw CodeGenError("LLVM `transpose` backend is not implemented for result physical type `" +
+                    ASRUtils::get_type_code(result_array_type) + "`", x.base.base.loc);
+            }
+
+            llvm::AllocaInst* idx_i = llvm_utils->CreateAlloca(index_type, nullptr, "transpose_i");
+            llvm::AllocaInst* idx_j = llvm_utils->CreateAlloca(index_type, nullptr, "transpose_j");
+            builder->CreateStore(llvm::ConstantInt::get(index_type, 0), idx_i);
+            llvm_utils->create_loop("transpose_outer", [&]() {
+                llvm::Value* i = llvm_utils->CreateLoad2(index_type, idx_i);
+                return builder->CreateICmpSLT(i, dim_m);
+            }, [&]() {
+                builder->CreateStore(llvm::ConstantInt::get(index_type, 0), idx_j);
+                llvm_utils->create_loop("transpose_inner", [&]() {
+                    llvm::Value* j = llvm_utils->CreateLoad2(index_type, idx_j);
+                    return builder->CreateICmpSLT(j, dim_n);
+                }, [&]() {
+                    llvm::Value* i = llvm_utils->CreateLoad2(index_type, idx_i);
+                    llvm::Value* j = llvm_utils->CreateLoad2(index_type, idx_j);
+                    llvm::Value* source_offset = builder->CreateAdd(i, builder->CreateMul(j, dim_m));
+                    llvm::Value* result_offset = builder->CreateAdd(j, builder->CreateMul(i, dim_n));
+                    llvm::Value* elem = llvm_utils->CreateLoad2(source_elem_type,
+                        llvm_utils->create_ptr_gep2(source_elem_type, source_data, source_offset));
+                    builder->CreateStore(elem,
+                        llvm_utils->create_ptr_gep2(result_elem_type, result_data, result_offset));
+                    builder->CreateStore(
+                        builder->CreateAdd(j, llvm::ConstantInt::get(index_type, 1)), idx_j);
+                });
+                builder->CreateStore(
+                    builder->CreateAdd(llvm_utils->CreateLoad2(index_type, idx_i),
+                        llvm::ConstantInt::get(index_type, 1)),
+                    idx_i);
+            });
+
+            if (source_owned_copy) {
+                llvm_utils->lfortran_free_nocheck(source_owned_copy);
+            }
+            tmp = result_handle;
+        };
+
         auto generate_Spread = [&]() {
             if (!(x.m_overload_id == 2 || x.m_overload_id == -1)) {
                 throw CodeGenError("LLVM `spread` backend only implements array and scalar-source overloads",
@@ -5717,6 +5850,10 @@ public:
             }
             case ASRUtils::IntrinsicArrayFunctions::Spread: {
                 generate_Spread();
+                break;
+            }
+            case ASRUtils::IntrinsicArrayFunctions::Transpose: {
+                generate_Transpose();
                 break;
             }
             case ASRUtils::IntrinsicArrayFunctions::DotProduct: {
