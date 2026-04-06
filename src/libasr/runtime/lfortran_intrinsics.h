@@ -226,6 +226,7 @@ LFORTRAN_API int64_t _lfortran_str_len(char* s);
 LFORTRAN_API int64_t _lfortran_str_len_trim(char* s, int64_t len);
 LFORTRAN_API char* _lfortran_str_adjustl_alloc(lfortran_allocator_t* al, char* s, int64_t len);
 LFORTRAN_API char* _lfortran_str_adjustr_alloc(lfortran_allocator_t* al, char* s, int64_t len);
+LFORTRAN_API int64_t _lfortran_str_contains_set(char* str, int64_t str_len, char* set, int64_t set_len, bool back);
 LFORTRAN_API int64_t _lfortran_str_find_set(char* str, int64_t str_len, char* set, int64_t set_len, bool back);
 LFORTRAN_API int64_t _lfortran_str_index(char* str, int64_t str_len, char* substr, int64_t substr_len, bool back);
 LFORTRAN_API int _lfortran_str_ord(char** s);

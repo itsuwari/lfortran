@@ -1395,6 +1395,27 @@ public:
         return builder->CreateCall(fn, {str, str_len, set, set_len, back});
     }
 
+    llvm::Value* lfortran_str_contains_set(llvm::Value* str, llvm::Value* str_len,
+                                           llvm::Value* set, llvm::Value* set_len,
+                                           llvm::Value* back)
+    {
+        std::string runtime_func_name = "_lfortran_str_contains_set";
+        llvm::Function *fn = module->getFunction(runtime_func_name);
+        if (!fn) {
+            llvm::FunctionType *function_type = llvm::FunctionType::get(
+                    llvm::Type::getInt64Ty(context), {
+                        character_type,
+                        llvm::Type::getInt64Ty(context),
+                        character_type,
+                        llvm::Type::getInt64Ty(context),
+                        llvm::Type::getInt1Ty(context)
+                    }, false);
+            fn = llvm::Function::Create(function_type,
+                    llvm::Function::ExternalLinkage, runtime_func_name, module.get());
+        }
+        return builder->CreateCall(fn, {str, str_len, set, set_len, back});
+    }
+
     llvm::Value* lfortran_str_index(llvm::Value* str, llvm::Value* str_len,
                                     llvm::Value* substr, llvm::Value* substr_len,
                                     llvm::Value* back)
@@ -3414,6 +3435,20 @@ public:
                 ASRUtils::extract_kind_from_ttype_t(return_type) * 8));
     }
 
+    void generate_StringContainsSet(ASR::expr_t* str_arg, ASR::expr_t* set_arg,
+                                    ASR::expr_t* back_arg, ASR::ttype_t* return_type) {
+        llvm::Value *str_data, *str_len;
+        llvm::Value *set_data, *set_len;
+        std::tie(str_data, str_len) = get_string_data_and_length(str_arg);
+        std::tie(set_data, set_len) = get_string_data_and_length(set_arg);
+        this->visit_expr_wrapper(back_arg, true);
+        llvm::Value *back = llvm_utils->to_i1(tmp);
+        tmp = lfortran_str_contains_set(str_data, str_len, set_data, set_len, back);
+        tmp = llvm_utils->convert_kind(tmp,
+            llvm::Type::getIntNTy(context,
+                ASRUtils::extract_kind_from_ttype_t(return_type) * 8));
+    }
+
     void generate_SubstrIndex(ASR::expr_t* str_arg, ASR::expr_t* substr_arg,
                               ASR::expr_t* back_arg, ASR::ttype_t* return_type) {
         llvm::Value *str_data, *str_len;
@@ -3810,6 +3845,10 @@ public:
             }
             case ASRUtils::IntrinsicElementalFunctions::StringFindSet: {
                 generate_StringFindSet(x.m_args[0], x.m_args[1], x.m_args[2], x.m_type);
+                break;
+            }
+            case ASRUtils::IntrinsicElementalFunctions::StringContainsSet: {
+                generate_StringContainsSet(x.m_args[0], x.m_args[1], x.m_args[2], x.m_type);
                 break;
             }
             case ASRUtils::IntrinsicElementalFunctions::SubstrIndex: {

@@ -4782,6 +4782,38 @@ LFORTRAN_API int64_t _lfortran_str_find_set(char* str, int64_t str_len, char* se
     return 0;
 }
 
+LFORTRAN_API int64_t _lfortran_str_contains_set(char* str, int64_t str_len, char* set, int64_t set_len, bool back)
+{
+    if (back) {
+        for (int64_t i = str_len - 1; i >= 0; i--) {
+            bool matched = false;
+            for (int64_t j = 0; j < set_len; j++) {
+                if (str[i] == set[j]) {
+                    matched = true;
+                    break;
+                }
+            }
+            if (!matched) {
+                return i + 1;
+            }
+        }
+    } else {
+        for (int64_t i = 0; i < str_len; i++) {
+            bool matched = false;
+            for (int64_t j = 0; j < set_len; j++) {
+                if (str[i] == set[j]) {
+                    matched = true;
+                    break;
+                }
+            }
+            if (!matched) {
+                return i + 1;
+            }
+        }
+    }
+    return 0;
+}
+
 LFORTRAN_API int64_t _lfortran_str_index(char* str, int64_t str_len, char* substr, int64_t substr_len, bool back)
 {
     if (substr_len == 0) {
