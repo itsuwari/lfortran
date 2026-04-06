@@ -3219,7 +3219,7 @@ public:
         tmp = builder->CreateFSub(exp, one);
     }
 
-    llvm::Value* create_trig_intrinsic(llvm::Intrinsic::ID intrinsic_id, llvm::Value *item) {
+    llvm::Value* create_unary_fp_intrinsic(llvm::Intrinsic::ID intrinsic_id, llvm::Value *item) {
 #if LLVM_VERSION_MAJOR >= 12
         return builder->CreateUnaryIntrinsic(intrinsic_id, item);
 #elif LLVM_VERSION_MAJOR >= 8
@@ -3253,7 +3253,7 @@ public:
         llvm::Value *item = tmp;
         llvm::Type *item_type = item->getType();
         if (item_type->isFloatingPointTy()) {
-            tmp = create_trig_intrinsic(llvm::Intrinsic::sin, item);
+            tmp = create_unary_fp_intrinsic(llvm::Intrinsic::sin, item);
         } else if (item_type == complex_type_4) {
             tmp = lfortran_complex_unary_intrinsic(item, "_lfortran_csin", complex_type_4);
         } else if (item_type == complex_type_8) {
@@ -3268,13 +3268,28 @@ public:
         llvm::Value *item = tmp;
         llvm::Type *item_type = item->getType();
         if (item_type->isFloatingPointTy()) {
-            tmp = create_trig_intrinsic(llvm::Intrinsic::cos, item);
+            tmp = create_unary_fp_intrinsic(llvm::Intrinsic::cos, item);
         } else if (item_type == complex_type_4) {
             tmp = lfortran_complex_unary_intrinsic(item, "_lfortran_ccos", complex_type_4);
         } else if (item_type == complex_type_8) {
             tmp = lfortran_complex_unary_intrinsic(item, "_lfortran_zcos", complex_type_8);
         } else {
             throw CodeGenError("cos() expects real or complex arguments", m_arg->base.loc);
+        }
+    }
+
+    void generate_Sqrt(ASR::expr_t* m_arg) {
+        this->visit_expr_wrapper(m_arg, true);
+        llvm::Value *item = tmp;
+        llvm::Type *item_type = item->getType();
+        if (item_type->isFloatingPointTy()) {
+            tmp = create_unary_fp_intrinsic(llvm::Intrinsic::sqrt, item);
+        } else if (item_type == complex_type_4) {
+            tmp = lfortran_complex_unary_intrinsic(item, "_lfortran_csqrt", complex_type_4);
+        } else if (item_type == complex_type_8) {
+            tmp = lfortran_complex_unary_intrinsic(item, "_lfortran_zsqrt", complex_type_8);
+        } else {
+            throw CodeGenError("sqrt() expects real or complex arguments", m_arg->base.loc);
         }
     }
 
@@ -3740,6 +3755,10 @@ public:
             }
             case ASRUtils::IntrinsicElementalFunctions::Cos: {
                 generate_Cos(x.m_args[0]);
+                break;
+            }
+            case ASRUtils::IntrinsicElementalFunctions::Sqrt: {
+                generate_Sqrt(x.m_args[0]);
                 break;
             }
             case ASRUtils::IntrinsicElementalFunctions::FlipSign: {
