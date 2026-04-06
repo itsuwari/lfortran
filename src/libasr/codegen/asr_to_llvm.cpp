@@ -4422,6 +4422,114 @@ public:
             }
         };
 
+        auto get_array_reduction_input_with_extents = [&](ASR::expr_t* array_expr,
+                llvm::Value*& array_data, llvm::Value*& num_elements,
+                std::vector<llvm::Value*>& extents, llvm::Type*& elem_type,
+                llvm::Value*& owned_copy) {
+            ASR::ttype_t* array_expr_type = ASRUtils::expr_type(array_expr);
+            llvm::Type* array_type = llvm_utils->get_type_from_ttype_t_util(
+                array_expr,
+                ASRUtils::type_get_past_allocatable(
+                    ASRUtils::type_get_past_pointer(array_expr_type)),
+                module.get());
+            elem_type = llvm_utils->get_el_type(
+                array_expr, ASRUtils::extract_type(array_expr_type), module.get());
+
+            int64_t ptr_loads_copy = ptr_loads;
+            ptr_loads = 2 - LLVM::is_llvm_pointer(*array_expr_type);
+            visit_expr_wrapper(array_expr);
+            ptr_loads = ptr_loads_copy;
+
+            if (ASR::is_a<ASR::StructInstanceMember_t>(*array_expr)) {
+                tmp = llvm_utils->CreateLoad2(array_type->getPointerTo(), tmp);
+            }
+
+            llvm::Value* llvm_array = tmp;
+            llvm::Type* index_type = arr_descr->get_index_type();
+            ASR::array_physical_typeType physical_type = ASRUtils::extract_physical_type(array_expr_type);
+            if (physical_type == ASR::array_physical_typeType::StringArraySinglePointer) {
+                if (ASRUtils::is_fixed_size_array(array_expr_type)) {
+                    physical_type = ASR::array_physical_typeType::FixedSizeArray;
+                } else {
+                    physical_type = ASR::array_physical_typeType::DescriptorArray;
+                }
+            }
+
+            int rank = ASRUtils::extract_n_dims_from_ttype(array_expr_type);
+            extents.clear();
+            extents.reserve(rank);
+            owned_copy = nullptr;
+
+            switch (physical_type) {
+                case ASR::array_physical_typeType::AssumedRankArray:
+                case ASR::array_physical_typeType::DescriptorArray: {
+                    llvm::Value* dim_des_array = arr_descr->get_pointer_to_dimension_descriptor_array(
+                        array_type, llvm_array, true);
+                    num_elements = llvm::ConstantInt::get(index_type, 1);
+                    for (int dim = 0; dim < rank; dim++) {
+                        llvm::Value* dim_desc = arr_descr->get_pointer_to_dimension_descriptor(
+                            dim_des_array,
+                            llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), dim));
+                        llvm::Value* extent = arr_descr->get_dimension_size(dim_desc, true);
+                        extents.push_back(extent);
+                        num_elements = builder->CreateMul(num_elements, extent);
+                    }
+                    owned_copy = arr_descr->create_contiguous_copy_from_descriptor(
+                        array_type, llvm_array, elem_type, rank, module.get());
+                    array_data = owned_copy;
+                    break;
+                }
+                case ASR::array_physical_typeType::PointerArray:
+                case ASR::array_physical_typeType::UnboundedPointerArray: {
+                    ASR::dimension_t* dims = nullptr;
+                    int n_dims = ASRUtils::extract_dimensions_from_ttype(array_expr_type, dims);
+                    num_elements = llvm::ConstantInt::get(index_type, 1);
+                    int64_t ptr_loads_dims_copy = ptr_loads;
+                    ptr_loads = 2;
+                    for (int dim = 0; dim < n_dims; dim++) {
+                        if (!dims[dim].m_length) {
+                            ptr_loads = ptr_loads_dims_copy;
+                            throw CodeGenError("LLVM array backend requires explicit extents for pointer arrays",
+                                x.base.base.loc);
+                        }
+                        load_array_size_deep_copy(dims[dim].m_length);
+                        llvm::Value* extent = tmp;
+                        if (extent->getType() != index_type) {
+                            extent = builder->CreateSExtOrTrunc(extent, index_type);
+                        }
+                        extents.push_back(extent);
+                        num_elements = builder->CreateMul(num_elements, extent);
+                    }
+                    ptr_loads = ptr_loads_dims_copy;
+                    array_data = llvm_array;
+                    break;
+                }
+                case ASR::array_physical_typeType::FixedSizeArray:
+                case ASR::array_physical_typeType::SIMDArray: {
+                    array_data = llvm_utils->create_gep2(array_type, llvm_array, 0);
+                    ASR::dimension_t* dims = nullptr;
+                    int n_dims = ASRUtils::extract_dimensions_from_ttype(array_expr_type, dims);
+                    num_elements = llvm::ConstantInt::get(index_type, 1);
+                    for (int dim = 0; dim < n_dims; dim++) {
+                        int64_t dim_extent = -1;
+                        bool ok = ASRUtils::extract_value(dims[dim].m_length, dim_extent);
+                        if (!ok) {
+                            throw CodeGenError("LLVM array backend only implements fixed-size arrays with compile-time extents",
+                                x.base.base.loc);
+                        }
+                        llvm::Value* extent = llvm::ConstantInt::get(index_type, dim_extent);
+                        extents.push_back(extent);
+                        num_elements = builder->CreateMul(num_elements, extent);
+                    }
+                    break;
+                }
+                default: {
+                    throw CodeGenError("LLVM array backend is not implemented for array physical type `" +
+                        ASRUtils::get_type_code(array_expr_type) + "`", x.base.base.loc);
+                }
+            }
+        };
+
         auto generate_AnyAll = [&](bool init_value, bool use_and) {
             if (x.m_overload_id != 0) {
                 throw CodeGenError("LLVM array reduction backend only implements the scalar form of `" +
@@ -4507,51 +4615,203 @@ public:
         };
 
         auto generate_Sum = [&]() {
-            if (x.m_overload_id != 0) {
-                throw CodeGenError("LLVM array reduction backend only implements the scalar form of `sum`",
+            auto create_sum = [&](llvm::Value* old_sum, llvm::Value* elem, llvm::Type* result_type) -> llvm::Value* {
+                if (result_type->isIntegerTy()) {
+                    return builder->CreateAdd(old_sum, elem);
+                } else if (result_type->isFloatingPointTy()) {
+                    return builder->CreateFAdd(old_sum, elem);
+                } else if (result_type == complex_type_4) {
+                    return lfortran_complex_bin_op(old_sum, elem, "_lfortran_complex_add_32", complex_type_4);
+                } else if (result_type == complex_type_8) {
+                    return lfortran_complex_bin_op(old_sum, elem, "_lfortran_complex_add_64", complex_type_8);
+                } else {
+                    throw CodeGenError("LLVM array reduction backend only implements numeric `sum`",
+                        x.base.base.loc);
+                }
+            };
+
+            if (x.m_overload_id == 0 || !ASRUtils::is_array(x.m_type)) {
+                llvm::Value *array_data = nullptr, *num_elements = nullptr, *owned_copy = nullptr;
+                llvm::Type* elem_type = nullptr;
+                get_array_reduction_input(x.m_args[0], array_data, num_elements, elem_type, owned_copy);
+
+                llvm::Type* index_type = arr_descr->get_index_type();
+                llvm::Type* result_type = llvm_utils->get_type_from_ttype_t_util(
+                    x.m_args[0], x.m_type, module.get());
+                llvm::AllocaInst* idx = llvm_utils->CreateAlloca(index_type, nullptr, "sum_idx");
+                builder->CreateStore(llvm::ConstantInt::get(index_type, 0), idx);
+
+                llvm::AllocaInst* sum = llvm_utils->CreateAlloca(result_type, nullptr, "sum_accum");
+                builder->CreateStore(llvm::Constant::getNullValue(result_type), sum);
+
+                llvm_utils->create_loop("array_sum", [&]() {
+                    llvm::Value* i = llvm_utils->CreateLoad2(index_type, idx);
+                    return builder->CreateICmpSLT(i, num_elements);
+                }, [&]() {
+                    llvm::Value* i = llvm_utils->CreateLoad2(index_type, idx);
+                    llvm::Value* elem = llvm_utils->CreateLoad2(elem_type,
+                        llvm_utils->create_ptr_gep2(elem_type, array_data, i));
+                    llvm::Value* old_sum = llvm_utils->CreateLoad2(result_type, sum);
+                    builder->CreateStore(create_sum(old_sum, elem, result_type), sum);
+                    builder->CreateStore(
+                        builder->CreateAdd(i, llvm::ConstantInt::get(index_type, 1)), idx);
+                });
+
+                tmp = llvm_utils->CreateLoad2(result_type, sum);
+                if (owned_copy) {
+                    llvm_utils->lfortran_free_nocheck(owned_copy);
+                }
+                return;
+            }
+
+            if (x.m_overload_id != 1) {
+                throw CodeGenError("LLVM array reduction backend only implements `sum` scalar and dim forms without masks",
                     x.base.base.loc);
             }
 
             llvm::Value *array_data = nullptr, *num_elements = nullptr, *owned_copy = nullptr;
             llvm::Type* elem_type = nullptr;
-            get_array_reduction_input(x.m_args[0], array_data, num_elements, elem_type, owned_copy);
+            std::vector<llvm::Value*> source_extents;
+            get_array_reduction_input_with_extents(
+                x.m_args[0], array_data, num_elements, source_extents, elem_type, owned_copy);
 
             llvm::Type* index_type = arr_descr->get_index_type();
-            llvm::Type* result_type = llvm_utils->get_type_from_ttype_t_util(
-                x.m_args[0], x.m_type, module.get());
-            llvm::AllocaInst* idx = llvm_utils->CreateAlloca(index_type, nullptr, "sum_idx");
+            visit_expr_wrapper(x.m_args[1], true);
+            llvm::Value* dim_val = builder->CreateSExtOrTrunc(tmp, index_type);
+
+            ASR::ttype_t* result_array_type = ASRUtils::type_get_past_allocatable(
+                ASRUtils::type_get_past_pointer(x.m_type));
+            ASR::array_physical_typeType result_physical_type =
+                ASRUtils::extract_physical_type(result_array_type);
+            llvm::Type* result_storage_type = llvm_utils->get_type_from_ttype_t_util(
+                x.m_args[0], result_array_type, module.get());
+            llvm::Type* result_elem_type = llvm_utils->get_el_type(
+                x.m_args[0], ASRUtils::extract_type(result_array_type), module.get());
+
+            int rank = static_cast<int>(source_extents.size());
+            int result_rank = rank - 1;
+            LCOMPILERS_ASSERT(result_rank > 0);
+
+            std::vector<llvm::Value*> result_extents;
+            result_extents.reserve(result_rank);
+            for (int dim = 0; dim < result_rank; dim++) {
+                llvm::Value* dim_index = llvm::ConstantInt::get(index_type, dim + 1);
+                llvm::Value* before_reduced = builder->CreateICmpSLT(dim_index, dim_val);
+                llvm::Value* extent = builder->CreateSelect(before_reduced,
+                    source_extents[dim], source_extents[dim + 1]);
+                result_extents.push_back(extent);
+            }
+
+            llvm::Value* result_size = llvm::ConstantInt::get(index_type, 1);
+            for (llvm::Value* extent : result_extents) {
+                result_size = builder->CreateMul(result_size, extent);
+            }
+
+            llvm::Value* result_handle = nullptr;
+            llvm::Value* result_data = nullptr;
+            if (result_physical_type == ASR::array_physical_typeType::DescriptorArray ||
+                    result_physical_type == ASR::array_physical_typeType::AssumedRankArray) {
+                llvm::Value* result_desc = arr_descr->create_descriptor_alloca(
+                    result_storage_type, "sum_dim_result");
+                arr_descr->fill_dimension_descriptor(result_storage_type, result_desc, result_rank);
+                arr_descr->set_rank(result_storage_type, result_desc,
+                    llvm::ConstantInt::get(context, llvm::APInt(32, result_rank)));
+                builder->CreateStore(
+                    llvm::ConstantInt::get(context, llvm::APInt(index_type->getIntegerBitWidth(), 0)),
+                    arr_descr->get_offset(result_storage_type, result_desc, false));
+
+                llvm::Value* result_dim_des = arr_descr->get_pointer_to_dimension_descriptor_array(
+                    result_storage_type, result_desc, true);
+                llvm::Value* stride = llvm::ConstantInt::get(index_type, 1);
+                for (int dim = 0; dim < result_rank; dim++) {
+                    llvm::Value* dim_desc = arr_descr->get_pointer_to_dimension_descriptor(
+                        result_dim_des, llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), dim));
+                    builder->CreateStore(llvm::ConstantInt::get(index_type, 1),
+                        arr_descr->get_lower_bound(dim_desc, false));
+                    builder->CreateStore(result_extents[dim],
+                        arr_descr->get_dimension_size(dim_desc, false));
+                    builder->CreateStore(stride,
+                        arr_descr->get_stride(dim_desc, false));
+                    stride = builder->CreateMul(stride, result_extents[dim]);
+                }
+
+                llvm::AllocaInst* result_desc_data = llvm_utils->CreateAlloca(
+                    result_elem_type, result_size, "sum_dim_data");
+                builder->CreateStore(result_desc_data,
+                    arr_descr->get_pointer_to_data(result_storage_type, result_desc));
+                llvm::DataLayout data_layout(module->getDataLayout());
+                uint64_t elem_size = data_layout.getTypeAllocSize(result_elem_type);
+                set_cfi_descriptor_fields(result_storage_type, result_desc,
+                    ASRUtils::extract_type(result_array_type), elem_size, x.m_type);
+                result_handle = result_desc;
+                result_data = result_desc_data;
+            } else if (result_physical_type == ASR::array_physical_typeType::FixedSizeArray ||
+                       result_physical_type == ASR::array_physical_typeType::SIMDArray) {
+                llvm::Value* result_array = llvm_utils->CreateAlloca(
+                    result_storage_type, nullptr, "sum_dim_result");
+                result_handle = result_array;
+                result_data = llvm_utils->create_gep2(result_storage_type, result_array, 0);
+            } else {
+                if (owned_copy) {
+                    llvm_utils->lfortran_free_nocheck(owned_copy);
+                }
+                throw CodeGenError("LLVM `sum` backend is not implemented for result physical type `" +
+                    ASRUtils::get_type_code(result_array_type) + "`", x.base.base.loc);
+            }
+
+            llvm::AllocaInst* out_idx = llvm_utils->CreateAlloca(index_type, nullptr, "sum_dim_out_idx");
+            builder->CreateStore(llvm::ConstantInt::get(index_type, 0), out_idx);
+            llvm_utils->create_loop("array_sum_dim_init", [&]() {
+                llvm::Value* i = llvm_utils->CreateLoad2(index_type, out_idx);
+                return builder->CreateICmpSLT(i, result_size);
+            }, [&]() {
+                llvm::Value* i = llvm_utils->CreateLoad2(index_type, out_idx);
+                builder->CreateStore(llvm::Constant::getNullValue(result_elem_type),
+                    llvm_utils->create_ptr_gep2(result_elem_type, result_data, i));
+                builder->CreateStore(builder->CreateAdd(i, llvm::ConstantInt::get(index_type, 1)), out_idx);
+            });
+
+            llvm::AllocaInst* idx = llvm_utils->CreateAlloca(index_type, nullptr, "sum_dim_idx");
             builder->CreateStore(llvm::ConstantInt::get(index_type, 0), idx);
-
-            llvm::AllocaInst* sum = llvm_utils->CreateAlloca(result_type, nullptr, "sum_accum");
-            builder->CreateStore(llvm::Constant::getNullValue(result_type), sum);
-
-            llvm_utils->create_loop("array_sum", [&]() {
+            llvm_utils->create_loop("array_sum_dim", [&]() {
                 llvm::Value* i = llvm_utils->CreateLoad2(index_type, idx);
                 return builder->CreateICmpSLT(i, num_elements);
             }, [&]() {
-                llvm::Value* i = llvm_utils->CreateLoad2(index_type, idx);
-                llvm::Value* elem = llvm_utils->CreateLoad2(elem_type,
-                    llvm_utils->create_ptr_gep2(elem_type, array_data, i));
-                llvm::Value* old_sum = llvm_utils->CreateLoad2(result_type, sum);
-                llvm::Value* new_sum = nullptr;
-                if (result_type->isIntegerTy()) {
-                    new_sum = builder->CreateAdd(old_sum, elem);
-                } else if (result_type->isFloatingPointTy()) {
-                    new_sum = builder->CreateFAdd(old_sum, elem);
-                } else if (result_type == complex_type_4) {
-                    new_sum = lfortran_complex_bin_op(old_sum, elem, "_lfortran_complex_add_32", complex_type_4);
-                } else if (result_type == complex_type_8) {
-                    new_sum = lfortran_complex_bin_op(old_sum, elem, "_lfortran_complex_add_64", complex_type_8);
-                } else {
-                    throw CodeGenError("LLVM array reduction backend only implements numeric scalar `sum`",
-                        x.base.base.loc);
+                llvm::Value* linear_idx = llvm_utils->CreateLoad2(index_type, idx);
+                llvm::Value* temp_idx = linear_idx;
+                llvm::Value* result_offset = llvm::ConstantInt::get(index_type, 0);
+                llvm::Value* result_stride = llvm::ConstantInt::get(index_type, 1);
+
+                for (int dim = 0; dim < rank; dim++) {
+                    llvm::Value* coord = builder->CreateSRem(temp_idx, source_extents[dim]);
+                    temp_idx = builder->CreateSDiv(temp_idx, source_extents[dim]);
+                    llvm::Value* dim_index = llvm::ConstantInt::get(index_type, dim + 1);
+                    llvm::Value* keep_dim = builder->CreateICmpNE(dim_index, dim_val);
+                    int safe_before_idx = std::min(dim, result_rank - 1);
+                    int safe_after_idx = std::max(dim - 1, 0);
+                    llvm::Value* before_reduced = builder->CreateICmpSLT(dim_index, dim_val);
+                    llvm::Value* result_extent = builder->CreateSelect(before_reduced,
+                        result_extents[safe_before_idx], result_extents[safe_after_idx]);
+                    llvm::Value* old_stride = result_stride;
+                    llvm::Value* contrib = builder->CreateMul(coord, old_stride);
+                    result_offset = builder->CreateSelect(keep_dim,
+                        builder->CreateAdd(result_offset, contrib), result_offset);
+                    result_stride = builder->CreateSelect(keep_dim,
+                        builder->CreateMul(old_stride, result_extent), old_stride);
                 }
-                builder->CreateStore(new_sum, sum);
+
+                llvm::Value* elem = llvm_utils->CreateLoad2(elem_type,
+                    llvm_utils->create_ptr_gep2(elem_type, array_data, linear_idx));
+                llvm::Value* old_sum = llvm_utils->CreateLoad2(result_elem_type,
+                    llvm_utils->create_ptr_gep2(result_elem_type, result_data, result_offset));
+                llvm::Value* new_sum = create_sum(old_sum, elem, result_elem_type);
+                builder->CreateStore(new_sum,
+                    llvm_utils->create_ptr_gep2(result_elem_type, result_data, result_offset));
                 builder->CreateStore(
-                    builder->CreateAdd(i, llvm::ConstantInt::get(index_type, 1)), idx);
+                    builder->CreateAdd(linear_idx, llvm::ConstantInt::get(index_type, 1)), idx);
             });
 
-            tmp = llvm_utils->CreateLoad2(result_type, sum);
+            tmp = result_handle;
             if (owned_copy) {
                 llvm_utils->lfortran_free_nocheck(owned_copy);
             }
