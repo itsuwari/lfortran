@@ -3481,6 +3481,18 @@ public:
         }
     }
 
+    void generate_Nint(ASR::expr_t* arg, ASR::ttype_t* return_type) {
+        this->visit_expr_wrapper(arg, true);
+        llvm::Value *value = tmp;
+        llvm::Type *value_type = value->getType();
+        if (!value_type->isFloatingPointTy()) {
+            throw CodeGenError("nint() expects a real argument", arg->base.loc);
+        }
+        llvm::Value *rounded = create_unary_fp_intrinsic(llvm::Intrinsic::round, value);
+        tmp = builder->CreateFPToSI(rounded, llvm_utils->getIntType(
+            ASRUtils::extract_kind_from_ttype_t(return_type)));
+    }
+
     void generate_Real(ASR::expr_t* arg, ASR::ttype_t* return_type) {
         this->visit_expr_wrapper(arg, true);
         llvm::Value *value = tmp;
@@ -3857,6 +3869,10 @@ public:
             }
             case ASRUtils::IntrinsicElementalFunctions::Int: {
                 generate_Int(x.m_args[0], x.m_type);
+                break;
+            }
+            case ASRUtils::IntrinsicElementalFunctions::Nint: {
+                generate_Nint(x.m_args[0], x.m_type);
                 break;
             }
             case ASRUtils::IntrinsicElementalFunctions::Real: {
