@@ -4364,6 +4364,77 @@ public:
             }
         };
 
+        auto generate_MinMaxVal = [&](bool is_max) {
+            if (x.m_overload_id != 0) {
+                throw CodeGenError("LLVM array reduction backend only implements the scalar form of `" +
+                    ASRUtils::get_array_intrinsic_name(static_cast<int64_t>(x.m_arr_intrinsic_id)) + "`",
+                    x.base.base.loc);
+            }
+
+            llvm::Value *array_data = nullptr, *num_elements = nullptr, *owned_copy = nullptr;
+            llvm::Type* elem_type = nullptr;
+            get_array_reduction_input(x.m_args[0], array_data, num_elements, elem_type, owned_copy);
+
+            llvm::Type* index_type = arr_descr->get_index_type();
+            llvm::Type* result_type = llvm_utils->get_type_from_ttype_t_util(
+                x.m_args[0], x.m_type, module.get());
+
+            if (!(result_type->isIntegerTy() || result_type->isFloatingPointTy())) {
+                throw CodeGenError("LLVM array reduction backend only implements numeric scalar `" +
+                    ASRUtils::get_array_intrinsic_name(static_cast<int64_t>(x.m_arr_intrinsic_id)) + "`",
+                    x.base.base.loc);
+            }
+
+            llvm::AllocaInst* idx = llvm_utils->CreateAlloca(index_type, nullptr,
+                is_max ? "maxval_idx" : "minval_idx");
+            builder->CreateStore(llvm::ConstantInt::get(index_type, 0), idx);
+
+            llvm::AllocaInst* accum = llvm_utils->CreateAlloca(result_type, nullptr,
+                is_max ? "maxval_accum" : "minval_accum");
+            if (result_type->isIntegerTy()) {
+                unsigned bits = result_type->getIntegerBitWidth();
+                llvm::APInt init(bits, 0, true);
+                if (is_max) {
+                    init = llvm::APInt::getSignedMinValue(bits);
+                } else {
+                    init = llvm::APInt::getSignedMaxValue(bits);
+                }
+                builder->CreateStore(llvm::ConstantInt::get(result_type, init), accum);
+            } else {
+                builder->CreateStore(
+                    llvm::ConstantFP::getInfinity(result_type, is_max),
+                    accum);
+            }
+
+            llvm_utils->create_loop(is_max ? "array_maxval" : "array_minval", [&]() {
+                llvm::Value* i = llvm_utils->CreateLoad2(index_type, idx);
+                return builder->CreateICmpSLT(i, num_elements);
+            }, [&]() {
+                llvm::Value* i = llvm_utils->CreateLoad2(index_type, idx);
+                llvm::Value* elem = llvm_utils->CreateLoad2(elem_type,
+                    llvm_utils->create_ptr_gep2(elem_type, array_data, i));
+                llvm::Value* old_accum = llvm_utils->CreateLoad2(result_type, accum);
+                llvm::Value* should_update = nullptr;
+                if (result_type->isIntegerTy()) {
+                    should_update = is_max
+                        ? builder->CreateICmpSGT(elem, old_accum)
+                        : builder->CreateICmpSLT(elem, old_accum);
+                } else {
+                    should_update = is_max
+                        ? builder->CreateFCmpOGT(elem, old_accum)
+                        : builder->CreateFCmpOLT(elem, old_accum);
+                }
+                builder->CreateStore(builder->CreateSelect(should_update, elem, old_accum), accum);
+                builder->CreateStore(
+                    builder->CreateAdd(i, llvm::ConstantInt::get(index_type, 1)), idx);
+            });
+
+            tmp = llvm_utils->CreateLoad2(result_type, accum);
+            if (owned_copy) {
+                llvm_utils->lfortran_free_nocheck(owned_copy);
+            }
+        };
+
         auto get_array_matmul_input = [&](ASR::expr_t* array_expr,
                 llvm::Value*& array_data, std::vector<llvm::Value*>& extents,
                 llvm::Type*& elem_type, llvm::Value*& owned_copy) {
@@ -4699,6 +4770,14 @@ public:
             }
             case ASRUtils::IntrinsicArrayFunctions::Sum: {
                 generate_Sum();
+                break;
+            }
+            case ASRUtils::IntrinsicArrayFunctions::MaxVal: {
+                generate_MinMaxVal(true);
+                break;
+            }
+            case ASRUtils::IntrinsicArrayFunctions::MinVal: {
+                generate_MinMaxVal(false);
                 break;
             }
             case ASRUtils::IntrinsicArrayFunctions::MatMul: {
