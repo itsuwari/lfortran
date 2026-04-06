@@ -10185,8 +10185,16 @@ public:
 
     llvm::Value* logical_load_val(llvm::Value* ptr, ASR::expr_t* x,
                                   bool is_volatile = false) {
+        ASR::ttype_t* asr_type = ASRUtils::expr_type(x);
+        if (ASRUtils::is_array(asr_type) && !ASRUtils::is_fixed_size_array(asr_type)) {
+            // Descriptor-backed array expressions are already represented by a
+            // reference/descriptor value. Loading them as a concrete LLVM array
+            // object can misclassify them as fixed-size arrays and crash later
+            // in get_type_from_ttype_t_util().
+            return ptr;
+        }
         llvm::Type* t = llvm_utils->get_type_from_ttype_t_util(
-            x, ASRUtils::expr_type(x), module.get());
+            x, asr_type, module.get());
         return llvm_utils->CreateLoad2(t, ptr, is_volatile);
     }
 
