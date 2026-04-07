@@ -4274,6 +4274,10 @@ public:
                 generate_Ior(x.m_args[0], x.m_args[1]);
                 break;
             }
+            case ASRUtils::IntrinsicElementalFunctions::Iand: {
+                generate_Iand(x.m_args[0], x.m_args[1]);
+                break;
+            }
             case ASRUtils::IntrinsicElementalFunctions::Ishft: {
                 generate_Ishft(x.m_args[0], x.m_args[1]);
                 break;
@@ -24775,6 +24779,16 @@ public:
         load_non_array_non_character_pointers(x, ASRUtils::expr_type(x), x_val);
         load_non_array_non_character_pointers(y, ASRUtils::expr_type(y), y_val);
         tmp = builder->CreateOr(x_val, y_val);
+    }
+
+    void generate_Iand(ASR::expr_t* x, ASR::expr_t* y) {
+        this->visit_expr_load_wrapper(x, LLVM::is_llvm_pointer(*expr_type(x)) ? 2 : 1, true);
+        llvm::Value* x_val = tmp;
+        this->visit_expr_load_wrapper(y, LLVM::is_llvm_pointer(*expr_type(y)) ? 2 : 1, true);
+        llvm::Value* y_val = tmp;
+        load_non_array_non_character_pointers(x, ASRUtils::expr_type(x), x_val);
+        load_non_array_non_character_pointers(y, ASRUtils::expr_type(y), y_val);
+        tmp = builder->CreateAnd(x_val, y_val);
     }
 
     void generate_Ishft(ASR::expr_t* x, ASR::expr_t* y) {
