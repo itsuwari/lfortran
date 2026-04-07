@@ -4278,8 +4278,24 @@ public:
                 generate_Iand(x.m_args[0], x.m_args[1]);
                 break;
             }
+            case ASRUtils::IntrinsicElementalFunctions::Ieor: {
+                generate_Ieor(x.m_args[0], x.m_args[1]);
+                break;
+            }
             case ASRUtils::IntrinsicElementalFunctions::Ishft: {
                 generate_Ishft(x.m_args[0], x.m_args[1]);
+                break;
+            }
+            case ASRUtils::IntrinsicElementalFunctions::Shiftr: {
+                generate_Shiftr(x.m_args[0], x.m_args[1]);
+                break;
+            }
+            case ASRUtils::IntrinsicElementalFunctions::Shiftl: {
+                generate_Shiftl(x.m_args[0], x.m_args[1]);
+                break;
+            }
+            case ASRUtils::IntrinsicElementalFunctions::Not: {
+                generate_Not(x.m_args[0]);
                 break;
             }
             case ASRUtils::IntrinsicElementalFunctions::FlipSign: {
@@ -24791,6 +24807,16 @@ public:
         tmp = builder->CreateAnd(x_val, y_val);
     }
 
+    void generate_Ieor(ASR::expr_t* x, ASR::expr_t* y) {
+        this->visit_expr_load_wrapper(x, LLVM::is_llvm_pointer(*expr_type(x)) ? 2 : 1, true);
+        llvm::Value* x_val = tmp;
+        this->visit_expr_load_wrapper(y, LLVM::is_llvm_pointer(*expr_type(y)) ? 2 : 1, true);
+        llvm::Value* y_val = tmp;
+        load_non_array_non_character_pointers(x, ASRUtils::expr_type(x), x_val);
+        load_non_array_non_character_pointers(y, ASRUtils::expr_type(y), y_val);
+        tmp = builder->CreateXor(x_val, y_val);
+    }
+
     void generate_Ishft(ASR::expr_t* x, ASR::expr_t* y) {
         this->visit_expr_load_wrapper(x, LLVM::is_llvm_pointer(*expr_type(x)) ? 2 : 1, true);
         llvm::Value* x_val = tmp;
@@ -24810,6 +24836,45 @@ public:
         llvm::Value* right_shift = builder->CreateLShr(x_val, neg_shift);
         llvm::Value* left_shift = builder->CreateShl(x_val, y_val);
         tmp = builder->CreateSelect(is_right_shift, right_shift, left_shift);
+    }
+
+    void generate_Shiftr(ASR::expr_t* x, ASR::expr_t* y) {
+        this->visit_expr_load_wrapper(x, LLVM::is_llvm_pointer(*expr_type(x)) ? 2 : 1, true);
+        llvm::Value* x_val = tmp;
+        this->visit_expr_load_wrapper(y, LLVM::is_llvm_pointer(*expr_type(y)) ? 2 : 1, true);
+        llvm::Value* y_val = tmp;
+        load_non_array_non_character_pointers(x, ASRUtils::expr_type(x), x_val);
+        load_non_array_non_character_pointers(y, ASRUtils::expr_type(y), y_val);
+
+        llvm::Type* int_type = llvm_utils->get_type_from_ttype_t_util(
+            x, ASRUtils::type_get_past_pointer(ASRUtils::expr_type(x)), module.get());
+        if (y_val->getType() != int_type) {
+            y_val = llvm_utils->convert_kind(y_val, int_type);
+        }
+        tmp = builder->CreateLShr(x_val, y_val);
+    }
+
+    void generate_Shiftl(ASR::expr_t* x, ASR::expr_t* y) {
+        this->visit_expr_load_wrapper(x, LLVM::is_llvm_pointer(*expr_type(x)) ? 2 : 1, true);
+        llvm::Value* x_val = tmp;
+        this->visit_expr_load_wrapper(y, LLVM::is_llvm_pointer(*expr_type(y)) ? 2 : 1, true);
+        llvm::Value* y_val = tmp;
+        load_non_array_non_character_pointers(x, ASRUtils::expr_type(x), x_val);
+        load_non_array_non_character_pointers(y, ASRUtils::expr_type(y), y_val);
+
+        llvm::Type* int_type = llvm_utils->get_type_from_ttype_t_util(
+            x, ASRUtils::type_get_past_pointer(ASRUtils::expr_type(x)), module.get());
+        if (y_val->getType() != int_type) {
+            y_val = llvm_utils->convert_kind(y_val, int_type);
+        }
+        tmp = builder->CreateShl(x_val, y_val);
+    }
+
+    void generate_Not(ASR::expr_t* x) {
+        this->visit_expr_load_wrapper(x, LLVM::is_llvm_pointer(*expr_type(x)) ? 2 : 1, true);
+        llvm::Value* x_val = tmp;
+        load_non_array_non_character_pointers(x, ASRUtils::expr_type(x), x_val);
+        tmp = builder->CreateNot(x_val);
     }
 
     template <typename T>
