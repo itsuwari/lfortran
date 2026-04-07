@@ -1976,7 +1976,8 @@ namespace LCompilers {
             x_type_str + ") != type parameter (" +
             t_type_str + ")");
 #endif
-        return builder->CreateGEP(t, x, idx);
+        llvm::GetElementPtrInst *gep = llvm::GetElementPtrInst::Create(t, x, idx);
+        return builder->Insert(gep);
     }
 
     llvm::Value* LLVMUtils::CreateGEP2(llvm::Type *type,
@@ -2008,7 +2009,9 @@ namespace LCompilers {
             x_type_str + ") != type parameter (" +
             t_type_str + ")");
 #endif
-        return builder->CreateInBoundsGEP(t, x, idx);
+        llvm::GetElementPtrInst *gep = llvm::GetElementPtrInst::Create(t, x, idx);
+        gep->setIsInBounds(true);
+        return builder->Insert(gep);
     }
 
     llvm::Function* LLVMUtils::_Deallocate() {

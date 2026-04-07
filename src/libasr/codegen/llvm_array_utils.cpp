@@ -987,7 +987,7 @@ namespace LCompilers {
                         ASR::down_cast<ASR::StructType_t>(ASRUtils::extract_type(asr_type)), array, idx);
                 } else {
                     if( is_fixed_size ) {
-                        tmp = llvm_utils->create_gep2(type, array, idx);
+                        tmp = llvm_utils->create_ptr_gep2(type, array, idx);
                     } else {
                         tmp = llvm_utils->create_ptr_gep2(type, array, idx);
                     }
