@@ -7097,9 +7097,36 @@ public:
                     ASRUtils::type_get_past_allocatable_pointer(asr_shape_type), module.get());
                 ASR::ttype_t* asr_result_type = ASRUtils::expr_type(
                     const_cast<ASR::expr_t*>(&(x.base)));
+                ASR::ttype_t* result_array_type = ASRUtils::type_get_past_allocatable(
+                    ASRUtils::type_get_past_pointer(asr_result_type));
+                ASR::array_physical_typeType original_result_physical_type =
+                    ASRUtils::extract_physical_type(result_array_type);
+                ASR::array_physical_typeType result_physical_type =
+                    original_result_physical_type;
+                if (result_physical_type == ASR::array_physical_typeType::StringArraySinglePointer) {
+                    if (ASRUtils::is_fixed_size_array(result_array_type)) {
+                        result_physical_type = ASR::array_physical_typeType::FixedSizeArray;
+                    } else {
+                        result_physical_type = ASR::array_physical_typeType::DescriptorArray;
+                    }
+                } else if (result_physical_type == ASR::array_physical_typeType::ISODescriptorArray) {
+                    result_physical_type = ASR::array_physical_typeType::DescriptorArray;
+                } else if (result_physical_type != ASR::array_physical_typeType::DescriptorArray &&
+                           result_physical_type != ASR::array_physical_typeType::AssumedRankArray &&
+                           result_physical_type != ASR::array_physical_typeType::FixedSizeArray &&
+                           result_physical_type != ASR::array_physical_typeType::SIMDArray &&
+                           !ASRUtils::is_fixed_size_array(result_array_type)) {
+                    result_physical_type = ASR::array_physical_typeType::DescriptorArray;
+                }
+                ASR::ttype_t* result_storage_asr_type = result_array_type;
+                if (result_physical_type == ASR::array_physical_typeType::DescriptorArray &&
+                        original_result_physical_type != ASR::array_physical_typeType::DescriptorArray) {
+                    result_storage_asr_type = ASRUtils::duplicate_type(
+                        al, result_array_type, nullptr,
+                        ASR::array_physical_typeType::DescriptorArray, true);
+                }
                 llvm::Type* result_desc_type = llvm_utils->get_type_from_ttype_t_util(
-                    x.m_array, ASRUtils::type_get_past_allocatable_pointer(asr_result_type),
-                    module.get());
+                    x.m_array, result_storage_asr_type, module.get());
                 llvm::Value* order = nullptr;
                 if (x.m_order != nullptr) {
                     this->visit_expr(*x.m_order);
@@ -9666,7 +9693,10 @@ public:
                 ASR::ArrayConstant_t* arr_const = nullptr;
                 ASR::expr_t* value = v->m_value != nullptr ? v->m_value : v->m_symbolic_value;
                 if (value) {
-                    arr_const = ASR::down_cast<ASR::ArrayConstant_t>(ASRUtils::expr_value(value));
+                    ASR::expr_t* value_const = ASRUtils::expr_value(value);
+                    if (value_const && ASR::is_a<ASR::ArrayConstant_t>(*value_const)) {
+                        arr_const = ASR::down_cast<ASR::ArrayConstant_t>(value_const);
+                    }
                 }
                 ptr = llvm_utils->handle_global_nonallocatable_stringArray(
                     al, ASR::down_cast<ASR::Array_t>(v->m_type), arr_const, v->m_name);
