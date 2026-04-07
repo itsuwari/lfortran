@@ -3531,6 +3531,60 @@ public:
         }
     }
 
+    void generate_Log10(ASR::expr_t* m_arg) {
+        this->visit_expr_wrapper(m_arg, true);
+        llvm::Value *item = tmp;
+        llvm::Type *item_type = item->getType();
+        if (item_type == llvm::Type::getFloatTy(context)) {
+            llvm::Function *fn = module->getFunction("_lfortran_slog10");
+            if (!fn) {
+                llvm::FunctionType *function_type = llvm::FunctionType::get(
+                    item_type, {item_type}, false);
+                fn = llvm::Function::Create(function_type,
+                    llvm::Function::ExternalLinkage, "_lfortran_slog10", module.get());
+            }
+            tmp = builder->CreateCall(fn, {item});
+        } else if (item_type == llvm::Type::getDoubleTy(context)) {
+            llvm::Function *fn = module->getFunction("_lfortran_dlog10");
+            if (!fn) {
+                llvm::FunctionType *function_type = llvm::FunctionType::get(
+                    item_type, {item_type}, false);
+                fn = llvm::Function::Create(function_type,
+                    llvm::Function::ExternalLinkage, "_lfortran_dlog10", module.get());
+            }
+            tmp = builder->CreateCall(fn, {item});
+        } else {
+            throw CodeGenError("log10() expects real arguments", m_arg->base.loc);
+        }
+    }
+
+    void generate_LogGamma(ASR::expr_t* m_arg) {
+        this->visit_expr_wrapper(m_arg, true);
+        llvm::Value *item = tmp;
+        llvm::Type *item_type = item->getType();
+        if (item_type == llvm::Type::getFloatTy(context)) {
+            llvm::Function *fn = module->getFunction("_lfortran_slog_gamma");
+            if (!fn) {
+                llvm::FunctionType *function_type = llvm::FunctionType::get(
+                    item_type, {item_type}, false);
+                fn = llvm::Function::Create(function_type,
+                    llvm::Function::ExternalLinkage, "_lfortran_slog_gamma", module.get());
+            }
+            tmp = builder->CreateCall(fn, {item});
+        } else if (item_type == llvm::Type::getDoubleTy(context)) {
+            llvm::Function *fn = module->getFunction("_lfortran_dlog_gamma");
+            if (!fn) {
+                llvm::FunctionType *function_type = llvm::FunctionType::get(
+                    item_type, {item_type}, false);
+                fn = llvm::Function::Create(function_type,
+                    llvm::Function::ExternalLinkage, "_lfortran_dlog_gamma", module.get());
+            }
+            tmp = builder->CreateCall(fn, {item});
+        } else {
+            throw CodeGenError("log_gamma() expects real arguments", m_arg->base.loc);
+        }
+    }
+
     void generate_Erf(ASR::expr_t* m_arg) {
         this->visit_expr_wrapper(m_arg, true);
         llvm::Value *item = tmp;
@@ -4154,6 +4208,14 @@ public:
             }
             case ASRUtils::IntrinsicElementalFunctions::Log: {
                 generate_Log(x.m_args[0]);
+                break;
+            }
+            case ASRUtils::IntrinsicElementalFunctions::Log10: {
+                generate_Log10(x.m_args[0]);
+                break;
+            }
+            case ASRUtils::IntrinsicElementalFunctions::LogGamma: {
+                generate_LogGamma(x.m_args[0]);
                 break;
             }
             case ASRUtils::IntrinsicElementalFunctions::Erf: {
