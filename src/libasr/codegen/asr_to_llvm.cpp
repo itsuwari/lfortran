@@ -3665,6 +3665,14 @@ public:
 
         llvm::Type* result_type = llvm_utils->get_type_from_ttype_t_util(
             tsource_arg, ASRUtils::extract_type(return_type_asr), module.get());
+        auto coerce_merge_value = [&](llvm::Value* source_value) -> llvm::Value* {
+            if (source_value->getType() == result_type->getPointerTo()) {
+                return llvm_utils->CreateLoad2(result_type, source_value);
+            }
+            return source_value;
+        };
+        tsource = coerce_merge_value(tsource);
+        fsource = coerce_merge_value(fsource);
         auto coerce_merge_string = [&](ASR::expr_t* source_arg,
                                        llvm::Value* source_value,
                                        const char* side_name) -> llvm::Value* {
