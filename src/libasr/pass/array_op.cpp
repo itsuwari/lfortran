@@ -1143,12 +1143,18 @@ class ArrayOpVisitor: public ASR::CallReplacerOnExpressionsVisitor<ArrayOpVisito
 
     void insert_realloc_for_target(ASR::expr_t* target, ASR::expr_t* value, Vec<ASR::expr_t**>& vars, bool per_assign_realloc = false) {
         ASR::ttype_t* target_type = ASRUtils::expr_type(target);
+        bool target_is_allocatable = ASRUtils::is_allocatable(target_type);
         bool array_copy = ASR::is_a<ASR::Var_t>(*value) && ASR::is_a<ASR::Var_t>(*target);
         if (!realloc_lhs && !per_assign_realloc) {
             return;
         }
-        if( (!ASRUtils::is_allocatable(target_type) || vars.size() == 1) &&
-            !(array_copy && ASRUtils::is_allocatable(target_type)) ) {
+        if( !target_is_allocatable && vars.size() == 1 ) {
+            return ;
+        }
+        if( target_is_allocatable && !per_assign_realloc && !(realloc_lhs || array_copy) ) {
+            return ;
+        }
+        if( !target_is_allocatable && !array_copy && vars.size() == 0 ) {
             return ;
         }
 
@@ -1452,6 +1458,15 @@ class ArrayOpVisitor: public ASR::CallReplacerOnExpressionsVisitor<ArrayOpVisito
                 ASR::down_cast<ASR::ArrayItem_t>(expr)))
         if( ( is_array_indexed_with_array_indices_check(xx.m_value) ) ||
             ( is_array_indexed_with_array_indices_check(xx.m_target) ) ) {
+            if (ASRUtils::is_array(ASRUtils::expr_type(xx.m_value))) {
+                bool per_assign_realloc = xx.m_realloc_lhs ||
+                    ASRUtils::is_allocatable(ASRUtils::expr_type(xx.m_target)) ||
+                    should_auto_realloc_component_assignment(xx.m_target);
+                Vec<ASR::expr_t**> realloc_vars;
+                realloc_vars.reserve(al, 1);
+                realloc_vars.push_back(al, const_cast<ASR::expr_t**>(&(xx.m_value)));
+                insert_realloc_for_target(xx.m_target, xx.m_value, realloc_vars, per_assign_realloc);
+            }
             generate_loop_for_array_indexed_with_array_indices(
                 x, &(xx.m_target), &(xx.m_value), loc);
             return ;
@@ -1519,6 +1534,7 @@ class ArrayOpVisitor: public ASR::CallReplacerOnExpressionsVisitor<ArrayOpVisito
 
         if (ASRUtils::is_array(ASRUtils::expr_type(xx.m_value))) {
             bool per_assign_realloc = xx.m_realloc_lhs ||
+                ASRUtils::is_allocatable(ASRUtils::expr_type(xx.m_target)) ||
                 should_auto_realloc_component_assignment(xx.m_target);
             insert_realloc_for_target(xx.m_target, xx.m_value, vars, per_assign_realloc);
         }

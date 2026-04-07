@@ -4032,6 +4032,32 @@ ASR::expr_t* get_expr_size_expr(ASR::expr_t* x, bool inside_binop /* = false*/) 
         return x;
     }
 
+    if (ASR::is_a<ASR::ArrayItem_t>(*x)) {
+        ASR::ArrayItem_t* item = ASR::down_cast<ASR::ArrayItem_t>(x);
+        if (ASRUtils::is_array(ASRUtils::expr_type(x))) {
+            for (size_t i = 0; i < item->n_args; i++) {
+                if (item->m_args[i].m_right != nullptr &&
+                    ASRUtils::is_array(ASRUtils::expr_type(item->m_args[i].m_right))) {
+                    return get_expr_size_expr(item->m_args[i].m_right);
+                }
+            }
+            return x;
+        }
+    }
+
+    if (ASR::is_a<ASR::ArraySection_t>(*x)) {
+        ASR::ArraySection_t* section = ASR::down_cast<ASR::ArraySection_t>(x);
+        if (ASRUtils::is_array(ASRUtils::expr_type(x))) {
+            for (size_t i = 0; i < section->n_args; i++) {
+                if (section->m_args[i].m_right != nullptr &&
+                    ASRUtils::is_array(ASRUtils::expr_type(section->m_args[i].m_right))) {
+                    return get_expr_size_expr(section->m_args[i].m_right);
+                }
+            }
+            return x;
+        }
+    }
+
     if (ASR::is_a<ASR::IntegerBinOp_t>(*x)) {
         return get_binop_size_var<ASR::IntegerBinOp_t>(x);
     } else if (ASR::is_a<ASR::RealBinOp_t>(*x)) {

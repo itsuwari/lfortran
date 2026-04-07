@@ -7029,7 +7029,9 @@ public:
                     )
                 );
                 if (is_fixed_size) {
-                    type = llvm_utils->get_type_from_ttype_t_util(x.m_v, x_mv_type, module.get());
+                    // Fixed-size arrays are addressable storage. Array indexing needs
+                    // pointer arithmetic in element units, not in whole-array units.
+                    type = llvm_utils->get_el_type(x.m_v, ASRUtils::extract_type(x_mv_type), module.get());
                 } else {
                     // Use the array element *storage* type (e.g. logical arrays are i8-backed).
                     type = llvm_utils->get_el_type(x.m_v, ASRUtils::extract_type(x_mv_type), module.get());
@@ -17293,9 +17295,13 @@ public:
         }
         // Create a pointer <n x float>* to a stack allocated <n x float>
         llvm::AllocaInst *p_fxn = llvm_utils->CreateAlloca(*builder, type_fxn);
+        // Materialize a stable element pointer first, then index from it.
+        // Indexing the alloca directly as [N x T]* can step by whole arrays.
+        llvm::Value *array_data = llvm_utils->create_gep2(type_fxn, p_fxn, 0);
         // Assign the array elements to `p_fxn`.
         for (size_t i=0; i < x.n_args; i++) {
-            llvm::Value *llvm_el = llvm_utils->create_gep2(type_fxn, p_fxn, i);
+            llvm::Value *llvm_el = llvm_utils->create_ptr_gep2(
+                el_type, array_data, static_cast<int>(i));
             ASR::expr_t *el = x.m_args[i];
             int64_t ptr_loads_copy = ptr_loads;
             ptr_loads = 2;
@@ -17307,7 +17313,7 @@ public:
             builder->CreateStore(tmp, llvm_el);
         }
         // Return the vector as float* type:
-        tmp = llvm_utils->create_gep2(type_fxn ,p_fxn, 0);
+        tmp = array_data;
     }
 
     void visit_ArrayConstantUtil(const ASR::ArrayConstant_t &x) {
