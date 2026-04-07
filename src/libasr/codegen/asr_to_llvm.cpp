@@ -1481,6 +1481,12 @@ public:
                     llvm::Function::ExternalLinkage, runtime_func_name, module.get());
         }
         llvm::Value* allocator = llvm_utils->get_allocator(module.get());
+        if (str->getType() != llvm::Type::getInt8Ty(context)) {
+            if (!str->getType()->isIntegerTy()) {
+                throw LCompilersException("char()/achar() expects integer argument");
+            }
+            str = builder->CreateIntCast(str, llvm::Type::getInt8Ty(context), false);
+        }
         return builder->CreateCall(fn, {allocator, str});
     }
 
