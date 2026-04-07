@@ -5123,7 +5123,7 @@ public:
                     stride = builder->CreateMul(stride, result_extents[dim]);
                 }
 
-                llvm::AllocaInst* result_desc_data = llvm_utils->CreateAlloca(
+                llvm::AllocaInst* result_desc_data = llvm_utils->CreateAlloca(*builder,
                     result_elem_type, result_size, "sum_dim_data");
                 builder->CreateStore(result_desc_data,
                     arr_descr->get_pointer_to_data(result_storage_type, result_desc));
@@ -6075,7 +6075,7 @@ public:
                 builder->CreateStore(dim_n,
                     arr_descr->get_stride(result_dim1, false));
 
-                llvm::AllocaInst* result_desc_data = llvm_utils->CreateAlloca(
+                llvm::AllocaInst* result_desc_data = llvm_utils->CreateAlloca(*builder,
                     result_elem_type, result_size, "transpose_data");
                 builder->CreateStore(result_desc_data,
                     arr_descr->get_pointer_to_data(result_storage_type, result_desc));
@@ -6243,7 +6243,7 @@ public:
                     stride = builder->CreateMul(stride, result_extents[dim]);
                 }
 
-                llvm::AllocaInst* result_desc_data = llvm_utils->CreateAlloca(
+                llvm::AllocaInst* result_desc_data = llvm_utils->CreateAlloca(*builder,
                     result_elem_type, result_size, "spread_data");
                 builder->CreateStore(result_desc_data,
                     arr_descr->get_pointer_to_data(result_storage_type, result_desc));
@@ -6435,7 +6435,7 @@ public:
                         arr_descr->get_dimension_size(result_dim0, false));
                 }
 
-                llvm::AllocaInst* result_desc_data = llvm_utils->CreateAlloca(result_elem_type, result_size, "matmul_data");
+                llvm::AllocaInst* result_desc_data = llvm_utils->CreateAlloca(*builder, result_elem_type, result_size, "matmul_data");
                 builder->CreateStore(result_desc_data, arr_descr->get_pointer_to_data(result_desc_type, result_desc));
                 llvm::DataLayout data_layout(module->getDataLayout());
                 uint64_t elem_size = data_layout.getTypeAllocSize(result_elem_type);
