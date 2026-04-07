@@ -145,6 +145,47 @@ namespace LCompilers::CommandLineInterface {
         parser.app.require_subcommand(0, 1);
     }
 
+    static void extract_framework_flags(const char *const *argv, int argc,
+                                        const std::vector<std::string> &args,
+                                        std::vector<std::string> &filtered_args,
+                                        std::vector<std::string> &linker_flags) {
+        auto push_framework = [&](const std::string &framework_name) {
+            linker_flags.push_back("l,-framework," + framework_name);
+        };
+
+        if (argv != nullptr) {
+            filtered_args.reserve(argc);
+            for (int i = 0; i < argc; ++i) {
+                std::string arg = argv[i];
+                if (i > 0 && arg == "-framework") {
+                    if (i + 1 >= argc) {
+                        throw lc::LCompilersException(
+                            "The flag `-framework` requires an argument");
+                    }
+                    push_framework(argv[i + 1]);
+                    ++i;
+                    continue;
+                }
+                filtered_args.push_back(arg);
+            }
+        } else {
+            filtered_args.reserve(args.size());
+            for (size_t i = 0; i < args.size(); ++i) {
+                const std::string &arg = args[i];
+                if (arg == "-framework") {
+                    if (i + 1 >= args.size()) {
+                        throw lc::LCompilersException(
+                            "The flag `-framework` requires an argument");
+                    }
+                    push_framework(args[i + 1]);
+                    ++i;
+                    continue;
+                }
+                filtered_args.push_back(arg);
+            }
+        }
+    }
+
     static bool try_fast_compile_only_parse(int argc, const char *const *argv,
                                             LFortranCommandLineParser &parser) {
         if (argv == nullptr || argc <= 1) {
@@ -386,10 +427,18 @@ namespace LCompilers::CommandLineInterface {
             handle_help_category(app, help_arg);
         }
 
+        std::vector<std::string> filtered_args;
+        extract_framework_flags(argv, argc, args, filtered_args, opts.linker_flags);
+
         if (argv != nullptr) {
-            app.parse(argc, argv);
+            std::vector<const char*> filtered_argv;
+            filtered_argv.reserve(filtered_args.size());
+            for (const std::string &arg : filtered_args) {
+                filtered_argv.push_back(arg.c_str());
+            }
+            app.parse(static_cast<int>(filtered_argv.size()), filtered_argv.data());
         } else {
-            app.parse(args);
+            app.parse(filtered_args);
         }
 
         if (opts.disable_style_suggestions) {

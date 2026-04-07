@@ -250,7 +250,7 @@ LLVMEvaluator::LLVMEvaluator(const std::string &t)
 #else
         target_triple,
 #endif
-        CPU, features, opt, RM);
+        CPU, features, opt, RM, std::nullopt, llvm::CodeGenOptLevel::None);
 #else
     // LLVM 7: Use EngineBuilder with setRelocationModel to avoid ABI issues
     // with Optional parameters while still specifying PIC relocation model

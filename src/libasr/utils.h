@@ -69,7 +69,7 @@ struct PassOptions {
     bool gpu_offload_metal = false;
     bool time_report = false;
     bool skip_removal_of_unused_procedures_in_pass_array_by_data = false;
-    bool bounds_checking = true;
+    bool bounds_checking = false;
     bool strict_bounds_checking = false;
     bool descriptor_index_64 = false; // Use 64-bit indices in array descriptors
     std::vector<std::string> vector_of_time_report;
@@ -126,7 +126,7 @@ struct CompilerOptions {
     bool show_style_suggestions = true;
     bool logical_casting = false;
     bool show_error_banner = true;
-    bool bounds_checking = true;
+    bool bounds_checking = false;
     std::string error_format = "human";
     bool new_parser = false;
     bool implicit_typing = false;
