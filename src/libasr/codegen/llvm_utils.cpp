@@ -2306,6 +2306,11 @@ namespace LCompilers {
         switch (str_type->m_physical_type)
         {
             case ASR::DescriptorString:{
+                if (str->getType() == string_descriptor) {
+                    llvm::Value* desc_tmp = CreateAlloca(string_descriptor, nullptr, "string_desc_tmp");
+                    builder->CreateStore(str, desc_tmp);
+                    str = desc_tmp;
+                }
                 ptr_to_data = create_gep2(string_descriptor, str, 0);
                 break;
             }
@@ -2337,6 +2342,11 @@ namespace LCompilers {
             switch (str_type->m_physical_type)
             {
                 case ASR::DescriptorString:{
+                    if (str->getType() == string_descriptor) {
+                        llvm::Value* desc_tmp = CreateAlloca(string_descriptor, nullptr, "string_desc_tmp");
+                        builder->CreateStore(str, desc_tmp);
+                        str = desc_tmp;
+                    }
                     llvm::Value* ptr_to_len = create_gep2(string_descriptor, str, 1);
                     if(get_pointer_to_len){
                         return ptr_to_len;

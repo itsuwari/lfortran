@@ -943,9 +943,7 @@ public:
                         // Accessing Non-array string or non-empty ArrayItem
                         visit_expr_load_wrapper(str_expr, 0);
                         LCOMPILERS_ASSERT(llvm_utils->is_proper_string_llvm_variable(str, tmp))
-                        return builder->CreateLoad(
-                            llvm::Type::getInt64Ty(context),
-                            llvm_utils->create_gep2(string_descriptor, tmp, 1));
+                        return llvm_utils->get_string_length(str, tmp);
                     }
                 }
             }
@@ -971,9 +969,7 @@ public:
         switch (str->m_physical_type)
         {
             case ASR::DescriptorString:{
-                return builder->CreateLoad(
-                    character_type,
-                    llvm_utils->create_gep2(string_descriptor, tmp, 0));
+                return llvm_utils->get_string_data(str, tmp);
             }
             case ASR::CChar:{
                 llvm::Value* char_ptr = builder->CreateAlloca(llvm::Type::getInt8Ty(context));
