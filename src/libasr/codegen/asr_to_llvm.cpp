@@ -3665,8 +3665,38 @@ public:
 
         llvm::Type* result_type = llvm_utils->get_type_from_ttype_t_util(
             tsource_arg, ASRUtils::extract_type(return_type_asr), module.get());
+        auto coerce_merge_string = [&](ASR::expr_t* source_arg,
+                                       llvm::Value* source_value,
+                                       const char* side_name) -> llvm::Value* {
+            if (source_value->getType() == result_type) {
+                return source_value;
+            }
+            ASR::String_t* source_type = ASRUtils::get_string_type(source_arg);
+            if (result_type == llvm_utils->string_descriptor) {
+                if (source_value->getType() == result_type->getPointerTo()) {
+                    return llvm_utils->CreateLoad2(result_type, source_value);
+                }
+                if (source_value->getType() == llvm_utils->character_type) {
+                    llvm::Value* string_len = llvm_utils->get_string_length(source_type, source_value);
+                    llvm::Value* string_view = llvm_utils->create_stringView(
+                        source_type, source_value, string_len, "merge.string");
+                    return llvm_utils->CreateLoad2(result_type, string_view);
+                }
+            }
+            if (result_type == llvm::Type::getInt8Ty(context)) {
+                llvm::Value* string_data = llvm_utils->get_string_data(source_type, source_value);
+                return llvm_utils->CreateLoad2(result_type, string_data);
+            }
+            if (result_type == llvm_utils->character_type) {
+                return llvm_utils->get_string_data(source_type, source_value);
+            }
+            throw CodeGenError(std::string("merge() ") + side_name +
+                "-source type does not match the return type", source_arg->base.loc);
+        };
         if (tsource->getType() != result_type) {
-            if (tsource->getType()->isIntegerTy() && result_type->isIntegerTy()) {
+            if (ASRUtils::is_character(*ASRUtils::extract_type(ASRUtils::expr_type(tsource_arg)))) {
+                tsource = coerce_merge_string(tsource_arg, tsource, "true");
+            } else if (tsource->getType()->isIntegerTy() && result_type->isIntegerTy()) {
                 tsource = builder->CreateIntCast(tsource, result_type, true);
             } else if (tsource->getType()->isFloatingPointTy() && result_type->isFloatingPointTy()) {
                 tsource = builder->CreateFPCast(tsource, result_type);
@@ -3676,7 +3706,9 @@ public:
             }
         }
         if (fsource->getType() != result_type) {
-            if (fsource->getType()->isIntegerTy() && result_type->isIntegerTy()) {
+            if (ASRUtils::is_character(*ASRUtils::extract_type(ASRUtils::expr_type(fsource_arg)))) {
+                fsource = coerce_merge_string(fsource_arg, fsource, "false");
+            } else if (fsource->getType()->isIntegerTy() && result_type->isIntegerTy()) {
                 fsource = builder->CreateIntCast(fsource, result_type, true);
             } else if (fsource->getType()->isFloatingPointTy() && result_type->isFloatingPointTy()) {
                 fsource = builder->CreateFPCast(fsource, result_type);

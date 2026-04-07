@@ -854,8 +854,16 @@ class ASRToLLVMVisitor;
                 if (cond->getType()->isIntegerTy(1)) {
                     return cond;
                 }
-                return builder->CreateICmpNE(
-                    cond, llvm::ConstantInt::get(cond->getType(), 0));
+                if (cond->getType()->isIntOrIntVectorTy() ||
+                    cond->getType()->isPtrOrPtrVectorTy()) {
+                    return builder->CreateICmpNE(
+                        cond, llvm::Constant::getNullValue(cond->getType()));
+                }
+                if (cond->getType()->isFPOrFPVectorTy()) {
+                    return builder->CreateFCmpONE(
+                        cond, llvm::Constant::getNullValue(cond->getType()));
+                }
+                throw LCompilersException("Unsupported LLVM condition type in to_i1()");
             }
 
             template <typename IF, typename ELSE>
