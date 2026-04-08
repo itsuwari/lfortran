@@ -443,7 +443,15 @@ public:
             "StructMethodDeclaration::m_parent_symtab must be present in the ASR ("
                 + std::string(x.m_name) + ")");
 
-        ASR::Function_t* x_m_proc = ASR::down_cast<ASR::Function_t>(x.m_proc);
+        if (!check_external) {
+            return;
+        }
+
+        ASR::symbol_t *x_m_proc_sym = ASRUtils::symbol_get_past_external(x.m_proc);
+        require(x_m_proc_sym != nullptr &&
+                ASR::is_a<ASR::Function_t>(*x_m_proc_sym),
+            "StructMethodDeclaration::m_proc must resolve to a Function");
+        ASR::Function_t* x_m_proc = ASR::down_cast<ASR::Function_t>(x_m_proc_sym);
         if( x.m_self_argument ) {
             bool arg_found = false;
             std::string self_arg_name = std::string(x.m_self_argument);
@@ -461,6 +469,8 @@ public:
     }
 
     void visit_Function(const Function_t &x) {
+        std::string current_name_copy = current_name;
+        current_name = x.m_name;
         std::vector<std::string> function_dependencies_copy = function_dependencies;
         function_dependencies.clear();
         function_dependencies.reserve(x.n_dependencies);
@@ -538,6 +548,7 @@ public:
         visit_ttype(*x.m_function_signature);
         current_symtab = parent_symtab;
         function_dependencies = function_dependencies_copy;
+        current_name = current_name_copy;
     }
 
     void visit_GpuKernelFunction(const GpuKernelFunction_t &x) {
@@ -856,8 +867,14 @@ public:
         if (check_external) {
             require(x.m_external != nullptr,
                 "ExternalSymbol::m_external cannot be nullptr");
+            if (is_a<ExternalSymbol_t>(*x.m_external)) {
+                std::cerr << "Nested ExternalSymbol: local=" << x.m_name
+                          << " external=" << symbol_name(x.m_external) << "\n";
+            }
             require(!is_a<ExternalSymbol_t>(*x.m_external),
-                "ExternalSymbol::m_external cannot be an ExternalSymbol");
+                "ExternalSymbol::m_external cannot be an ExternalSymbol: local='"
+                + std::string(x.m_name) + "' external='"
+                + std::string(symbol_name(x.m_external)) + "'");
             char *orig_name = symbol_name(x.m_external);
             require(std::string(x.m_original_name) == std::string(orig_name),
                 "ExternalSymbol::m_original_name must match external->m_name");
@@ -1151,8 +1168,10 @@ public:
             require(is_method,
                 "StructMethodDeclaration '" + std::string(method->m_name) +
                 "' called without dt (not as a method).");
-            if (method->m_proc && ASR::is_a<ASR::Function_t>(*method->m_proc)) {
-                func = ASR::down_cast<ASR::Function_t>(method->m_proc);
+            if (method->m_proc &&
+                    ASR::is_a<ASR::Function_t>(*ASRUtils::symbol_get_past_external(method->m_proc))) {
+                func = ASR::down_cast<ASR::Function_t>(
+                    ASRUtils::symbol_get_past_external(method->m_proc));
                 nopass = method->m_is_nopass;
             }
         } else if (func_sym && ASR::is_a<ASR::Function_t>(*func_sym)) {

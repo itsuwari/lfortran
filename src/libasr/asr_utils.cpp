@@ -3134,12 +3134,14 @@ ASR::symbol_t* import_class_procedure(Allocator &al, const Location& loc,
     if (original_sym && ASR::is_a<ASR::ExternalSymbol_t>(*original_sym)) {
         ASR::symbol_t* original_sym_past_ext = ASRUtils::symbol_get_past_external(original_sym);
         if (ASR::is_a<ASR::StructMethodDeclaration_t>(*original_sym_past_ext) ||
+            ASR::is_a<ASR::Function_t>(*original_sym_past_ext) ||
             (ASR::is_a<ASR::Variable_t>(*original_sym_past_ext) &&
              ASR::is_a<ASR::FunctionType_t>(*ASRUtils::type_get_past_pointer(ASRUtils::symbol_type(original_sym_past_ext))))) {
             original_sym = original_sym_past_ext;
         }
     }
     if( original_sym && (ASR::is_a<ASR::StructMethodDeclaration_t>(*original_sym) ||
+        ASR::is_a<ASR::Function_t>(*original_sym) ||
         (ASR::is_a<ASR::Variable_t>(*original_sym) &&
          ASR::is_a<ASR::FunctionType_t>(*ASRUtils::type_get_past_pointer(ASRUtils::symbol_type(original_sym))))) ) {
         std::string class_proc_name;
@@ -3846,19 +3848,55 @@ ASR::asr_t* make_ArraySize_t_util(
             LCOMPILERS_ASSERT(!ASRUtils::is_allocatable(array_item_t->m_type) &&
                               !ASRUtils::is_pointer(array_item_t->m_type));
         }
+        ASR::dimension_t* item_dims = nullptr;
+        size_t item_n_dims = ASRUtils::extract_dimensions_from_ttype(
+            array_item_t->m_type, item_dims);
+        if (item_n_dims > 0) {
+            if (a_dim == nullptr) {
+                ASR::asr_t* size = ASR::make_IntegerConstant_t(al, a_loc, 1, a_type);
+                for (size_t i = 0; i < item_n_dims; i++) {
+                    if (item_dims[i].m_length == nullptr) {
+                        return ASR::make_ArraySize_t(al, a_loc, a_v, a_dim, a_type, a_value);
+                    }
+                    size = ASR::make_IntegerBinOp_t(al, a_loc, ASRUtils::EXPR(size),
+                        ASR::binopType::Mul, item_dims[i].m_length, a_type, nullptr);
+                }
+                return size;
+            } else if (is_dimension_constant) {
+                if (dim < 0 || static_cast<size_t>(dim) >= item_n_dims) {
+                    return ASR::make_IntegerConstant_t(al, a_loc, 1, a_type);
+                }
+                if (item_dims[dim].m_length != nullptr) {
+                    return &(item_dims[dim].m_length->base);
+                }
+                return ASR::make_ArraySize_t(al, a_loc, a_v, a_dim, a_type, a_value);
+            }
+        }
         if( a_dim == nullptr ) {
             ASR::asr_t* const1 = ASR::make_IntegerConstant_t(al, a_loc, 1, a_type);
             ASR::asr_t* size = const1;
             for( size_t i = 0; i < array_item_t->n_args; i++ ) {
+                ASR::expr_t* idx_expr = array_item_t->m_args[i].m_right;
+                ASR::ttype_t* idx_type = idx_expr ? ASRUtils::expr_type(idx_expr) : nullptr;
+                if (idx_expr == nullptr || idx_type == nullptr ||
+                    !ASRUtils::is_array(idx_type)) {
+                    continue;
+                }
                 ASR::expr_t* end = ASRUtils::EXPR(make_ArraySize_t_util(al, a_loc,
-                    array_item_t->m_args[i].m_right, a_dim, a_type, nullptr, for_type));
+                    idx_expr, a_dim, a_type, nullptr, for_type));
                 size = ASR::make_IntegerBinOp_t(al, a_loc, ASRUtils::EXPR(size),
                     ASR::binopType::Mul, end, a_type, nullptr);
             }
             return size;
         } else if( is_dimension_constant ) {
+            ASR::expr_t* idx_expr = array_item_t->m_args[dim].m_right;
+            ASR::ttype_t* idx_type = idx_expr ? ASRUtils::expr_type(idx_expr) : nullptr;
+            if (idx_expr == nullptr || idx_type == nullptr ||
+                !ASRUtils::is_array(idx_type)) {
+                return ASR::make_IntegerConstant_t(al, a_loc, 1, a_type);
+            }
             return make_ArraySize_t_util(al, a_loc,
-                array_item_t->m_args[dim].m_right,
+                idx_expr,
                 nullptr, a_type, nullptr, for_type);
         }
     }
@@ -3879,16 +3917,36 @@ ASR::asr_t* make_ArraySize_t_util(
     } else {
         ASR::dimension_t* m_dims = nullptr;
         size_t n_dims = 0;
-        if (array_func_type != nullptr) n_dims = ASRUtils::extract_dimensions_from_ttype(array_func_type, m_dims);
-        else n_dims = ASRUtils::extract_dimensions_from_ttype(ASRUtils::expr_type(a_v), m_dims);
+        ASR::ttype_t* size_type = array_func_type;
+        if (size_type == nullptr) {
+            size_type = ASRUtils::expr_type(a_v);
+            if (size_type == nullptr && a_v != nullptr) {
+                if (ASR::is_a<ASR::Var_t>(*a_v)) {
+                    size_type = ASRUtils::symbol_type(
+                        ASR::down_cast<ASR::Var_t>(a_v)->m_v);
+                } else if (ASR::is_a<ASR::StructInstanceMember_t>(*a_v)) {
+                    size_type = ASRUtils::symbol_type(
+                        ASR::down_cast<ASR::StructInstanceMember_t>(a_v)->m_m);
+                } else if (ASR::is_a<ASR::UnionInstanceMember_t>(*a_v)) {
+                    size_type = ASRUtils::symbol_type(
+                        ASR::down_cast<ASR::UnionInstanceMember_t>(a_v)->m_m);
+                }
+            }
+        }
+        if (size_type == nullptr) {
+            if (a_v != nullptr && ASR::is_a<ASR::StructConstant_t>(*a_v)) {
+                return ASR::make_IntegerConstant_t(al, a_loc, 1, a_type);
+            }
+            return nullptr;
+        }
+        n_dims = ASRUtils::extract_dimensions_from_ttype(size_type, m_dims);
         bool is_dimension_dependent_only_on_arguments_ = is_dimension_dependent_only_on_arguments(m_dims, n_dims);
 
         bool compute_size = (is_dimension_dependent_only_on_arguments_ &&
             (is_dimension_constant || a_dim == nullptr));
         if( compute_size && for_type ) {
             ASR::dimension_t* m_dims = nullptr;
-            if (array_func_type != nullptr) n_dims = ASRUtils::extract_dimensions_from_ttype(array_func_type, m_dims);
-            else n_dims = ASRUtils::extract_dimensions_from_ttype(ASRUtils::expr_type(a_v), m_dims);
+            n_dims = ASRUtils::extract_dimensions_from_ttype(size_type, m_dims);
             if( a_dim == nullptr ) {
                 ASR::asr_t* size = ASR::make_IntegerConstant_t(al, a_loc, 1, a_type);
                 for( size_t i = 0; i < n_dims; i++ ) {

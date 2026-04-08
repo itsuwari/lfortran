@@ -3393,28 +3393,43 @@ public:
                     ASR::GenericProcedure_t *gp
                         = ASR::down_cast<ASR::GenericProcedure_t>(sym);
                     for (size_t i=0; i < gp->n_procs; i++) {
-                        ASR::symbol_t *s = current_scope->get_symbol(
-                            ASRUtils::symbol_name(gp->m_procs[i]));
-                        if (s != nullptr) {
-                            // Append all the module procedure's in the scope
-                            symbols.push_back(al, s);
+                        ASR::symbol_t *proc_sym = gp->m_procs[i];
+                        ASR::symbol_t *s = nullptr;
+                        if (ASRUtils::symbol_parent_symtab(proc_sym) == current_scope) {
+                            s = proc_sym;
+                        } else if (ASR::is_a<ASR::StructMethodDeclaration_t>(
+                                       *ASRUtils::symbol_get_past_external(proc_sym))) {
+                            s = ASRUtils::import_class_procedure(
+                                al, proc_sym->base.loc,
+                                ASRUtils::symbol_get_past_external(proc_sym), current_scope);
                         } else {
-                            // If not available, import it from the module
-                            // Create an ExternalSymbol using it
-                            ASR::Module_t *m = ASRUtils::get_sym_module(sym);
-                            s = m->m_symtab->get_symbol(
-                                ASRUtils::symbol_name(gp->m_procs[i]));
-                            if (ASR::is_a<ASR::Function_t>(*s)) {
-                                ASR::Function_t *fn = ASR::down_cast<ASR::Function_t>(s);
-                                ASR::symbol_t *ep_s = (ASR::symbol_t *)
-                                    ASR::make_ExternalSymbol_t(
-                                        al, fn->base.base.loc, current_scope,
-                                        fn->m_name, s, m->m_name, nullptr, 0,
-                                        fn->m_name, dflt_access);
-                                current_scope->add_symbol(fn->m_name, ep_s);
-                                // Append the ExternalSymbol
-                                symbols.push_back(al, ep_s);
+                            ASR::symbol_t *proc_unwrapped =
+                                ASRUtils::symbol_get_past_external(proc_sym);
+                            ASR::symbol_t *owner =
+                                ASRUtils::get_asr_owner(proc_unwrapped);
+                            while (owner != nullptr &&
+                                   !ASR::is_a<ASR::Module_t>(*owner)) {
+                                owner = ASRUtils::get_asr_owner(owner);
                             }
+                            if (owner != nullptr) {
+                                std::string local_name =
+                                    std::string(ASRUtils::symbol_name(owner))
+                                    + "@" + ASRUtils::symbol_name(proc_unwrapped);
+                                s = current_scope->get_symbol(local_name);
+                                if (s == nullptr) {
+                                    s = ASR::down_cast<ASR::symbol_t>(
+                                        ASR::make_ExternalSymbol_t(
+                                            al, proc_sym->base.loc, current_scope,
+                                            s2c(al, local_name), proc_unwrapped,
+                                            ASRUtils::symbol_name(owner), nullptr, 0,
+                                            ASRUtils::symbol_name(proc_unwrapped),
+                                            dflt_access));
+                                    current_scope->add_symbol(local_name, s);
+                                }
+                            }
+                        }
+                        if (s != nullptr) {
+                            symbols.push_back(al, s);
                         }
                     }
                 }
@@ -3528,6 +3543,36 @@ public:
         return nullptr;
     }
 
+    ASR::GenericProcedure_t* resolve_type_bound_generic_in_parent_chain(
+            ASR::Struct_t *clss, const std::string &generic_name) {
+        ASR::Struct_t *curr = clss;
+        if (curr != nullptr && curr->m_parent != nullptr) {
+            ASR::symbol_t *parent_sym =
+                ASRUtils::symbol_get_past_external(curr->m_parent);
+            LCOMPILERS_ASSERT(ASR::is_a<ASR::Struct_t>(*parent_sym));
+            curr = ASR::down_cast<ASR::Struct_t>(parent_sym);
+        } else {
+            curr = nullptr;
+        }
+        while (curr != nullptr) {
+            ASR::symbol_t *generic_sym = curr->m_symtab->get_symbol(generic_name);
+            if (generic_sym != nullptr) {
+                generic_sym = ASRUtils::symbol_get_past_external(generic_sym);
+                if (ASR::is_a<ASR::GenericProcedure_t>(*generic_sym)) {
+                    return ASR::down_cast<ASR::GenericProcedure_t>(generic_sym);
+                }
+            }
+            if (curr->m_parent == nullptr) {
+                break;
+            }
+            ASR::symbol_t *parent_sym =
+                ASRUtils::symbol_get_past_external(curr->m_parent);
+            LCOMPILERS_ASSERT(ASR::is_a<ASR::Struct_t>(*parent_sym));
+            curr = ASR::down_cast<ASR::Struct_t>(parent_sym);
+        }
+        return nullptr;
+    }
+
     void sync_pdt_specialization_symbols(ASR::Struct_t* template_struct,
         SymbolTable* enclosing_scope) {
         if (template_struct->n_kind_params == 0) {
@@ -3574,6 +3619,7 @@ public:
             for (auto &pname : proc.second) {
                 Vec<ASR::symbol_t*> cand_procs;
                 cand_procs.reserve(al, pname.second.size());
+                std::set<std::string> seen_proc_names;
                 for( std::string &cand_proc: pname.second ) {
                     ASR::symbol_t *cand_proc_sym
                         = resolve_type_bound_proc_in_parent_chain(clss, cand_proc);
@@ -3589,10 +3635,12 @@ public:
                             std::string cand_proc_name = ASRUtils::symbol_name(cand_proc_sym);
                             ASR::symbol_t *local_proc_sym = clss->m_symtab->get_symbol(cand_proc_name);
                             if (local_proc_sym == nullptr) {
+                                ASR::symbol_t *imported_proc = ASRUtils::import_class_procedure(
+                                    al, cand_proc_sym->base.loc, parent_decl->m_proc, clss->m_symtab);
                                 ASR::asr_t *new_decl = ASR::make_StructMethodDeclaration_t(
                                     al, cand_proc_sym->base.loc, clss->m_symtab,
                                     parent_decl->m_name, parent_decl->m_self_argument,
-                                    parent_decl->m_proc_name, parent_decl->m_proc,
+                                    parent_decl->m_proc_name, imported_proc,
                                     parent_decl->m_abi, parent_decl->m_is_deferred,
                                     parent_decl->m_is_nopass);
                                 local_proc_sym = ASR::down_cast<ASR::symbol_t>(new_decl);
@@ -3600,6 +3648,7 @@ public:
                             }
                             cand_proc_sym = local_proc_sym;
                         }
+                        seen_proc_names.insert(std::string(ASRUtils::symbol_name(cand_proc_sym)));
                         cand_procs.push_back(al, cand_proc_sym);
                     } else {
                         diag.add(diag::Diagnostic(
@@ -3607,6 +3656,48 @@ public:
                             diag::Level::Error, diag::Stage::Semantic, {
                                 diag::Label("", {loc})}));
                         throw SemanticAbort();
+                    }
+                }
+
+                ASR::GenericProcedure_t *inherited_gp =
+                    resolve_type_bound_generic_in_parent_chain(clss, pname.first);
+                if (inherited_gp != nullptr) {
+                    for (size_t i = 0; i < inherited_gp->n_procs; i++) {
+                        ASR::symbol_t *inherited_proc =
+                            ASRUtils::symbol_get_past_external(inherited_gp->m_procs[i]);
+                        std::string inherited_name =
+                            std::string(ASRUtils::symbol_name(inherited_proc));
+                        if (seen_proc_names.find(inherited_name) != seen_proc_names.end()) {
+                            continue;
+                        }
+                        ASR::symbol_t *cand_proc_sym =
+                            resolve_type_bound_proc_in_parent_chain(clss, inherited_name);
+                        if (cand_proc_sym == nullptr) {
+                            continue;
+                        }
+                        if (ASRUtils::symbol_parent_symtab(cand_proc_sym) != clss->m_symtab) {
+                            LCOMPILERS_ASSERT(
+                                ASR::is_a<ASR::StructMethodDeclaration_t>(*cand_proc_sym));
+                            ASR::StructMethodDeclaration_t *parent_decl =
+                                ASR::down_cast<ASR::StructMethodDeclaration_t>(cand_proc_sym);
+                            ASR::symbol_t *local_proc_sym =
+                                clss->m_symtab->get_symbol(inherited_name);
+                            if (local_proc_sym == nullptr) {
+                                ASR::symbol_t *imported_proc = ASRUtils::import_class_procedure(
+                                    al, cand_proc_sym->base.loc, parent_decl->m_proc, clss->m_symtab);
+                                ASR::asr_t *new_decl = ASR::make_StructMethodDeclaration_t(
+                                    al, cand_proc_sym->base.loc, clss->m_symtab,
+                                    parent_decl->m_name, parent_decl->m_self_argument,
+                                    parent_decl->m_proc_name, imported_proc,
+                                    parent_decl->m_abi, parent_decl->m_is_deferred,
+                                    parent_decl->m_is_nopass);
+                                local_proc_sym = ASR::down_cast<ASR::symbol_t>(new_decl);
+                                clss->m_symtab->add_symbol(inherited_name, local_proc_sym);
+                            }
+                            cand_proc_sym = local_proc_sym;
+                        }
+                        seen_proc_names.insert(inherited_name);
+                        cand_procs.push_back(al, cand_proc_sym);
                     }
                 }
                 Str s;

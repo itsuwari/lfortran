@@ -242,6 +242,8 @@ LLVMEvaluator::LLVMEvaluator(const std::string &t)
     std::string CPU = "generic";
     std::string features = "";
     llvm::TargetOptions opt;
+    opt.EnableFastISel = false;
+    opt.EnableGlobalISel = false;
 #if LLVM_VERSION_MAJOR >= 8
     RM_OPTIONAL_TYPE<llvm::Reloc::Model> RM = llvm::Reloc::Model::PIC_;
     TM = target->createTargetMachine(
@@ -251,6 +253,9 @@ LLVMEvaluator::LLVMEvaluator(const std::string &t)
         target_triple,
 #endif
         CPU, features, opt, RM, std::nullopt, llvm::CodeGenOptLevel::None);
+    TM->setFastISel(false);
+    TM->setO0WantsFastISel(false);
+    TM->setGlobalISel(false);
 #else
     // LLVM 7: Use EngineBuilder with setRelocationModel to avoid ABI issues
     // with Optional parameters while still specifying PIC relocation model

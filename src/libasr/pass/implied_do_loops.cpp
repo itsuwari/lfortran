@@ -880,6 +880,34 @@ class ArrayConstantVisitor : public ASR::CallReplacerOnExpressionsVisitor<ArrayC
             // Do nothing, already handled in init_expr pass
         }
 
+        void visit_Function(const ASR::Function_t &x) {
+            ASR::Function_t &xx = const_cast<ASR::Function_t&>(x);
+            SymbolTable* current_scope_copy = this->current_scope;
+            this->current_scope = xx.m_symtab;
+            for (size_t i = 0; i < x.n_args; i++) {
+                this->visit_expr(*x.m_args[i]);
+            }
+            transform_stmts(xx.m_body, xx.n_body);
+            if (x.m_return_var) {
+                this->visit_expr(*x.m_return_var);
+            }
+            for (auto &item : x.m_symtab->get_scope()) {
+                if (ASR::is_a<ASR::Function_t>(*item.second)) {
+                    ASR::Function_t *s = ASR::down_cast<ASR::Function_t>(item.second);
+                    this->visit_Function(*s);
+                }
+                if (ASR::is_a<ASR::Block_t>(*item.second)) {
+                    ASR::Block_t *s = ASR::down_cast<ASR::Block_t>(item.second);
+                    this->visit_Block(*s);
+                }
+                if (ASR::is_a<ASR::AssociateBlock_t>(*item.second)) {
+                    ASR::AssociateBlock_t *s = ASR::down_cast<ASR::AssociateBlock_t>(item.second);
+                    this->visit_AssociateBlock(*s);
+                }
+            }
+            this->current_scope = current_scope_copy;
+        }
+
         void call_replacer() {
             replacer.current_expr = current_expr;
             replacer.current_scope = current_scope;

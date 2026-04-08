@@ -247,7 +247,6 @@ namespace LCompilers {
                 "init_expr",
                 "function_call_in_declaration",
                 "openmp",
-                "implied_do_loops",
                 "gpu_offload",
                 "array_struct_temporary",
                 "transform_optional_argument_functions",

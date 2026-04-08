@@ -3777,20 +3777,7 @@ static inline ASR::ttype_t* duplicate_type(Allocator& al, const ASR::ttype_t* t,
             break;
         }
         case ASR::ttypeType::FunctionType: {
-            ASR::FunctionType_t* ft = ASR::down_cast<ASR::FunctionType_t>(t);
-            //ASR::ttype_t* dup_type = duplicate_type(al, c->m_type, dims);
-            Vec<ASR::ttype_t*> arg_types;
-            arg_types.reserve(al, ft->n_arg_types);
-            for( size_t i = 0; i < ft->n_arg_types; i++ ) {
-                ASR::ttype_t *t = ASRUtils::duplicate_type(al, ft->m_arg_types[i],
-                    nullptr, physical_type, override_physical_type);
-                arg_types.push_back(al, t);
-            }
-            return ASRUtils::TYPE(ASR::make_FunctionType_t(al, ft->base.base.loc,
-                arg_types.p, arg_types.size(), ft->m_return_var_type, ft->m_abi,
-                ft->m_deftype, ft->m_bindc_name, ft->m_elemental, ft->m_pure, ft->m_module, ft->m_inline,
-                ft->m_static, ft->m_restrictions, ft->n_restrictions,
-                ft->m_is_restriction));
+            return const_cast<ASR::ttype_t*>(t);
         }
         case ASR::ttypeType::SymbolicExpression: {
             return ASRUtils::TYPE(ASR::make_SymbolicExpression_t(al, t->base.loc));
@@ -6860,6 +6847,7 @@ static inline ASR::symbol_t* import_struct_sym_as_external(Allocator& al,
     const Location& loc, ASR::expr_t* v_expr, SymbolTable* current_scope) {
     ASR::symbol_t* struct_sym = get_struct_sym_from_struct_expr(v_expr);
     if (struct_sym == nullptr) return nullptr;
+    struct_sym = symbol_get_past_external(struct_sym);
     std::string struct_name = symbol_name(struct_sym);
     if (current_scope->resolve_symbol(struct_name) == nullptr) {
         struct_sym = ASR::down_cast<ASR::symbol_t>(ASR::make_ExternalSymbol_t(

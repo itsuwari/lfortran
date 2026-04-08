@@ -276,10 +276,11 @@ static inline ASR::expr_t* instantiate_functions(Allocator &al,
         const Location &loc, SymbolTable *scope, std::string new_name,
         ASR::ttype_t *arg_type, ASR::ttype_t *return_type,
         Vec<ASR::call_arg_t>& new_args, int64_t /*overload_id*/, int /*index_kind*/) {
+    ASR::ttype_t *c_arg_type = ASRUtils::type_get_past_allocatable_pointer(arg_type);
     std::string c_func_name;
-    switch (arg_type->type) {
+    switch (c_arg_type->type) {
         case ASR::ttypeType::Complex : {
-            if (ASRUtils::extract_kind_from_ttype_t(arg_type) == 4) {
+            if (ASRUtils::extract_kind_from_ttype_t(c_arg_type) == 4) {
                 c_func_name = "_lfortran_c" + new_name;
             } else {
                 c_func_name = "_lfortran_z" + new_name;
@@ -287,7 +288,7 @@ static inline ASR::expr_t* instantiate_functions(Allocator &al,
             break;
         }
         default : {
-            if (ASRUtils::extract_kind_from_ttype_t(arg_type) == 4) {
+            if (ASRUtils::extract_kind_from_ttype_t(c_arg_type) == 4) {
                 c_func_name = "_lfortran_s" + new_name;
             } else {
                 c_func_name = "_lfortran_d" + new_name;
@@ -310,7 +311,7 @@ static inline ASR::expr_t* instantiate_functions(Allocator &al,
         Vec<ASR::expr_t*> args_1;
         {
             args_1.reserve(al, 1);
-            ASR::expr_t *arg = b.Variable(fn_symtab_1, "x", arg_type,
+            ASR::expr_t *arg = b.Variable(fn_symtab_1, "x", c_arg_type,
                 ASR::intentType::In, nullptr, ASR::abiType::BindC, true);
             args_1.push_back(al, arg);
         }
@@ -664,8 +665,9 @@ namespace MathIntrinsicFunction{
     static inline ASR::expr_t* instantiate_functions(Allocator &al, const Location &loc,
             SymbolTable *scope, std::string lcompiler_name, Vec<ASR::ttype_t*>& arg_types, ASR::ttype_t *return_type,
             Vec<ASR::call_arg_t>& new_args, int64_t /*overload_id*/, int /*index_kind*/) {
+        ASR::ttype_t* c_arg_type = ASRUtils::type_get_past_allocatable_pointer(arg_types[0]);
         std::string c_func_name;
-        if (ASRUtils::extract_kind_from_ttype_t(arg_types[0]) == 4) {
+        if (ASRUtils::extract_kind_from_ttype_t(c_arg_type) == 4) {
             c_func_name = "_lfortran_s" + lcompiler_name;
         } else {
             c_func_name = "_lfortran_d" + lcompiler_name;
@@ -681,7 +683,10 @@ namespace MathIntrinsicFunction{
         fill_func_arg("x", arg_types[0]);
         auto result = declare(new_name, return_type, ReturnVar);
         {
-            ASR::symbol_t *s = b.create_c_func(c_func_name, fn_symtab, return_type, arg_types.size(), arg_types);
+            Vec<ASR::ttype_t*> c_arg_types;
+            c_arg_types.reserve(al, arg_types.size());
+            c_arg_types.push_back(al, c_arg_type);
+            ASR::symbol_t *s = b.create_c_func(c_func_name, fn_symtab, return_type, c_arg_types.size(), c_arg_types);
             fn_symtab->add_symbol(c_func_name, s);
             dep.push_back(al, s2c(al, c_func_name));
             body.push_back(al, b.Assignment(result, b.Call(s, args, return_type)));
@@ -4326,13 +4331,28 @@ namespace Merge {
             return b.Call(s, new_args, expr_type(f->m_return_var), nullptr);
         }
 
-        auto tsource_arg = declare("tsource", tsource_type, In);
+        ASR::expr_t *tsource_arg = nullptr;
+        if (ASR::is_a<ASR::StructType_t>(*ASRUtils::extract_type(tsource_type))) {
+            tsource_arg = declare_struct_type("tsource", tsource_type, In, new_args[0].m_value);
+        } else {
+            tsource_arg = declare("tsource", tsource_type, In);
+        }
         args.push_back(al, tsource_arg);
-        auto fsource_arg = declare("fsource", fsource_type, In);
+        ASR::expr_t *fsource_arg = nullptr;
+        if (ASR::is_a<ASR::StructType_t>(*ASRUtils::extract_type(fsource_type))) {
+            fsource_arg = declare_struct_type("fsource", fsource_type, In, new_args[1].m_value);
+        } else {
+            fsource_arg = declare("fsource", fsource_type, In);
+        }
         args.push_back(al, fsource_arg);
         auto mask_arg = declare("mask", mask_type, In);
         args.push_back(al, mask_arg);
-        auto result = declare("merge", return_type, ReturnVar);
+        ASR::expr_t *result = nullptr;
+        if (ASR::is_a<ASR::StructType_t>(*ASRUtils::extract_type(return_type))) {
+            result = declare_struct_type("merge", return_type, ReturnVar, new_args[0].m_value);
+        } else {
+            result = declare("merge", return_type, ReturnVar);
+        }
 
         {
             Vec<ASR::stmt_t *> if_body; if_body.reserve(al, 1);
