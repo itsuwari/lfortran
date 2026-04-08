@@ -889,6 +889,7 @@ namespace LCompilers {
                 llvm::Value* lval = llvm_utils->CreateLoad2(index_type, llvm_utils->create_gep2(dim_des, dim_des_ptr, DIM_LOWER_BOUND));
                 llvm::Value* length = llvm_utils->CreateLoad2(index_type, llvm_utils->create_gep2(dim_des, dim_des_ptr, DIM_EXTENT));
                 // Cast req_idx to index_type
+                req_idx = load_if_pointer(req_idx, index_type, builder, llvm_utils);
                 req_idx = builder->CreateSExtOrTrunc(req_idx, index_type);
                 curr_llvm_idx = builder->CreateSub(req_idx, lval);
                 if( check_for_bounds ) {
@@ -932,6 +933,7 @@ namespace LCompilers {
                     lval = llvm_utils->CreateLoad2(index_type, lval);
                 }
                 // Cast req_idx to index_type
+                req_idx = load_if_pointer(req_idx, index_type, builder, llvm_utils);
                 req_idx = builder->CreateSExtOrTrunc(req_idx, index_type);
                 lval = builder->CreateSExtOrTrunc(lval, index_type);
                 curr_llvm_idx = builder->CreateSub(req_idx, lval);
