@@ -1916,7 +1916,10 @@ class ASRToLLVMVisitor;
                 llvm_utils_->getStructType(struct_, llvm_utils_->module), ptr, idx + is_extended);
             auto const fetched_member_variable = ASR::down_cast<ASR::Variable_t>(struct_->m_symtab->get_symbol(struct_->m_members[idx]));
             auto const fetched_member_asr_type = fetched_member_variable->m_type;
-            if(LLVM::is_llvm_pointer(*fetched_member_asr_type)) {
+            if(LLVM::is_llvm_pointer(*fetched_member_asr_type)
+                    || (ASRUtils::is_allocatable(fetched_member_asr_type)
+                        && ASRUtils::is_array(fetched_member_asr_type))
+                    || ASRUtils::is_pointer(fetched_member_asr_type)) {
                 auto const loaded_fetched_member = llvm_utils_->CreateLoad2(
                     get_llvm_type(fetched_member_asr_type, get_struct_sym(fetched_member_variable)), fetched_member);
                 return loaded_fetched_member;

@@ -9037,6 +9037,13 @@ public:
                     if (skip_allocatable_array_descriptor_init && ASRUtils::is_allocatable(v->m_type)) {
                         continue;
                     }
+                    // Allocatable array members in derived types must start as a
+                    // null descriptor pointer. That is the unallocated state,
+                    // and the Allocate path already knows how to materialize the
+                    // descriptor lazily for struct members.
+                    if (ASRUtils::is_allocatable(v->m_type)) {
+                        continue;
+                    }
                     ASR::dimension_t* m_dims = nullptr;
                     size_t n_dims = ASRUtils::extract_dimensions_from_ttype(symbol_type, m_dims);
                     ASR::array_physical_typeType phy_type = ASRUtils::extract_physical_type(symbol_type);
