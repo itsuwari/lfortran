@@ -94,8 +94,7 @@ namespace {
  */
 static inline bool is_external_interface_function(ASR::FunctionType_t* ftype) {
     return ftype->m_deftype == ASR::deftypeType::Interface &&
-           ftype->m_abi != ASR::abiType::Intrinsic &&
-           !ftype->m_module;
+           ftype->m_abi != ASR::abiType::Intrinsic;
 }
 
 /**
@@ -12626,6 +12625,16 @@ public:
             // reference/descriptor value. Loading them as a concrete LLVM array
             // object can misclassify them as fixed-size arrays and crash later
             // in get_type_from_ttype_t_util().
+            //
+            // One exception is a derived-type member reference. visit_StructInstanceMember()
+            // returns the address of the member slot; for allocatable/pointer/descriptor
+            // arrays we must load that slot once to recover the actual descriptor pointer
+            // before passing it into array helpers such as allocated() / deallocate().
+            if (ASR::is_a<ASR::StructInstanceMember_t>(*x)) {
+                llvm::Type* t = llvm_utils->get_type_from_ttype_t_util(
+                    x, asr_type, module.get());
+                return llvm_utils->CreateLoad2(t, ptr, is_volatile);
+            }
             return ptr;
         }
         llvm::Type* t = llvm_utils->get_type_from_ttype_t_util(
@@ -24224,7 +24233,22 @@ public:
                         tmp = value;
                     }
                 } else if(ASR::is_a<ASR::String_t>(*arg_type)){
-                    if (orig_arg && orig_arg->m_abi == ASR::abiType::BindC
+                    bool callee_is_external_interface = false;
+                    ASR::symbol_t* call_sym = symbol_get_past_external(x.m_name);
+                    bool is_proc_pointer_call = ASR::is_a<ASR::Variable_t>(*call_sym);
+                    if (func_subrout->type == ASR::symbolType::Function) {
+                        ASR::FunctionType_t* callee_ft = ASRUtils::get_FunctionType(
+                            ASR::down_cast<ASR::Function_t>(func_subrout));
+                        callee_is_external_interface = is_external_interface_function(callee_ft) &&
+                            callee_ft->m_abi != ASR::abiType::BindC;
+                    }
+                    if (callee_is_external_interface && !is_proc_pointer_call) {
+                        // External Fortran library calls (for example BLAS/LAPACK)
+                        // expect the address of the first character, not LFortran's
+                        // internal string_descriptor wrapper.
+                        ASR::String_t* str_type = ASRUtils::get_string_type(arg_type);
+                        tmp = llvm_utils->get_string_data(str_type, value);
+                    } else if (orig_arg && orig_arg->m_abi == ASR::abiType::BindC
                             && orig_arg->m_value_attr) {
                         // For bind(C) character with value attribute,
                         // load the i8 value from the pointer
@@ -24937,6 +24961,27 @@ public:
                     llvm::Type* expected_type = fn->getFunctionType()->getParamType(i);
                     if (tmp->getType() != expected_type) {
                         tmp = builder->CreateBitCast(tmp, expected_type);
+                    }
+                }
+            }
+
+            if (callee_fn_type &&
+                callee_fn_type->m_abi != ASR::abiType::BindC &&
+                is_external_interface_function(callee_fn_type) &&
+                tmp->getType() != llvm::Type::getInt8Ty(context)->getPointerTo()) {
+                ASR::symbol_t* call_sym = symbol_get_past_external(x.m_name);
+                if (ASR::is_a<ASR::Variable_t>(*call_sym)) {
+                    args.push_back(tmp);
+                    continue;
+                }
+                ASR::ttype_t* actual_arg_type = ASRUtils::expr_type(x.m_args[i].m_value);
+                if (ASRUtils::is_character(*actual_arg_type) &&
+                    !ASRUtils::is_array(actual_arg_type)) {
+                    ASR::ttype_t* scalar_char_type = ASRUtils::extract_type(
+                        ASRUtils::type_get_past_allocatable_pointer(actual_arg_type));
+                    if (ASR::is_a<ASR::String_t>(*scalar_char_type)) {
+                        tmp = llvm_utils->get_string_data(
+                            ASR::down_cast<ASR::String_t>(scalar_char_type), tmp);
                     }
                 }
             }
@@ -26241,6 +26286,31 @@ public:
         std::string sub_name = s->m_name;
         uint32_t h;
         ASR::FunctionType_t* s_func_type = ASR::down_cast<ASR::FunctionType_t>(s->m_function_signature);
+        auto normalize_external_scalar_character_args = [&](std::vector<llvm::Value*>& call_args) {
+            if (s_func_type->m_abi == ASR::abiType::BindC ||
+                !is_external_interface_function(s_func_type)) {
+                return;
+            }
+            size_t n = std::min<size_t>(call_args.size(), x.n_args);
+            for (size_t i = 0; i < n; i++) {
+                ASR::expr_t* arg_expr = x.m_args[i].m_value;
+                if (!arg_expr) continue;
+                if (ASR::is_a<ASR::StringConstant_t>(*arg_expr)) {
+                    continue;
+                }
+                ASR::ttype_t* arg_type = ASRUtils::expr_type(arg_expr);
+                if (!ASRUtils::is_character(*arg_type) || ASRUtils::is_array(arg_type)) {
+                    continue;
+                }
+                ASR::ttype_t* scalar_char_type = ASRUtils::extract_type(
+                    ASRUtils::type_get_past_allocatable_pointer(arg_type));
+                if (!ASR::is_a<ASR::String_t>(*scalar_char_type)) {
+                    continue;
+                }
+                call_args[i] = llvm_utils->get_string_data(
+                    ASR::down_cast<ASR::String_t>(scalar_char_type), call_args[i]);
+            }
+        };
         if (s_func_type->m_abi == ASR::abiType::LFortranModule) {
             throw CodeGenError("Subroutine LCompilers interfaces not implemented yet");
         } else if (s_func_type->m_abi == ASR::abiType::ExternalUndefined) {
@@ -26357,6 +26427,7 @@ public:
             llvm::Function *fn = llvm_symtab_fn[h];
             std::string m_name = ASRUtils::symbol_name(x.m_name);
             args = convert_call_args(x, false);
+            normalize_external_scalar_character_args(args);
             // check if type of each arg is same as type of each arg in subrout_called
             if (ASR::is_a<ASR::Function_t>(*symbol_get_past_external(x.m_name))) {
                 ASR::Function_t* subrout_called = ASR::down_cast<ASR::Function_t>(symbol_get_past_external(x.m_name));
