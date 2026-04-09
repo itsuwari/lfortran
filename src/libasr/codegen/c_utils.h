@@ -44,6 +44,25 @@ namespace LCompilers {
 
 namespace CUtils {
 
+    static inline std::string get_c_type_from_type_parameter(const std::string &param,
+            bool is_c=true) {
+        if (param == "str") return "char*";
+        if (param == "bool") return "bool";
+        if (param == "i8") return "int8_t";
+        if (param == "i16") return "int16_t";
+        if (param == "i32") return "int32_t";
+        if (param == "i64") return "int64_t";
+        if (param == "u8") return "uint8_t";
+        if (param == "u16") return "uint16_t";
+        if (param == "u32") return "uint32_t";
+        if (param == "u64") return "uint64_t";
+        if (param == "f32") return "float";
+        if (param == "f64") return "double";
+        if (param == "c32") return is_c ? "float_complex_t" : "std::complex<float>";
+        if (param == "c64") return is_c ? "double_complex_t" : "std::complex<double>";
+        return "";
+    }
+
     static inline bool is_non_primitive_DT(ASR::ttype_t *t) {
         return ASR::is_a<ASR::List_t>(*t) || ASR::is_a<ASR::Tuple_t>(*t) || ASR::is_a<ASR::StructType_t>(*t);
     }
@@ -303,9 +322,6 @@ namespace CUtils {
                 break;
             }
             case ASR::ttypeType::StructType: {
-                // TODO: StructType
-                // ASR::StructType_t* der_type = ASR::down_cast<ASR::StructType_t>(t);
-                // type_src = std::string("struct ") + ASRUtils::symbol_name(der_type->m_derived_type);
                 break;
             }
             case ASR::ttypeType::List: {
@@ -335,6 +351,28 @@ namespace CUtils {
                     }
                 } else {
                     throw CodeGenError(std::to_string(kind * 8) + "-bit floating points not yet supported.");
+                }
+                break;
+            }
+            case ASR::ttypeType::EnumType: {
+                ASR::EnumType_t* enum_type = ASR::down_cast<ASR::EnumType_t>(t);
+                ASR::symbol_t *enum_sym = ASRUtils::symbol_get_past_external(enum_type->m_enum_type);
+                type_src = std::string("enum ") + ASRUtils::symbol_name(enum_sym);
+                break;
+            }
+            case ASR::ttypeType::UnionType: {
+                break;
+            }
+            case ASR::ttypeType::SymbolicExpression: {
+                type_src = "char*";
+                break;
+            }
+            case ASR::ttypeType::TypeParameter: {
+                ASR::TypeParameter_t* tp = ASR::down_cast<ASR::TypeParameter_t>(t);
+                type_src = get_c_type_from_type_parameter(tp->m_param, is_c);
+                if (type_src.empty()) {
+                    throw CodeGenError("Type parameter '" + std::string(tp->m_param) +
+                        "' not supported yet.");
                 }
                 break;
             }

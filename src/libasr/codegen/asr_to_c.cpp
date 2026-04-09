@@ -394,6 +394,28 @@ public:
                     std::string dims = convert_dims_c(n_dims, m_dims, v_m_type, is_fixed_size);
                     sub = format_type_c(dims, type_name, v.m_name, use_ref, dummy);
                 }
+            } else if (ASRUtils::is_character(*t2)) {
+                std::string type_name = "char *";
+                if( !ASRUtils::is_array(v_m_type) ) {
+                    type_name.append("*");
+                }
+                if( is_array ) {
+                    bool is_fixed_size = true;
+                    std::string dims = convert_dims_c(n_dims, m_dims, v_m_type, is_fixed_size, true);
+                    std::string encoded_type_name = ASRUtils::get_type_code(t2);
+                    generate_array_decl(sub, std::string(v.m_name), type_name, dims,
+                                        encoded_type_name, m_dims, n_dims,
+                                        use_ref, dummy,
+                                        v.m_intent != ASRUtils::intent_in &&
+                                        v.m_intent != ASRUtils::intent_inout &&
+                                        v.m_intent != ASRUtils::intent_out &&
+                                        v.m_intent != ASRUtils::intent_unspecified,
+                                        is_fixed_size, true, ASR::abiType::Source, false);
+                } else {
+                    bool is_fixed_size = true;
+                    std::string dims = convert_dims_c(n_dims, m_dims, v_m_type, is_fixed_size);
+                    sub = format_type_c(dims, type_name, v.m_name, use_ref, dummy);
+                }
             } else if(ASR::is_a<ASR::StructType_t>(*t2)) {
                 std::string der_type_name = ASRUtils::symbol_name(v.m_type_declaration);
                 if( is_array ) {
