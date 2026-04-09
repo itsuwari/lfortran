@@ -1062,6 +1062,25 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         }
      }
 
+    ASR::Function_t* get_procedure_interface_function(ASR::symbol_t *sym) {
+        ASR::symbol_t *base_sym = ASRUtils::symbol_get_past_external(sym);
+        if (ASR::is_a<ASR::Function_t>(*base_sym)) {
+            return ASR::down_cast<ASR::Function_t>(base_sym);
+        }
+        if (!ASR::is_a<ASR::Variable_t>(*base_sym)) {
+            return nullptr;
+        }
+        ASR::Variable_t *var = ASR::down_cast<ASR::Variable_t>(base_sym);
+        if (!var->m_type_declaration) {
+            return nullptr;
+        }
+        ASR::symbol_t *iface_sym = ASRUtils::symbol_get_past_external(var->m_type_declaration);
+        if (ASR::is_a<ASR::Function_t>(*iface_sym)) {
+            return ASR::down_cast<ASR::Function_t>(iface_sym);
+        }
+        return nullptr;
+    }
+
     std::string construct_call_args(ASR::Function_t* f, size_t n_args, ASR::call_arg_t* m_args) {
         bracket_open++;
         std::string args = "";
@@ -1112,14 +1131,20 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
 
     void visit_FunctionCall(const ASR::FunctionCall_t &x) {
         CHECK_FAST_C_CPP(compiler_options, x)
-        ASR::Function_t *fn = ASR::down_cast<ASR::Function_t>(
-            ASRUtils::symbol_get_past_external(x.m_name));
-        std::string fn_name = fn->m_name;
-        ASR::FunctionType_t *fn_type = ASRUtils::get_FunctionType(fn);
-        if (fn_type->m_abi == ASR::abiType::BindC && fn_type->m_bindc_name) {
-            fn_name = fn_type->m_bindc_name;
-        } else {
+        ASR::symbol_t *callee_sym = ASRUtils::symbol_get_past_external(x.m_name);
+        ASR::Function_t *fn = get_procedure_interface_function(x.m_name);
+        std::string fn_name;
+        if (ASR::is_a<ASR::Variable_t>(*callee_sym)) {
+            fn_name = ASR::down_cast<ASR::Variable_t>(callee_sym)->m_name;
+        } else if (fn) {
             fn_name = fn->m_name;
+        } else {
+            throw CodeGenError("Unsupported function call target", x.base.base.loc);
+        }
+        ASR::FunctionType_t *fn_type = ASRUtils::get_FunctionType(fn);
+        if (!ASR::is_a<ASR::Variable_t>(*callee_sym) &&
+                fn_type->m_abi == ASR::abiType::BindC && fn_type->m_bindc_name) {
+            fn_name = fn_type->m_bindc_name;
         }
         if (sym_info[get_hash((ASR::asr_t*)fn)].intrinsic_function) {
             if (fn_name == "size") {
@@ -3213,15 +3238,21 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
 
     void visit_SubroutineCall(const ASR::SubroutineCall_t &x) {
         std::string indent(indentation_level*indentation_spaces, ' ');
-        ASR::Function_t *s = ASR::down_cast<ASR::Function_t>(
-            ASRUtils::symbol_get_past_external(x.m_name));
-        // TODO: use a mapping with a hash(s) instead:
-        std::string sym_name = s->m_name;
-        ASR::FunctionType_t *s_type = ASRUtils::get_FunctionType(s);
-        if (s_type->m_abi == ASR::abiType::BindC && s_type->m_bindc_name) {
-            sym_name = s_type->m_bindc_name;
+        ASR::symbol_t *callee_sym = ASRUtils::symbol_get_past_external(x.m_name);
+        ASR::Function_t *s = get_procedure_interface_function(x.m_name);
+        if (!s) {
+            throw CodeGenError("Unsupported subroutine call target", x.base.base.loc);
+        }
+        std::string sym_name;
+        if (ASR::is_a<ASR::Variable_t>(*callee_sym)) {
+            sym_name = ASR::down_cast<ASR::Variable_t>(callee_sym)->m_name;
         } else {
             sym_name = s->m_name;
+        }
+        ASR::FunctionType_t *s_type = ASRUtils::get_FunctionType(s);
+        if (!ASR::is_a<ASR::Variable_t>(*callee_sym) &&
+                s_type->m_abi == ASR::abiType::BindC && s_type->m_bindc_name) {
+            sym_name = s_type->m_bindc_name;
         }
 
         if (sym_name == "exit") {

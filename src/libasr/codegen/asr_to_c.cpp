@@ -246,6 +246,41 @@ public:
         }
     }
 
+    std::string get_function_pointer_declaration_from_type(const ASR::Variable_t &v,
+            const ASR::FunctionType_t *ft, const std::string &name) {
+        std::string ret_type = "void";
+        if (ft->m_return_var_type) {
+            ret_type = CUtils::get_c_type_from_ttype_t(ft->m_return_var_type);
+        }
+        std::string decl = ret_type + " (*" + name + ")(";
+        for (size_t i = 0; i < ft->n_arg_types; i++) {
+            ASR::ttype_t *arg_type = ft->m_arg_types[i];
+            if (ASRUtils::is_character(*arg_type) && ASRUtils::is_allocatable(arg_type)) {
+                decl += "char **";
+            } else if (ASR::is_a<ASR::Allocatable_t>(*arg_type)) {
+                decl += CUtils::get_c_type_from_ttype_t(ASR::down_cast<ASR::Allocatable_t>(arg_type)->m_type) + "*";
+            } else {
+                decl += CUtils::get_c_type_from_ttype_t(arg_type);
+            }
+            if (i < ft->n_arg_types - 1) decl += ", ";
+        }
+        decl += ")";
+        return decl;
+    }
+
+    std::string get_function_pointer_declaration_from_interface(
+            const ASR::Function_t &iface_fn, const std::string &name) {
+        bool has_typevar = false;
+        std::string decl = get_function_declaration(iface_fn, has_typevar, true);
+        std::string old_name = "(*" + std::string(iface_fn.m_name) + ")";
+        std::string new_name = "(*" + name + ")";
+        size_t pos = decl.find(old_name);
+        if (pos != std::string::npos) {
+            decl.replace(pos, old_name.size(), new_name);
+        }
+        return decl;
+    }
+
     std::string convert_variable_decl(const ASR::Variable_t &v,
         DeclarationOptions* decl_options=nullptr)
     {
@@ -287,6 +322,20 @@ public:
         size_t n_dims = ASRUtils::extract_dimensions_from_ttype(v.m_type, m_dims);
         ASR::ttype_t* v_m_type = v.m_type;
         v_m_type = ASRUtils::type_get_past_array(ASRUtils::type_get_past_allocatable(v_m_type));
+        if (ASR::is_a<ASR::FunctionType_t>(*v_m_type)) {
+            ASR::Function_t *iface_fn = nullptr;
+            if (v.m_type_declaration) {
+                ASR::symbol_t *iface_sym = ASRUtils::symbol_get_past_external(v.m_type_declaration);
+                if (ASR::is_a<ASR::Function_t>(*iface_sym)) {
+                    iface_fn = ASR::down_cast<ASR::Function_t>(iface_sym);
+                }
+            }
+            if (iface_fn) {
+                return get_function_pointer_declaration_from_interface(*iface_fn, std::string(v.m_name));
+            }
+            return get_function_pointer_declaration_from_type(v,
+                ASR::down_cast<ASR::FunctionType_t>(v_m_type), std::string(v.m_name));
+        }
         if (ASRUtils::is_pointer(v_m_type)) {
             ASR::ttype_t *t2 = ASR::down_cast<ASR::Pointer_t>(v_m_type)->m_type;
             t2 = ASRUtils::type_get_past_array(t2);
@@ -645,6 +694,19 @@ public:
             }
         }
         return sub;
+    }
+
+    void visit_ExternalSymbol(const ASR::ExternalSymbol_t &x) {
+        ASR::symbol_t *sym = ASRUtils::symbol_get_past_external(x.m_external);
+        if (sym == nullptr) {
+            src.clear();
+            return;
+        }
+        this->visit_symbol(*sym);
+    }
+
+    void visit_CustomOperator(const ASR::CustomOperator_t &x) {
+        src.clear();
     }
 
 
