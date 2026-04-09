@@ -1465,6 +1465,21 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         } else if (ASR::is_a<ASR::DictItem_t>(*x.m_target)) {
             self().visit_DictItem(*ASR::down_cast<ASR::DictItem_t>(x.m_target));
             target = src;
+        } else if (ASR::is_a<ASR::Cast_t>(*x.m_target)) {
+            ASR::Cast_t *cast_target = ASR::down_cast<ASR::Cast_t>(x.m_target);
+            switch (cast_target->m_kind) {
+                case ASR::cast_kindType::ClassToStruct:
+                case ASR::cast_kindType::ClassToClass:
+                case ASR::cast_kindType::ClassToIntrinsic: {
+                    self().visit_expr(*cast_target->m_arg);
+                    target = src;
+                    break;
+                }
+                default: {
+                    throw CodeGenError("Assignment target cast kind not implemented in C backend: " +
+                        std::to_string(static_cast<int>(cast_target->m_kind)), x.base.base.loc);
+                }
+            }
         } else {
             throw CodeGenError("Assignment target not implemented in C backend for ASR node type " +
                 std::to_string(static_cast<int>(x.m_target->type)), x.base.base.loc);
