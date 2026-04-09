@@ -144,22 +144,60 @@ inline bool load_serialised_asr(const std::string &s, std::string& asr_binary,
         return false;
     }
 #ifdef WITH_LFORTRAN_BINARY_MODFILES
-    BinaryReader b(s);
+    auto read_u32_be = [&](size_t &pos) -> uint32_t {
+        if (pos + 4 > s.size()) {
+            throw LCompilersException("load_modfile: String is too short for deserialization.");
+        }
+        uint32_t n = string_to_uint32(&s[pos]);
+        pos += 4;
+        return n;
+    };
+    auto read_u64_be = [&](size_t &pos) -> uint64_t {
+        if (pos + 8 > s.size()) {
+            throw LCompilersException("load_modfile: String is too short for deserialization.");
+        }
+        uint64_t n = string_to_uint64(&s[pos]);
+        pos += 8;
+        return n;
+    };
+    auto read_str_be = [&](size_t &pos) -> std::string {
+        uint64_t n = read_u64_be(pos);
+        if (pos + n > s.size()) {
+            throw LCompilersException("load_modfile: String is too short for deserialization.");
+        }
+        std::string r(&s[pos], n);
+        pos += n;
+        return r;
+    };
+    size_t pos = 0;
 #else
     TextReader b(s);
 #endif
+#ifdef WITH_LFORTRAN_BINARY_MODFILES
+    std::string file_type = read_str_be(pos);
+#else
     std::string file_type = b.read_string();
+#endif
     if (file_type != lfortran_modfile_type_string) {
         error_message = "LCompilers Modfile format not recognized";
         return false;
     }
+#ifdef WITH_LFORTRAN_BINARY_MODFILES
+    std::string version = read_str_be(pos);
+#else
     std::string version = b.read_string();
+#endif
     if (version != LFORTRAN_VERSION) {
         error_message = "Incompatible format: LFortran Modfile was generated using version '"
                         + version + "', but current LFortran version is '" + LFORTRAN_VERSION + "'";
         return false;  // Error code for incompatible version
     }
+#ifdef WITH_LFORTRAN_BINARY_MODFILES
+    uint32_t format_version = read_u32_be(pos);
+    BinaryReader b(s.substr(pos));
+#else
     uint32_t format_version = b.read_int32();
+#endif
     if (format_version != lfortran_modfile_format_version) {
         error_message = "Incompatible format: LFortran Modfile schema version is '"
                         + std::to_string(format_version)

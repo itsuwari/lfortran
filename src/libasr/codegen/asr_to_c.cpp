@@ -339,6 +339,20 @@ public:
         if (ASRUtils::is_pointer(v_m_type)) {
             ASR::ttype_t *t2 = ASR::down_cast<ASR::Pointer_t>(v_m_type)->m_type;
             t2 = ASRUtils::type_get_past_array(t2);
+            if (ASR::is_a<ASR::FunctionType_t>(*t2)) {
+                ASR::Function_t *iface_fn = nullptr;
+                if (v.m_type_declaration) {
+                    ASR::symbol_t *iface_sym = ASRUtils::symbol_get_past_external(v.m_type_declaration);
+                    if (ASR::is_a<ASR::Function_t>(*iface_sym)) {
+                        iface_fn = ASR::down_cast<ASR::Function_t>(iface_sym);
+                    }
+                }
+                if (iface_fn) {
+                    return get_function_pointer_declaration_from_interface(*iface_fn, std::string(v.m_name));
+                }
+                return get_function_pointer_declaration_from_type(v,
+                    ASR::down_cast<ASR::FunctionType_t>(t2), std::string(v.m_name));
+            }
             if (ASRUtils::is_integer(*t2)) {
                 ASR::Integer_t *t = ASR::down_cast<ASR::Integer_t>(ASRUtils::type_get_past_array(t2));
                 std::string type_name = "int" + std::to_string(t->m_kind * 8) + "_t";

@@ -2657,6 +2657,32 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         src = "NULL";
     }
 
+    void visit_PointerAssociated(const ASR::PointerAssociated_t &x) {
+        if (x.m_value) {
+            self().visit_expr(*x.m_value);
+            return;
+        }
+        self().visit_expr(*x.m_ptr);
+        std::string ptr_src = std::move(src);
+        if (x.m_tgt == nullptr || ASR::is_a<ASR::PointerNullConstant_t>(*x.m_tgt)) {
+            src = "(" + ptr_src + " != NULL)";
+            last_expr_precedence = 6;
+            return;
+        }
+        self().visit_expr(*x.m_tgt);
+        std::string tgt_src = std::move(src);
+        std::string addr_prefix = "&";
+        ASR::ttype_t *tgt_type = ASRUtils::expr_type(x.m_tgt);
+        if (ASRUtils::is_array(tgt_type) ||
+            ASR::is_a<ASR::StructType_t>(*ASRUtils::type_get_past_allocatable(
+                ASRUtils::type_get_past_pointer(
+                    ASRUtils::type_get_past_array(tgt_type))))) {
+            addr_prefix.clear();
+        }
+        src = "(" + ptr_src + " == " + addr_prefix + tgt_src + ")";
+        last_expr_precedence = 6;
+    }
+
     void visit_GetPointer(const ASR::GetPointer_t& x) {
         CHECK_FAST_C_CPP(compiler_options, x)
         self().visit_expr(*x.m_arg);

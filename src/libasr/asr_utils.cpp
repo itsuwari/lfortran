@@ -1343,7 +1343,8 @@ Result<ASR::TranslationUnit_t*, ErrorMessage> find_and_load_module(Allocator &al
                 }
                 return asr;
             } else {
-                return res.error;
+                return ErrorMessage("While loading modfile '" + full_path.string()
+                    + "': " + res.error.message);
             }
         }
     }
@@ -1368,7 +1369,8 @@ Result<ASR::TranslationUnit_t*, ErrorMessage> find_and_load_module(Allocator &al
                             }
                             return asr;
                         } else {
-                            return res.error;
+                            return ErrorMessage("While loading modfile '" + entry.path().string()
+                                + "': " + res.error.message);
                         }
                     }
                 }
@@ -1407,7 +1409,8 @@ Result<std::vector<ASR::TranslationUnit_t*>, ErrorMessage> find_and_load_submodu
                         ASR::TranslationUnit_t* asr = sub_res.result;
                         submodules_collector.push_back(asr);
                     } else {
-                        return sub_res.error;
+                        return ErrorMessage("While loading modfile '" + file.path().string()
+                            + "': " + sub_res.error.message);
                     }
                 }
             }
