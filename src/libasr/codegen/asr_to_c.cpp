@@ -1398,6 +1398,104 @@ R"(    // Initialise Numpy
         std::pair<std::string, std::string> fmt_arg = visit_string_arg(x.m_fmt);
         std::pair<std::string, std::string> iomsg_arg = visit_string_arg(x.m_iomsg);
 
+        ASR::ttype_t *unit_type = x.m_unit ? ASRUtils::expr_type(x.m_unit) : nullptr;
+        bool is_internal_string_read = unit_type && ASRUtils::is_character(*unit_type);
+
+        if (is_internal_string_read) {
+            auto unit_arg = visit_string_arg(x.m_unit);
+            std::string format_arg = x.m_fmt ? fmt_arg.first : "NULL";
+            std::string offset_name = current_scope->get_unique_name("__lfortran_read_offset");
+            src.clear();
+            src += indent + "int64_t " + offset_name + " = 0;\n";
+            if (x.m_iomsg) {
+                src += indent + "if (" + iomsg_arg.first + " == NULL) " + iomsg_arg.first
+                    + " = (char*) _lfortran_string_malloc_alloc(_lfortran_get_default_allocator(), "
+                    + iomsg_arg.second + ");\n";
+            }
+
+            for (size_t i = 0; i < x.n_values; i++) {
+                ASR::expr_t *value_expr = x.m_values[i];
+                ASR::ttype_t *value_type = ASRUtils::expr_type(value_expr);
+                ASR::ttype_t *value_type_past_allocatable = ASRUtils::type_get_past_allocatable(value_type);
+                this->visit_expr(*value_expr);
+                std::string value = src;
+
+                auto emit_scalar_read = [&](const std::string &helper, const std::string &target_expr) {
+                    src += indent + helper + "("
+                        + unit_arg.first + ", " + unit_arg.second + ", "
+                        + format_arg + ", " + target_expr + ", "
+                        + iostat_ptr + ", &" + offset_name + ");\n";
+                };
+
+                if (ASR::is_a<ASR::Integer_t>(*value_type_past_allocatable)) {
+                    int kind = ASR::down_cast<ASR::Integer_t>(value_type_past_allocatable)->m_kind;
+                    if (kind == 1) {
+                        emit_scalar_read("_lfortran_string_read_i8", "&(" + value + ")");
+                    } else if (kind == 2) {
+                        emit_scalar_read("_lfortran_string_read_i16", "&(" + value + ")");
+                    } else if (kind == 4) {
+                        emit_scalar_read("_lfortran_string_read_i32", "&(" + value + ")");
+                    } else if (kind == 8) {
+                        emit_scalar_read("_lfortran_string_read_i64", "&(" + value + ")");
+                    } else {
+                        throw CodeGenError("C backend FileRead does not support this integer kind for internal string reads",
+                            value_expr->base.loc);
+                    }
+                } else if (ASR::is_a<ASR::Real_t>(*value_type_past_allocatable)) {
+                    int kind = ASR::down_cast<ASR::Real_t>(value_type_past_allocatable)->m_kind;
+                    if (kind == 4) {
+                        emit_scalar_read("_lfortran_string_read_f32", "&(" + value + ")");
+                    } else if (kind == 8) {
+                        emit_scalar_read("_lfortran_string_read_f64", "&(" + value + ")");
+                    } else {
+                        throw CodeGenError("C backend FileRead does not support this real kind for internal string reads",
+                            value_expr->base.loc);
+                    }
+                } else if (ASR::is_a<ASR::Complex_t>(*value_type_past_allocatable)) {
+                    int kind = ASR::down_cast<ASR::Complex_t>(value_type_past_allocatable)->m_kind;
+                    if (kind == 4) {
+                        emit_scalar_read("_lfortran_string_read_c32", "&(" + value + ")");
+                    } else if (kind == 8) {
+                        emit_scalar_read("_lfortran_string_read_c64", "&(" + value + ")");
+                    } else {
+                        throw CodeGenError("C backend FileRead does not support this complex kind for internal string reads",
+                            value_expr->base.loc);
+                    }
+                } else if (ASR::is_a<ASR::Logical_t>(*value_type_past_allocatable)) {
+                    std::string tmp_name = current_scope->get_unique_name("__lfortran_read_logical");
+                    src += indent + "int32_t " + tmp_name + " = 0;\n";
+                    emit_scalar_read("_lfortran_string_read_bool", "&" + tmp_name);
+                    src += indent + value + " = (" + tmp_name + " != 0);\n";
+                } else if (ASRUtils::is_character(*value_type_past_allocatable)) {
+                    ASR::String_t *value_str_type = ASRUtils::get_string_type(value_expr);
+                    std::string value_len = "strlen(" + value + ")";
+                    if (value_str_type && value_str_type->m_len) {
+                        this->visit_expr(*value_str_type->m_len);
+                        value_len = src;
+                    }
+                    src += indent + "if (" + value + " == NULL) " + value
+                        + " = (char*) _lfortran_string_malloc_alloc(_lfortran_get_default_allocator(), "
+                        + value_len + ");\n";
+                    src += indent + "_lfortran_string_read_str("
+                        + unit_arg.first + ", " + unit_arg.second + ", "
+                        + value + ", " + value_len + ", "
+                        + "&" + offset_name + ");\n";
+                    if (x.m_iostat) {
+                        src += indent + iostat_val + " = 0;\n";
+                    }
+                } else {
+                    throw CodeGenError("C backend FileRead currently supports only scalar integer/real/complex/logical/character values for internal string reads",
+                        value_expr->base.loc);
+                }
+            }
+
+            if (x.m_iomsg && x.m_iostat) {
+                src += indent + "_lfortran_set_read_iomsg(" + iostat_val + ", "
+                    + iomsg_arg.first + ", " + iomsg_arg.second + ");\n";
+            }
+            return;
+        }
+
         if (!x.m_is_formatted || x.n_values != 1 ||
             !ASRUtils::is_character(*ASRUtils::expr_type(x.m_values[0]))) {
             throw CodeGenError("C backend FileRead currently supports only single formatted scalar character reads",
