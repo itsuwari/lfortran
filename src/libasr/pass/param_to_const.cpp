@@ -160,22 +160,30 @@ public:
         if (is_a<ASR::Variable_t>(*ASRUtils::symbol_get_past_external(x.m_v))) {
             ASR::Variable_t *init_var = ASR::down_cast<ASR::Variable_t>(ASRUtils::symbol_get_past_external(x.m_v));
             if( init_var->m_storage == ASR::storage_typeType::Parameter ) {
-                if( init_var->m_symbolic_value == nullptr ) {
-                    asr = init_var->m_symbolic_value;
-                } else {
-                    switch( init_var->m_symbolic_value->type ) {
+                ASR::expr_t* folded_value = init_var->m_value;
+                if( folded_value == nullptr && init_var->m_symbolic_value != nullptr ) {
+                    folded_value = ASRUtils::expr_value(init_var->m_symbolic_value);
+                }
+                if( folded_value != nullptr ) {
+                    switch( folded_value->type ) {
+                        case ASR::exprType::ArrayConstant:
                         case ASR::exprType::IntegerConstant:
                         case ASR::exprType::RealConstant:
                         case ASR::exprType::ComplexConstant:
                         case ASR::exprType::LogicalConstant:
                         case ASR::exprType::StringConstant: {
-                            asr = init_var->m_symbolic_value;
+                            asr = folded_value;
                             break;
                         }
                         default: {
                             this->visit_expr(*(init_var->m_symbolic_value));
+                            break;
                         }
                     }
+                } else if( init_var->m_symbolic_value != nullptr ) {
+                    this->visit_expr(*(init_var->m_symbolic_value));
+                } else {
+                    asr = init_var->m_symbolic_value;
                 }
             }
         }
