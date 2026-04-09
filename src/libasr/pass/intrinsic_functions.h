@@ -6449,46 +6449,43 @@ namespace Repeat {
             ASR::string_length_kindType::AssumedLength,
             ASR::string_physical_typeType::DescriptorString)));
         fill_func_arg("y", arg_types[1]);
-        ASR::expr_t* repeat_len = ASRUtils::EXPR(ASR::make_IntegerBinOp_t(
+        ASR::expr_t* result = declare("result",
+            b.allocatable(b.String(nullptr, ASR::DeferredLength)), ReturnVar);
+        Vec<ASR::expr_t*> allocated_args;
+        allocated_args.reserve(al, 1);
+        allocated_args.push_back(al, result);
+        ASR::expr_t* result_allocated = ASRUtils::EXPR(ASR::make_IntrinsicImpureFunction_t(
             al, loc,
-            ASRUtils::EXPR(ASR::make_StringLen_t(al, loc, args[0], int32, nullptr)),
-            ASR::binopType::Mul,
-            CastingUtil::perform_casting(args[1], int32, al, loc),
-            int32, nullptr));
-        auto result = declare(fn_name,
-            b.String(repeat_len, ASR::ExpressionLength), ReturnVar);
-        auto i = declare("i", int32, Local);
-        auto j = declare("j", int32, Local);
-        auto m = declare("m", int32, Local);
+            2, /* IntrinsicImpureFunctions::Allocated */
+            allocated_args.p, allocated_args.n, 0, logical, nullptr));
         auto cnt = declare("cnt", int32, Local);
         /*
             function repeat_(s, n) result(r)
                 character(len=*), intent(in) :: s
                 integer, intent(in) :: n
-                character(len=n*len(s)) :: r
-                integer :: i, j, m, cnt
-                m = len(s)
-                i = 1
-                j = m
+                character(len=:), allocatable :: r
+                integer :: cnt
+                r = ""
                 cnt = 0
                 do while (cnt < n)
-                    r(i:j) = s(1:len(s))
-                    i = j + 1
-                    j = i + m - 1
+                    r = r // s
                     cnt = cnt + 1
                 end do
             end function
         */
-        body.push_back(al, b.Assignment(m, b.StringLen(args[0])));
-        body.push_back(al, b.Assignment(i, b.i32(1)));
-        body.push_back(al, b.Assignment(j, m));
-        body.push_back(al, b.Assignment(cnt, b.i32(0)));
-        body.push_back(al, b.While(b.Lt(cnt, CastingUtil::perform_casting(args[1], int32, al, loc)), {
-            b.Assignment(b.StringSection(result, i, j),
-                b.StringSection(args[0], b.i32(1), b.StringLen(args[0]))),
-            b.Assignment(i, b.Add(j, b.i32(1))),
-            b.Assignment(j, b.Sub(b.Add(i, m), b.i32(1))),
-            b.Assignment(cnt, b.Add(cnt, b.i32(1))),
+        ASR::expr_t* repeat_count = CastingUtil::perform_casting(args[1], int32, al, loc);
+        body.push_back(al, b.If(result_allocated, {
+            b.Deallocate(result)
+        }, {}));
+        body.push_back(al, b.If(b.Gt(repeat_count, b.i32(0)), {
+            b.Assignment(result, args[0]),
+            b.Assignment(cnt, b.i32(1)),
+            b.While(b.Lt(cnt, repeat_count), {
+                b.Assignment(result, b.StringConcat(result, args[0], ASRUtils::expr_type(result))),
+                b.Assignment(cnt, b.Add(cnt, b.i32(1))),
+            })
+        }, {
+            b.Assignment(result, b.StringConstant("", character(0)))
         }));
 
         ASR::symbol_t *f_sym = make_ASR_Function_t(fn_name, fn_symtab, dep, args,
