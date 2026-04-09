@@ -1263,10 +1263,15 @@ static inline std::pair<char**, size_t> symbol_dependencies(const ASR::symbol_t 
 
             // if there exists a parent, add parent and it's dependencies
             if (sym->m_parent) {
-                ASR::Struct_t* parent = ASR::down_cast<ASR::Struct_t>(sym->m_parent);
-                unique_deps.insert(std::string(parent->m_name));
+                ASR::symbol_t *parent_sym = symbol_get_past_external(sym->m_parent);
+                if (ASR::is_a<ASR::Struct_t>(*parent_sym)) {
+                    ASR::Struct_t* parent = ASR::down_cast<ASR::Struct_t>(parent_sym);
+                    unique_deps.insert(std::string(parent->m_name));
+                } else {
+                    unique_deps.insert(std::string(symbol_name(parent_sym)));
+                }
 
-                auto parent_deps = symbol_dependencies(sym->m_parent);
+                auto parent_deps = symbol_dependencies(parent_sym);
                 char** parent_dep_array = parent_deps.first;
                 size_t parent_dep_count = parent_deps.second;
 
