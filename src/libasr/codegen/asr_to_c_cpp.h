@@ -1686,22 +1686,30 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         LCOMPILERS_ASSERT(target_rank > 0);
 
         ASR::ttype_t* array_type = ASRUtils::expr_type(array_section->m_v);
-        if( ASRUtils::extract_physical_type(array_type) == ASR::array_physical_typeType::PointerArray ||
-            ASRUtils::extract_physical_type(array_type) == ASR::array_physical_typeType::FixedSizeArray ) {
-            value_desc = value_desc + "->data";
-            ASR::dimension_t* m_dims = nullptr;
-            // Fill in m_dims:
-            [[maybe_unused]] int array_value_rank = ASRUtils::extract_dimensions_from_ttype(array_type, m_dims);
-            LCOMPILERS_ASSERT(array_value_rank == value_rank);
+        ASR::array_physical_typeType phys_type = ASRUtils::extract_physical_type(array_type);
+        if( phys_type == ASR::array_physical_typeType::PointerArray ||
+            phys_type == ASR::array_physical_typeType::FixedSizeArray ||
+            phys_type == ASR::array_physical_typeType::DescriptorArray ) {
+            std::string value_data = value_desc + "->data";
             std::vector<std::string> diminfo;
             diminfo.reserve(value_rank * 2);
-            for( int i = 0; i < value_rank; i++ ) {
-                self().visit_expr(*m_dims[i].m_start);
-                diminfo.push_back(src);
-                self().visit_expr(*m_dims[i].m_length);
-                diminfo.push_back(src);
+            if (phys_type == ASR::array_physical_typeType::DescriptorArray) {
+                for( int i = 0; i < value_rank; i++ ) {
+                    diminfo.push_back(value_desc + "->dims[" + std::to_string(i) + "].lower_bound");
+                    diminfo.push_back(value_desc + "->dims[" + std::to_string(i) + "].length");
+                }
+            } else {
+                ASR::dimension_t* m_dims = nullptr;
+                [[maybe_unused]] int array_value_rank = ASRUtils::extract_dimensions_from_ttype(array_type, m_dims);
+                LCOMPILERS_ASSERT(array_value_rank == value_rank);
+                for( int i = 0; i < value_rank; i++ ) {
+                    self().visit_expr(*m_dims[i].m_start);
+                    diminfo.push_back(src);
+                    self().visit_expr(*m_dims[i].m_length);
+                    diminfo.push_back(src);
+                }
             }
-            fill_descriptor_for_array_section_data_only(value_desc, target_desc,
+            fill_descriptor_for_array_section_data_only(value_data, target_desc,
                 lbs, ubs, ds, non_sliced_indices,
                 diminfo, value_rank, target_rank);
         } else {

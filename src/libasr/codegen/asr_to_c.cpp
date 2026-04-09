@@ -1644,6 +1644,125 @@ R"(    // Initialise Numpy
         src = this->check_tmp_buffer() + out;
     }
 
+    void visit_FileWrite(const ASR::FileWrite_t &x) {
+        if (x.m_overloaded) {
+            this->visit_stmt(*x.m_overloaded);
+            return;
+        }
+
+        headers.insert("stdio.h");
+        headers.insert("stdlib.h");
+        headers.insert("string.h");
+
+        std::string indent(indentation_level*indentation_spaces, ' ');
+
+        auto visit_string_arg = [&](ASR::expr_t *expr) -> std::pair<std::string, std::string> {
+            if (!expr) return {"NULL", "0"};
+            this->visit_expr(*expr);
+            std::string value = src;
+            ASR::String_t *str_type = ASRUtils::get_string_type(expr);
+            if (str_type && str_type->m_len) {
+                this->visit_expr(*str_type->m_len);
+                return {value, src};
+            }
+            return {value, "strlen(" + value + ")"};
+        };
+
+        if (!x.m_unit || !ASRUtils::is_integer(*ASRUtils::expr_type(x.m_unit)) ||
+            !x.m_is_formatted || x.n_values != 1) {
+            throw CodeGenError("C backend FileWrite currently supports only formatted writes of a single value to integer units",
+                x.base.base.loc);
+        }
+
+        this->visit_expr(*x.m_unit);
+        std::string unit = src;
+
+        std::string iostat_ptr = "NULL";
+        if (x.m_iostat) {
+            this->visit_expr(*x.m_iostat);
+            iostat_ptr = "&(" + src + ")";
+        }
+
+        std::pair<std::string, std::string> end_arg = x.m_end
+            ? visit_string_arg(x.m_end)
+            : std::make_pair("\"\\n\"", "1");
+
+        if (ASR::is_a<ASR::StringFormat_t>(*x.m_values[0])) {
+            ASR::StringFormat_t *str_fmt = ASR::down_cast<ASR::StringFormat_t>(x.m_values[0]);
+            std::string snprintf_fmt = "\"";
+            std::vector<std::string> fmt_args;
+            bool has_hash_prefix = false;
+            if (str_fmt->m_fmt) {
+                ASR::expr_t *fmt_value = ASRUtils::expr_value(str_fmt->m_fmt);
+                if (fmt_value && ASR::is_a<ASR::StringConstant_t>(*fmt_value)) {
+                    std::string fmt_text = ASR::down_cast<ASR::StringConstant_t>(fmt_value)->m_s;
+                    if (fmt_text == "(\"#\", *(1x, g0))") {
+                        snprintf_fmt += "#";
+                        has_hash_prefix = true;
+                    }
+                }
+            }
+            for (size_t i=0; i<str_fmt->n_args; i++) {
+                this->visit_expr(*str_fmt->m_args[i]);
+                std::string arg_value = src;
+                ASR::ttype_t* value_type = ASRUtils::expr_type(str_fmt->m_args[i]);
+                ASR::ttype_t* printable_type = ASRUtils::type_get_past_allocatable_pointer(value_type);
+                if (ASRUtils::is_array(value_type)) {
+                    printable_type = ASRUtils::extract_type(value_type);
+                }
+                if (ASR::is_a<ASR::List_t>(*value_type) || ASR::is_a<ASR::Tuple_t>(*value_type)) {
+                    throw CodeGenError("C backend FileWrite does not support list/tuple values in StringFormat yet",
+                        str_fmt->m_args[i]->base.loc);
+                }
+                if (i != 0 || has_hash_prefix) {
+                    snprintf_fmt += " ";
+                }
+                snprintf_fmt += c_ds_api->get_print_type(printable_type,
+                    ASR::is_a<ASR::ArrayItem_t>(*(str_fmt->m_args[i])));
+                if (ASRUtils::is_array(value_type)) {
+                    arg_value += "->data";
+                }
+                if (ASR::is_a<ASR::Complex_t>(*printable_type)) {
+                    fmt_args.push_back("creal(" + arg_value + ")");
+                    fmt_args.push_back("cimag(" + arg_value + ")");
+                } else {
+                    fmt_args.push_back(arg_value);
+                }
+            }
+            snprintf_fmt += "\"";
+
+            std::string size_name = current_scope->get_unique_name("__lfortran_write_size");
+            std::string buffer_name = current_scope->get_unique_name("__lfortran_write_buffer");
+
+            src = indent + "int " + size_name + " = snprintf(NULL, 0, " + snprintf_fmt;
+            for (auto &arg: fmt_args) {
+                src += ", " + arg;
+            }
+            src += ");\n";
+            src += indent + "char *" + buffer_name + " = (char*) malloc((size_t)" + size_name + " + 1);\n";
+            src += indent + "snprintf(" + buffer_name + ", (size_t)" + size_name + " + 1, " + snprintf_fmt;
+            for (auto &arg: fmt_args) {
+                src += ", " + arg;
+            }
+            src += ");\n";
+            src += indent + "_lfortran_file_write(" + unit + ", " + iostat_ptr + ", \"%s%s\", 4, "
+                + buffer_name + ", (int64_t)" + size_name + ", "
+                + end_arg.first + ", " + end_arg.second + ");\n";
+            src += indent + "free(" + buffer_name + ");\n";
+            return;
+        }
+
+        if (!ASRUtils::is_character(*ASRUtils::expr_type(x.m_values[0]))) {
+            throw CodeGenError("C backend FileWrite currently supports only character or StringFormat values",
+                x.base.base.loc);
+        }
+
+        auto value_arg = visit_string_arg(x.m_values[0]);
+        src = indent + "_lfortran_file_write(" + unit + ", " + iostat_ptr + ", \"%s%s\", 4, "
+            + value_arg.first + ", " + value_arg.second + ", "
+            + end_arg.first + ", " + end_arg.second + ");\n";
+    }
+
     void visit_ArrayBroadcast(const ASR::ArrayBroadcast_t &x) {
         /*
             !LF$ attributes simd :: A
