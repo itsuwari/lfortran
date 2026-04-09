@@ -2530,6 +2530,25 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         src = out;
     }
 
+    void visit_StructConstant(const ASR::StructConstant_t &x) {
+        std::string out = "{";
+        ASR::Struct_t *st = ASR::down_cast<ASR::Struct_t>(x.m_dt_sym);
+        for (size_t i = 0; i < x.n_args; i++) {
+            if (x.m_args[i].m_value) {
+                out += ".";
+                out += st->m_members[i];
+                out += " = ";
+                self().visit_expr(*x.m_args[i].m_value);
+                out += src;
+                if (i < x.n_args-1) {
+                    out += ", ";
+                }
+            }
+        }
+        out += "}";
+        src = out;
+    }
+
     template <typename T>
     void handle_BinOp(const T &x) {
         CHECK_FAST_C_CPP(compiler_options, x)
@@ -3169,6 +3188,10 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
 
     void visit_TypeInquiry(const ASR::TypeInquiry_t &x) {
         this->visit_expr(*x.m_value);
+    }
+
+    void visit_StringPhysicalCast(const ASR::StringPhysicalCast_t &x) {
+        self().visit_expr(*x.m_arg);
     }
 
     void visit_RealSqrt(const ASR::RealSqrt_t &x) {
