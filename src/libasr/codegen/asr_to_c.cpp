@@ -161,19 +161,23 @@ public:
 
     void allocate_array_members_of_struct(ASR::Struct_t* der_type_t, std::string& sub,
         std::string indent, std::string name) {
-        for( auto itr: der_type_t->m_symtab->get_scope() ) {
-            ASR::symbol_t *sym = ASRUtils::symbol_get_past_external(itr.second);
-            if( ASR::is_a<ASR::Union_t>(*sym) ||
-                ASR::is_a<ASR::Struct_t>(*sym) ) {
-                continue ;
+        for (size_t i = 0; i < der_type_t->n_members; i++) {
+            const std::string member_name = der_type_t->m_members[i];
+            ASR::symbol_t *member_sym = der_type_t->m_symtab->get_symbol(member_name);
+            if (member_sym == nullptr) {
+                continue;
+            }
+            ASR::symbol_t *sym = ASRUtils::symbol_get_past_external(member_sym);
+            if (!ASR::is_a<ASR::Variable_t>(*sym)) {
+                continue;
             }
             ASR::ttype_t* mem_type = ASRUtils::symbol_type(sym);
             if( ASRUtils::is_character(*mem_type) ) {
-                sub += indent + name + "->" + itr.first + " = NULL;\n";
+                sub += indent + name + "->" + member_name + " = NULL;\n";
             } else if( ASRUtils::is_array(mem_type) &&
-                        ASR::is_a<ASR::Variable_t>(*itr.second) ) {
-                ASR::Variable_t* mem_var = ASR::down_cast<ASR::Variable_t>(itr.second);
-                std::string mem_var_name = current_scope->get_unique_name(itr.first + std::to_string(counter));
+                        ASR::is_a<ASR::Variable_t>(*member_sym) ) {
+                ASR::Variable_t* mem_var = ASR::down_cast<ASR::Variable_t>(member_sym);
+                std::string mem_var_name = current_scope->get_unique_name(member_name + std::to_string(counter));
                 counter += 1;
                 ASR::dimension_t* m_dims = nullptr;
                 size_t n_dims = ASRUtils::extract_dimensions_from_ttype(mem_type, m_dims);
@@ -186,7 +190,7 @@ public:
                 c_decl_options_.do_not_initialize = true;
                 sub += indent + convert_variable_decl(*mem_var, &c_decl_options_) + ";\n";
                 if( !ASRUtils::is_fixed_size_array(m_dims, n_dims) ) {
-                    sub += indent + name + "->" + itr.first + " = " + mem_var_name + ";\n";
+                    sub += indent + name + "->" + member_name + " = " + mem_var_name + ";\n";
                 }
             } else if( ASR::is_a<ASR::StructType_t>(*mem_type) ) {
                 // TODO: StructType

@@ -3016,6 +3016,123 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         src = out;
     }
 
+    void visit_TypeStmtName(const ASR::TypeStmtName_t &x) {
+        std::string out;
+        for (size_t i = 0; i < x.n_body; i++) {
+            self().visit_stmt(*x.m_body[i]);
+            out += src;
+        }
+        src = out;
+    }
+
+    void visit_ClassStmt(const ASR::ClassStmt_t &x) {
+        std::string out;
+        for (size_t i = 0; i < x.n_body; i++) {
+            self().visit_stmt(*x.m_body[i]);
+            out += src;
+        }
+        src = out;
+    }
+
+    void visit_TypeStmtType(const ASR::TypeStmtType_t &x) {
+        std::string out;
+        for (size_t i = 0; i < x.n_body; i++) {
+            self().visit_stmt(*x.m_body[i]);
+            out += src;
+        }
+        src = out;
+    }
+
+    bool selector_matches_type_stmt(ASR::expr_t *selector, ASR::type_stmt_t *type_stmt) {
+        ASR::symbol_t *selector_sym = ASRUtils::get_struct_sym_from_struct_expr(selector);
+        if (selector_sym != nullptr) {
+            selector_sym = ASRUtils::symbol_get_past_external(selector_sym);
+        }
+        ASR::ttype_t *selector_type = ASRUtils::type_get_past_allocatable_pointer(
+            ASRUtils::expr_type(selector));
+
+        switch (type_stmt->type) {
+            case ASR::type_stmtType::TypeStmtName: {
+                if (selector_sym == nullptr) return false;
+                ASR::symbol_t *guard_sym = ASRUtils::symbol_get_past_external(
+                    ASR::down_cast<ASR::TypeStmtName_t>(type_stmt)->m_sym);
+                return selector_sym == guard_sym;
+            }
+            case ASR::type_stmtType::ClassStmt: {
+                if (selector_sym == nullptr) return false;
+                ASR::symbol_t *guard_sym = ASRUtils::symbol_get_past_external(
+                    ASR::down_cast<ASR::ClassStmt_t>(type_stmt)->m_sym);
+                ASR::symbol_t *current = selector_sym;
+                while (current != nullptr) {
+                    if (current == guard_sym) {
+                        return true;
+                    }
+                    if (!ASR::is_a<ASR::Struct_t>(*current)) {
+                        break;
+                    }
+                    ASR::Struct_t *current_struct = ASR::down_cast<ASR::Struct_t>(current);
+                    if (current_struct->m_parent == nullptr) {
+                        break;
+                    }
+                    current = ASRUtils::symbol_get_past_external(current_struct->m_parent);
+                }
+                return false;
+            }
+            case ASR::type_stmtType::TypeStmtType: {
+                ASR::ttype_t *guard_type = ASRUtils::type_get_past_allocatable_pointer(
+                    ASR::down_cast<ASR::TypeStmtType_t>(type_stmt)->m_type);
+                return ASRUtils::check_equal_type(selector_type, guard_type, nullptr, nullptr);
+            }
+            default:
+                return false;
+        }
+    }
+
+    void visit_SelectType(const ASR::SelectType_t &x) {
+        std::string indent(indentation_level * indentation_spaces, ' ');
+        std::string out;
+        bool emitted = false;
+
+        for (size_t i = 0; i < x.n_body; i++) {
+            if (!selector_matches_type_stmt(x.m_selector, x.m_body[i])) {
+                continue;
+            }
+            switch (x.m_body[i]->type) {
+                case ASR::type_stmtType::TypeStmtName:
+                    self().visit_TypeStmtName(
+                        *ASR::down_cast<ASR::TypeStmtName_t>(x.m_body[i]));
+                    break;
+                case ASR::type_stmtType::ClassStmt:
+                    self().visit_ClassStmt(
+                        *ASR::down_cast<ASR::ClassStmt_t>(x.m_body[i]));
+                    break;
+                case ASR::type_stmtType::TypeStmtType:
+                    self().visit_TypeStmtType(
+                        *ASR::down_cast<ASR::TypeStmtType_t>(x.m_body[i]));
+                    break;
+                default:
+                    throw CodeGenError("Unsupported type statement in SelectType");
+            }
+            out += src;
+            emitted = true;
+            break;
+        }
+
+        if (!emitted) {
+            for (size_t i = 0; i < x.n_default; i++) {
+                self().visit_stmt(*x.m_default[i]);
+                out += src;
+            }
+            if (x.n_default == 0) {
+                out += indent
+                    + "/* FIXME: C backend SelectType runtime dispatch is not implemented; "
+                    + "no compile-time matching branch was emitted. */\n";
+            }
+        }
+
+        src = out;
+    }
+
     void visit_Select(const ASR::Select_t& x)
     {
         std::string indent(indentation_level * indentation_spaces, ' ');
