@@ -1254,6 +1254,47 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         bool is_value_dict = ASR::is_a<ASR::Dict_t>(*m_value_type);
         bool alloc_return_var = false;
         std::string indent(indentation_level*indentation_spaces, ' ');
+        if (is_c && ASR::is_a<ASR::StringSection_t>(*x.m_target)) {
+            ASR::StringSection_t *ss = ASR::down_cast<ASR::StringSection_t>(x.m_target);
+            self().visit_expr(*ss->m_arg);
+            std::string string_arg = src;
+            self().visit_expr(*x.m_value);
+            std::string string_value = src;
+            std::string left, right, step, left_present, right_present;
+            if (ss->m_start) {
+                self().visit_expr(*ss->m_start);
+                left = src;
+                left_present = "true";
+            } else {
+                left = "0";
+                left_present = "false";
+            }
+            if (ss->m_end) {
+                self().visit_expr(*ss->m_end);
+                right = src;
+                right_present = "true";
+            } else {
+                right = "0";
+                right_present = "false";
+            }
+            if (ss->m_step) {
+                self().visit_expr(*ss->m_step);
+                step = src;
+            } else {
+                step = "1";
+            }
+            headers.insert("string.h");
+            src = check_tmp_buffer();
+            std::string updated_value =
+                "_lfortran_str_slice_assign_alloc(_lfortran_get_default_allocator(), " +
+                string_arg + ", strlen(" + string_arg + "), " +
+                string_value + ", strlen(" + string_value + "), " +
+                left + ", " + right + ", " + step + ", " +
+                left_present + ", " + right_present + ")";
+            src += indent + c_ds_api->get_deepcopy(ASRUtils::expr_type(ss->m_arg),
+                updated_value, string_arg) + "\n";
+            return;
+        }
         if (ASRUtils::is_simd_array(x.m_target)) {
             this->visit_expr(*x.m_target);
             target = src;
@@ -1342,7 +1383,8 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             self().visit_DictItem(*ASR::down_cast<ASR::DictItem_t>(x.m_target));
             target = src;
         } else {
-            LCOMPILERS_ASSERT(false)
+            throw CodeGenError("Assignment target not implemented in C backend for ASR node type " +
+                std::to_string(static_cast<int>(x.m_target->type)), x.base.base.loc);
         }
         from_std_vector_helper.clear();
         if( ASR::is_a<ASR::UnionConstructor_t>(*x.m_value) ) {
@@ -3196,8 +3238,50 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         this->visit_expr(*x.m_value);
     }
 
+    void visit_IntrinsicImpureFunction(const ASR::IntrinsicImpureFunction_t &x) {
+        switch (static_cast<ASRUtils::IntrinsicImpureFunctions>(x.m_impure_intrinsic_id)) {
+            case ASRUtils::IntrinsicImpureFunctions::IsIostatEnd: {
+                self().visit_expr(*x.m_args[0]);
+                src = "(" + src + " == -1)";
+                return;
+            }
+            case ASRUtils::IntrinsicImpureFunctions::IsIostatEor: {
+                self().visit_expr(*x.m_args[0]);
+                src = "(" + src + " == -2)";
+                return;
+            }
+            case ASRUtils::IntrinsicImpureFunctions::Allocated: {
+                ASR::expr_t *arg = x.m_args[0];
+                ASR::ttype_t *arg_type = ASRUtils::expr_type(arg);
+                ASR::ttype_t *arg_base_type = ASRUtils::type_get_past_allocatable_pointer(arg_type);
+                self().visit_expr(*arg);
+                std::string arg_src = std::move(src);
+                if (ASRUtils::is_array(arg_type)) {
+                    src = "((" + arg_src + ") != NULL && (" + arg_src + ")->data != NULL)";
+                } else if (ASRUtils::is_character(*arg_base_type)) {
+                    src = "((" + arg_src + ") != NULL)";
+                } else {
+                    src = "((" + arg_src + ") != NULL)";
+                }
+                return;
+            }
+            default: {
+                throw CodeGenError("IntrinsicImpureFunction not implemented for " +
+                    ASRUtils::get_impure_intrinsic_name(x.m_impure_intrinsic_id));
+            }
+        }
+    }
+
     void visit_StringPhysicalCast(const ASR::StringPhysicalCast_t &x) {
         self().visit_expr(*x.m_arg);
+    }
+
+    void visit_BitCast(const ASR::BitCast_t &x) {
+        if (x.m_value) {
+            self().visit_expr(*x.m_value);
+        } else {
+            self().visit_expr(*x.m_source);
+        }
     }
 
     void visit_RealSqrt(const ASR::RealSqrt_t &x) {
