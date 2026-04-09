@@ -3299,6 +3299,73 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         src = indent + sym_name + "(" + construct_call_args(s, x.n_args, x.m_args) + ");\n";
     }
 
+    void visit_ForEach(const ASR::ForEach_t &x) {
+        std::string current_body_copy = current_body;
+        current_body = "";
+        std::string indent(indentation_level*indentation_spaces, ' ');
+        std::string out = check_tmp_buffer();
+        ASR::ttype_t *container_type = ASRUtils::expr_type(x.m_container);
+        ASR::ttype_t *container_type_past_alloc = ASRUtils::type_get_past_allocatable(container_type);
+
+        self().visit_expr(*x.m_var);
+        std::string iter_var = src;
+        self().visit_expr(*x.m_container);
+        std::string container = src;
+
+        auto emit_body = [&](const std::string &assign_stmt) {
+            std::string body_out = indent + std::string(indentation_spaces, ' ') + assign_stmt + "\n";
+            indentation_level += 1;
+            for (size_t i=0; i<x.n_body; i++) {
+                self().visit_stmt(*x.m_body[i]);
+                current_body += check_tmp_buffer() + src;
+            }
+            body_out += current_body;
+            indentation_level -= 1;
+            current_body.clear();
+            return body_out;
+        };
+
+        if (ASR::is_a<ASR::List_t>(*container_type_past_alloc)) {
+            std::string idx_name = current_scope->get_unique_name("foreach_i");
+            out += indent + "for (int32_t " + idx_name + " = 0; " + idx_name + " < "
+                + container + ".current_end_point; " + idx_name + "++) {\n";
+            out += emit_body(iter_var + " = " + container + ".data[" + idx_name + "];");
+            out += indent + "}\n";
+        } else if (ASR::is_a<ASR::Tuple_t>(*container_type_past_alloc)) {
+            ASR::Tuple_t *tuple_type = ASR::down_cast<ASR::Tuple_t>(container_type_past_alloc);
+            for (size_t i = 0; i < tuple_type->n_type; i++) {
+                out += indent + "{\n";
+                out += emit_body(iter_var + " = " + container + ".element_" + std::to_string(i) + ";");
+                out += indent + "}\n";
+            }
+        } else if (ASRUtils::is_array(container_type)) {
+            ASR::dimension_t* m_dims = nullptr;
+            int n_dims = ASRUtils::extract_dimensions_from_ttype(container_type, m_dims);
+            std::string idx_name = current_scope->get_unique_name("foreach_i");
+            std::string total_name = current_scope->get_unique_name("foreach_n");
+            out += indent + "int32_t " + total_name + " = 1;\n";
+            std::string container_desc = container;
+            if (!ASR::is_a<ASR::Array_t>(*container_type_past_alloc)) {
+                container_desc += "->";
+            } else {
+                container_desc += ".";
+            }
+            for (int i = 0; i < n_dims; i++) {
+                out += indent + total_name + " *= " + container + "->dims[" + std::to_string(i) + "].length;\n";
+            }
+            out += indent + "for (int32_t " + idx_name + " = 0; " + idx_name + " < "
+                + total_name + "; " + idx_name + "++) {\n";
+            out += emit_body(iter_var + " = " + container + "->data[" + idx_name + "];");
+            out += indent + "}\n";
+        } else {
+            throw CodeGenError("ForEach container type not supported in C backend: " +
+                ASRUtils::type_to_str_python_expr(container_type, x.m_container), x.base.base.loc);
+        }
+
+        src = out;
+        current_body = current_body_copy;
+    }
+
     #define SET_INTRINSIC_NAME(X, func_name)                                    \
         case (static_cast<int64_t>(ASRUtils::IntrinsicElementalFunctions::X)) : {  \
             out += func_name; break;                                            \
