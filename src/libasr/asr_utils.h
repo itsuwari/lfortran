@@ -464,6 +464,11 @@ static inline ASR::ttype_t* symbol_type(const ASR::symbol_t *f)
             return ASRUtils::expr_type(
                 ASR::down_cast<ASR::Function_t>(f)->m_return_var);
         }
+        case ASR::symbolType::StructMethodDeclaration: {
+            ASR::symbol_t *proc = ASRUtils::symbol_get_past_external(
+                ASR::down_cast<ASR::StructMethodDeclaration_t>(f)->m_proc);
+            return symbol_type(proc);
+        }
         case ASR::symbolType::Struct: {
             return ASR::down_cast<ASR::Struct_t>(f)->m_struct_signature;
         }

@@ -921,6 +921,14 @@ R"(
         std::vector<std::string> struct_deps = ASRUtils::order_deps(struct_dep_graph);
         for (auto &item : struct_deps) {
             ASR::symbol_t* struct_sym = x.m_symtab->get_symbol(item);
+            if (struct_sym == nullptr) {
+                continue;
+            }
+            if (!(ASR::is_a<ASR::Struct_t>(*struct_sym) ||
+                  ASR::is_a<ASR::Enum_t>(*struct_sym) ||
+                  ASR::is_a<ASR::Union_t>(*struct_sym))) {
+                continue;
+            }
             visit_symbol(*struct_sym);
         }
 
