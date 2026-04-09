@@ -2813,19 +2813,24 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         std::string indent(indentation_level*indentation_spaces, ' ');
         std::string out = "";
         for (size_t i=0; i<x.n_args; i++) {
-            ASR::symbol_t* tmp_sym = nullptr;
             ASR::ttype_t* type = nullptr;
             ASR::expr_t* tmp_expr = x.m_args[i].m_a;
+            std::string sym;
             if( ASR::is_a<ASR::Var_t>(*tmp_expr) ) {
                 const ASR::Var_t* tmp_var = ASR::down_cast<ASR::Var_t>(tmp_expr);
-                tmp_sym = tmp_var->m_v;
                 type = ASRUtils::expr_type(tmp_expr);
+                sym = ASRUtils::symbol_name(tmp_var->m_v);
+            } else if (ASR::is_a<ASR::StructInstanceMember_t>(*tmp_expr) ||
+                       ASR::is_a<ASR::UnionInstanceMember_t>(*tmp_expr) ||
+                       ASR::is_a<ASR::ArrayItem_t>(*tmp_expr)) {
+                type = ASRUtils::expr_type(tmp_expr);
+                self().visit_expr(*tmp_expr);
+                sym = src;
             } else {
                 throw CodeGenError("Cannot deallocate variables in expression " +
                                     ASRUtils::type_to_str_python_expr(ASRUtils::expr_type(tmp_expr), tmp_expr),
                                     tmp_expr->base.loc);
             }
-            std::string sym = ASRUtils::symbol_name(tmp_sym);
             if (ASRUtils::is_array(type)) {
                 std::string size_str = "1";
                 out += indent + sym + "->n_dims = " + std::to_string(x.m_args[i].n_dims) + ";\n";
