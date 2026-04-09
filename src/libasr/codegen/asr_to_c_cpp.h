@@ -1694,7 +1694,12 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         if (ASR::is_a<ASR::ArraySection_t>(*x.m_value)) {
             handle_array_section_association_to_pointer(x);
         } else {
-            throw CodeGenError("Associate only implemented for ArraySection so far");
+            std::string indent(indentation_level*indentation_spaces, ' ');
+            self().visit_expr(*x.m_target);
+            std::string target = src;
+            self().visit_expr(*x.m_value);
+            std::string value = src;
+            src = indent + target + " = " + value + ";\n";
         }
     }
 
