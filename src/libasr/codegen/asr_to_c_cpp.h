@@ -2376,6 +2376,46 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         src = "_lfortran_iachar(" + src + ")";
     }
 
+    void visit_ArrayIsContiguous(const ASR::ArrayIsContiguous_t &x) {
+        CHECK_FAST_C_CPP(compiler_options, x)
+        if (x.m_value) {
+            self().visit_expr(*x.m_value);
+            return;
+        }
+        ASR::ttype_t *array_type = ASRUtils::expr_type(x.m_array);
+        ASR::array_physical_typeType physical_type = ASRUtils::extract_physical_type(array_type);
+        self().visit_expr(*x.m_array);
+        std::string array_expr = src;
+        switch (physical_type) {
+            case ASR::array_physical_typeType::DescriptorArray: {
+                ASR::dimension_t *m_dims = nullptr;
+                int n_dims = ASRUtils::extract_dimensions_from_ttype(array_type, m_dims);
+                std::string is_contiguous = "true";
+                std::string expected_stride = "1";
+                for (int i = 0; i < n_dims; i++) {
+                    is_contiguous += " && (" + array_expr + "->dims[" + std::to_string(i)
+                        + "].stride == " + expected_stride + ")";
+                    expected_stride = "(" + expected_stride + " * " + array_expr
+                        + "->dims[" + std::to_string(i) + "].length)";
+                }
+                src = "(!" + array_expr + "->is_allocated || (" + is_contiguous + "))";
+                return;
+            }
+            case ASR::array_physical_typeType::FixedSizeArray:
+            case ASR::array_physical_typeType::SIMDArray:
+            case ASR::array_physical_typeType::PointerArray:
+            case ASR::array_physical_typeType::UnboundedPointerArray:
+                src = "true";
+                return;
+            case ASR::array_physical_typeType::StringArraySinglePointer:
+                src = "false";
+                return;
+            default:
+                throw CodeGenError("ArrayIsContiguous is not implemented for physical type " +
+                    std::to_string(static_cast<int>(physical_type)), x.base.base.loc);
+        }
+    }
+
     void visit_IntegerCompare(const ASR::IntegerCompare_t &x) {
         handle_Compare(x);
     }
@@ -2808,12 +2848,12 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             if( ASR::is_a<ASR::Var_t>(*tmp_expr) ) {
                 const ASR::Var_t* tmp_var = ASR::down_cast<ASR::Var_t>(tmp_expr);
                 tmp_sym = tmp_var->m_v;
+                out += std::string(ASRUtils::symbol_name(tmp_sym));
             } else {
-                throw CodeGenError("Cannot deallocate variables in expression " +
-                                    ASRUtils::type_to_str_python_expr(ASRUtils::expr_type(tmp_expr), tmp_expr),
-                                    tmp_expr->base.loc);
+                self().visit_expr(*tmp_expr);
+                out += src;
             }
-            out += std::string(ASRUtils::symbol_name(tmp_sym)) + ", ";
+            out += ", ";
         }
         out += ");\n";
         src = out;
@@ -2828,12 +2868,12 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             if( ASR::is_a<ASR::Var_t>(*tmp_expr) ) {
                 const ASR::Var_t* tmp_var = ASR::down_cast<ASR::Var_t>(tmp_expr);
                 tmp_sym = tmp_var->m_v;
+                out += std::string(ASRUtils::symbol_name(tmp_sym));
             } else {
-                throw CodeGenError("Cannot deallocate variables in expression " +
-                                    ASRUtils::type_to_str_python_expr(ASRUtils::expr_type(tmp_expr), tmp_expr),
-                                    tmp_expr->base.loc);
+                self().visit_expr(*tmp_expr);
+                out += src;
             }
-            out += std::string(ASRUtils::symbol_name(tmp_sym)) + ", ";
+            out += ", ";
         }
         out += ");\n";
         src = out;
