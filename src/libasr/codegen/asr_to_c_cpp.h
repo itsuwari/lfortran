@@ -1768,11 +1768,18 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         ASR::array_physical_typeType phys_type = ASRUtils::extract_physical_type(array_type);
         if( phys_type == ASR::array_physical_typeType::PointerArray ||
             phys_type == ASR::array_physical_typeType::FixedSizeArray ||
-            phys_type == ASR::array_physical_typeType::DescriptorArray ) {
+            phys_type == ASR::array_physical_typeType::SIMDArray ||
+            phys_type == ASR::array_physical_typeType::DescriptorArray ||
+            phys_type == ASR::array_physical_typeType::UnboundedPointerArray ||
+            phys_type == ASR::array_physical_typeType::ISODescriptorArray ||
+            phys_type == ASR::array_physical_typeType::NumPyArray ) {
             std::string value_data = value_desc + "->data";
             std::vector<std::string> diminfo;
             diminfo.reserve(value_rank * 2);
-            if (phys_type == ASR::array_physical_typeType::DescriptorArray) {
+            if (phys_type == ASR::array_physical_typeType::DescriptorArray ||
+                phys_type == ASR::array_physical_typeType::UnboundedPointerArray ||
+                phys_type == ASR::array_physical_typeType::ISODescriptorArray ||
+                phys_type == ASR::array_physical_typeType::NumPyArray) {
                 for( int i = 0; i < value_rank; i++ ) {
                     diminfo.push_back(value_desc + "->dims[" + std::to_string(i) + "].lower_bound");
                     diminfo.push_back(value_desc + "->dims[" + std::to_string(i) + "].length");
