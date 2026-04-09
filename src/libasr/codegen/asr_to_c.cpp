@@ -1533,6 +1533,10 @@ R"(    // Initialise Numpy
         src = "_lfortran_str_item_alloc(_lfortran_get_default_allocator(), " + str + ", " + idx + ")";
     }
 
+    void visit_StringPhysicalCast(const ASR::StringPhysicalCast_t &x) {
+        this->visit_expr(*x.m_arg);
+    }
+
     std::string generate_map_clauses(ASR::OMPMap_t* m) {
         std::string result = " map(";
         
