@@ -570,11 +570,46 @@ class CCPPDSUtils {
                         return get_print_type(type_ptr->m_type, false);
                     }
                 }
+                case ASR::ttypeType::Allocatable: {
+                    ASR::Allocatable_t* type_alloc = ASR::down_cast<ASR::Allocatable_t>(t);
+                    return get_print_type(type_alloc->m_type, deref_ptr);
+                }
+                case ASR::ttypeType::Array: {
+                    ASR::Array_t* type_arr = ASR::down_cast<ASR::Array_t>(t);
+                    return get_print_type(type_arr->m_type, deref_ptr);
+                }
+                case ASR::ttypeType::TypeParameter: {
+                    ASR::TypeParameter_t* type_param = ASR::down_cast<ASR::TypeParameter_t>(t);
+                    std::string param = std::string(type_param->m_param);
+                    if (param == "str") return "%s";
+                    if (param == "bool") return "%d";
+                    if (param == "i8" || param == "i16" || param == "i32") return "%d";
+                    if (param == "i64") {
+                        if (platform == Platform::Linux) {
+                            return "%li";
+                        } else {
+                            return "%lli";
+                        }
+                    }
+                    if (param == "u8" || param == "u16" || param == "u32") return "%u";
+                    if (param == "u64") {
+                        if (platform == Platform::Linux) {
+                            return "%lu";
+                        } else {
+                            return "%llu";
+                        }
+                    }
+                    if (param == "f32") return "%f";
+                    if (param == "f64") return "%lf";
+                    if (param == "c32" || param == "c64") return "(%f, %f)";
+                    throw LCompilersException("Type parameter print type not implemented: " + param);
+                }
                 case ASR::ttypeType::EnumType: {
                     ASR::ttype_t* enum_underlying_type = ASRUtils::get_contained_type(t);
                     return get_print_type(enum_underlying_type, deref_ptr);
                 }
-                default : throw LCompilersException("Not implemented");
+                default : throw LCompilersException("Not implemented print type " +
+                    ASRUtils::type_to_str_python_expr(t, nullptr));
             }
         }
 
