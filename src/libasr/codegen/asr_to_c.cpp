@@ -1923,14 +1923,40 @@ R"(    // Initialise Numpy
             return {value, "strlen(" + value + ")"};
         };
 
-        if (!x.m_unit || !ASRUtils::is_integer(*ASRUtils::expr_type(x.m_unit)) ||
-            !x.m_is_formatted || x.n_values != 1) {
-            throw CodeGenError("C backend FileWrite currently supports only formatted writes of a single value to integer units",
+        bool is_integer_unit = x.m_unit && ASRUtils::is_integer(*ASRUtils::expr_type(x.m_unit));
+        bool is_string_unit = x.m_unit && ASRUtils::is_character(*ASRUtils::expr_type(x.m_unit));
+
+        if (!x.m_unit || !x.m_is_formatted || x.n_values != 1 ||
+            (!is_integer_unit && !is_string_unit)) {
+            throw CodeGenError("C backend FileWrite currently supports only formatted writes of a single value to integer or character units",
                 x.base.base.loc);
         }
 
-        this->visit_expr(*x.m_unit);
-        std::string unit = src;
+        std::string unit;
+        std::string unit_len = "0";
+        std::string unit_len_name;
+        std::string unit_setup;
+        bool is_unit_allocatable = false;
+        bool is_unit_deferred = false;
+
+        if (is_string_unit) {
+            auto unit_arg = visit_string_arg(x.m_unit);
+            unit = unit_arg.first;
+            unit_len = unit_arg.second;
+            unit_len_name = current_scope->get_unique_name("__lfortran_unit_len");
+            unit_setup += indent + "int64_t " + unit_len_name + " = (int64_t)(" + unit_len + ");\n";
+            if (ASR::is_a<ASR::Var_t>(*x.m_unit)) {
+                unit_setup += indent + "if (" + unit + " == NULL) " + unit
+                    + " = (char*) _lfortran_string_malloc_alloc(_lfortran_get_default_allocator(), "
+                    + unit_len_name + ");\n";
+            }
+            ASR::ttype_t *unit_type = ASRUtils::expr_type(x.m_unit);
+            is_unit_allocatable = ASRUtils::is_allocatable(unit_type);
+            is_unit_deferred = ASRUtils::is_deferredLength_string(unit_type);
+        } else {
+            this->visit_expr(*x.m_unit);
+            unit = src;
+        }
 
         std::string iostat_ptr = "NULL";
         if (x.m_iostat) {
@@ -2000,9 +2026,18 @@ R"(    // Initialise Numpy
                 src += ", " + arg;
             }
             src += ");\n";
-            src += indent + "_lfortran_file_write(" + unit + ", " + iostat_ptr + ", \"%s%s\", 4, "
-                + buffer_name + ", (int64_t)" + size_name + ", "
-                + end_arg.first + ", " + end_arg.second + ");\n";
+            if (is_string_unit) {
+                src += unit_setup;
+                src += indent + "_lfortran_string_write(&(" + unit + "), "
+                    + (is_unit_allocatable ? "true" : "false") + ", "
+                    + (is_unit_deferred ? "true" : "false") + ", false, 1, &"
+                    + unit_len_name + ", " + iostat_ptr + ", \"%s\", 2, "
+                    + buffer_name + ", (int64_t)" + size_name + ");\n";
+            } else {
+                src += indent + "_lfortran_file_write(" + unit + ", " + iostat_ptr + ", \"%s%s\", 4, "
+                    + buffer_name + ", (int64_t)" + size_name + ", "
+                    + end_arg.first + ", " + end_arg.second + ");\n";
+            }
             src += indent + "free(" + buffer_name + ");\n";
             return;
         }
@@ -2013,9 +2048,18 @@ R"(    // Initialise Numpy
         }
 
         auto value_arg = visit_string_arg(x.m_values[0]);
-        src = indent + "_lfortran_file_write(" + unit + ", " + iostat_ptr + ", \"%s%s\", 4, "
-            + value_arg.first + ", " + value_arg.second + ", "
-            + end_arg.first + ", " + end_arg.second + ");\n";
+        if (is_string_unit) {
+            src = unit_setup;
+            src += indent + "_lfortran_string_write(&(" + unit + "), "
+                + (is_unit_allocatable ? "true" : "false") + ", "
+                + (is_unit_deferred ? "true" : "false") + ", false, 1, &"
+                + unit_len_name + ", " + iostat_ptr + ", \"%s\", 2, "
+                + value_arg.first + ", " + value_arg.second + ");\n";
+        } else {
+            src = indent + "_lfortran_file_write(" + unit + ", " + iostat_ptr + ", \"%s%s\", 4, "
+                + value_arg.first + ", " + value_arg.second + ", "
+                + end_arg.first + ", " + end_arg.second + ");\n";
+        }
     }
 
     void visit_ArrayBroadcast(const ASR::ArrayBroadcast_t &x) {
