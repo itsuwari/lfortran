@@ -5,6 +5,7 @@
 #include <libasr/asr.h>
 #include <libasr/asr_utils.h>
 #include <libasr/pass/intrinsic_function_registry.h>
+#include <cctype>
 
 namespace LCompilers {
 
@@ -43,6 +44,42 @@ namespace LCompilers {
     class Abort {};
 
 namespace CUtils {
+
+    static inline std::string sanitize_c_identifier(const std::string &name) {
+        if (name.empty()) {
+            return "_";
+        }
+        std::string result;
+        result.reserve(name.size() + 8);
+        auto append_hex_escape = [&](unsigned char c) {
+            static const char *hex = "0123456789ABCDEF";
+            result += "_x";
+            result += hex[(c >> 4) & 0xF];
+            result += hex[c & 0xF];
+            result += "_";
+        };
+        for (size_t i = 0; i < name.size(); i++) {
+            unsigned char c = static_cast<unsigned char>(name[i]);
+            bool is_valid = std::isalnum(c) || c == '_';
+            if (!is_valid || (i == 0 && std::isdigit(c))) {
+                append_hex_escape(c);
+            } else {
+                result += static_cast<char>(c);
+            }
+        }
+        return result;
+    }
+
+    static inline std::string get_c_symbol_name(const ASR::symbol_t *sym) {
+        return sanitize_c_identifier(ASRUtils::symbol_name(sym));
+    }
+
+    static inline std::string get_c_type_code(ASR::ttype_t *t,
+            bool encode_kind=true, bool encode_dimensions=true,
+            bool encode_physical_type=true) {
+        return sanitize_c_identifier(
+            ASRUtils::get_type_code(t, encode_kind, encode_dimensions, encode_physical_type));
+    }
 
     static inline std::string get_c_type_from_type_parameter(const std::string &param,
             bool is_c=true) {
@@ -257,7 +294,7 @@ namespace CUtils {
     static inline std::string get_tuple_type_code(ASR::Tuple_t *tup) {
         std::string result = "tuple_";
         for (size_t i = 0; i < tup->n_type; i++) {
-            result += ASRUtils::get_type_code(tup->m_type[i], true);
+            result += get_c_type_code(tup->m_type[i], true);
             if (i + 1 != tup->n_type) {
                 result += "_";
             }
@@ -268,7 +305,7 @@ namespace CUtils {
     static inline std::string get_struct_type_code(ASR::expr_t* struct_expr) {
         ASR::Variable_t* v = ASR::down_cast<ASR::Variable_t>(
             ASRUtils::symbol_get_past_external(ASRUtils::get_struct_sym_from_struct_expr(struct_expr)));
-        return ASRUtils::symbol_name(v->m_type_declaration);
+        return get_c_symbol_name(v->m_type_declaration);
     }
 
     static inline std::string get_c_type_from_ttype_t(ASR::ttype_t* t,
@@ -322,12 +359,19 @@ namespace CUtils {
                 break;
             }
             case ASR::ttypeType::StructType: {
+                ASR::StructType_t* struct_type = ASR::down_cast<ASR::StructType_t>(t);
+                if (struct_type->m_is_unlimited_polymorphic) {
+                    type_src = "struct "
+                        + sanitize_c_identifier("~unlimited_polymorphic_type");
+                } else {
+                    type_src = "void*";
+                }
                 break;
             }
             case ASR::ttypeType::List: {
                 ASR::List_t* list_type = ASR::down_cast<ASR::List_t>(t);
                 std::string list_element_type = get_c_type_from_ttype_t(list_type->m_type);
-                std::string list_type_code = ASRUtils::get_type_code(list_type->m_type, true);
+                std::string list_type_code = get_c_type_code(list_type->m_type, true);
                 type_src = "struct list_" + list_type_code;
                 break;
             }
@@ -357,7 +401,7 @@ namespace CUtils {
             case ASR::ttypeType::EnumType: {
                 ASR::EnumType_t* enum_type = ASR::down_cast<ASR::EnumType_t>(t);
                 ASR::symbol_t *enum_sym = ASRUtils::symbol_get_past_external(enum_type->m_enum_type);
-                type_src = std::string("enum ") + ASRUtils::symbol_name(enum_sym);
+                type_src = std::string("enum ") + get_c_symbol_name(enum_sym);
                 break;
             }
             case ASR::ttypeType::UnionType: {
@@ -424,12 +468,12 @@ class CCPPDSUtils {
         }
 
         std::string get_compare_func(ASR::ttype_t *t) {
-            std::string type_code = ASRUtils::get_type_code(t, true);
+            std::string type_code = CUtils::get_c_type_code(t, true);
             return compareTwoDS[type_code];
         }
 
         std::string get_print_func(ASR::ttype_t *t) {
-            std::string type_code = ASRUtils::get_type_code(t, true);
+            std::string type_code = CUtils::get_c_type_code(t, true);
             return printFuncs[type_code];
         }
 
@@ -443,7 +487,7 @@ class CCPPDSUtils {
             switch (t->type) {
                 case ASR::ttypeType::List : {
                     ASR::List_t* list_type = ASR::down_cast<ASR::List_t>(t);
-                    std::string list_type_code = ASRUtils::get_type_code(list_type->m_type, true);
+                    std::string list_type_code = CUtils::get_c_type_code(list_type->m_type, true);
                     std::string func = typecodeToDSfuncs[list_type_code]["list_deepcopy"];
                     result = func + "(&" + value + ", &" + target + ");";
                     break;
@@ -456,7 +500,7 @@ class CCPPDSUtils {
                     break;
                 }
                 case ASR::ttypeType::Dict : {
-                    std::string d_type_code = ASRUtils::get_type_code(t, true);
+                    std::string d_type_code = CUtils::get_c_type_code(t, true);
                     std::string func = typecodeToDSfuncs[d_type_code]["dict_deepcopy"];
                     result = func + "(&" + value + ", &" + target + ");";
                     break;
@@ -649,7 +693,7 @@ class CCPPDSUtils {
                 // Make sure the nested types work
                 get_type(list_type->m_type);
             }
-            std::string list_type_code = ASRUtils::get_type_code(list_type->m_type, true);
+            std::string list_type_code = CUtils::get_c_type_code(list_type->m_type, true);
             if( typecodeToDStype.find(list_type_code) != typecodeToDStype.end() ) {
                 return typecodeToDStype[list_type_code];
             }
@@ -679,7 +723,7 @@ class CCPPDSUtils {
         }
 
         std::string get_list_deepcopy_func(ASR::List_t* list_type) {
-            std::string list_type_code = ASRUtils::get_type_code(list_type->m_type, true);
+            std::string list_type_code = CUtils::get_c_type_code(list_type->m_type, true);
             return typecodeToDSfuncs[list_type_code]["list_deepcopy"];
         }
 
@@ -694,7 +738,7 @@ class CCPPDSUtils {
         std::string get_array_deepcopy_func(ASR::ttype_t* array_type_asr) {
             LCOMPILERS_ASSERT(is_c);
             std::string array_type_name = CUtils::get_c_type_from_ttype_t(array_type_asr);
-            std::string array_encoded_type_name = ASRUtils::get_type_code(array_type_asr, true, false, false);
+            std::string array_encoded_type_name = CUtils::get_c_type_code(array_type_asr, true, false, false);
             std::string array_types_decls = "";
             std::string array_type_str = get_array_type(array_type_name, array_encoded_type_name,
                                                             array_types_decls, true, false);
@@ -703,17 +747,17 @@ class CCPPDSUtils {
         }
 
         std::string get_list_init_func(ASR::List_t* list_type) {
-            std::string list_type_code = ASRUtils::get_type_code(list_type->m_type, true);
+            std::string list_type_code = CUtils::get_c_type_code(list_type->m_type, true);
             return typecodeToDSfuncs[list_type_code]["list_init"];
         }
 
         std::string get_list_append_func(ASR::List_t* list_type) {
-            std::string list_type_code = ASRUtils::get_type_code(list_type->m_type, true);
+            std::string list_type_code = CUtils::get_c_type_code(list_type->m_type, true);
             return typecodeToDSfuncs[list_type_code]["list_append"];
         }
 
         std::string get_list_insert_func(ASR::List_t* list_type) {
-            std::string list_type_code = ASRUtils::get_type_code(list_type->m_type, true);
+            std::string list_type_code = CUtils::get_c_type_code(list_type->m_type, true);
             return typecodeToDSfuncs[list_type_code]["list_insert"];
         }
 
@@ -722,17 +766,17 @@ class CCPPDSUtils {
         }
 
         std::string get_list_remove_func(ASR::List_t* list_type) {
-            std::string list_type_code = ASRUtils::get_type_code(list_type->m_type, true);
+            std::string list_type_code = CUtils::get_c_type_code(list_type->m_type, true);
             return typecodeToDSfuncs[list_type_code]["list_remove"];
         }
 
         std::string get_list_concat_func(ASR::List_t* list_type) {
-            std::string list_type_code = ASRUtils::get_type_code(list_type->m_type, true);
+            std::string list_type_code = CUtils::get_c_type_code(list_type->m_type, true);
             return typecodeToDSfuncs[list_type_code]["list_concat"];
         }
 
         std::string get_list_repeat_func(ASR::List_t* list_type) {
-            std::string list_type_code = ASRUtils::get_type_code(list_type->m_type, true);
+            std::string list_type_code = CUtils::get_c_type_code(list_type->m_type, true);
             return typecodeToDSfuncs[list_type_code]["list_repeat"];
         }
 
@@ -741,12 +785,12 @@ class CCPPDSUtils {
         }
 
         std::string get_list_clear_func(ASR::List_t* list_type) {
-            std::string list_type_code = ASRUtils::get_type_code(list_type->m_type, true);
+            std::string list_type_code = CUtils::get_c_type_code(list_type->m_type, true);
             return typecodeToDSfuncs[list_type_code]["list_clear"];
         }
 
         std::string get_list_section_func(ASR::List_t* list_type) {
-            std::string list_type_code = ASRUtils::get_type_code(list_type->m_type, true);
+            std::string list_type_code = CUtils::get_c_type_code(list_type->m_type, true);
             return typecodeToDSfuncs[list_type_code]["list_section"];
         }
 
@@ -759,7 +803,7 @@ class CCPPDSUtils {
         }
 
         void generate_print_funcs(ASR::ttype_t *t) {
-            std::string type_code = ASRUtils::get_type_code(t, true);
+            std::string type_code = CUtils::get_c_type_code(t, true);
             if (printFuncs.find(type_code) != printFuncs.end()) {
                 return;
             }
@@ -775,7 +819,7 @@ class CCPPDSUtils {
             if (ASR::is_a<ASR::List_t>(*t)) {
                 ASR::ttype_t *tt = ASR::down_cast<ASR::List_t>(t)->m_type;
                 generate_print_funcs(tt);
-                std::string ele_func = printFuncs[ASRUtils::get_type_code(tt, true)];
+                std::string ele_func = printFuncs[CUtils::get_c_type_code(tt, true)];
                 tmp_gen += indent + signature + " {\n";
                 tmp_gen += indent + tab + "printf(\"[\");\n";
                 tmp_gen += indent + tab + "for (int i=0; i<a.current_end_point; i++) {\n";
@@ -790,7 +834,7 @@ class CCPPDSUtils {
                 tmp_gen += indent + tab + "printf(\"(\");\n";
                 for (size_t i=0; i<tt->n_type; i++) {
                     generate_print_funcs(tt->m_type[i]);
-                    std::string ele_func = printFuncs[ASRUtils::get_type_code(tt->m_type[i], true)];
+                    std::string ele_func = printFuncs[CUtils::get_c_type_code(tt->m_type[i], true)];
                     std::string num = std::to_string(i);
                     tmp_gen += indent + tab + ele_func + "(a.element_" + num + ");\n";
                     if (i+1 != tt->n_type)
@@ -815,7 +859,7 @@ class CCPPDSUtils {
         }
 
         void generate_compare_funcs(ASR::ttype_t *t) {
-            std::string type_code = ASRUtils::get_type_code(t, true);
+            std::string type_code = CUtils::get_c_type_code(t, true);
             if (compareTwoDS.find(type_code) != compareTwoDS.end()) {
                 return;
             }
@@ -832,7 +876,7 @@ class CCPPDSUtils {
                 tmp_gen += indent + signature + " {\n";
                 ASR::ttype_t *tt = ASR::down_cast<ASR::List_t>(t)->m_type;
                 generate_compare_funcs(tt);
-                std::string ele_func = compareTwoDS[ASRUtils::get_type_code(tt, true)];
+                std::string ele_func = compareTwoDS[CUtils::get_c_type_code(tt, true)];
                 tmp_gen += indent + tab + "if (a.current_end_point != b.current_end_point)\n";
                 tmp_gen += indent + tab + tab + "return false;\n";
                 tmp_gen += indent + tab + "for (int i=0; i<a.current_end_point; i++) {\n";
@@ -852,7 +896,7 @@ class CCPPDSUtils {
                 tmp_gen += indent + tab + "bool ans = true;\n";
                 for (size_t i=0; i<tt->n_type; i++) {
                     generate_compare_funcs(tt->m_type[i]);
-                    std::string ele_func = compareTwoDS[ASRUtils::get_type_code(tt->m_type[i], true)];
+                    std::string ele_func = compareTwoDS[CUtils::get_c_type_code(tt->m_type[i], true)];
                     std::string num = std::to_string(i);
                     tmp_gen += indent + tab + "ans &= " + ele_func + "(a.element_" +
                                 num + ", " + "b.element_" + num + ");\n";
@@ -976,7 +1020,7 @@ class CCPPDSUtils {
                                 "src->capacity * sizeof(" + list_element_type + "));\n";
             if (ASR::is_a<ASR::List_t>(*m_type)) {
                 ASR::ttype_t *tt = ASR::down_cast<ASR::List_t>(m_type)->m_type;
-                std::string deep_copy_func = typecodeToDSfuncs[ASRUtils::get_type_code(tt, true)]["list_deepcopy"];
+                std::string deep_copy_func = typecodeToDSfuncs[CUtils::get_c_type_code(tt, true)]["list_deepcopy"];
                 LCOMPILERS_ASSERT(deep_copy_func.size() > 0);
                 generated_code += indent + tab + "for(int i=0; i<src->current_end_point; i++)\n";
                 generated_code += indent + tab + tab + deep_copy_func + "(&src->data[i], &dest->data[i]);\n";
@@ -1002,7 +1046,7 @@ class CCPPDSUtils {
             generated_code += indent + tab + init_func + "(result, left->current_end_point + right->current_end_point);\n";
             if (ASR::is_a<ASR::List_t>(*m_type)) {
                 ASR::ttype_t *tt = ASR::down_cast<ASR::List_t>(m_type)->m_type;
-                std::string deep_copy_func = typecodeToDSfuncs[ASRUtils::get_type_code(tt, true)]["list_deepcopy"];
+                std::string deep_copy_func = typecodeToDSfuncs[CUtils::get_c_type_code(tt, true)]["list_deepcopy"];
                 LCOMPILERS_ASSERT(deep_copy_func.size() > 0);
                 generated_code += indent + tab + "for(int i=0; i<left->current_end_point; i++)\n";
                 generated_code += indent + tab + tab + deep_copy_func + "(&left->data[i], &result->data[i]);\n";
@@ -1039,7 +1083,7 @@ class CCPPDSUtils {
 
             if (ASR::is_a<ASR::List_t>(*m_type)) {
                 ASR::ttype_t *tt = ASR::down_cast<ASR::List_t>(m_type)->m_type;
-                std::string deep_copy_func = typecodeToDSfuncs[ASRUtils::get_type_code(tt, true)]["list_deepcopy"];
+                std::string deep_copy_func = typecodeToDSfuncs[CUtils::get_c_type_code(tt, true)]["list_deepcopy"];
                 LCOMPILERS_ASSERT(deep_copy_func.size() > 0);
                 generated_code += indent + tab + tab + "for(int j=0; j<x->current_end_point; j++)\n";
                 generated_code += indent + tab + tab + tab + deep_copy_func + "(&x->data[j], &result->data[i*x->current_end_point+j]);\n";
@@ -1272,12 +1316,12 @@ class CCPPDSUtils {
         }
 
         std::string get_dict_insert_func(ASR::Dict_t* d_type) {
-            std::string dict_type_code = ASRUtils::get_type_code((ASR::ttype_t*)d_type, true);
+            std::string dict_type_code = CUtils::get_c_type_code((ASR::ttype_t*)d_type, true);
             return typecodeToDSfuncs[dict_type_code]["dict_insert"];
         }
 
         std::string get_dict_get_func(ASR::Dict_t* d_type, bool with_fallback=false) {
-            std::string dict_type_code = ASRUtils::get_type_code((ASR::ttype_t*)d_type, true);
+            std::string dict_type_code = CUtils::get_c_type_code((ASR::ttype_t*)d_type, true);
             if (with_fallback) {
                 return typecodeToDSfuncs[dict_type_code]["dict_get_fb"];
             }
@@ -1285,27 +1329,27 @@ class CCPPDSUtils {
         }
 
         std::string get_dict_len_func(ASR::Dict_t* d_type) {
-            std::string dict_type_code = ASRUtils::get_type_code((ASR::ttype_t*)d_type, true);
+            std::string dict_type_code = CUtils::get_c_type_code((ASR::ttype_t*)d_type, true);
             return typecodeToDSfuncs[dict_type_code]["dict_len"];
         }
 
         std::string get_dict_pop_func(ASR::Dict_t* d_type) {
-            std::string dict_type_code = ASRUtils::get_type_code((ASR::ttype_t*)d_type, true);
+            std::string dict_type_code = CUtils::get_c_type_code((ASR::ttype_t*)d_type, true);
             return typecodeToDSfuncs[dict_type_code]["dict_pop"];
         }
 
         std::string get_dict_init_func(ASR::Dict_t* d_type) {
-            std::string dict_type_code = ASRUtils::get_type_code((ASR::ttype_t*)d_type, true);
+            std::string dict_type_code = CUtils::get_c_type_code((ASR::ttype_t*)d_type, true);
             return typecodeToDSfuncs[dict_type_code]["dict_init"];
         }
 
         std::string get_dict_deepcopy_func(ASR::Dict_t* d_type) {
-            std::string dict_type_code = ASRUtils::get_type_code((ASR::ttype_t*)d_type, true);
+            std::string dict_type_code = CUtils::get_c_type_code((ASR::ttype_t*)d_type, true);
             return typecodeToDSfuncs[dict_type_code]["dict_deepcopy"];
         }
 
         std::string get_dict_type(ASR::Dict_t* dict_type) {
-            std::string dict_type_code = ASRUtils::get_type_code((ASR::ttype_t*)dict_type, true);
+            std::string dict_type_code = CUtils::get_c_type_code((ASR::ttype_t*)dict_type, true);
             if (typecodeToDStype.find(dict_type_code) != typecodeToDStype.end()) {
                 return typecodeToDStype[dict_type_code];
             }
@@ -1915,7 +1959,7 @@ namespace BindPyUtils {
             case ASR::ttypeType::Array: {
                 ASR::ttype_t* array_t = ASR::down_cast<ASR::Array_t>(t)->m_type;
                 std::string array_type_name = CUtils::get_c_type_from_ttype_t(array_t);
-                std::string array_encoded_type_name = ASRUtils::get_type_code(array_t, true, false);
+                std::string array_encoded_type_name = CUtils::get_c_type_code(array_t, true, false);
                 std::string return_type = c_ds_api->get_array_type(array_type_name, array_encoded_type_name, array_types_decls, true);
                 type_src = bind_py_utils_functions->get_conv_py_arr_to_c(return_type, array_type_name,
                     array_encoded_type_name);

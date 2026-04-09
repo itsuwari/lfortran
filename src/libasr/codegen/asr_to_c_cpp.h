@@ -535,9 +535,9 @@ R"(#include <stdio.h>
             sub = c_ds_api->get_dict_type(dict_type) + " ";
         } else {
             throw CodeGenError("Return type not supported in function '" +
-                std::string(ASRUtils::symbol_name(ASR::down_cast<ASR::symbol_t>(
-                    return_var->m_parent_symtab->asr_owner))) +
-                    + "'", return_var->base.base.loc);
+                CUtils::get_c_symbol_name(ASR::down_cast<ASR::symbol_t>(
+                    return_var->m_parent_symtab->asr_owner)) +
+                "'", return_var->base.base.loc);
         }
 
         return sub;
@@ -565,7 +565,7 @@ R"(#include <stdio.h>
         } else {
             sub = "void ";
         }
-        std::string sym_name = x.m_name;
+        std::string sym_name = CUtils::sanitize_c_identifier(x.m_name);
         if (sym_name == "main") {
             sym_name = "_xx_lcompilers_changed_main_xx";
         }
@@ -633,7 +633,7 @@ R"(#include <stdio.h>
 )";
         for (size_t i = 0; i < x.n_args; ++i) {
             ASR::Variable_t *arg = ASRUtils::EXPR2VAR(x.m_args[i]);
-            std::string arg_name = std::string(arg->m_name);
+            std::string arg_name = CUtils::sanitize_c_identifier(arg->m_name);
             std::string indent = "\n    ";
             if (ASRUtils::is_array(arg->m_type)) {
                 arg_conv += indent + bind_py_utils_functions->get_conv_dims_to_1D_arr() + "(" + arg_name + "->n_dims, " + arg_name + "->dims, __new_dims);";
@@ -1174,9 +1174,10 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         ASR::Function_t *fn = get_procedure_interface_function(x.m_name);
         std::string fn_name;
         if (ASR::is_a<ASR::Variable_t>(*callee_sym)) {
-            fn_name = ASR::down_cast<ASR::Variable_t>(callee_sym)->m_name;
+            fn_name = CUtils::sanitize_c_identifier(
+                ASR::down_cast<ASR::Variable_t>(callee_sym)->m_name);
         } else if (fn) {
-            fn_name = fn->m_name;
+            fn_name = CUtils::sanitize_c_identifier(fn->m_name);
         } else {
             throw CodeGenError("Unsupported function call target", x.base.base.loc);
         }
@@ -2210,25 +2211,27 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
     void visit_Var(const ASR::Var_t &x) {
         const ASR::symbol_t *s = ASRUtils::symbol_get_past_external(x.m_v);
         if (ASR::is_a<ASR::Function_t>(*s)) {
-            src = ASRUtils::symbol_name(s);
+            src = CUtils::get_c_symbol_name(s);
             return;
         }
         ASR::Variable_t* sv = ASR::down_cast<ASR::Variable_t>(s);
+        std::string var_name = CUtils::sanitize_c_identifier(
+            ASR::down_cast<ASR::Variable_t>(s)->m_name);
         if (is_c) {
             if ((sv->m_intent == ASRUtils::intent_in
                 || sv->m_intent == ASRUtils::intent_inout)
                 && ASRUtils::is_array(sv->m_type)
                 && ASRUtils::is_pointer(sv->m_type)) {
-                src = "(*" + std::string(ASR::down_cast<ASR::Variable_t>(s)->m_name) + ")";
+                src = "(*" + var_name + ")";
             } else if ((sv->m_intent == ASRUtils::intent_inout
                 || sv->m_intent == ASRUtils::intent_out)
                 && !ASRUtils::is_aggregate_type(sv->m_type)) {
-                src = "(*" + std::string(ASR::down_cast<ASR::Variable_t>(s)->m_name) + ")";
+                src = "(*" + var_name + ")";
             } else {
-                src = std::string(ASR::down_cast<ASR::Variable_t>(s)->m_name);
+                src = var_name;
             }
         } else {
-            src = std::string(ASR::down_cast<ASR::Variable_t>(s)->m_name);
+            src = var_name;
         }
         last_expr_precedence = 2;
     }
@@ -2238,7 +2241,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         std::string der_expr, member;
         this->visit_expr(*x.m_v);
         der_expr = std::move(src);
-        member = ASRUtils::symbol_name(ASRUtils::symbol_get_past_external(x.m_m));
+        member = CUtils::get_c_symbol_name(ASRUtils::symbol_get_past_external(x.m_m));
         if( ASR::is_a<ASR::ArrayItem_t>(*x.m_v) ||
             ASR::is_a<ASR::UnionInstanceMember_t>(*x.m_v) ||
             ASR::is_a<ASR::StructInstanceMember_t>(*x.m_v) ) {
@@ -2253,7 +2256,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         std::string der_expr, member;
         this->visit_expr(*x.m_v);
         der_expr = std::move(src);
-        member = ASRUtils::symbol_name(x.m_m);
+        member = CUtils::get_c_symbol_name(x.m_m);
         src = der_expr + "." + member;
     }
 
@@ -2906,7 +2909,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             if( ASR::is_a<ASR::Var_t>(*tmp_expr) ) {
                 const ASR::Var_t* tmp_var = ASR::down_cast<ASR::Var_t>(tmp_expr);
                 type = ASRUtils::expr_type(tmp_expr);
-                sym = ASRUtils::symbol_name(tmp_var->m_v);
+                sym = CUtils::get_c_symbol_name(tmp_var->m_v);
             } else if (ASR::is_a<ASR::StructInstanceMember_t>(*tmp_expr) ||
                        ASR::is_a<ASR::UnionInstanceMember_t>(*tmp_expr) ||
                        ASR::is_a<ASR::ArrayItem_t>(*tmp_expr)) {
@@ -2997,7 +3000,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             if( ASR::is_a<ASR::Var_t>(*tmp_expr) ) {
                 const ASR::Var_t* tmp_var = ASR::down_cast<ASR::Var_t>(tmp_expr);
                 tmp_sym = tmp_var->m_v;
-                out += std::string(ASRUtils::symbol_name(tmp_sym));
+                out += CUtils::get_c_symbol_name(tmp_sym);
             } else {
                 self().visit_expr(*tmp_expr);
                 out += src;
@@ -3017,7 +3020,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             if( ASR::is_a<ASR::Var_t>(*tmp_expr) ) {
                 const ASR::Var_t* tmp_var = ASR::down_cast<ASR::Var_t>(tmp_expr);
                 tmp_sym = tmp_var->m_v;
-                out += std::string(ASRUtils::symbol_name(tmp_sym));
+                out += CUtils::get_c_symbol_name(tmp_sym);
             } else {
                 self().visit_expr(*tmp_expr);
                 out += src;
@@ -3273,13 +3276,13 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
 
     void visit_GoTo(const ASR::GoTo_t &x) {
         std::string indent(indentation_level*indentation_spaces, ' ');
-        std::string goto_c_name = "__c__goto__" + std::string(x.m_name);
+        std::string goto_c_name = "__c__goto__" + CUtils::sanitize_c_identifier(x.m_name);
         src =  indent + "goto " + goto_c_name + ";\n";
         gotoid2name[x.m_target_id] = goto_c_name;
     }
 
     void visit_GoToTarget(const ASR::GoToTarget_t &x) {
-        std::string goto_c_name = "__c__goto__" + std::string(x.m_name);
+        std::string goto_c_name = "__c__goto__" + CUtils::sanitize_c_identifier(x.m_name);
         src = goto_c_name + ":\n";
     }
 
@@ -3454,9 +3457,10 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         }
         std::string sym_name;
         if (ASR::is_a<ASR::Variable_t>(*callee_sym)) {
-            sym_name = ASR::down_cast<ASR::Variable_t>(callee_sym)->m_name;
+            sym_name = CUtils::sanitize_c_identifier(
+                ASR::down_cast<ASR::Variable_t>(callee_sym)->m_name);
         } else {
-            sym_name = s->m_name;
+            sym_name = CUtils::sanitize_c_identifier(s->m_name);
         }
         ASR::FunctionType_t *s_type = ASRUtils::get_FunctionType(s);
         if (!ASR::is_a<ASR::Variable_t>(*callee_sym) &&
