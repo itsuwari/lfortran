@@ -2126,6 +2126,20 @@ R"(    // Initialise Numpy
 
     void visit_ArrayItem(const ASR::ArrayItem_t &x) {
         CHECK_FAST_C(compiler_options, x)
+        auto get_dim_start_src = [&](const ASR::dimension_t &dim) {
+            if (dim.m_start) {
+                this->visit_expr(*dim.m_start);
+                return src;
+            }
+            return std::to_string(lower_bound);
+        };
+        auto get_dim_length_src = [&](const ASR::dimension_t &dim) {
+            if (dim.m_length) {
+                this->visit_expr(*dim.m_length);
+                return src;
+            }
+            return std::string("1");
+        };
         ASR::expr_t *array_expr = x.m_v;
         ASR::ArraySection_t *array_section = nullptr;
         if (ASR::is_a<ASR::ArraySection_t>(*x.m_v)) {
@@ -2137,8 +2151,10 @@ R"(    // Initialise Numpy
         ASR::ttype_t* x_mv_type = ASRUtils::expr_type(array_expr);
         ASR::dimension_t* m_dims;
         int n_dims = ASRUtils::extract_dimensions_from_ttype(x_mv_type, m_dims);
+        ASR::symbol_t *array_owner = ASRUtils::get_asr_owner(array_expr);
         bool is_data_only_array = ASRUtils::is_fixed_size_array(m_dims, n_dims) &&
-                                  ASR::is_a<ASR::Struct_t>(*ASRUtils::get_asr_owner(array_expr));
+                                  array_owner != nullptr &&
+                                  ASR::is_a<ASR::Struct_t>(*array_owner);
         if( is_data_only_array || ASRUtils::is_simd_array(x.m_v)) {
             std::string index = "";
             std::string out = array;
@@ -2208,8 +2224,7 @@ R"(    // Initialise Numpy
                     this->visit_expr(*curr_idx.m_left);
                     base_lb = src;
                 } else {
-                    this->visit_expr(*m_dims[r].m_start);
-                    base_lb = src;
+                    base_lb = get_dim_start_src(m_dims[r]);
                 }
 
                 std::string step = "1";
@@ -2232,15 +2247,12 @@ R"(    // Initialise Numpy
         if( array_t->m_physical_type == ASR::array_physical_typeType::PointerArray ||
                 array_t->m_physical_type == ASR::array_physical_typeType::FixedSizeArray ) {
             for( size_t idim = 0; idim < x.n_args; idim++ ) {
-                this->visit_expr(*m_dims[idim].m_start);
-                diminfo.push_back(src);
-                this->visit_expr(*m_dims[idim].m_length);
-                diminfo.push_back(src);
+                diminfo.push_back(get_dim_start_src(m_dims[idim]));
+                diminfo.push_back(get_dim_length_src(m_dims[idim]));
             }
         } else if( array_t->m_physical_type == ASR::array_physical_typeType::UnboundedPointerArray ) {
             for( size_t idim = 0; idim < x.n_args; idim++ ) {
-                this->visit_expr(*m_dims[idim].m_start);
-                diminfo.push_back(src);
+                diminfo.push_back(get_dim_start_src(m_dims[idim]));
             }
         }
 
