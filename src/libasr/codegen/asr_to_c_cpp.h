@@ -1097,6 +1097,15 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         if (ASR::is_a<ASR::Function_t>(*base_sym)) {
             return ASR::down_cast<ASR::Function_t>(base_sym);
         }
+        if (ASR::is_a<ASR::StructMethodDeclaration_t>(*base_sym)) {
+            ASR::StructMethodDeclaration_t *meth =
+                ASR::down_cast<ASR::StructMethodDeclaration_t>(base_sym);
+            ASR::symbol_t *proc_sym = ASRUtils::symbol_get_past_external(meth->m_proc);
+            if (ASR::is_a<ASR::Function_t>(*proc_sym)) {
+                return ASR::down_cast<ASR::Function_t>(proc_sym);
+            }
+            return nullptr;
+        }
         if (!ASR::is_a<ASR::Variable_t>(*base_sym)) {
             return nullptr;
         }
