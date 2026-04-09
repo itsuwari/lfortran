@@ -1023,7 +1023,7 @@ class ASRToLLVMVisitor;
             if(ASRUtils::is_allocatable(t)){
                 finalize_allocatable(ptr, t, struct_sym, in_struct);
             } else if(ASRUtils::is_pointer(t)) {
-                finalize_pointer(ptr, t, struct_sym);
+                finalize_pointer(ptr, t, struct_sym, in_struct);
             } else {
                 finalize_type(ptr, t, struct_sym);
             }
@@ -1181,12 +1181,20 @@ class ASRToLLVMVisitor;
             }
         }
 
-        void finalize_pointer(llvm::Value* ptr, ASR::ttype_t* const t, [[maybe_unused]] ASR::Struct_t* const struct_sym){
+        void finalize_pointer(llvm::Value* ptr, ASR::ttype_t* const t, [[maybe_unused]] ASR::Struct_t* const struct_sym, bool in_struct){
             LCOMPILERS_ASSERT_MSG(ASRUtils::is_pointer(t), "Must be finalizable pointer.")
             auto const t_past = ASRUtils::type_get_past_pointer(t);
             switch (t_past->type) {
-                case ASR::Array:
-                    llvm_utils_->lfortran_free_nocheck(ptr);
+                case ASR::Array: {    
+                    const bool upoly_descr_arr =   ASRUtils::is_unlimited_polymorphic_type(t_past) 
+                    && ASRUtils::is_array_physically_descriptor(t_past);
+                    if(upoly_descr_arr) {
+                        llvm::Value* const wrapper = builder_->CreateLoad(llvm_utils_->getClassType(struct_sym, true), 
+                                        llvm_utils_->create_gep2(get_llvm_type(t_past, struct_sym), ptr, 0));
+                        llvm_utils_->lfortran_free_nocheck(wrapper);
+                    }
+                    if(in_struct) { llvm_utils_->lfortran_free_nocheck(ptr); }
+                }
                 break;
                 case ASR::StructType:
                     if(ASRUtils::is_class_type(t_past)){
@@ -1240,6 +1248,28 @@ class ASRToLLVMVisitor;
                     bool const need_free = ( arr_physical_t == ASR::DescriptorArray
                                               || arr_physical_t == ASR::PointerArray) && in_struct;
                     if(need_free) {
+                        // Narrow case: allocatable descriptor-array of deferred-
+                        // length strings can leave its descriptor backing store
+                        // allocated. Free that backing store before wrapper free.
+                        if (arr_physical_t == ASR::DescriptorArray
+                                && ASRUtils::extract_type(t_past)->type == ASR::String) {
+                            auto* const str_t = ASR::down_cast<ASR::String_t>(ASRUtils::extract_type(t_past));
+                            if (str_t->m_len == nullptr) {
+                                auto* const arr_t = ASR::down_cast<ASR::Array_t>(t_past);
+                                llvm::Type* const arr_llvm_t = get_llvm_type(t_past, struct_sym);
+                                llvm::Type* const elem_llvm_t = get_llvm_type(arr_t->m_type, struct_sym);
+                                auto* const data_ptr = builder_->CreateLoad(
+                                    elem_llvm_t->getPointerTo(),
+                                    llvm_utils_->create_gep2(arr_llvm_t, var_ptr, 0));
+                                auto* const data_not_null = builder_->CreateICmpNE(
+                                    data_ptr,
+                                    llvm::ConstantPointerNull::get(
+                                        llvm::cast<llvm::PointerType>(elem_llvm_t->getPointerTo())));
+                                llvm_utils_->create_if_else(data_not_null,
+                                    [this, data_ptr]() { llvm_utils_->lfortran_free_nocheck(data_ptr); },
+                                    [](){});
+                            }
+                        }
                         llvm_utils_->lfortran_free_nocheck(var_ptr);
                     }
                 }
@@ -1994,10 +2024,12 @@ class ASRToLLVMVisitor;
         bool is_finalizable_type_pointer(ASR::Pointer_t* const t, [[maybe_unused]] ASR::Struct_t* const struct_sym, const bool in_struct){
             ASR::ttype_t* const t_past = ASRUtils::type_get_past_allocatable_pointer(&t->base);
             switch(t_past->type){
-                case ASR::Array:
-                    return in_struct 
-                        && (   ASRUtils::extract_physical_type(t_past) == ASR::DescriptorArray
-                            || ASRUtils::extract_physical_type(t_past) == ASR::AssumedRankArray);
+                case ASR::Array:{
+                    const bool in_struct_descr_arr = in_struct && ASRUtils::is_array_physically_descriptor(t_past);
+                    const bool upoly_descr_array = ASRUtils::is_unlimited_polymorphic_type(ASRUtils::extract_type(t_past)) 
+                    && ASRUtils::is_array_physically_descriptor(t_past);
+                    return in_struct_descr_arr || upoly_descr_array;
+                }
                 case ASR::StructType:
                     return ASRUtils::is_class_type(t_past);
                 case ASR::Integer:
