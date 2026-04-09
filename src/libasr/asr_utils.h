@@ -6939,6 +6939,7 @@ inline void set_ArrayConstant_value(ASR::ArrayConstant_t* x, ASR::expr_t* value,
                 default:
                     throw LCompilersException("Unsupported kind for integer array constant.");
             }
+            break;
         }
         case ASR::ttypeType::Real: {
             ASR::RealConstant_t* value_real = ASR::down_cast<ASR::RealConstant_t>(value);
@@ -6948,6 +6949,7 @@ inline void set_ArrayConstant_value(ASR::ArrayConstant_t* x, ASR::expr_t* value,
                 default:
                     throw LCompilersException("Unsupported kind for real array constant.");
             }
+            break;
         }
         case ASR::ttypeType::UnsignedInteger: {
             ASR::UnsignedIntegerConstant_t* value_int = ASR::down_cast<ASR::UnsignedIntegerConstant_t>(value);
@@ -6959,6 +6961,7 @@ inline void set_ArrayConstant_value(ASR::ArrayConstant_t* x, ASR::expr_t* value,
                 default:
                     throw LCompilersException("Unsupported kind for unsigned integer array constant.");
             }
+            break;
         }
         case ASR::ttypeType::Complex: {
             ASR::ComplexConstant_t* value_complex = ASR::down_cast<ASR::ComplexConstant_t>(value);
@@ -6972,6 +6975,7 @@ inline void set_ArrayConstant_value(ASR::ArrayConstant_t* x, ASR::expr_t* value,
                 default:
                     throw LCompilersException("Unsupported kind for complex array constant.");
             }
+            break;
         }
         case ASR::ttypeType::Logical: {
             ASR::LogicalConstant_t* value_logical = ASR::down_cast<ASR::LogicalConstant_t>(value);

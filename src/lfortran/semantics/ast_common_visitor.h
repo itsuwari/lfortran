@@ -3172,10 +3172,279 @@ public:
         return true;
     }
 
+    bool get_integer_constant_value(ASR::expr_t* expr, int64_t& value) {
+        if (!expr) {
+            return false;
+        }
+        ASR::expr_t* expr_value = ASRUtils::expr_value(expr);
+        if (!expr_value || !ASR::is_a<ASR::IntegerConstant_t>(*expr_value)) {
+            return false;
+        }
+        value = ASR::down_cast<ASR::IntegerConstant_t>(expr_value)->m_n;
+        return true;
+    }
+
+    ASR::expr_t* make_zero_constant(ASR::ttype_t* type, const Location& loc) {
+        type = ASRUtils::type_get_past_array(
+            ASRUtils::type_get_past_allocatable(
+                ASRUtils::type_get_past_pointer(type)));
+        switch (type->type) {
+            case ASR::ttypeType::Integer:
+                return ASRUtils::EXPR(ASR::make_IntegerConstant_t(al, loc, 0, type));
+            case ASR::ttypeType::Real:
+                return ASRUtils::EXPR(ASR::make_RealConstant_t(al, loc, 0.0, type));
+            case ASR::ttypeType::UnsignedInteger:
+                return ASRUtils::EXPR(ASR::make_UnsignedIntegerConstant_t(al, loc, 0, type));
+            case ASR::ttypeType::Logical:
+                return ASRUtils::EXPR(ASR::make_LogicalConstant_t(al, loc, false, type));
+            case ASR::ttypeType::Complex:
+                return ASRUtils::EXPR(ASR::make_ComplexConstant_t(al, loc, 0.0, 0.0, type));
+            case ASR::ttypeType::String: {
+                int64_t len = 0;
+                ASRUtils::extract_value(ASR::down_cast<ASR::String_t>(type)->m_len, len);
+                char* blank = al.allocate<char>(len + 1);
+                std::memset(blank, ' ', len);
+                blank[len] = '\0';
+                return ASRUtils::EXPR(ASR::make_StringConstant_t(al, loc, blank, type));
+            }
+            default:
+                return nullptr;
+        }
+    }
+
+    ASR::ArrayConstant_t* ensure_data_array_constant(ASR::Variable_t* var, const Location& loc) {
+        ASR::expr_t* value = var->m_symbolic_value ? var->m_symbolic_value : var->m_value;
+        value = value ? ASRUtils::expr_value(value) : nullptr;
+        if (value && ASR::is_a<ASR::ArrayConstant_t>(*value)) {
+            return ASR::down_cast<ASR::ArrayConstant_t>(value);
+        }
+
+        if (!ASRUtils::is_array(var->m_type)) {
+            return nullptr;
+        }
+
+        int64_t array_size = ASRUtils::get_fixed_size_of_array(var->m_type);
+        if (array_size <= 0) {
+            return nullptr;
+        }
+
+        ASR::ttype_t* element_type = ASRUtils::type_get_past_array(var->m_type);
+        ASR::expr_t* zero = make_zero_constant(element_type, loc);
+        if (!zero) {
+            return nullptr;
+        }
+
+        Vec<ASR::expr_t*> values;
+        values.reserve(al, array_size);
+        for (int64_t i = 0; i < array_size; i++) {
+            values.push_back(al, zero);
+        }
+
+        void* data = ASRUtils::set_ArrayConstant_data(values.p, values.size(), element_type);
+        int64_t n_data = array_size * ASRUtils::extract_kind_from_ttype_t(element_type);
+        if (ASR::is_a<ASR::Complex_t>(*element_type)) {
+            n_data *= 2;
+        } else if (ASR::is_a<ASR::Logical_t>(*element_type)) {
+            n_data = array_size;
+        } else if (ASR::is_a<ASR::String_t>(*element_type)) {
+            int64_t len = 0;
+            ASRUtils::extract_value(ASR::down_cast<ASR::String_t>(element_type)->m_len, len);
+            n_data = array_size * len;
+        }
+
+        ASR::expr_t* array_expr = ASRUtils::EXPR(
+            ASR::make_ArrayConstant_t(al, loc, n_data, data, var->m_type,
+                ASR::arraystorageType::ColMajor));
+        var->m_value = array_expr;
+        var->m_symbolic_value = array_expr;
+        SetChar var_deps_vec;
+        var_deps_vec.reserve(al, 1);
+        ASRUtils::collect_variable_dependencies(al, var_deps_vec, var->m_type,
+            var->m_symbolic_value, var->m_value);
+        var->m_dependencies = var_deps_vec.p;
+        var->n_dependencies = var_deps_vec.size();
+        return ASR::down_cast<ASR::ArrayConstant_t>(array_expr);
+    }
+
+    bool compute_array_flat_index(ASR::ttype_t* array_type, ASR::array_index_t* args,
+                                  size_t n_args, size_t& flat_index) {
+        ASR::dimension_t* dims = nullptr;
+        size_t n_dims = ASRUtils::extract_dimensions_from_ttype(array_type, dims);
+        if (n_dims == 0 || n_args != n_dims) {
+            return false;
+        }
+
+        flat_index = 0;
+        int64_t stride = 1;
+        for (size_t i = 0; i < n_dims; i++) {
+            if (args[i].m_left != nullptr || args[i].m_step != nullptr || args[i].m_right == nullptr) {
+                return false;
+            }
+
+            int64_t lower = 1, length = -1, index_value = 0;
+            if (dims[i].m_start && !get_integer_constant_value(dims[i].m_start, lower)) {
+                return false;
+            }
+            if (!dims[i].m_length || !get_integer_constant_value(dims[i].m_length, length)) {
+                return false;
+            }
+            if (!get_integer_constant_value(args[i].m_right, index_value)) {
+                return false;
+            }
+
+            int64_t offset = index_value - lower;
+            if (offset < 0 || offset >= length) {
+                return false;
+            }
+            flat_index += static_cast<size_t>(offset * stride);
+            stride *= length;
+        }
+        return true;
+    }
+
+    bool compute_array_section_flat_indices(ASR::ttype_t* array_type, ASR::ArraySection_t* section,
+                                            std::vector<size_t>& flat_indices) {
+        ASR::dimension_t* dims = nullptr;
+        size_t n_dims = ASRUtils::extract_dimensions_from_ttype(array_type, dims);
+        if (n_dims == 0 || section->n_args != n_dims) {
+            return false;
+        }
+
+        std::vector<std::vector<int64_t>> per_dim_indices(n_dims);
+        std::vector<int64_t> lowers(n_dims), lengths(n_dims);
+        for (size_t i = 0; i < n_dims; i++) {
+            int64_t lower = 1, length = -1;
+            if (dims[i].m_start && !get_integer_constant_value(dims[i].m_start, lower)) {
+                return false;
+            }
+            if (!dims[i].m_length || !get_integer_constant_value(dims[i].m_length, length)) {
+                return false;
+            }
+            lowers[i] = lower;
+            lengths[i] = length;
+            int64_t upper = lower + length - 1;
+
+            ASR::array_index_t arg = section->m_args[i];
+            if (arg.m_left == nullptr && arg.m_step == nullptr && arg.m_right != nullptr) {
+                int64_t idx = 0;
+                if (!get_integer_constant_value(arg.m_right, idx)) {
+                    return false;
+                }
+                if (idx < lower || idx > upper) {
+                    return false;
+                }
+                per_dim_indices[i].push_back(idx);
+                continue;
+            }
+
+            int64_t start = lower, finish = upper, step = 1;
+            if (arg.m_left && !get_integer_constant_value(arg.m_left, start)) {
+                return false;
+            }
+            if (arg.m_right && !get_integer_constant_value(arg.m_right, finish)) {
+                return false;
+            }
+            if (arg.m_step && !get_integer_constant_value(arg.m_step, step)) {
+                return false;
+            }
+            if (step == 0) {
+                return false;
+            }
+            if (start < lower || start > upper || finish < lower || finish > upper) {
+                return false;
+            }
+
+            if (step > 0) {
+                for (int64_t idx = start; idx <= finish; idx += step) {
+                    per_dim_indices[i].push_back(idx);
+                }
+            } else {
+                for (int64_t idx = start; idx >= finish; idx += step) {
+                    per_dim_indices[i].push_back(idx);
+                }
+            }
+        }
+
+        std::vector<int64_t> strides(n_dims, 1);
+        for (size_t i = 1; i < n_dims; i++) {
+            strides[i] = strides[i - 1] * lengths[i - 1];
+        }
+
+        std::vector<int64_t> current_indices(n_dims, 0);
+        std::function<void(int)> visit_dim = [&](int dim) {
+            if (dim < 0) {
+                size_t flat_index = 0;
+                for (size_t i = 0; i < n_dims; i++) {
+                    flat_index += static_cast<size_t>((current_indices[i] - lowers[i]) * strides[i]);
+                }
+                flat_indices.push_back(flat_index);
+                return;
+            }
+            for (int64_t idx: per_dim_indices[dim]) {
+                current_indices[dim] = idx;
+                visit_dim(dim - 1);
+            }
+        };
+        visit_dim(static_cast<int>(n_dims) - 1);
+        return true;
+    }
+
+    void update_data_stmt_array_item(ASR::ArrayItem_t* item, ASR::expr_t* value) {
+        if (!ASR::is_a<ASR::Var_t>(*item->m_v)) {
+            return;
+        }
+        ASR::Variable_t* var = ASR::down_cast<ASR::Variable_t>(
+            ASR::down_cast<ASR::Var_t>(item->m_v)->m_v);
+        if (ASR::is_a<ASR::Pointer_t>(*var->m_type)) {
+            return;
+        }
+
+        ASR::ArrayConstant_t* array_value = ensure_data_array_constant(var, item->base.base.loc);
+        if (!array_value) {
+            return;
+        }
+
+        size_t flat_index = 0;
+        if (!compute_array_flat_index(var->m_type, item->m_args, item->n_args, flat_index)) {
+            return;
+        }
+        ASRUtils::set_ArrayConstant_value(array_value, value, static_cast<int>(flat_index));
+    }
+
+    void update_data_stmt_array_section(ASR::ArraySection_t* section, Vec<ASR::expr_t*>& body) {
+        if (!ASR::is_a<ASR::Var_t>(*section->m_v)) {
+            return;
+        }
+        ASR::Variable_t* var = ASR::down_cast<ASR::Variable_t>(
+            ASR::down_cast<ASR::Var_t>(section->m_v)->m_v);
+        if (ASR::is_a<ASR::Pointer_t>(*var->m_type)) {
+            return;
+        }
+
+        ASR::ArrayConstant_t* array_value = ensure_data_array_constant(var, section->base.base.loc);
+        if (!array_value) {
+            return;
+        }
+
+        std::vector<size_t> flat_indices;
+        if (!compute_array_section_flat_indices(var->m_type, section, flat_indices) ||
+            flat_indices.size() != body.size()) {
+            return;
+        }
+
+        for (size_t i = 0; i < flat_indices.size(); i++) {
+            ASRUtils::set_ArrayConstant_value(array_value, body[i], static_cast<int>(flat_indices[i]));
+        }
+    }
+
     void handle_array_data_stmt(const AST::DataStmt_t &x, AST::DataStmtSet_t* a, ASR::ttype_t* obj_type, ASR::expr_t* object, size_t &curr_value) {
         ASR::ttype_t* array_ttype = ASRUtils::type_get_past_allocatable(
             ASRUtils::type_get_past_pointer(obj_type));
         ASR::Array_t* array_type = ASR::down_cast<ASR::Array_t>(array_ttype);
+        ASR::ArraySection_t* object_section = nullptr;
+        if (ASR::is_a<ASR::ArraySection_t>(*object)) {
+            object_section = ASR::down_cast<ASR::ArraySection_t>(object);
+        }
         ASR::ttype_t* temp_current_variable_type_ = current_variable_type_;
         bool is_real = 0;
         if (ASR::is_a<ASR::Real_t>(*array_type->m_type)){
@@ -3232,9 +3501,9 @@ public:
             Vec<ASR::expr_t*> body;
             body.reserve(al, a->n_value);
             int size_of_array = 0;
-            if (ASR::is_a<ASR::ArraySection_t>(*object)) {
-                size_of_array = ASRUtils::get_fixed_size_of_ArraySection(ASR::down_cast<ASR::ArraySection_t>(object));
-                object = ASR::down_cast<ASR::ArraySection_t>(object)->m_v;
+            if (object_section) {
+                size_of_array = ASRUtils::get_fixed_size_of_ArraySection(object_section);
+                object = object_section->m_v;
             } else {
                 size_of_array = ASRUtils::get_fixed_size_of_array(array_type->m_dims, array_type->n_dims);
             }
@@ -3346,6 +3615,8 @@ public:
                             object->base.loc, object, arr_const, nullptr, compiler_options.po.realloc_lhs_arrays, false));
                 LCOMPILERS_ASSERT(current_body != nullptr)
                 current_body->push_back(al, assign_stmt);
+            } else if (object_section) {
+                update_data_stmt_array_section(object_section, body);
             } else {
                 v2->m_value = ASRUtils::EXPR(tmp);
                 v2->m_symbolic_value = ASRUtils::EXPR(tmp);
@@ -3690,6 +3961,9 @@ public:
             // won't work correctly
             // To fix that, we would have to iterate over data statements first
             // but we can fix that later.
+            if (ASR::is_a<ASR::ArrayItem_t>(*object)) {
+                update_data_stmt_array_item(ASR::down_cast<ASR::ArrayItem_t>(object), symbolic_expr);
+            }
         } else {
             diag.add(Diagnostic(
                 "The variable (object) type is not supported (only variables, character substrings and array items are supported so far)",
@@ -7217,7 +7491,15 @@ public:
                             ASRUtils::expr_type(init_expr));
                         if (var_ptype != init_expr_ptype &&
                             var_ptype == ASR::array_physical_typeType::DescriptorArray) {
-                            type = ASRUtils::duplicate_type(al, ASRUtils::expr_type(init_expr));
+                            ASR::Array_t *lhs_array = ASR::down_cast<ASR::Array_t>(type);
+                            Vec<ASR::dimension_t> lhs_dims;
+                            lhs_dims.reserve(al, lhs_array->n_dims);
+                            for (size_t dim_i = 0; dim_i < lhs_array->n_dims; dim_i++) {
+                                lhs_dims.push_back(al, lhs_array->m_dims[dim_i]);
+                            }
+                            type = ASRUtils::duplicate_type(
+                                al, ASRUtils::expr_type(init_expr), &lhs_dims,
+                                init_expr_ptype, true);
                         }
                     }
                     // Apply character validation for type() syntax & parameter type
@@ -7781,7 +8063,15 @@ public:
                                 ASRUtils::expr_type(init_expr));
                             if( var_ptype != init_expr_ptype &&
                                 var_ptype == ASR::array_physical_typeType::DescriptorArray ) {
-                                type = ASRUtils::duplicate_type(al, ASRUtils::expr_type(init_expr));
+                                ASR::Array_t *lhs_array = ASR::down_cast<ASR::Array_t>(type);
+                                Vec<ASR::dimension_t> lhs_dims;
+                                lhs_dims.reserve(al, lhs_array->n_dims);
+                                for (size_t dim_i = 0; dim_i < lhs_array->n_dims; dim_i++) {
+                                    lhs_dims.push_back(al, lhs_array->m_dims[dim_i]);
+                                }
+                                type = ASRUtils::duplicate_type(
+                                    al, ASRUtils::expr_type(init_expr), &lhs_dims,
+                                    init_expr_ptype, true);
                             }
                         }
                         if( value ) {
