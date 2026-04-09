@@ -6,10 +6,12 @@
 #include <libasr/modfile.h>
 #include <libasr/serialization.h>
 #include <libasr/bwriter.h>
+#include <libasr/exception.h>
 
 namespace LCompilers {
 
 const std::string lfortran_modfile_type_string = "LCompilers Modfile";
+static constexpr uint32_t lfortran_modfile_format_version = 0x4D4F4432; // "MOD2"
 
 inline void save_asr(const ASR::TranslationUnit_t &m, std::string& asr_string, LCompilers::LocationManager lm) {
     #ifdef WITH_LFORTRAN_BINARY_MODFILES
@@ -20,6 +22,7 @@ inline void save_asr(const ASR::TranslationUnit_t &m, std::string& asr_string, L
     // Header
     b.write_string(lfortran_modfile_type_string);
     b.write_string(LFORTRAN_VERSION);
+    b.write_int32(lfortran_modfile_format_version);
 
     // AST section: Original module source code:
     // Currently empty.
@@ -156,6 +159,15 @@ inline bool load_serialised_asr(const std::string &s, std::string& asr_binary,
                         + version + "', but current LFortran version is '" + LFORTRAN_VERSION + "'";
         return false;  // Error code for incompatible version
     }
+    uint32_t format_version = b.read_int32();
+    if (format_version != lfortran_modfile_format_version) {
+        error_message = "Incompatible format: LFortran Modfile schema version is '"
+                        + std::to_string(format_version)
+                        + "', but current LFortran modfile schema version is '"
+                        + std::to_string(lfortran_modfile_format_version)
+                        + "'. Rebuild all dependent modules with the current compiler.";
+        return false;
+    }
     LCompilers::LocationManager serialized_lm;
     int32_t n_files = b.read_int32();
     std::vector<LCompilers::LocationManager::FileLocations> files;
@@ -246,7 +258,15 @@ Result<ASR::TranslationUnit_t*, ErrorMessage> load_modfile(Allocator &al, const 
     // LocationManager, so the base offset is 0.
     uint32_t offset = lm.file_ends.size() >= 2
         ? lm.file_ends[lm.file_ends.size()-2] : 0;
-    ASR::asr_t *asr = deserialize_asr(al, asr_binary, load_symtab_id, symtab, offset);
+    ASR::asr_t *asr = nullptr;
+    try {
+        asr = deserialize_asr(al, asr_binary, load_symtab_id, symtab, offset);
+    } catch (const LCompilersException &e) {
+        return ErrorMessage(
+            "Failed to deserialize an LFortran modfile. "
+            "The module is likely stale or incompatible with the current compiler; "
+            "rebuild all dependent modules with the current compiler. Details: " + e.msg());
+    }
     ASR::TranslationUnit_t *tu = ASR::down_cast2<ASR::TranslationUnit_t>(asr);
     return tu;
 }
@@ -259,7 +279,15 @@ Result<ASR::TranslationUnit_t*, ErrorMessage> load_pycfile(Allocator &al, const 
         return ErrorMessage(error_message);
     }
     uint32_t offset = 0;
-    ASR::asr_t *asr = deserialize_asr(al, asr_binary, load_symtab_id, offset);
+    ASR::asr_t *asr = nullptr;
+    try {
+        asr = deserialize_asr(al, asr_binary, load_symtab_id, offset);
+    } catch (const LCompilersException &e) {
+        return ErrorMessage(
+            "Failed to deserialize an LFortran pyc file. "
+            "The file is likely stale or incompatible with the current compiler. Details: "
+            + e.msg());
+    }
 
     ASR::TranslationUnit_t *tu = ASR::down_cast2<ASR::TranslationUnit_t>(asr);
     return tu;

@@ -2682,10 +2682,12 @@ R"(    // Initialise Numpy
 
 };
 
-Result<std::string> asr_to_c(Allocator & /*al*/, ASR::TranslationUnit_t &asr,
+Result<std::string> asr_to_c(Allocator &al, ASR::TranslationUnit_t &asr,
     diag::Diagnostics &diagnostics, CompilerOptions &co,
     int64_t default_lower_bound)
 {
+    co.po.always_run = true;
+    pass_unused_functions(al, asr, co.po);
     ASRToCVisitor v(diagnostics, co, default_lower_bound);
     try {
         v.visit_asr((ASR::asr_t &)asr);

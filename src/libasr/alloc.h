@@ -77,9 +77,7 @@ public:
         size_t snew = std::max(s+ALIGNMENT, 2*size);
         start = malloc(snew);
         blocks.push_back(start);
-        if (start == nullptr) {
-            throw std::runtime_error("malloc failed.");
-        }
+        if (start == nullptr) throw std::runtime_error("malloc failed.");
         current_pos = (size_t)start;
         current_pos = align(current_pos);
         size = snew;
