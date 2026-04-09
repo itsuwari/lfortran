@@ -1242,6 +1242,175 @@ R"(    // Initialise Numpy
             + round_arg.first + ", " + round_arg.second + ");\n";
     }
 
+    void visit_FileOpen(const ASR::FileOpen_t &x) {
+        headers.insert("string.h");
+        std::string indent(indentation_level * indentation_spaces, ' ');
+
+        auto visit_scalar_ptr = [&](ASR::expr_t *expr) -> std::string {
+            if (!expr) return "NULL";
+            this->visit_expr(*expr);
+            return "&(" + src + ")";
+        };
+
+        auto visit_string_arg = [&](ASR::expr_t *expr) -> std::pair<std::string, std::string> {
+            if (!expr) return {"NULL", "0"};
+            this->visit_expr(*expr);
+            std::string value = src;
+            return {value, "strlen(" + value + ")"};
+        };
+
+        std::string unit = "-1";
+        if (x.m_newunit) {
+            this->visit_expr(*x.m_newunit);
+            unit = src;
+        }
+
+        std::pair<std::string, std::string> file_arg = visit_string_arg(x.m_filename);
+        std::pair<std::string, std::string> status_arg = visit_string_arg(x.m_status);
+        std::pair<std::string, std::string> form_arg = visit_string_arg(x.m_form);
+        std::pair<std::string, std::string> access_arg = visit_string_arg(x.m_access);
+        std::pair<std::string, std::string> iomsg_arg = visit_string_arg(x.m_iomsg);
+        std::pair<std::string, std::string> action_arg = visit_string_arg(x.m_action);
+        std::pair<std::string, std::string> delim_arg = visit_string_arg(x.m_delim);
+        std::pair<std::string, std::string> position_arg = visit_string_arg(x.m_position);
+        std::pair<std::string, std::string> blank_arg = visit_string_arg(x.m_blank);
+        std::pair<std::string, std::string> encoding_arg = visit_string_arg(x.m_encoding);
+        std::pair<std::string, std::string> sign_arg = visit_string_arg(x.m_sign);
+        std::pair<std::string, std::string> decimal_arg = visit_string_arg(x.m_decimal);
+        std::pair<std::string, std::string> round_arg = visit_string_arg(x.m_round);
+
+        src = indent + "_lfortran_open("
+            + unit + ", "
+            + file_arg.first + ", " + file_arg.second + ", "
+            + status_arg.first + ", " + status_arg.second + ", "
+            + form_arg.first + ", " + form_arg.second + ", "
+            + access_arg.first + ", " + access_arg.second + ", "
+            + iomsg_arg.first + ", " + iomsg_arg.second + ", "
+            + visit_scalar_ptr(x.m_iostat) + ", "
+            + action_arg.first + ", " + action_arg.second + ", "
+            + delim_arg.first + ", " + delim_arg.second + ", "
+            + position_arg.first + ", " + position_arg.second + ", "
+            + blank_arg.first + ", " + blank_arg.second + ", "
+            + encoding_arg.first + ", " + encoding_arg.second + ", "
+            + visit_scalar_ptr(x.m_recl) + ", "
+            + sign_arg.first + ", " + sign_arg.second + ", "
+            + decimal_arg.first + ", " + decimal_arg.second + ", "
+            + round_arg.first + ", " + round_arg.second + ");\n";
+    }
+
+    void visit_FileClose(const ASR::FileClose_t &x) {
+        headers.insert("string.h");
+        std::string indent(indentation_level * indentation_spaces, ' ');
+
+        auto visit_scalar_ptr = [&](ASR::expr_t *expr) -> std::string {
+            if (!expr) return "NULL";
+            this->visit_expr(*expr);
+            return "&(" + src + ")";
+        };
+
+        auto visit_string_arg = [&](ASR::expr_t *expr) -> std::pair<std::string, std::string> {
+            if (!expr) return {"NULL", "0"};
+            this->visit_expr(*expr);
+            std::string value = src;
+            return {value, "strlen(" + value + ")"};
+        };
+
+        this->visit_expr(*x.m_unit);
+        std::string unit = src;
+        std::pair<std::string, std::string> status_arg = visit_string_arg(x.m_status);
+
+        src = indent + "_lfortran_close("
+            + unit + ", "
+            + status_arg.first + ", " + status_arg.second + ", "
+            + visit_scalar_ptr(x.m_iostat) + ");\n";
+    }
+
+    void visit_FileRead(const ASR::FileRead_t &x) {
+        if (x.m_overloaded) {
+            this->visit_stmt(*x.m_overloaded);
+            return;
+        }
+
+        headers.insert("string.h");
+        std::string indent(indentation_level * indentation_spaces, ' ');
+
+        auto visit_string_arg = [&](ASR::expr_t *expr) -> std::pair<std::string, std::string> {
+            if (!expr) return {"NULL", "0"};
+            this->visit_expr(*expr);
+            std::string value = src;
+            ASR::String_t *str_type = ASRUtils::get_string_type(expr);
+            if (str_type && str_type->m_len) {
+                this->visit_expr(*str_type->m_len);
+                return {value, src};
+            }
+            return {value, "strlen(" + value + ")"};
+        };
+
+        std::string unit = "-1";
+        if (x.m_unit) {
+            this->visit_expr(*x.m_unit);
+            unit = src;
+        }
+
+        std::string iostat_ptr = "NULL";
+        std::string iostat_val = "0";
+        if (x.m_iostat) {
+            this->visit_expr(*x.m_iostat);
+            iostat_val = src;
+            iostat_ptr = "&(" + iostat_val + ")";
+        }
+
+        std::string size_ptr = "NULL";
+        if (x.m_size) {
+            this->visit_expr(*x.m_size);
+            size_ptr = "&(" + src + ")";
+        }
+
+        std::pair<std::string, std::string> advance_arg;
+        if (x.m_advance) {
+            advance_arg = visit_string_arg(x.m_advance);
+        } else {
+            advance_arg = {"\"yes\"", "3"};
+        }
+
+        std::pair<std::string, std::string> fmt_arg = visit_string_arg(x.m_fmt);
+        std::pair<std::string, std::string> iomsg_arg = visit_string_arg(x.m_iomsg);
+
+        if (!x.m_is_formatted || x.n_values != 1 ||
+            !ASRUtils::is_character(*ASRUtils::expr_type(x.m_values[0]))) {
+            throw CodeGenError("C backend FileRead currently supports only single formatted scalar character reads",
+                x.base.base.loc);
+        }
+
+        this->visit_expr(*x.m_values[0]);
+        std::string value = src;
+        ASR::String_t *value_type = ASRUtils::get_string_type(x.m_values[0]);
+        std::string value_len = "strlen(" + value + ")";
+        if (value_type && value_type->m_len) {
+            this->visit_expr(*value_type->m_len);
+            value_len = src;
+        }
+
+        src.clear();
+        src += indent + "if (" + value + " == NULL) " + value
+            + " = (char*) _lfortran_string_malloc_alloc(_lfortran_get_default_allocator(), "
+            + value_len + ");\n";
+        if (x.m_iomsg) {
+            src += indent + "if (" + iomsg_arg.first + " == NULL) " + iomsg_arg.first
+                + " = (char*) _lfortran_string_malloc_alloc(_lfortran_get_default_allocator(), "
+                + iomsg_arg.second + ");\n";
+        }
+        src += indent + "_lfortran_formatted_read("
+            + unit + ", " + iostat_ptr + ", " + size_ptr + ", "
+            + advance_arg.first + ", " + advance_arg.second + ", "
+            + fmt_arg.first + ", " + fmt_arg.second + ", "
+            + "1, 0, 0, &(" + value + "), " + value_len + ");\n";
+        if (x.m_iomsg && x.m_iostat) {
+            src += indent + "_lfortran_set_read_iomsg(" + iostat_val + ", "
+                + iomsg_arg.first + ", " + iomsg_arg.second + ");\n";
+        }
+    }
+
     void visit_CPtrToPointer(const ASR::CPtrToPointer_t& x) {
         visit_expr(*x.m_cptr);
         std::string source_src = std::move(src);

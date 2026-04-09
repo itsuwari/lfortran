@@ -2356,6 +2356,26 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         }
     }
 
+    void visit_Ichar(const ASR::Ichar_t &x) {
+        CHECK_FAST_C_CPP(compiler_options, x)
+        if (x.m_value) {
+            self().visit_expr(*x.m_value);
+            return;
+        }
+        self().visit_expr(*x.m_arg);
+        src = "_lfortran_ichar(" + src + ")";
+    }
+
+    void visit_Iachar(const ASR::Iachar_t &x) {
+        CHECK_FAST_C_CPP(compiler_options, x)
+        if (x.m_value) {
+            self().visit_expr(*x.m_value);
+            return;
+        }
+        self().visit_expr(*x.m_arg);
+        src = "_lfortran_iachar(" + src + ")";
+    }
+
     void visit_IntegerCompare(const ASR::IntegerCompare_t &x) {
         handle_Compare(x);
     }
