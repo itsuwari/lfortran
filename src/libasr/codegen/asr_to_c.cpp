@@ -162,6 +162,9 @@ public:
     void allocate_array_members_of_struct(ASR::Struct_t* der_type_t, std::string& sub,
         std::string indent, std::string name) {
         for (size_t i = 0; i < der_type_t->n_members; i++) {
+            if (der_type_t->m_members[i] == nullptr) {
+                continue;
+            }
             const std::string member_name = der_type_t->m_members[i];
             ASR::symbol_t *member_sym = der_type_t->m_symtab->get_symbol(member_name);
             if (member_sym == nullptr) {
@@ -177,7 +180,8 @@ public:
             } else if( ASRUtils::is_array(mem_type) &&
                         ASR::is_a<ASR::Variable_t>(*member_sym) ) {
                 ASR::Variable_t* mem_var = ASR::down_cast<ASR::Variable_t>(member_sym);
-                std::string mem_var_name = current_scope->get_unique_name(member_name + std::to_string(counter));
+                std::string safe_member_name = ASRUtils::symbol_name(sym);
+                std::string mem_var_name = name + "_" + safe_member_name + "_" + std::to_string(counter);
                 counter += 1;
                 ASR::dimension_t* m_dims = nullptr;
                 size_t n_dims = ASRUtils::extract_dimensions_from_ttype(mem_type, m_dims);
@@ -1912,6 +1916,114 @@ R"(    // Initialise Numpy
             }
         };
 
+        if (x.m_is_formatted) {
+            std::string formatted_setup = src;
+            std::string formatted_args;
+            std::string formatted_post;
+            int formatted_arg_count = 0;
+
+            if (x.m_pos) {
+                this->visit_expr(*x.m_pos);
+                std::string pos = src;
+                formatted_setup += indent + "_lfortran_file_seek(" + unit + ", (int64_t)(" + pos + "), " + iostat_ptr + ");\n";
+            }
+
+            auto append_formatted_scalar = [&](ASR::expr_t *value_expr) {
+                ASR::ttype_t *value_type = ASRUtils::expr_type(value_expr);
+                ASR::ttype_t *value_type_past_allocatable = ASRUtils::type_get_past_allocatable_pointer(value_type);
+
+                this->visit_expr(*value_expr);
+                std::string value = src;
+
+                if (ASRUtils::is_character(*value_type_past_allocatable)) {
+                    ASR::String_t *value_str_type = ASRUtils::get_string_type(value_expr);
+                    std::string value_len = "strlen(" + value + ")";
+                    if (value_str_type && value_str_type->m_len) {
+                        this->visit_expr(*value_str_type->m_len);
+                        value_len = src;
+                    }
+                    formatted_setup += indent + "if (" + value + " == NULL) " + value
+                        + " = (char*) _lfortran_string_malloc_alloc(_lfortran_get_default_allocator(), "
+                        + value_len + ");\n";
+                    formatted_args += ", 0, 0, &(" + value + "), " + value_len;
+                    formatted_arg_count++;
+                    return;
+                }
+
+                if (ASR::is_a<ASR::Logical_t>(*value_type_past_allocatable)) {
+                    std::string tmp_name = current_scope->get_unique_name("__lfortran_fmt_logical");
+                    formatted_setup += indent + "int32_t " + tmp_name + " = 0;\n";
+                    formatted_args += ", 0, 1, &" + tmp_name;
+                    formatted_post += indent + value + " = (" + tmp_name + " != 0);\n";
+                    formatted_arg_count++;
+                    return;
+                }
+
+                if (ASR::is_a<ASR::Integer_t>(*value_type_past_allocatable)) {
+                    int kind = ASR::down_cast<ASR::Integer_t>(value_type_past_allocatable)->m_kind;
+                    if (kind == 4) {
+                        formatted_args += ", 0, 2, &(" + value + ")";
+                    } else if (kind == 8) {
+                        formatted_args += ", 0, 3, &(" + value + ")";
+                    } else {
+                        throw CodeGenError("C backend FileRead supports formatted scalar integer reads only for kind=4 or kind=8",
+                            value_expr->base.loc);
+                    }
+                    formatted_arg_count++;
+                    return;
+                }
+
+                if (ASR::is_a<ASR::Real_t>(*value_type_past_allocatable)) {
+                    int kind = ASR::down_cast<ASR::Real_t>(value_type_past_allocatable)->m_kind;
+                    if (kind == 4) {
+                        formatted_args += ", 0, 4, &(" + value + ")";
+                    } else if (kind == 8) {
+                        formatted_args += ", 0, 5, &(" + value + ")";
+                    } else {
+                        throw CodeGenError("C backend FileRead supports formatted scalar real reads only for kind=4 or kind=8",
+                            value_expr->base.loc);
+                    }
+                    formatted_arg_count++;
+                    return;
+                }
+
+                if (ASR::is_a<ASR::Complex_t>(*value_type_past_allocatable)) {
+                    int kind = ASR::down_cast<ASR::Complex_t>(value_type_past_allocatable)->m_kind;
+                    if (kind == 4) {
+                        formatted_args += ", 0, 6, &(" + value + ")";
+                    } else if (kind == 8) {
+                        formatted_args += ", 0, 7, &(" + value + ")";
+                    } else {
+                        throw CodeGenError("C backend FileRead supports formatted scalar complex reads only for kind=4 or kind=8",
+                            value_expr->base.loc);
+                    }
+                    formatted_arg_count++;
+                    return;
+                }
+
+                throw CodeGenError("C backend FileRead currently supports only scalar integer/real/complex/logical/character values for formatted external reads",
+                    value_expr->base.loc);
+            };
+
+            for (size_t i = 0; i < x.n_values; i++) {
+                append_formatted_scalar(x.m_values[i]);
+            }
+
+            src = formatted_setup;
+            src += indent + "_lfortran_formatted_read("
+                + unit + ", " + iostat_ptr + ", " + size_ptr + ", "
+                + advance_arg.first + ", " + advance_arg.second + ", "
+                + fmt_arg.first + ", " + fmt_arg.second + ", "
+                + std::to_string(formatted_arg_count) + ", NULL, 0"
+                + formatted_args + ");\n";
+            src += formatted_post;
+            if (x.m_iomsg && x.m_iostat) {
+                src += indent + "_lfortran_set_read_iomsg(" + iostat_val + ", "
+                    + iomsg_arg.first + ", " + iomsg_arg.second + ");\n";
+            }
+            return;
+        }
+
         if (x.m_pos) {
             this->visit_expr(*x.m_pos);
             std::string pos = src;
@@ -2249,8 +2361,10 @@ R"(    // Initialise Numpy
             }
             snprintf_fmt += "\"";
 
-            std::string size_name = current_scope->get_unique_name("__lfortran_write_size");
-            std::string buffer_name = current_scope->get_unique_name("__lfortran_write_buffer");
+            std::string unique_suffix = std::to_string(counter);
+            counter += 1;
+            std::string size_name = "__lfortran_write_size_" + unique_suffix;
+            std::string buffer_name = "__lfortran_write_buffer_" + unique_suffix;
 
             src = indent + "int " + size_name + " = snprintf(NULL, 0, " + snprintf_fmt;
             for (auto &arg: fmt_args) {
