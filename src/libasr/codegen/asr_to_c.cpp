@@ -2114,13 +2114,19 @@ R"(    // Initialise Numpy
 
     void visit_ArrayItem(const ASR::ArrayItem_t &x) {
         CHECK_FAST_C(compiler_options, x)
-        this->visit_expr(*x.m_v);
+        ASR::expr_t *array_expr = x.m_v;
+        ASR::ArraySection_t *array_section = nullptr;
+        if (ASR::is_a<ASR::ArraySection_t>(*x.m_v)) {
+            array_section = ASR::down_cast<ASR::ArraySection_t>(x.m_v);
+            array_expr = array_section->m_v;
+        }
+        this->visit_expr(*array_expr);
         std::string array = src;
-        ASR::ttype_t* x_mv_type = ASRUtils::expr_type(x.m_v);
+        ASR::ttype_t* x_mv_type = ASRUtils::expr_type(array_expr);
         ASR::dimension_t* m_dims;
         int n_dims = ASRUtils::extract_dimensions_from_ttype(x_mv_type, m_dims);
         bool is_data_only_array = ASRUtils::is_fixed_size_array(m_dims, n_dims) &&
-                                  ASR::is_a<ASR::Struct_t>(*ASRUtils::get_asr_owner(x.m_v));
+                                  ASR::is_a<ASR::Struct_t>(*ASRUtils::get_asr_owner(array_expr));
         if( is_data_only_array || ASRUtils::is_simd_array(x.m_v)) {
             std::string index = "";
             std::string out = array;
@@ -2156,10 +2162,54 @@ R"(    // Initialise Numpy
         }
 
         std::vector<std::string> indices;
-        for( size_t r = 0; r < x.n_args; r++ ) {
-            ASR::array_index_t curr_idx = x.m_args[r];
-            this->visit_expr(*curr_idx.m_right);
-            indices.push_back(src);
+        if (array_section == nullptr) {
+            for( size_t r = 0; r < x.n_args; r++ ) {
+                ASR::array_index_t curr_idx = x.m_args[r];
+                this->visit_expr(*curr_idx.m_right);
+                indices.push_back(src);
+            }
+        } else {
+            ASR::dimension_t *section_dims = nullptr;
+            int section_rank = ASRUtils::extract_dimensions_from_ttype(array_section->m_type, section_dims);
+            size_t sliced_dim = 0;
+            for (size_t r = 0; r < array_section->n_args; r++) {
+                ASR::array_index_t curr_idx = array_section->m_args[r];
+                bool is_sliced_dim = curr_idx.m_left || curr_idx.m_step || curr_idx.m_right == nullptr;
+                if (!is_sliced_dim) {
+                    this->visit_expr(*curr_idx.m_right);
+                    indices.push_back(src);
+                    continue;
+                }
+                LCOMPILERS_ASSERT(sliced_dim < x.n_args);
+                LCOMPILERS_ASSERT((int)sliced_dim < section_rank);
+                this->visit_expr(*x.m_args[sliced_dim].m_right);
+                std::string item_idx = src;
+
+                std::string section_lb = "1";
+                if (section_dims && section_dims[sliced_dim].m_start) {
+                    this->visit_expr(*section_dims[sliced_dim].m_start);
+                    section_lb = src;
+                }
+
+                std::string base_lb;
+                if (curr_idx.m_left) {
+                    this->visit_expr(*curr_idx.m_left);
+                    base_lb = src;
+                } else {
+                    this->visit_expr(*m_dims[r].m_start);
+                    base_lb = src;
+                }
+
+                std::string step = "1";
+                if (curr_idx.m_step) {
+                    this->visit_expr(*curr_idx.m_step);
+                    step = src;
+                }
+
+                indices.push_back("(" + base_lb + " + ((" + item_idx + ") - (" +
+                    section_lb + ")) * (" + step + "))");
+                sliced_dim++;
+            }
         }
 
         ASR::ttype_t* x_mv_type_ = ASRUtils::type_get_past_allocatable(
@@ -2195,6 +2245,12 @@ R"(    // Initialise Numpy
                                                 array_t->m_physical_type == ASR::array_physical_typeType::FixedSizeArray,
                                                 diminfo, false);
         }
+        last_expr_precedence = 2;
+    }
+
+    void visit_ArraySection(const ASR::ArraySection_t &x) {
+        CHECK_FAST_C(compiler_options, x)
+        this->visit_expr(*x.m_v);
         last_expr_precedence = 2;
     }
 
