@@ -2068,9 +2068,8 @@ R"(    // Initialise Numpy
         bool is_integer_unit = x.m_unit && ASRUtils::is_integer(*ASRUtils::expr_type(x.m_unit));
         bool is_string_unit = x.m_unit && ASRUtils::is_character(*ASRUtils::expr_type(x.m_unit));
 
-        if (!x.m_unit || !x.m_is_formatted || x.n_values != 1 ||
-            (!is_integer_unit && !is_string_unit)) {
-            throw CodeGenError("C backend FileWrite currently supports only formatted writes of a single value to integer or character units",
+        if (!x.m_unit || (!is_integer_unit && !is_string_unit)) {
+            throw CodeGenError("C backend FileWrite currently supports only integer or character units",
                 x.base.base.loc);
         }
 
@@ -2109,6 +2108,102 @@ R"(    // Initialise Numpy
         std::pair<std::string, std::string> end_arg = x.m_end
             ? visit_string_arg(x.m_end)
             : std::make_pair("\"\\n\"", "1");
+
+        if (!x.m_is_formatted) {
+            if (!is_integer_unit) {
+                throw CodeGenError("C backend FileWrite currently supports unformatted writes only to integer units",
+                    x.base.base.loc);
+            }
+
+            std::string code;
+            if (x.m_pos) {
+                this->visit_expr(*x.m_pos);
+                std::string pos = src;
+                code += indent + "_lfortran_file_seek(" + unit + ", (int64_t)(" + pos + "), " + iostat_ptr + ");\n";
+            }
+
+            auto emit_unformatted_chunk = [&](ASR::expr_t *expr) {
+                this->visit_expr(*expr);
+                std::string value = src;
+                ASR::ttype_t *value_type = ASRUtils::expr_type(expr);
+                ASR::ttype_t *past_type = ASRUtils::type_get_past_allocatable_pointer(value_type);
+
+                if (ASRUtils::is_array(past_type)) {
+                    ASR::ttype_t *element_type = ASRUtils::extract_type(past_type);
+                    ASR::array_physical_typeType phys = ASRUtils::extract_physical_type(past_type);
+                    std::string data_ptr = value;
+                    if (phys == ASR::array_physical_typeType::DescriptorArray ||
+                        phys == ASR::array_physical_typeType::PointerArray ||
+                        phys == ASR::array_physical_typeType::UnboundedPointerArray) {
+                        data_ptr += "->data";
+                    }
+
+                    std::string array_size;
+                    if (ASRUtils::is_fixed_size_array(past_type)) {
+                        array_size = std::to_string(ASRUtils::get_fixed_size_of_array(past_type));
+                    } else {
+                        ASR::dimension_t *m_dims = nullptr;
+                        int n_dims = ASRUtils::extract_dimensions_from_ttype(past_type, m_dims);
+                        std::string array_size_func = c_utils_functions->get_array_size();
+                        array_size = "((int32_t) " + array_size_func + "(" + value + "->dims, " + std::to_string(n_dims) + "))";
+                    }
+
+                    if (ASRUtils::is_character(*element_type)) {
+                        ASR::String_t *str_type = ASRUtils::get_string_type(expr);
+                        std::string value_len = "strlen(" + data_ptr + ")";
+                        if (str_type && str_type->m_len) {
+                            this->visit_expr(*str_type->m_len);
+                            value_len = src;
+                        }
+                        code += indent + "_lfortran_file_write(" + unit + ", " + iostat_ptr + ", \"\", 0, "
+                            + "((int32_t)((" + array_size + ") * (" + value_len + "))), "
+                            + "(void*)(" + data_ptr + "), -1);\n";
+                    } else {
+                        std::string elem_size = "sizeof(" + CUtils::get_c_type_from_ttype_t(element_type) + ")";
+                        code += indent + "_lfortran_file_write(" + unit + ", " + iostat_ptr + ", \"\", 0, "
+                            + "((int32_t)((" + array_size + ") * " + elem_size + ")), "
+                            + "(void*)(" + data_ptr + "), -1);\n";
+                    }
+                    return;
+                }
+
+                if (ASRUtils::is_character(*past_type)) {
+                    ASR::String_t *str_type = ASRUtils::get_string_type(expr);
+                    std::string value_len = "strlen(" + value + ")";
+                    if (str_type && str_type->m_len) {
+                        this->visit_expr(*str_type->m_len);
+                        value_len = src;
+                    }
+                    code += indent + "_lfortran_file_write(" + unit + ", " + iostat_ptr + ", \"\", 0, "
+                        + "((int32_t)(" + value_len + ")), (void*)(" + value + "), -1);\n";
+                    return;
+                }
+
+                if (ASR::is_a<ASR::Integer_t>(*past_type) ||
+                    ASR::is_a<ASR::Real_t>(*past_type) ||
+                    ASR::is_a<ASR::Complex_t>(*past_type) ||
+                    ASR::is_a<ASR::Logical_t>(*past_type)) {
+                    std::string size_expr = "sizeof(" + CUtils::get_c_type_from_ttype_t(past_type) + ")";
+                    code += indent + "_lfortran_file_write(" + unit + ", " + iostat_ptr + ", \"\", 0, "
+                        + "((int32_t)" + size_expr + "), (void*)&(" + value + "), -1);\n";
+                    return;
+                }
+
+                throw CodeGenError("C backend FileWrite currently supports only scalar or array numeric/logical/character values for unformatted external writes",
+                    expr->base.loc);
+            };
+
+            for (size_t i=0; i<x.n_values; i++) {
+                emit_unformatted_chunk(x.m_values[i]);
+            }
+            src = code;
+            return;
+        }
+
+        if (x.n_values != 1) {
+            throw CodeGenError("C backend FileWrite currently supports formatted writes only for a single value to integer or character units",
+                x.base.base.loc);
+        }
 
         if (ASR::is_a<ASR::StringFormat_t>(*x.m_values[0])) {
             ASR::StringFormat_t *str_fmt = ASR::down_cast<ASR::StringFormat_t>(x.m_values[0]);
