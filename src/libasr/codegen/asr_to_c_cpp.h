@@ -425,6 +425,36 @@ R"(#include <stdio.h>
         current_scope = current_scope_copy;
     }
 
+    void visit_AssociateBlockCall(const ASR::AssociateBlockCall_t &x) {
+        LCOMPILERS_ASSERT(ASR::is_a<ASR::AssociateBlock_t>(*x.m_m));
+        ASR::AssociateBlock_t* associate_block = ASR::down_cast<ASR::AssociateBlock_t>(x.m_m);
+        std::string decl, body;
+        std::string indent(indentation_level*indentation_spaces, ' ');
+        std::string open_paranthesis = indent + "{\n";
+        std::string close_paranthesis = indent + "}\n";
+        indent += std::string(indentation_spaces, ' ');
+        indentation_level += 1;
+        SymbolTable* current_scope_copy = current_scope;
+        current_scope = associate_block->m_symtab;
+        std::vector<std::string> var_order = ASRUtils::determine_variable_declaration_order(associate_block->m_symtab);
+        for (auto &item : var_order) {
+            ASR::symbol_t* var_sym = associate_block->m_symtab->get_symbol(item);
+            if (ASR::is_a<ASR::Variable_t>(*var_sym)) {
+                ASR::Variable_t *v = ASR::down_cast<ASR::Variable_t>(var_sym);
+                std::string d = indent + self().convert_variable_decl(*v) + ";\n";
+                decl += check_tmp_buffer() + d;
+            }
+        }
+        for (size_t i = 0; i < associate_block->n_body; i++) {
+            self().visit_stmt(*associate_block->m_body[i]);
+            body += src;
+        }
+        decl += check_tmp_buffer();
+        src = open_paranthesis + decl + body + close_paranthesis;
+        indentation_level -= 1;
+        current_scope = current_scope_copy;
+    }
+
     std::string get_return_var_type(ASR::Variable_t* return_var) {
         std::string sub;
         bool is_array = ASRUtils::is_array(return_var->m_type);
