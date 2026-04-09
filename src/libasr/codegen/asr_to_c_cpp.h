@@ -1254,6 +1254,25 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         bool is_value_dict = ASR::is_a<ASR::Dict_t>(*m_value_type);
         bool alloc_return_var = false;
         std::string indent(indentation_level*indentation_spaces, ' ');
+        if (is_c && ASR::is_a<ASR::StringItem_t>(*x.m_target)) {
+            ASR::StringItem_t *si = ASR::down_cast<ASR::StringItem_t>(x.m_target);
+            self().visit_expr(*si->m_arg);
+            std::string string_arg = src;
+            self().visit_expr(*x.m_value);
+            std::string string_value = src;
+            self().visit_expr(*si->m_idx);
+            std::string idx = src;
+            headers.insert("string.h");
+            src = check_tmp_buffer();
+            std::string updated_value =
+                "_lfortran_str_slice_assign_alloc(_lfortran_get_default_allocator(), " +
+                string_arg + ", strlen(" + string_arg + "), " +
+                string_value + ", strlen(" + string_value + "), " +
+                idx + ", " + idx + ", 1, true, true)";
+            src += indent + c_ds_api->get_deepcopy(ASRUtils::expr_type(si->m_arg),
+                updated_value, string_arg) + "\n";
+            return;
+        }
         if (is_c && ASR::is_a<ASR::StringSection_t>(*x.m_target)) {
             ASR::StringSection_t *ss = ASR::down_cast<ASR::StringSection_t>(x.m_target);
             self().visit_expr(*ss->m_arg);
@@ -2881,6 +2900,16 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             out += ", ";
         }
         out += ");\n";
+        src = out;
+    }
+
+    void visit_Nullify(const ASR::Nullify_t &x) {
+        std::string indent(indentation_level*indentation_spaces, ' ');
+        std::string out;
+        for (size_t i = 0; i < x.n_vars; i++) {
+            self().visit_expr(*x.m_vars[i]);
+            out += indent + src + " = NULL;\n";
+        }
         src = out;
     }
 
