@@ -2263,6 +2263,12 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 last_expr_precedence = 2;
                 break;
             }
+            case (ASR::cast_kindType::StringToArray) : {
+                // The C backend already represents scalar strings as `char*`.
+                // Treating this cast as a no-op keeps string-backed dummy
+                // arguments moving through the existing runtime helpers.
+                break;
+            }
             case (ASR::cast_kindType::RealToString) : {
                 if (is_c) {
                     ASR::ttype_t *arg_type = ASRUtils::expr_type(x.m_arg);
