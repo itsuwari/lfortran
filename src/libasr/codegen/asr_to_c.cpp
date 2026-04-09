@@ -1147,6 +1147,78 @@ R"(    // Initialise Numpy
         src = check_tmp_buffer() + out;
     }
 
+    void visit_FileInquire(const ASR::FileInquire_t &x) {
+        headers.insert("string.h");
+        std::string indent(indentation_level * indentation_spaces, ' ');
+
+        auto visit_scalar_ptr = [&](ASR::expr_t *expr) -> std::string {
+            if (!expr) return "NULL";
+            this->visit_expr(*expr);
+            return "&(" + src + ")";
+        };
+
+        auto visit_string_arg = [&](ASR::expr_t *expr) -> std::pair<std::string, std::string> {
+            if (!expr) return {"NULL", "0"};
+            this->visit_expr(*expr);
+            std::string value = src;
+            return {value, "strlen(" + value + ")"};
+        };
+
+        std::pair<std::string, std::string> file_arg = visit_string_arg(x.m_file);
+        std::pair<std::string, std::string> write_arg = visit_string_arg(x.m_write);
+        std::pair<std::string, std::string> read_arg = visit_string_arg(x.m_read);
+        std::pair<std::string, std::string> readwrite_arg = visit_string_arg(x.m_readwrite);
+        std::pair<std::string, std::string> access_arg = visit_string_arg(x.m_access);
+        std::pair<std::string, std::string> name_arg = visit_string_arg(x.m_name);
+        std::pair<std::string, std::string> blank_arg = visit_string_arg(x.m_blank);
+        std::pair<std::string, std::string> sequential_arg = visit_string_arg(x.m_sequential);
+        std::pair<std::string, std::string> direct_arg = visit_string_arg(x.m_direct);
+        std::pair<std::string, std::string> form_arg = visit_string_arg(x.m_form);
+        std::pair<std::string, std::string> formatted_arg = visit_string_arg(x.m_formatted);
+        std::pair<std::string, std::string> unformatted_arg = visit_string_arg(x.m_unformatted);
+        std::pair<std::string, std::string> decimal_arg = visit_string_arg(x.m_decimal);
+        std::pair<std::string, std::string> sign_arg = visit_string_arg(x.m_sign);
+        std::pair<std::string, std::string> encoding_arg = visit_string_arg(x.m_encoding);
+        std::pair<std::string, std::string> stream_arg = visit_string_arg(x.m_stream);
+        std::pair<std::string, std::string> iomsg_arg = visit_string_arg(x.m_iomsg);
+        std::pair<std::string, std::string> round_arg = visit_string_arg(x.m_round);
+
+        std::string unit = "-1";
+        if (x.m_unit) {
+            this->visit_expr(*x.m_unit);
+            unit = src;
+        }
+
+        src = indent + "_lfortran_inquire("
+            + file_arg.first + ", " + file_arg.second + ", "
+            + visit_scalar_ptr(x.m_exist) + ", " + unit + ", "
+            + visit_scalar_ptr(x.m_opened) + ", "
+            + visit_scalar_ptr(x.m_size) + ", "
+            + visit_scalar_ptr(x.m_pos) + ", "
+            + write_arg.first + ", " + write_arg.second + ", "
+            + read_arg.first + ", " + read_arg.second + ", "
+            + readwrite_arg.first + ", " + readwrite_arg.second + ", "
+            + access_arg.first + ", " + access_arg.second + ", "
+            + name_arg.first + ", " + name_arg.second + ", "
+            + blank_arg.first + ", " + blank_arg.second + ", "
+            + visit_scalar_ptr(x.m_recl) + ", "
+            + visit_scalar_ptr(x.m_number) + ", "
+            + visit_scalar_ptr(x.m_named) + ", "
+            + sequential_arg.first + ", " + sequential_arg.second + ", "
+            + direct_arg.first + ", " + direct_arg.second + ", "
+            + form_arg.first + ", " + form_arg.second + ", "
+            + formatted_arg.first + ", " + formatted_arg.second + ", "
+            + unformatted_arg.first + ", " + unformatted_arg.second + ", "
+            + visit_scalar_ptr(x.m_iostat) + ", "
+            + visit_scalar_ptr(x.m_nextrec) + ", "
+            + decimal_arg.first + ", " + decimal_arg.second + ", "
+            + sign_arg.first + ", " + sign_arg.second + ", "
+            + encoding_arg.first + ", " + encoding_arg.second + ", "
+            + stream_arg.first + ", " + stream_arg.second + ", "
+            + iomsg_arg.first + ", " + iomsg_arg.second + ", "
+            + round_arg.first + ", " + round_arg.second + ");\n";
+    }
+
     void visit_CPtrToPointer(const ASR::CPtrToPointer_t& x) {
         visit_expr(*x.m_cptr);
         std::string source_src = std::move(src);
