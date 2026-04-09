@@ -6449,7 +6449,14 @@ namespace Repeat {
             ASR::string_length_kindType::AssumedLength,
             ASR::string_physical_typeType::DescriptorString)));
         fill_func_arg("y", arg_types[1]);
-        auto result = declare(fn_name, b.allocatable(b.String(nullptr, ASR::DeferredLength)), ReturnVar);
+        ASR::expr_t* repeat_len = ASRUtils::EXPR(ASR::make_IntegerBinOp_t(
+            al, loc,
+            ASRUtils::EXPR(ASR::make_StringLen_t(al, loc, args[0], int32, nullptr)),
+            ASR::binopType::Mul,
+            CastingUtil::perform_casting(args[1], int32, al, loc),
+            int32, nullptr));
+        auto result = declare(fn_name,
+            b.String(repeat_len, ASR::ExpressionLength), ReturnVar);
         auto i = declare("i", int32, Local);
         auto j = declare("j", int32, Local);
         auto m = declare("m", int32, Local);
@@ -6472,10 +6479,6 @@ namespace Repeat {
                 end do
             end function
         */
-        body.push_back(al, b.Allocate(result, nullptr, 0, 
-            ASRUtils::EXPR(ASR::make_IntegerBinOp_t(al, loc,
-                ASRUtils::EXPR(ASR::make_StringLen_t(al, loc, args[0], ASRUtils::expr_type(args[1]), nullptr)),
-                ASR::binopType::Mul, args[1], ASRUtils::expr_type(args[1]), nullptr))));
         body.push_back(al, b.Assignment(m, b.StringLen(args[0])));
         body.push_back(al, b.Assignment(i, b.i32(1)));
         body.push_back(al, b.Assignment(j, m));
@@ -6491,7 +6494,8 @@ namespace Repeat {
         ASR::symbol_t *f_sym = make_ASR_Function_t(fn_name, fn_symtab, dep, args,
             body, result, ASR::abiType::Source, ASR::deftypeType::Implementation, nullptr);
         scope->add_symbol(fn_name, f_sym);
-        return b.Call(f_sym, new_args, ASRUtils::duplicate_type(al, ASRUtils::expr_type(result)), nullptr);
+        return b.Call(f_sym, new_args,
+            ASRUtils::get_FunctionType(f_sym)->m_return_var_type, nullptr);
     }
 
         static inline void verify_args(const ASR::IntrinsicElementalFunction_t& x, diag::Diagnostics& diagnostics) {
