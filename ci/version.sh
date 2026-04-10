@@ -13,6 +13,16 @@
 
 set -ex
 
-version=$(git describe --tags --dirty)
-version="${version:1}"
+if version=$(git describe --tags --dirty 2>/dev/null); then
+    if [[ "${version}" == v* ]]; then
+        version="${version:1}"
+    fi
+else
+    sha=$(git rev-parse --short HEAD)
+    version="0.0.0-g${sha}"
+    if ! git diff --quiet --ignore-submodules HEAD --; then
+        version="${version}-dirty"
+    fi
+fi
+
 echo $version > version
