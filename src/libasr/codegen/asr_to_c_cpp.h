@@ -677,6 +677,18 @@ R"(#include <stdio.h>
         return sym_name;
     }
 
+    std::string get_c_function_target_name(const ASR::Function_t &x) {
+        ASR::FunctionType_t *f_type = ASRUtils::get_FunctionType(x);
+        if (f_type->m_abi == ASR::abiType::BindC && f_type->m_bindc_name) {
+            return CUtils::sanitize_c_identifier(std::string(f_type->m_bindc_name));
+        }
+        if (is_c && f_type->m_deftype == ASR::deftypeType::Interface
+                && f_type->m_abi != ASR::abiType::BindPython) {
+            return CUtils::sanitize_c_identifier(x.m_name);
+        }
+        return get_emitted_function_name(x);
+    }
+
     // Returns the declaration, no semi colon at the end
     std::string get_function_declaration(const ASR::Function_t &x, bool &has_typevar, bool is_pointer=false) {
         template_for_Kokkos.clear();
@@ -699,13 +711,11 @@ R"(#include <stdio.h>
         } else {
             sub = "void ";
         }
-        std::string sym_name = get_emitted_function_name(x);
         ASR::FunctionType_t *f_type = ASRUtils::get_FunctionType(x);
+        std::string sym_name = get_c_function_target_name(x);
         if (f_type->m_abi == ASR::abiType::BindPython &&
                 f_type->m_deftype == ASR::deftypeType::Implementation) {
             sym_name = "_xx_internal_" + sym_name + "_xx";
-        } else if (f_type->m_abi == ASR::abiType::BindC && f_type->m_bindc_name) {
-            sym_name = CUtils::sanitize_c_identifier(std::string(f_type->m_bindc_name));
         }
         if (is_c && f_type->m_abi == ASR::abiType::BindC
                 && f_type->m_bindc_name
@@ -750,7 +760,9 @@ R"(#include <stdio.h>
         }
         func += ")";
         bracket_open--;
-        if (is_c && f_type->m_abi == ASR::abiType::Source && !is_pointer) {
+        if (is_c && f_type->m_abi == ASR::abiType::Source
+                && f_type->m_deftype != ASR::deftypeType::Interface
+                && !is_pointer) {
             forward_decl_functions += func + ";\n";
         }
         if( is_c || template_for_Kokkos.empty() ) {
@@ -944,12 +956,6 @@ R"(#include <stdio.h>
         }
         bool has_typevar = false;
         ASR::FunctionType_t *f_type = ASRUtils::get_FunctionType(x);
-        if (f_type->m_deftype == ASR::deftypeType::Interface
-                && f_type->m_abi != ASR::abiType::BindC
-                && f_type->m_abi != ASR::abiType::BindPython) {
-            src = "";
-            return;
-        }
         sub += get_function_declaration(x, has_typevar);
         if (has_typevar) {
             src = "";
@@ -971,7 +977,7 @@ R"(#include <stdio.h>
                 sub += "\n" + get_func_body_bind_python(x);
                 indentation_level -= 1;
             } else {
-                generate_body = true;
+                sub += ";\n";
             }
         }
         if( generate_body ) {
@@ -1609,14 +1615,9 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             fn_name = CUtils::get_c_variable_name(
                 *ASR::down_cast<ASR::Variable_t>(callee_sym));
         } else if (fn) {
-            fn_name = get_emitted_function_name(*fn);
+            fn_name = get_c_function_target_name(*fn);
         } else {
             throw CodeGenError("Unsupported function call target", x.base.base.loc);
-        }
-        ASR::FunctionType_t *fn_type = ASRUtils::get_FunctionType(fn);
-        if (!ASR::is_a<ASR::Variable_t>(*callee_sym) &&
-                fn_type->m_abi == ASR::abiType::BindC && fn_type->m_bindc_name) {
-            fn_name = fn_type->m_bindc_name;
         }
         if (sym_info[get_hash((ASR::asr_t*)fn)].intrinsic_function) {
             if (fn_name == "size") {
@@ -1925,7 +1926,6 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         }
         self().visit_expr(*x.m_value);
         std::string value = src;
-        ASR::ttype_t* value_type = ASRUtils::expr_type(x.m_value);
         ASR::ttype_t *target_value_type = ASRUtils::type_get_past_allocatable_pointer(m_target_type);
         if (ASR::is_a<ASR::ArrayItem_t>(*x.m_target)) {
             ASR::ArrayItem_t *target_item = ASR::down_cast<ASR::ArrayItem_t>(x.m_target);
@@ -4135,12 +4135,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             sym_name = CUtils::get_c_variable_name(
                 *ASR::down_cast<ASR::Variable_t>(callee_sym));
         } else {
-            sym_name = get_emitted_function_name(*s);
-        }
-        ASR::FunctionType_t *s_type = ASRUtils::get_FunctionType(s);
-        if (!ASR::is_a<ASR::Variable_t>(*callee_sym) &&
-                s_type->m_abi == ASR::abiType::BindC && s_type->m_bindc_name) {
-            sym_name = s_type->m_bindc_name;
+            sym_name = get_c_function_target_name(*s);
         }
         src = indent + sym_name + "(" + construct_call_args(s, x.n_args, x.m_args) + ");\n";
     }
@@ -4337,10 +4332,15 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 ASR::ttype_t *arg_base_type = ASRUtils::type_get_past_allocatable_pointer(arg_type);
                 self().visit_expr(*arg);
                 std::string arg_src = std::move(src);
+                bool is_scalar_allocatable = ASR::is_a<ASR::Allocatable_t>(
+                    *ASRUtils::type_get_past_array(arg_type))
+                    && !ASRUtils::is_array(arg_type);
                 if (ASRUtils::is_array(arg_type)) {
                     src = "((" + arg_src + ") != NULL && (" + arg_src + ")->data != NULL)";
                 } else if (ASRUtils::is_character(*arg_base_type)) {
                     src = "((" + arg_src + ") != NULL)";
+                } else if (is_scalar_allocatable) {
+                    src = "true";
                 } else {
                     src = "((" + arg_src + ") != NULL)";
                 }
