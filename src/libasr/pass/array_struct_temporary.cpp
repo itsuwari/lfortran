@@ -103,6 +103,17 @@ class ArrayVarCollector: public ASR::BaseWalkVisitor<ArrayVarCollector> {
         }
     }
 
+    void visit_BitCast(const ASR::BitCast_t& x) {
+        // transfer(source, mold, ...) depends on source bytes; the mold only
+        // supplies result shape/type metadata and must not participate in
+        // alias detection for temporary creation.
+        if (x.m_value) {
+            visit_expr(*x.m_value);
+        } else if (x.m_source) {
+            visit_expr(*x.m_source);
+        }
+    }
+
     void visit_ArraySize(const ASR::ArraySize_t& /*x*/) {
 
     }

@@ -1599,6 +1599,39 @@ class ArrayOpVisitor: public ASR::CallReplacerOnExpressionsVisitor<ArrayOpVisito
         if (ASR::is_a<ASR::BitCast_t>(*xx.m_value)) {
             ASR::BitCast_t* bc = ASR::down_cast<ASR::BitCast_t>(xx.m_value);
             ASR::ttype_t* src_type = ASRUtils::expr_type(bc->m_source);
+            ASR::ttype_t* result_type = bc->m_type;
+
+            auto is_len_one_character_array = [](ASR::ttype_t* type) -> bool {
+                type = ASRUtils::type_get_past_allocatable_pointer(type);
+                if (!type || !ASRUtils::is_array(type)) {
+                    return false;
+                }
+                ASR::ttype_t* element_type = ASRUtils::extract_type(type);
+                if (!element_type || !ASRUtils::is_character(*element_type)) {
+                    return false;
+                }
+                ASR::String_t* string_type = ASR::down_cast<ASR::String_t>(element_type);
+                int64_t len = 0;
+                return string_type->m_len_kind == ASR::string_length_kindType::ExpressionLength
+                    && string_type->m_len != nullptr
+                    && ASRUtils::extract_value(string_type->m_len, len)
+                    && len == 1;
+            };
+
+            // transfer(scalar, char(1) array mold) is a byte reinterpretation of
+            // the scalar into a whole character array. Lowering it as an
+            // element-wise array loop is incorrect because each destination
+            // element sees the full scalar expression again. Leave the whole
+            // BitCast assignment intact for the backend to lower.
+            if (is_len_one_character_array(result_type) &&
+                (!ASRUtils::is_array(src_type) || ASR::is_a<ASR::ArrayItem_t>(*bc->m_source))) {
+                ASR::stmt_t* stmt = ASRUtils::STMT(
+                    ASRUtils::make_Assignment_t_util(al, loc,
+                        x.m_target, x.m_value, x.m_overloaded,
+                        x.m_realloc_lhs, x.m_move_allocation));
+                pass_result.push_back(al, stmt);
+                return;
+            }
 
             if (bc->m_size != nullptr &&
                 ASRUtils::is_array(src_type) &&
