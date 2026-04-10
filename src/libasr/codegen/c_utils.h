@@ -6,6 +6,8 @@
 #include <libasr/asr_utils.h>
 #include <libasr/pass/intrinsic_function_registry.h>
 #include <cctype>
+#include <sstream>
+#include <iomanip>
 #include <set>
 
 namespace LCompilers {
@@ -79,6 +81,31 @@ namespace CUtils {
             result += "_id";
         }
         return result;
+    }
+
+    static inline std::string escape_c_string_literal(const std::string &s) {
+        std::ostringstream o;
+        o << std::hex << std::setfill('0');
+        for (unsigned char c : s) {
+            switch (c) {
+                case '"':  o << "\\\""; break;
+                case '\\': o << "\\\\"; break;
+                case '\b': o << "\\b"; break;
+                case '\f': o << "\\f"; break;
+                case '\n': o << "\\n"; break;
+                case '\r': o << "\\r"; break;
+                case '\t': o << "\\t"; break;
+                case '\v': o << "\\v"; break;
+                default:
+                    if (c <= 0x1f || c == 0x7f) {
+                        o << "\\x" << std::setw(2) << static_cast<unsigned int>(c);
+                    } else {
+                        o << static_cast<char>(c);
+                    }
+                    break;
+            }
+        }
+        return o.str();
     }
 
     static inline std::string get_c_symbol_name(const ASR::symbol_t *sym) {

@@ -2644,7 +2644,11 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
 
 
     void visit_StringConstant(const ASR::StringConstant_t &x) {
-        src = "\"" + str_escape_c(x.m_s) + "\"";
+        if (is_c) {
+            src = "\"" + CUtils::escape_c_string_literal(x.m_s) + "\"";
+        } else {
+            src = "\"" + str_escape_c(x.m_s) + "\"";
+        }
         last_expr_precedence = 2;
     }
 
@@ -3513,7 +3517,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             case (ASR::cmpopType::NotEq): { last_expr_precedence = 10; break; }
             default : LCOMPILERS_ASSERT(false); // should never happen
         }
-        if (left_precedence <= last_expr_precedence) {
+        if (left_precedence < last_expr_precedence) {
             src += left;
         } else {
             src += "(" + left + ")";
@@ -3523,7 +3527,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             src = "strcmp(" + left + ", " + right + ") " + op_str + " 0";
         } else {
             src += op_str;
-            if (right_precedence <= last_expr_precedence) {
+            if (right_precedence < last_expr_precedence) {
                 src += right;
             } else {
                 src += "(" + right + ")";
