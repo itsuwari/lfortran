@@ -228,7 +228,8 @@ public:
                         ASR::is_a<ASR::Variable_t>(*member_sym) ) {
                 ASR::Variable_t* mem_var = ASR::down_cast<ASR::Variable_t>(member_sym);
                 std::string safe_member_name = CUtils::get_c_symbol_name(sym);
-                std::string mem_var_name = name + "_" + safe_member_name + "_" + std::to_string(counter);
+                std::string mem_var_name = CUtils::sanitize_c_identifier(
+                    "struct_member_" + safe_member_name + "_" + std::to_string(counter));
                 counter += 1;
                 ASR::dimension_t* m_dims = nullptr;
                 size_t n_dims = ASRUtils::extract_dimensions_from_ttype(mem_type, m_dims);
@@ -463,6 +464,54 @@ public:
             return get_function_pointer_declaration_from_type(
                 ASR::down_cast<ASR::FunctionType_t>(v_m_type),
                 c_v_name);
+        }
+        if (ASRUtils::is_allocatable(v.m_type) && !is_array
+                && !ASRUtils::is_character(*v_m_type)
+                && !ASR::is_a<ASR::StructType_t>(*v_m_type)
+                && !ASR::is_a<ASR::UnionType_t>(*v_m_type)
+                && !ASR::is_a<ASR::EnumType_t>(*v_m_type)) {
+            std::string dims;
+            if (ASRUtils::is_integer(*v_m_type)) {
+                ASR::Integer_t *t = ASR::down_cast<ASR::Integer_t>(v_m_type);
+                return format_type_c(dims, "int" + std::to_string(t->m_kind * 8) + "_t *",
+                    decl_name, use_ref, dummy);
+            } else if (ASRUtils::is_unsigned_integer(*v_m_type)) {
+                ASR::UnsignedInteger_t *t = ASR::down_cast<ASR::UnsignedInteger_t>(v_m_type);
+                return format_type_c(dims, "uint" + std::to_string(t->m_kind * 8) + "_t *",
+                    decl_name, use_ref, dummy);
+            } else if (ASRUtils::is_real(*v_m_type)) {
+                ASR::Real_t *t = ASR::down_cast<ASR::Real_t>(v_m_type);
+                std::string type_name;
+                if (t->m_kind == 4) {
+                    type_name = "float *";
+                } else if (t->m_kind == 8) {
+                    type_name = "double *";
+                } else {
+                    diag.codegen_error_label("Real kind '"
+                        + std::to_string(t->m_kind)
+                        + "' not supported", {v.base.base.loc}, "");
+                    throw Abort();
+                }
+                return format_type_c(dims, type_name, decl_name, use_ref, dummy);
+            } else if (ASRUtils::is_complex(*v_m_type)) {
+                ASR::Complex_t *t = ASR::down_cast<ASR::Complex_t>(v_m_type);
+                std::string type_name;
+                if (t->m_kind == 4) {
+                    type_name = "float complex *";
+                } else if (t->m_kind == 8) {
+                    type_name = "double complex *";
+                } else {
+                    diag.codegen_error_label("Complex kind '"
+                        + std::to_string(t->m_kind)
+                        + "' not supported", {v.base.base.loc}, "");
+                    throw Abort();
+                }
+                headers.insert("complex.h");
+                return format_type_c(dims, type_name, decl_name, use_ref, dummy);
+            } else if (ASRUtils::is_logical(*v_m_type)) {
+                headers.insert("stdbool.h");
+                return format_type_c(dims, "bool *", decl_name, use_ref, dummy);
+            }
         }
         if (ASRUtils::is_pointer(v_m_type)) {
             ASR::ttype_t *t2 = ASR::down_cast<ASR::Pointer_t>(v_m_type)->m_type;

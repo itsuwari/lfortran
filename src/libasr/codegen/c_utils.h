@@ -357,6 +357,67 @@ namespace CUtils {
                 return util2func["array_constant_" + encoded_type];
             }
 
+            std::string get_bitcast_string_to_scalar(std::string target_type,
+                std::string encoded_type) {
+                std::string indent(indentation_level * indentation_spaces, ' ');
+                std::string tab(indentation_spaces, ' ');
+                std::string helper_name;
+                if (util2func.find("bitcast_string_to_" + encoded_type) == util2func.end()) {
+                    helper_name = global_scope->get_unique_name("bitcast_string_to_" + encoded_type);
+                    util2func["bitcast_string_to_" + encoded_type] = helper_name;
+                } else {
+                    return util2func["bitcast_string_to_" + encoded_type];
+                }
+                helper_name = util2func["bitcast_string_to_" + encoded_type];
+                std::string signature = "static inline " + target_type + " " + helper_name + "(char *src)";
+                util_func_decls += indent + signature + ";\n";
+                std::string body = indent + signature + " {\n";
+                body += indent + tab + target_type + " out;\n";
+                body += indent + tab + "memcpy(&out, src, sizeof(" + target_type + "));\n";
+                body += indent + tab + "return out;\n";
+                body += indent + "}\n\n";
+                util_funcs += body;
+                return helper_name;
+            }
+
+            std::string get_bitcast_scalar_to_char_array(std::string return_type,
+                std::string source_type, std::string source_code,
+                std::string target_code, size_t nbytes) {
+                std::string indent(indentation_level * indentation_spaces, ' ');
+                std::string tab(indentation_spaces, ' ');
+                std::string key = "bitcast_" + source_code + "_to_" + target_code + "_" + std::to_string(nbytes);
+                std::string helper_name;
+                if (util2func.find(key) == util2func.end()) {
+                    helper_name = global_scope->get_unique_name(key);
+                    util2func[key] = helper_name;
+                } else {
+                    return util2func[key];
+                }
+                helper_name = util2func[key];
+                std::string signature = "static inline " + return_type + "* " + helper_name + "(" + source_type + " value)";
+                util_func_decls += indent + signature + ";\n";
+                std::string body = indent + signature + " {\n";
+                body += indent + tab + return_type + "* result = (" + return_type + "*) malloc(sizeof(" + return_type + "));\n";
+                body += indent + tab + "unsigned char bytes[" + std::to_string(nbytes) + "];\n";
+                body += indent + tab + "memcpy(bytes, &value, sizeof(" + source_type + "));\n";
+                body += indent + tab + "result->data = (char**) malloc(sizeof(char*)*" + std::to_string(nbytes) + ");\n";
+                body += indent + tab + "result->n_dims = 1;\n";
+                body += indent + tab + "result->offset = 0;\n";
+                body += indent + tab + "result->is_allocated = true;\n";
+                body += indent + tab + "result->dims[0].lower_bound = 1;\n";
+                body += indent + tab + "result->dims[0].length = " + std::to_string(nbytes) + ";\n";
+                body += indent + tab + "result->dims[0].stride = 1;\n";
+                body += indent + tab + "for (int32_t i = 0; i < " + std::to_string(nbytes) + "; i++) {\n";
+                body += indent + tab + tab + "result->data[i] = (char*) malloc(2*sizeof(char));\n";
+                body += indent + tab + tab + "result->data[i][0] = (char) bytes[i];\n";
+                body += indent + tab + tab + "result->data[i][1] = '\\0';\n";
+                body += indent + tab + "}\n";
+                body += indent + tab + "return result;\n";
+                body += indent + "}\n\n";
+                util_funcs += body;
+                return helper_name;
+            }
+
             std::string get_array_deepcopy(ASR::ttype_t* array_type_asr,
             std::string array_type_name, std::string array_encoded_type_name,
             std::string array_type_str) {

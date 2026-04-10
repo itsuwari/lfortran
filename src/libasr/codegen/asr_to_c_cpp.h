@@ -1360,6 +1360,88 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         return false;
     }
 
+    std::string emit_c_array_constant_brace_init(ASR::expr_t *expr, ASR::ttype_t *target_type) {
+        ASR::expr_t *value = ASRUtils::expr_value(expr);
+        if (value == nullptr) {
+            value = expr;
+        }
+        if (value == nullptr || !ASR::is_a<ASR::ArrayConstant_t>(*value)) {
+            return "";
+        }
+        ASR::ttype_t *member_type = ASRUtils::type_get_past_pointer(
+            ASRUtils::type_get_past_allocatable(target_type));
+        if (member_type == nullptr || !ASR::is_a<ASR::Array_t>(*member_type)) {
+            return "";
+        }
+        ASR::Array_t *array_type = ASR::down_cast<ASR::Array_t>(member_type);
+        if (array_type->m_physical_type != ASR::array_physical_typeType::FixedSizeArray) {
+            return "";
+        }
+        ASR::ArrayConstant_t *arr = ASR::down_cast<ASR::ArrayConstant_t>(value);
+        size_t n = ASRUtils::get_fixed_size_of_array(member_type);
+        std::string init = "{";
+        for (size_t i = 0; i < n; i++) {
+            init += ASRUtils::fetch_ArrayConstant_value(arr, i);
+            if (i + 1 < n) {
+                init += ", ";
+            }
+        }
+        init += "}";
+        return init;
+    }
+
+    bool is_len_one_character_array_type(ASR::ttype_t *type) {
+        if (type == nullptr || !ASRUtils::is_array(type)) {
+            return false;
+        }
+        ASR::ttype_t *element_type = ASRUtils::extract_type(type);
+        if (element_type == nullptr || !ASRUtils::is_character(*element_type)) {
+            return false;
+        }
+        ASR::String_t *string_type = ASRUtils::get_string_type(element_type);
+        int64_t len = 0;
+        return string_type->m_len_kind == ASR::string_length_kindType::ExpressionLength
+            && string_type->m_len != nullptr
+            && ASRUtils::extract_value(string_type->m_len, len)
+            && len == 1;
+    }
+
+    bool try_emit_scalar_to_char_array_bitcast_expr(ASR::expr_t *expr, std::string &out_expr) {
+        if (!is_c || expr == nullptr || !ASR::is_a<ASR::BitCast_t>(*expr)) {
+            return false;
+        }
+        ASR::BitCast_t *bitcast = ASR::down_cast<ASR::BitCast_t>(expr);
+        ASR::ttype_t *target_type = bitcast->m_type;
+        if (!is_len_one_character_array_type(target_type)) {
+            return false;
+        }
+        ASR::expr_t *scalar_source = nullptr;
+        if (bitcast->m_value && !ASRUtils::is_array(ASRUtils::expr_type(bitcast->m_value))) {
+            scalar_source = bitcast->m_value;
+        } else if (bitcast->m_source && !ASRUtils::is_array(ASRUtils::expr_type(bitcast->m_source))) {
+            scalar_source = bitcast->m_source;
+        }
+        if (scalar_source == nullptr) {
+            return false;
+        }
+        ASR::ttype_t *source_type = ASRUtils::expr_type(scalar_source);
+        if (!(ASRUtils::is_integer(*source_type)
+                || ASRUtils::is_unsigned_integer(*source_type)
+                || ASRUtils::is_real(*source_type)
+                || ASRUtils::is_logical(*source_type))) {
+            return false;
+        }
+        size_t nbytes = ASRUtils::get_fixed_size_of_array(target_type);
+        std::string target_type_name = CUtils::get_c_type_from_ttype_t(target_type);
+        std::string target_code = CUtils::get_c_type_code(target_type, true, false);
+        std::string source_type_name = CUtils::get_c_type_from_ttype_t(source_type);
+        std::string source_code = CUtils::get_c_type_code(source_type, false, false);
+        self().visit_expr(*scalar_source);
+        out_expr = c_utils_functions->get_bitcast_scalar_to_char_array(
+            target_type_name, source_type_name, source_code, target_code, nbytes) + "(" + src + ")";
+        return true;
+    }
+
     bool is_scalar_base_array_type(ASR::ttype_t *type) {
         type = ASRUtils::type_get_past_allocatable_pointer(type);
         if (!ASRUtils::is_array(type)) {
@@ -2222,8 +2304,11 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             src = "";
             return ;
         }
-        self().visit_expr(*x.m_value);
-        std::string value = src;
+        std::string value;
+        if (!try_emit_scalar_to_char_array_bitcast_expr(x.m_value, value)) {
+            self().visit_expr(*x.m_value);
+            value = src;
+        }
         ASR::ttype_t *target_value_type = ASRUtils::type_get_past_allocatable_pointer(m_target_type);
         if (ASR::is_a<ASR::ArrayItem_t>(*unwrapped_target_expr)) {
             ASR::ArrayItem_t *target_item = ASR::down_cast<ASR::ArrayItem_t>(unwrapped_target_expr);
@@ -3761,8 +3846,14 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 out += ".";
                 out += CUtils::get_c_symbol_name(member_sym);
                 out += " = ";
-                self().visit_expr(*x.m_args[i].m_value);
-                out += src;
+                std::string array_init = emit_c_array_constant_brace_init(
+                    x.m_args[i].m_value, ASRUtils::symbol_type(member_sym));
+                if (!array_init.empty()) {
+                    out += array_init;
+                } else {
+                    self().visit_expr(*x.m_args[i].m_value);
+                    out += src;
+                }
                 if (i < x.n_args-1) {
                     out += ", ";
                 }
@@ -3786,8 +3877,14 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 out += ".";
                 out += CUtils::get_c_symbol_name(member_sym);
                 out += " = ";
-                self().visit_expr(*x.m_args[i].m_value);
-                out += src;
+                std::string array_init = emit_c_array_constant_brace_init(
+                    x.m_args[i].m_value, ASRUtils::symbol_type(member_sym));
+                if (!array_init.empty()) {
+                    out += array_init;
+                } else {
+                    self().visit_expr(*x.m_args[i].m_value);
+                    out += src;
+                }
                 if (i < x.n_args-1) {
                     out += ", ";
                 }
@@ -4817,6 +4914,40 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             self().visit_expr(*src_expr);
             src = "_lfortran_str_chr_alloc(_lfortran_get_default_allocator(), " + src + ")";
             return;
+        }
+        if (is_c && src_expr && target_type && source_type
+                && !ASRUtils::is_array(target_type)
+                && ASRUtils::is_character(*source_type)
+                && (ASRUtils::is_integer(*target_type)
+                    || ASRUtils::is_unsigned_integer(*target_type)
+                    || ASRUtils::is_real(*target_type)
+                    || ASRUtils::is_logical(*target_type))) {
+            self().visit_expr(*src_expr);
+            std::string source = src;
+            std::string target_c_type = CUtils::get_c_type_from_ttype_t(target_type);
+            std::string target_code = CUtils::get_c_type_code(target_type, true, false);
+            src = c_utils_functions->get_bitcast_string_to_scalar(target_c_type, target_code)
+                + "(" + source + ")";
+            return;
+        }
+        if (is_c && src_expr && target_type && source_type
+                && ASRUtils::is_array(target_type)
+                && !ASRUtils::is_array(source_type)) {
+            if (is_len_one_character_array_type(target_type)
+                    && (ASRUtils::is_integer(*source_type)
+                        || ASRUtils::is_unsigned_integer(*source_type)
+                        || ASRUtils::is_real(*source_type)
+                        || ASRUtils::is_logical(*source_type))) {
+                size_t nbytes = ASRUtils::get_fixed_size_of_array(target_type);
+                std::string target_type_name = CUtils::get_c_type_from_ttype_t(target_type);
+                std::string target_code = CUtils::get_c_type_code(target_type, true, false);
+                std::string source_type_name = CUtils::get_c_type_from_ttype_t(source_type);
+                std::string source_code = CUtils::get_c_type_code(source_type, false, false);
+                self().visit_expr(*src_expr);
+                src = c_utils_functions->get_bitcast_scalar_to_char_array(
+                    target_type_name, source_type_name, source_code, target_code, nbytes) + "(" + src + ")";
+                return;
+            }
         }
         if (x.m_value) {
             self().visit_expr(*x.m_value);
