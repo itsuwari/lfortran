@@ -343,6 +343,7 @@ namespace LCompilers::CommandLineInterface {
         app.add_flag("--show-llvm-from-mlir", opts.show_llvm_from_mlir, "Show LLVM IR translated from MLIR for the given file and exit")->group(group_output_debugging_options);
         app.add_flag("--show-cpp", opts.show_cpp, "Show C++ translation source for the given file and exit")->group(group_output_debugging_options);
         app.add_flag("--show-c", opts.show_c, "Show C translation source for the given file and exit")->group(group_output_debugging_options);
+        app.add_option("--show-c-split", opts.show_c_split, "Emit split C translation files into the given directory")->group(group_output_debugging_options);
         app.add_flag("--show-asm", opts.show_asm, "Show assembly for the given file and exit")->group(group_output_debugging_options);
         app.add_flag("--show-wat", opts.show_wat, "Show WAT (WebAssembly Text Format) and exit")->group(group_output_debugging_options);
         app.add_flag("--show-julia", opts.show_julia, "Show Julia translation source for the given file and exit")->group(group_output_debugging_options);

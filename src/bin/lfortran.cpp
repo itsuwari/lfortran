@@ -18,7 +18,9 @@
 #include <lfortran/semantics/ast_to_asr.h>
 #include <lfortran/mod_to_asr.h>
 #include <libasr/codegen/asr_to_llvm.h>
+#include <libasr/codegen/asr_to_c.h>
 #include <libasr/codegen/asr_to_cpp.h>
+#include <libasr/codegen/c_utils.h>
 #include <libasr/codegen/asr_to_py.h>
 #include <libasr/codegen/asr_to_x86.h>
 #include <libasr/codegen/asr_to_wasm.h>
@@ -903,6 +905,110 @@ int emit_c(const std::string &infile,
         return 0;
     } else {
         LCOMPILERS_ASSERT(diagnostics.has_error())
+        return 1;
+    }
+}
+
+int emit_c_split(const std::string &infile,
+    LCompilers::PassManager& pass_manager, CompilerOptions &compiler_options,
+    const std::string &output_dir, const std::string &rtlib_c_header_dir,
+    const std::string &runtime_library_dir)
+{
+    namespace fs = std::filesystem;
+    try {
+        std::string input = read_file_ok(infile);
+
+        LCompilers::FortranEvaluator fe(compiler_options);
+        LCompilers::LocationManager lm;
+        LCompilers::diag::Diagnostics diagnostics;
+        {
+            LCompilers::LocationManager::FileLocations fl;
+            fl.in_filename = infile;
+            lm.files.push_back(fl);
+            lm.file_ends.push_back(input.size());
+        }
+        LCompilers::Result<LCompilers::ASR::TranslationUnit_t*>
+            r = fe.get_asr2(input, lm, diagnostics);
+        std::cerr << diagnostics.render(lm, compiler_options);
+        if (!r.ok) {
+            LCOMPILERS_ASSERT(diagnostics.has_error())
+            return 2;
+        }
+        diagnostics.diagnostics.clear();
+        LCompilers::ASR::TranslationUnit_t* asr = r.result;
+
+        fs::create_directories(output_dir);
+        std::string project_name = fs::path(infile).stem().string();
+        project_name = LCompilers::CUtils::sanitize_c_identifier(project_name);
+        if (project_name.empty()) {
+            project_name = "lfortran_c_project";
+        }
+        std::string effective_rtlib_c_header_dir = rtlib_c_header_dir;
+        if (!fs::exists(fs::path(effective_rtlib_c_header_dir) / "lfortran_intrinsics.h")) {
+            effective_rtlib_c_header_dir =
+                (fs::path(__FILE__).parent_path().parent_path() / "libasr" / "runtime").string();
+        }
+
+        Allocator c_al(64*1024*1024);
+        compiler_options.po.always_run = false;
+        compiler_options.po.run_fun = "f";
+        pass_manager.skip_c_passes();
+        pass_manager.apply_passes(c_al, asr, compiler_options.po, diagnostics);
+        if (diagnostics.has_error()) {
+            std::cerr << diagnostics.render(lm, compiler_options);
+            return 1;
+        }
+
+        LCompilers::Result<LCompilers::CTranslationUnitSplitResult> split_result =
+            LCompilers::asr_to_c_split(c_al, *asr, diagnostics,
+                compiler_options, 1, output_dir, project_name);
+        std::cerr << diagnostics.render(lm, compiler_options);
+        if (!split_result.ok) {
+            LCOMPILERS_ASSERT(diagnostics.has_error())
+            return 1;
+        }
+
+        const auto &result = split_result.result;
+        std::string target_name = project_name;
+        std::string cmake_src =
+            "cmake_minimum_required(VERSION 3.16)\n"
+            "project(" + target_name + " C)\n\n"
+            "set(CMAKE_C_STANDARD 11)\n"
+            "set(CMAKE_C_STANDARD_REQUIRED ON)\n"
+            "set(CMAKE_EXPORT_COMPILE_COMMANDS ON)\n\n";
+        if (result.has_main_program) {
+            cmake_src += "add_executable(" + target_name + "\n";
+        } else {
+            cmake_src += "add_library(" + target_name + " STATIC\n";
+        }
+        for (const auto &src_file : result.source_files) {
+            cmake_src += "    " + src_file + "\n";
+        }
+        cmake_src += ")\n\n";
+        cmake_src += "target_include_directories(" + target_name + " PRIVATE\n";
+        cmake_src += "    \"${CMAKE_CURRENT_SOURCE_DIR}\"\n";
+        cmake_src += "    \"" + effective_rtlib_c_header_dir + "\"\n";
+        cmake_src += ")\n";
+        cmake_src += "target_link_directories(" + target_name + " PRIVATE\n";
+        cmake_src += "    \"" + runtime_library_dir + "\"\n";
+        cmake_src += ")\n";
+        cmake_src += "target_link_libraries(" + target_name + " PRIVATE lfortran_runtime m)\n";
+        cmake_src += "target_link_options(" + target_name + " PRIVATE \"-Wl,-rpath," + runtime_library_dir + "\")\n";
+        cmake_src += "if(APPLE)\n";
+        cmake_src += "    target_link_libraries(" + target_name + " PRIVATE \"-framework Accelerate\")\n";
+        cmake_src += "endif()\n";
+
+        std::ofstream cmake_out(fs::path(output_dir) / "CMakeLists.txt");
+        cmake_out << cmake_src;
+        cmake_out.close();
+
+        std::cout << "Generated split C package in " << output_dir << std::endl;
+        for (const auto &src_file : result.source_files) {
+            std::cout << src_file << std::endl;
+        }
+        return 0;
+    } catch (const std::exception &e) {
+        std::cerr << "emit_c_split exception: " << e.what() << std::endl;
         return 1;
     }
 }
@@ -2760,6 +2866,10 @@ int main_app(int argc, char *argv[]) {
     }
     if (opts.show_cpp) {
         return emit_cpp(opts.arg_file, compiler_options);
+    }
+    if (!opts.show_c_split.empty()) {
+        return emit_c_split(opts.arg_file, lfortran_pass_manager, compiler_options,
+            opts.show_c_split, rtlib_c_header_dir, runtime_library_dir);
     }
     if (opts.show_c) {
         return emit_c(opts.arg_file, lfortran_pass_manager, compiler_options);

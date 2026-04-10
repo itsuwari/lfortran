@@ -47,6 +47,7 @@ namespace LCompilers::CommandLineInterface {
         bool show_llvm_from_mlir = false;
         bool show_cpp = false;
         bool show_c = false;
+        std::string show_c_split;
         bool show_asm = false;
         bool show_wat = false;
         bool show_julia = false;

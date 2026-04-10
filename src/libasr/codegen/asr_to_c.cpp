@@ -1,4 +1,5 @@
 #include <fstream>
+#include <filesystem>
 #include <memory>
 
 #include <libasr/asr.h>
@@ -34,6 +35,7 @@ public:
     int counter;
     std::set<std::string> emitted_aggregate_names;
     std::unordered_map<const ASR::symbol_t*, std::string> enum_name_map;
+    std::string string_concat_helper_name;
 
     bool target_offload_enabled;
     std::vector<std::string> kernel_func_names;
@@ -51,6 +53,199 @@ public:
            counter{0} {
            target_offload_enabled = co.target_offload_enabled;
            }
+
+    std::string get_default_head() const {
+        std::string head =
+R"(
+#include <stdlib.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <string.h>
+#include <lfortran_intrinsics.h>
+
+)";
+        if(compiler_options.target_offload_enabled) {
+            head += R"(
+#ifdef USE_GPU
+#include<cuda_runtime.h>
+#else
+#include"cuda_cpu_runtime.h"
+#endif
+)";
+        }
+        return head;
+    }
+
+    std::string get_include_block() const {
+        std::string to_include = "";
+        for (auto &s: user_defines) {
+            to_include += "#define " + s + "\n";
+        }
+        for (auto &s: headers) {
+            to_include += "#include <" + s + ">\n";
+        }
+        for (auto &s: user_headers) {
+            to_include += "#include \"" + s + "\"\n";
+        }
+        return to_include;
+    }
+
+    void finalize_common_sections(std::string &helper_defs) {
+        if( c_ds_api->get_func_decls().size() > 0 ) {
+            array_types_decls += "\n" + c_ds_api->get_func_decls() + "\n";
+        }
+        if( c_utils_functions->get_util_func_decls().size() > 0 ) {
+            array_types_decls += "\n" + c_utils_functions->get_util_func_decls() + "\n";
+        }
+        if( bind_py_utils_functions->get_util_func_decls().size() > 0 ) {
+            array_types_decls += "\n" + bind_py_utils_functions->get_util_func_decls() + "\n";
+        }
+
+        if( c_ds_api->get_generated_code().size() > 0 ) {
+            helper_defs += "\n" + c_ds_api->get_generated_code() + "\n";
+        }
+        if( c_utils_functions->get_generated_code().size() > 0 ) {
+            helper_defs += "\n" + c_utils_functions->get_generated_code() + "\n";
+        }
+        if( bind_py_utils_functions->get_generated_code().size() > 0 ) {
+            helper_defs += "\n" + bind_py_utils_functions->get_generated_code() + "\n";
+        }
+
+        if( is_string_concat_present ) {
+            if (string_concat_helper_name.empty()) {
+                string_concat_helper_name = global_scope->get_unique_name("strcat_", false);
+            }
+            helper_defs += "char* " + string_concat_helper_name + "(char* x, char* y) {\n";
+            helper_defs += "    char* str_tmp = (char*) malloc((strlen(x) + strlen(y) + 2) * sizeof(char));\n";
+            helper_defs += "    strcpy(str_tmp, x);\n";
+            helper_defs += "    return strcat(str_tmp, y);\n";
+            helper_defs += "}\n\n";
+        }
+
+        if (array_types_decls.size() != 0) {
+            array_types_decls = "\nstruct dimension_descriptor\n"
+                "{\n    int32_t lower_bound, length, stride;\n};\n" + array_types_decls;
+        }
+    }
+
+    std::string make_unit_filename(const std::string &kind,
+            const std::string &name) const {
+        return kind + "_" + CUtils::sanitize_c_identifier(name) + ".c";
+    }
+
+    std::string get_unit_file_prelude(const std::string &header_name) const {
+        return "#include \"" + header_name + "\"\n\n";
+    }
+
+    std::string get_global_extern_decl(const ASR::Variable_t &v) {
+        CDeclarationOptions opts;
+        opts.use_static = false;
+        opts.do_not_initialize = true;
+        opts.pre_initialise_derived_type = false;
+        std::string decl = convert_variable_decl(v, &opts);
+        size_t eq_pos = decl.find(" = ");
+        if (eq_pos != std::string::npos) {
+            decl = decl.substr(0, eq_pos);
+        }
+        while (!decl.empty() && std::isspace(static_cast<unsigned char>(decl.back()))) {
+            decl.pop_back();
+        }
+        return "extern " + decl + ";\n";
+    }
+
+    std::string get_global_definition(const ASR::Variable_t &v) {
+        CDeclarationOptions opts;
+        opts.use_static = false;
+        opts.do_not_initialize = true;
+        opts.pre_initialise_derived_type = false;
+        return convert_variable_decl(v, &opts) + ";\n";
+    }
+
+    std::string collect_module_extern_decls(const ASR::TranslationUnit_t &x) {
+        std::string decls;
+        std::vector<std::string> build_order =
+            ASRUtils::determine_module_dependencies(x);
+        for (const auto &item : build_order) {
+            ASR::symbol_t *mod_sym = x.m_symtab->get_symbol(item);
+            if (mod_sym == nullptr || !ASR::is_a<ASR::Module_t>(*mod_sym)) {
+                continue;
+            }
+            ASR::Module_t *mod = ASR::down_cast<ASR::Module_t>(mod_sym);
+            if (to_lower(mod->m_name) == "omp_lib"
+                    || to_lower(mod->m_name) == "iso_c_binding"
+                    || to_lower(mod->m_name) == "lfortran_intrinsic_iso_c_binding") {
+                continue;
+            }
+            for (auto &scope_item : mod->m_symtab->get_scope()) {
+                if (ASR::is_a<ASR::Variable_t>(*scope_item.second)) {
+                    ASR::Variable_t *v = ASR::down_cast<ASR::Variable_t>(scope_item.second);
+                    if (v->m_access == ASR::accessType::Private) {
+                        continue;
+                    }
+                    try {
+                        decls += get_global_extern_decl(*v);
+                    } catch (...) {
+                        continue;
+                    }
+                }
+            }
+        }
+        return decls;
+    }
+
+    std::string collect_split_function_decls(const ASR::TranslationUnit_t &x) {
+        std::string decls;
+        std::set<std::string> seen;
+        auto add_function_decl = [&](ASR::Function_t *fn) {
+            bool has_typevar = false;
+            try {
+                std::string decl = get_function_declaration(*fn, has_typevar, false) + ";\n";
+                if (seen.insert(decl).second) {
+                    decls += decl;
+                }
+            } catch (...) {
+                return;
+            }
+        };
+
+        std::vector<std::string> global_func_order =
+            ASRUtils::determine_function_definition_order(x.m_symtab);
+        for (const auto &func_name : global_func_order) {
+            ASR::symbol_t *sym = x.m_symtab->get_symbol(func_name);
+            if (sym == nullptr || ASR::is_a<ASR::ExternalSymbol_t>(*sym)
+                    || !ASR::is_a<ASR::Function_t>(*sym)) {
+                continue;
+            }
+            add_function_decl(ASR::down_cast<ASR::Function_t>(sym));
+        }
+
+        std::vector<std::string> build_order =
+            ASRUtils::determine_module_dependencies(x);
+        for (const auto &item : build_order) {
+            ASR::symbol_t *mod_sym = x.m_symtab->get_symbol(item);
+            if (mod_sym == nullptr || !ASR::is_a<ASR::Module_t>(*mod_sym)) {
+                continue;
+            }
+            ASR::Module_t *mod = ASR::down_cast<ASR::Module_t>(mod_sym);
+            std::vector<std::string> func_order =
+                ASRUtils::determine_function_definition_order(mod->m_symtab);
+            for (const auto &func_name : func_order) {
+                ASR::symbol_t *sym = mod->m_symtab->get_symbol(func_name);
+                if (sym == nullptr || !ASR::is_a<ASR::Function_t>(*sym)) {
+                    continue;
+                }
+                add_function_decl(ASR::down_cast<ASR::Function_t>(sym));
+            }
+        }
+        return decls;
+    }
+
+    void write_text_file(const std::filesystem::path &path,
+            const std::string &contents) {
+        std::ofstream out_file(path);
+        out_file << contents;
+        out_file.close();
+    }
 
     template <typename T>
     std::string get_aggregate_c_name(const T &x) {
@@ -1235,6 +1430,185 @@ R"(
                 out_file.close();
             }
         }
+    }
+
+    CTranslationUnitSplitResult emit_split_translation_unit(
+            const ASR::TranslationUnit_t &x, const std::string &output_dir,
+            const std::string &project_name) {
+        namespace fs = std::filesystem;
+        fs::create_directories(output_dir);
+
+        is_string_concat_present = false;
+        global_scope = x.m_symtab;
+        LCOMPILERS_ASSERT(x.n_items == 0);
+        indentation_level = 0;
+        indentation_spaces = 4;
+        c_ds_api->set_indentation(indentation_level, indentation_spaces);
+        c_ds_api->set_global_scope(global_scope);
+        c_utils_functions->set_indentation(indentation_level, indentation_spaces);
+        c_utils_functions->set_global_scope(global_scope);
+        c_ds_api->set_c_utils_functions(c_utils_functions.get());
+        bind_py_utils_functions->set_indentation(indentation_level, indentation_spaces);
+        bind_py_utils_functions->set_global_scope(global_scope);
+
+        std::string global_var_defs;
+        std::string global_var_decls;
+        for (auto &item : x.m_symtab->get_scope()) {
+            if (ASR::is_a<ASR::Variable_t>(*item.second)) {
+                ASR::Variable_t *v = ASR::down_cast<ASR::Variable_t>(item.second);
+                global_var_defs += get_global_definition(*v);
+                global_var_decls += get_global_extern_decl(*v);
+            }
+        }
+
+        std::map<std::string, std::vector<std::string>> struct_dep_graph;
+        for (auto &item : x.m_symtab->get_scope()) {
+            if (ASR::is_a<ASR::Struct_t>(*item.second) ||
+                ASR::is_a<ASR::Enum_t>(*item.second) ||
+                ASR::is_a<ASR::Union_t>(*item.second)) {
+                std::vector<std::string> struct_deps_vec;
+                std::pair<char**, size_t> struct_deps_ptr = ASRUtils::symbol_dependencies(item.second);
+                for( size_t i = 0; i < struct_deps_ptr.second; i++ ) {
+                    struct_deps_vec.push_back(std::string(struct_deps_ptr.first[i]));
+                }
+                struct_dep_graph[item.first] = struct_deps_vec;
+            }
+        }
+
+        std::vector<std::string> struct_deps = ASRUtils::order_deps(struct_dep_graph);
+        for (auto &item : struct_deps) {
+            ASR::symbol_t* struct_sym = x.m_symtab->get_symbol(item);
+            visit_symbol(*struct_sym);
+            array_types_decls += src;
+        }
+
+        std::vector<std::pair<std::string, std::string>> unit_bodies;
+        std::vector<std::string> global_func_order =
+            ASRUtils::determine_function_definition_order(x.m_symtab);
+
+        std::vector<std::string> build_order =
+            ASRUtils::determine_module_dependencies(x);
+
+        for (auto &item : build_order) {
+            LCOMPILERS_ASSERT(x.m_symtab->get_scope().find(item)
+                != x.m_symtab->get_scope().end());
+            if (startswith(item, "lfortran_intrinsic")) {
+                ASR::symbol_t *mod = x.m_symtab->get_symbol(item);
+                if( ASRUtils::get_body_size(mod) != 0 ) {
+                    visit_symbol(*mod);
+                    if (!src.empty()) {
+                        unit_bodies.push_back({
+                            make_unit_filename("intrinsic", item), src
+                        });
+                    }
+                }
+            }
+        }
+
+        std::string global_functions_body;
+        for (size_t i = 0; i < global_func_order.size(); i++) {
+            ASR::symbol_t* sym = x.m_symtab->get_symbol(global_func_order[i]);
+            if( !sym || ASR::is_a<ASR::ExternalSymbol_t>(*sym) ) {
+                continue;
+            }
+            visit_symbol(*sym);
+            if (!src.empty()) {
+                global_functions_body += src;
+            }
+        }
+        if (!global_functions_body.empty()) {
+            unit_bodies.push_back({"global_procedures.c", global_functions_body});
+        }
+
+        for (auto &item : build_order) {
+            LCOMPILERS_ASSERT(x.m_symtab->get_scope().find(item)
+                != x.m_symtab->get_scope().end());
+            if (!startswith(item, "lfortran_intrinsic")) {
+                ASR::symbol_t *mod = x.m_symtab->get_symbol(item);
+                visit_symbol(*mod);
+                if (!src.empty()) {
+                    unit_bodies.push_back({
+                        make_unit_filename("module", item), src
+                    });
+                }
+            }
+        }
+
+        bool has_main_program = false;
+        for (auto &item : x.m_symtab->get_scope()) {
+            if (ASR::is_a<ASR::Program_t>(*item.second)) {
+                visit_symbol(*item.second);
+                if (!src.empty()) {
+                    unit_bodies.push_back({
+                        make_unit_filename("program", item.first), src
+                    });
+                    has_main_program = true;
+                }
+            }
+        }
+
+        forward_decl_functions += "\n\n";
+        std::string helper_defs;
+        finalize_common_sections(helper_defs);
+        std::string module_var_decls = collect_module_extern_decls(x);
+        std::string split_func_decls = collect_split_function_decls(x);
+        if (!string_concat_helper_name.empty()) {
+            forward_decl_functions += "char* " + string_concat_helper_name + "(char* x, char* y);\n";
+        }
+
+        std::string safe_project_name =
+            CUtils::sanitize_c_identifier(project_name.empty() ? "lfortran_c_project" : project_name);
+        std::string header_name = safe_project_name + "_generated.h";
+        std::string header_guard = safe_project_name;
+        std::transform(header_guard.begin(), header_guard.end(), header_guard.begin(), ::toupper);
+        header_guard += "_GENERATED_H";
+
+        std::string header_src = "#ifndef " + header_guard + "\n#define "
+            + header_guard + "\n\n"
+            + get_include_block() + get_default_head() + "\n"
+            + array_types_decls + forward_decl_functions + split_func_decls + global_var_decls
+            + module_var_decls
+            + "\n#endif\n";
+        write_text_file(fs::path(output_dir) / header_name, header_src);
+
+        std::vector<std::string> source_files;
+        std::string shared_body;
+        if (!global_var_defs.empty()) {
+            shared_body += global_var_defs + "\n";
+        }
+        if (!helper_defs.empty()) {
+            shared_body += helper_defs;
+        }
+        if (!shared_body.empty()) {
+            std::string shared_name = safe_project_name + "_shared.c";
+            write_text_file(fs::path(output_dir) / shared_name,
+                get_unit_file_prelude(header_name) + shared_body);
+            source_files.push_back(shared_name);
+        }
+
+        for (const auto &unit : unit_bodies) {
+            write_text_file(fs::path(output_dir) / unit.first,
+                get_unit_file_prelude(header_name) + unit.second);
+            source_files.push_back(unit.first);
+        }
+
+        if (!emit_headers.empty()) {
+            std::string to_includes_1 = "";
+            for (auto &s: headers) {
+                to_includes_1 += "#include <" + s + ">\n";
+            }
+            for (auto &f_name: emit_headers) {
+                std::string out_src = to_includes_1 + get_default_head() + f_name.second;
+                std::string ifdefs = f_name.first.substr(0, f_name.first.length() - 2);
+                std::transform(ifdefs.begin(), ifdefs.end(), ifdefs.begin(), ::toupper);
+                ifdefs += "_H";
+                out_src = "#ifndef " + ifdefs + "\n#define " + ifdefs + "\n\n"
+                    + out_src + "\n\n#endif\n";
+                write_text_file(fs::path(output_dir) / f_name.first, out_src);
+            }
+        }
+
+        return {source_files, header_name, has_main_program};
     }
 
     void visit_Module(const ASR::Module_t &x) {
@@ -3713,6 +4087,29 @@ Result<std::string> asr_to_c(Allocator &al, ASR::TranslationUnit_t &asr,
         return Error();
     }
     return v.src;
+}
+
+Result<CTranslationUnitSplitResult> asr_to_c_split(Allocator &al,
+    ASR::TranslationUnit_t &asr, diag::Diagnostics &diagnostics,
+    CompilerOptions &co, int64_t default_lower_bound,
+    const std::string &output_dir, const std::string &project_name)
+{
+    co.po.always_run = true;
+    pass_unused_functions(al, asr, co.po);
+    ASRToCVisitor v(diagnostics, co, default_lower_bound);
+    try {
+        return v.emit_split_translation_unit(asr, output_dir, project_name);
+    } catch (const CodeGenError &e) {
+        diagnostics.diagnostics.push_back(e.d);
+        return Error();
+    } catch (const std::exception &e) {
+        diagnostics.semantic_error_label(
+            "Split C emission failed: " + std::string(e.what()), {}, ""
+        );
+        return Error();
+    } catch (const Abort &) {
+        return Error();
+    }
 }
 
 } // namespace LCompilers
