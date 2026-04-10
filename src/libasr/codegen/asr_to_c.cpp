@@ -2833,10 +2833,11 @@ R"(    // Initialise Numpy
         ASR::dimension_t* m_dims;
         int n_dims = ASRUtils::extract_dimensions_from_ttype(x_mv_type, m_dims);
         ASR::symbol_t *array_owner = ASRUtils::get_asr_owner(array_expr);
+        bool is_raw_array_constant = ASR::is_a<ASR::ArrayConstant_t>(*array_expr);
         bool is_data_only_array = ASRUtils::is_fixed_size_array(m_dims, n_dims) &&
                                   array_owner != nullptr &&
                                   ASR::is_a<ASR::Struct_t>(*array_owner);
-        if( is_data_only_array || ASRUtils::is_simd_array(x.m_v)) {
+        if( is_data_only_array || is_raw_array_constant || ASRUtils::is_simd_array(x.m_v)) {
             std::string index = "";
             std::string out = array;
             out += "[";

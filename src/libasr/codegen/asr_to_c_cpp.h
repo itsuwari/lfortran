@@ -1331,6 +1331,28 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         return false;
     }
 
+    bool is_data_only_array_expr(ASR::expr_t *expr) {
+        expr = unwrap_c_lvalue_expr(expr);
+        if (expr == nullptr) {
+            return false;
+        }
+        if (ASR::is_a<ASR::ArrayConstant_t>(*expr)) {
+            return true;
+        }
+        ASR::ttype_t *expr_type = ASRUtils::expr_type(expr);
+        if (!ASRUtils::is_array(expr_type)) {
+            return false;
+        }
+        ASR::dimension_t *dims = nullptr;
+        int n_dims = ASRUtils::extract_dimensions_from_ttype(expr_type, dims);
+        if (!ASRUtils::is_fixed_size_array(dims, n_dims)
+                && !ASRUtils::is_simd_array(expr)) {
+            return false;
+        }
+        ASR::symbol_t *owner = ASRUtils::get_asr_owner(expr);
+        return owner != nullptr && ASR::is_a<ASR::Struct_t>(*owner);
+    }
+
     std::string construct_call_args(ASR::Function_t* f, size_t n_args, ASR::call_arg_t* m_args) {
         bracket_open++;
         std::string args = "";
@@ -2190,13 +2212,14 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             phys_type == ASR::array_physical_typeType::UnboundedPointerArray ||
             phys_type == ASR::array_physical_typeType::ISODescriptorArray ||
             phys_type == ASR::array_physical_typeType::NumPyArray ) {
-            std::string value_data = value_desc + "->data";
+            bool value_is_data_only_array = is_data_only_array_expr(array_section->m_v);
+            std::string value_data = value_is_data_only_array ? value_desc : value_desc + "->data";
             std::vector<std::string> diminfo;
             diminfo.reserve(value_rank * 2);
-            if (phys_type == ASR::array_physical_typeType::DescriptorArray ||
+            if (!value_is_data_only_array && (phys_type == ASR::array_physical_typeType::DescriptorArray ||
                 phys_type == ASR::array_physical_typeType::UnboundedPointerArray ||
                 phys_type == ASR::array_physical_typeType::ISODescriptorArray ||
-                phys_type == ASR::array_physical_typeType::NumPyArray) {
+                phys_type == ASR::array_physical_typeType::NumPyArray)) {
                 for( int i = 0; i < value_rank; i++ ) {
                     diminfo.push_back(value_desc + "->dims[" + std::to_string(i) + "].lower_bound");
                     diminfo.push_back(value_desc + "->dims[" + std::to_string(i) + "].length");
