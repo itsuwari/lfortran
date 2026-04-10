@@ -1498,9 +1498,13 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             return false;
         }
         ASR::expr_t *scalar_source = nullptr;
-        if (bitcast->m_value && !ASRUtils::is_array(ASRUtils::expr_type(bitcast->m_value))) {
+        if (bitcast->m_value
+                && (ASR::is_a<ASR::ArrayItem_t>(*bitcast->m_value)
+                    || !ASRUtils::is_array(ASRUtils::expr_type(bitcast->m_value)))) {
             scalar_source = bitcast->m_value;
-        } else if (bitcast->m_source && !ASRUtils::is_array(ASRUtils::expr_type(bitcast->m_source))) {
+        } else if (bitcast->m_source
+                && (ASR::is_a<ASR::ArrayItem_t>(*bitcast->m_source)
+                    || !ASRUtils::is_array(ASRUtils::expr_type(bitcast->m_source)))) {
             scalar_source = bitcast->m_source;
         }
         if (scalar_source == nullptr) {
@@ -1773,8 +1777,10 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             ASR::ttype_t *param_type_unwrapped = param_type ?
                 ASRUtils::type_get_past_allocatable_pointer(param_type) : nullptr;
             bool raw_pointer_actual = false;
-            bool param_is_optional_scalar_ref = is_c && param
+            bool param_is_optional_alloc_scalar_ref = is_c && param
                 && param->m_presence == ASR::presenceType::Optional
+                && param_type
+                && ASR::is_a<ASR::Allocatable_t>(*param_type)
                 && param_type_unwrapped
                 && !ASRUtils::is_array(param_type)
                 && !ASRUtils::is_aggregate_type(param_type)
@@ -1791,9 +1797,14 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                     ASR::Variable_t *arg_var = ASR::down_cast<ASR::Variable_t>(arg_sym);
                     if (((ASRUtils::is_pointer(param_type)
                                 && !ASRUtils::is_array(param_type))
-                            || param_is_optional_scalar_ref)
+                            || param_is_optional_alloc_scalar_ref)
                             && is_scalar_allocatable_storage_type(arg_var->m_type)) {
                         src = get_c_var_storage_name(arg_var);
+                        raw_pointer_actual = true;
+                    } else if (param_is_optional_alloc_scalar_ref
+                            && ASRUtils::is_pointer(type)
+                            && !ASRUtils::is_array(type)) {
+                        src = CUtils::get_c_variable_name(*arg_var);
                         raw_pointer_actual = true;
                     }
                 }
@@ -1807,6 +1818,13 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                         raw_pointer_actual = true;
                     }
                 }
+            }
+            if (param_is_optional_alloc_scalar_ref
+                    && src.size() > 3
+                    && src.rfind("(*", 0) == 0
+                    && src.back() == ')') {
+                src = src.substr(2, src.size() - 3);
+                raw_pointer_actual = true;
             }
             ASR::expr_t *array_like_arg = call_arg;
             if (ASR::is_a<ASR::Cast_t>(*array_like_arg)) {
@@ -1865,7 +1883,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 if (is_c && ASR::is_a<ASR::StructInstanceMember_t>(*call_arg)
                         && (((ASRUtils::is_pointer(param_type)
                                 && !ASRUtils::is_array(param_type))
-                            || param_is_optional_scalar_ref))) {
+                            || param_is_optional_alloc_scalar_ref))) {
                     ASR::StructInstanceMember_t *member_arg =
                         ASR::down_cast<ASR::StructInstanceMember_t>(call_arg);
                     ASR::symbol_t *member_sym = ASRUtils::symbol_get_past_external(member_arg->m_m);
@@ -1918,8 +1936,10 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             ASR::ttype_t *param_type_unwrapped = param_type ?
                 ASRUtils::type_get_past_allocatable_pointer(param_type) : nullptr;
             bool raw_pointer_actual = false;
-            bool param_is_optional_scalar_ref = is_c && param
+            bool param_is_optional_alloc_scalar_ref = is_c && param
                 && param->m_presence == ASR::presenceType::Optional
+                && param_type
+                && ASR::is_a<ASR::Allocatable_t>(*param_type)
                 && param_type_unwrapped
                 && !ASRUtils::is_array(param_type)
                 && !ASRUtils::is_aggregate_type(param_type)
@@ -1936,9 +1956,14 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                     ASR::Variable_t *arg_var = ASR::down_cast<ASR::Variable_t>(arg_sym);
                     if (((ASRUtils::is_pointer(param_type)
                                 && !ASRUtils::is_array(param_type))
-                            || param_is_optional_scalar_ref)
+                            || param_is_optional_alloc_scalar_ref)
                             && is_scalar_allocatable_storage_type(arg_var->m_type)) {
                         src = get_c_var_storage_name(arg_var);
+                        raw_pointer_actual = true;
+                    } else if (param_is_optional_alloc_scalar_ref
+                            && ASRUtils::is_pointer(type)
+                            && !ASRUtils::is_array(type)) {
+                        src = CUtils::get_c_variable_name(*arg_var);
                         raw_pointer_actual = true;
                     }
                 }
@@ -1952,6 +1977,13 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                         raw_pointer_actual = true;
                     }
                 }
+            }
+            if (param_is_optional_alloc_scalar_ref
+                    && src.size() > 3
+                    && src.rfind("(*", 0) == 0
+                    && src.back() == ')') {
+                src = src.substr(2, src.size() - 3);
+                raw_pointer_actual = true;
             }
             ASR::expr_t *array_like_arg = call_arg;
             if (ASR::is_a<ASR::Cast_t>(*array_like_arg)) {
@@ -2010,7 +2042,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 if (is_c && ASR::is_a<ASR::StructInstanceMember_t>(*call_arg)
                         && (((ASRUtils::is_pointer(param_type)
                                 && !ASRUtils::is_array(param_type))
-                            || param_is_optional_scalar_ref))) {
+                            || param_is_optional_alloc_scalar_ref))) {
                     ASR::StructInstanceMember_t *member_arg =
                         ASR::down_cast<ASR::StructInstanceMember_t>(call_arg);
                     ASR::symbol_t *member_sym = ASRUtils::symbol_get_past_external(member_arg->m_m);
@@ -2314,16 +2346,53 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         if (try_emit_vector_subscript_scalar_array_assignment(x, unwrapped_target_expr)) {
             return;
         }
+        std::string scalar_char_bitcast_value_expr;
+        bool have_scalar_char_bitcast_value =
+            try_emit_scalar_to_char_array_bitcast_expr(x.m_value, scalar_char_bitcast_value_expr);
+        if (!have_scalar_char_bitcast_value && is_c
+                && is_len_one_character_array_type(m_target_type)
+                && ASR::is_a<ASR::BitCast_t>(*x.m_value)) {
+            ASR::BitCast_t *bitcast = ASR::down_cast<ASR::BitCast_t>(x.m_value);
+            ASR::expr_t *scalar_source = nullptr;
+            if (bitcast->m_value
+                    && (ASR::is_a<ASR::ArrayItem_t>(*bitcast->m_value)
+                        || !ASRUtils::is_array(ASRUtils::expr_type(bitcast->m_value)))) {
+                scalar_source = bitcast->m_value;
+            } else if (bitcast->m_source
+                    && (ASR::is_a<ASR::ArrayItem_t>(*bitcast->m_source)
+                        || !ASRUtils::is_array(ASRUtils::expr_type(bitcast->m_source)))) {
+                scalar_source = bitcast->m_source;
+            }
+            if (scalar_source != nullptr) {
+                ASR::ttype_t *source_type = ASRUtils::expr_type(scalar_source);
+                if (ASRUtils::is_integer(*source_type)
+                        || ASRUtils::is_unsigned_integer(*source_type)
+                        || ASRUtils::is_real(*source_type)
+                        || ASRUtils::is_logical(*source_type)) {
+                    size_t nbytes = ASRUtils::get_fixed_size_of_array(m_target_type);
+                    std::string target_type_name = CUtils::get_c_type_from_ttype_t(m_target_type);
+                    std::string target_code = CUtils::get_c_type_code(m_target_type, true, false);
+                    std::string source_type_name = CUtils::get_c_type_from_ttype_t(source_type);
+                    std::string source_code = CUtils::get_c_type_code(source_type, false, false);
+                    self().visit_expr(*scalar_source);
+                    scalar_char_bitcast_value_expr = c_utils_functions->get_bitcast_scalar_to_char_array(
+                        target_type_name, source_type_name, source_code, target_code, nbytes)
+                        + "(" + src + ")";
+                    have_scalar_char_bitcast_value = true;
+                }
+            }
+        }
         if (is_c && is_len_one_character_array_type(m_target_type)
-                && !ASRUtils::is_array(m_value_type)
-                && (ASRUtils::is_integer(*m_value_type)
-                    || ASRUtils::is_unsigned_integer(*m_value_type)
-                    || ASRUtils::is_real(*m_value_type)
-                    || ASRUtils::is_logical(*m_value_type))) {
+                && (have_scalar_char_bitcast_value
+                    || (!ASRUtils::is_array(m_value_type)
+                        && (ASRUtils::is_integer(*m_value_type)
+                            || ASRUtils::is_unsigned_integer(*m_value_type)
+                            || ASRUtils::is_real(*m_value_type)
+                            || ASRUtils::is_logical(*m_value_type))))) {
             self().visit_expr(*x.m_target);
             std::string target_expr = src;
-            std::string value_expr;
-            if (!try_emit_scalar_to_char_array_bitcast_expr(x.m_value, value_expr)) {
+            std::string value_expr = scalar_char_bitcast_value_expr;
+            if (!have_scalar_char_bitcast_value) {
                 size_t nbytes = ASRUtils::get_fixed_size_of_array(m_target_type);
                 std::string target_type_name = CUtils::get_c_type_from_ttype_t(m_target_type);
                 std::string target_code = CUtils::get_c_type_code(m_target_type, true, false);
@@ -5142,7 +5211,8 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         }
         if (is_c && src_expr && target_type && source_type
                 && ASRUtils::is_array(target_type)
-                && !ASRUtils::is_array(source_type)) {
+                && (!ASRUtils::is_array(source_type)
+                    || ASR::is_a<ASR::ArrayItem_t>(*src_expr))) {
             if (is_len_one_character_array_type(target_type)
                     && (ASRUtils::is_integer(*source_type)
                         || ASRUtils::is_unsigned_integer(*source_type)

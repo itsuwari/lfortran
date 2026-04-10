@@ -2334,7 +2334,11 @@ R"(    // Initialise Numpy
                 formatted_setup += indent + "_lfortran_file_seek(" + unit + ", (int64_t)(" + pos + "), " + iostat_ptr + ");\n";
             }
 
-            auto append_formatted_scalar = [&](ASR::expr_t *value_expr) {
+            auto append_formatted_scalar = [&](ASR::expr_t *value_expr,
+                                              std::string &setup,
+                                              std::string &args,
+                                              std::string &post,
+                                              int &arg_count) {
                 ASR::ttype_t *value_type = ASRUtils::expr_type(value_expr);
                 ASR::ttype_t *value_type_past_allocatable = ASRUtils::type_get_past_allocatable_pointer(value_type);
 
@@ -2348,62 +2352,62 @@ R"(    // Initialise Numpy
                         this->visit_expr(*value_str_type->m_len);
                         value_len = src;
                     }
-                    formatted_setup += indent + "if (" + value + " == NULL) " + value
+                    setup += indent + "if (" + value + " == NULL) " + value
                         + " = (char*) _lfortran_string_malloc_alloc(_lfortran_get_default_allocator(), "
                         + value_len + ");\n";
-                    formatted_args += ", 0, 0, &(" + value + "), " + value_len;
-                    formatted_arg_count++;
+                    args += ", 0, 0, &(" + value + "), " + value_len;
+                    arg_count++;
                     return;
                 }
 
                 if (ASR::is_a<ASR::Logical_t>(*value_type_past_allocatable)) {
                     std::string tmp_name = current_scope->get_unique_name("__lfortran_fmt_logical");
-                    formatted_setup += indent + "int32_t " + tmp_name + " = 0;\n";
-                    formatted_args += ", 0, 1, &" + tmp_name;
-                    formatted_post += indent + value + " = (" + tmp_name + " != 0);\n";
-                    formatted_arg_count++;
+                    setup += indent + "int32_t " + tmp_name + " = 0;\n";
+                    args += ", 0, 1, &" + tmp_name;
+                    post += indent + value + " = (" + tmp_name + " != 0);\n";
+                    arg_count++;
                     return;
                 }
 
                 if (ASR::is_a<ASR::Integer_t>(*value_type_past_allocatable)) {
                     int kind = ASR::down_cast<ASR::Integer_t>(value_type_past_allocatable)->m_kind;
                     if (kind == 4) {
-                        formatted_args += ", 0, 2, &(" + value + ")";
+                        args += ", 0, 2, &(" + value + ")";
                     } else if (kind == 8) {
-                        formatted_args += ", 0, 3, &(" + value + ")";
+                        args += ", 0, 3, &(" + value + ")";
                     } else {
                         throw CodeGenError("C backend FileRead supports formatted scalar integer reads only for kind=4 or kind=8",
                             value_expr->base.loc);
                     }
-                    formatted_arg_count++;
+                    arg_count++;
                     return;
                 }
 
                 if (ASR::is_a<ASR::Real_t>(*value_type_past_allocatable)) {
                     int kind = ASR::down_cast<ASR::Real_t>(value_type_past_allocatable)->m_kind;
                     if (kind == 4) {
-                        formatted_args += ", 0, 4, &(" + value + ")";
+                        args += ", 0, 4, &(" + value + ")";
                     } else if (kind == 8) {
-                        formatted_args += ", 0, 5, &(" + value + ")";
+                        args += ", 0, 5, &(" + value + ")";
                     } else {
                         throw CodeGenError("C backend FileRead supports formatted scalar real reads only for kind=4 or kind=8",
                             value_expr->base.loc);
                     }
-                    formatted_arg_count++;
+                    arg_count++;
                     return;
                 }
 
                 if (ASR::is_a<ASR::Complex_t>(*value_type_past_allocatable)) {
                     int kind = ASR::down_cast<ASR::Complex_t>(value_type_past_allocatable)->m_kind;
                     if (kind == 4) {
-                        formatted_args += ", 0, 6, &(" + value + ")";
+                        args += ", 0, 6, &(" + value + ")";
                     } else if (kind == 8) {
-                        formatted_args += ", 0, 7, &(" + value + ")";
+                        args += ", 0, 7, &(" + value + ")";
                     } else {
                         throw CodeGenError("C backend FileRead supports formatted scalar complex reads only for kind=4 or kind=8",
                             value_expr->base.loc);
                     }
-                    formatted_arg_count++;
+                    arg_count++;
                     return;
                 }
 
@@ -2411,8 +2415,80 @@ R"(    // Initialise Numpy
                     value_expr->base.loc);
             };
 
+            bool has_implied_do = false;
             for (size_t i = 0; i < x.n_values; i++) {
-                append_formatted_scalar(x.m_values[i]);
+                if (ASR::is_a<ASR::ImpliedDoLoop_t>(*x.m_values[i])) {
+                    has_implied_do = true;
+                    break;
+                }
+            }
+
+            if (has_implied_do) {
+                auto emit_formatted_scalar_call = [&](ASR::expr_t *value_expr) {
+                    std::string accumulated_src = src;
+                    std::string single_setup;
+                    std::string single_args;
+                    std::string single_post;
+                    int single_arg_count = 0;
+                    append_formatted_scalar(value_expr, single_setup, single_args, single_post, single_arg_count);
+                    std::string emitted = single_setup;
+                    emitted += std::string(indentation_level * indentation_spaces, ' ')
+                        + "_lfortran_formatted_read("
+                        + unit + ", " + iostat_ptr + ", " + size_ptr + ", "
+                        + advance_arg.first + ", " + advance_arg.second + ", "
+                        + fmt_arg.first + ", " + fmt_arg.second + ", "
+                        + std::to_string(single_arg_count) + ", NULL, 0"
+                        + single_args + ");\n";
+                    emitted += single_post;
+                    src = accumulated_src + emitted;
+                };
+
+                src = formatted_setup;
+                for (size_t i = 0; i < x.n_values; i++) {
+                    if (ASR::is_a<ASR::ImpliedDoLoop_t>(*x.m_values[i])) {
+                        ASR::ImpliedDoLoop_t *idl = ASR::down_cast<ASR::ImpliedDoLoop_t>(x.m_values[i]);
+                        std::string accumulated_src = src;
+                        this->visit_expr(*idl->m_var);
+                        std::string loop_var = src;
+                        this->visit_expr(*idl->m_start);
+                        std::string loop_start = src;
+                        this->visit_expr(*idl->m_end);
+                        std::string loop_end = src;
+                        std::string loop_inc = "1";
+                        if (idl->m_increment) {
+                            this->visit_expr(*idl->m_increment);
+                            loop_inc = src;
+                        }
+                        src = accumulated_src;
+                        src += std::string(indentation_level * indentation_spaces, ' ')
+                            + "for (" + loop_var + " = " + loop_start + "; "
+                            + "((" + loop_inc + ") >= 0 ? (" + loop_var + " <= " + loop_end + ") : ("
+                            + loop_var + " >= " + loop_end + ")); "
+                            + loop_var + " += " + loop_inc + ") {\n";
+                        indentation_level++;
+                        for (size_t j = 0; j < idl->n_values; j++) {
+                            if (ASR::is_a<ASR::ImpliedDoLoop_t>(*idl->m_values[j])) {
+                                throw CodeGenError("C backend FileRead does not support nested implied do loops for formatted external reads",
+                                    idl->m_values[j]->base.loc);
+                            }
+                            emit_formatted_scalar_call(idl->m_values[j]);
+                        }
+                        indentation_level--;
+                        src += std::string(indentation_level * indentation_spaces, ' ') + "}\n";
+                    } else {
+                        emit_formatted_scalar_call(x.m_values[i]);
+                    }
+                }
+                if (x.m_iomsg && x.m_iostat) {
+                    src += indent + "_lfortran_set_read_iomsg(" + iostat_val + ", "
+                        + iomsg_arg.first + ", " + iomsg_arg.second + ");\n";
+                }
+                return;
+            }
+
+            for (size_t i = 0; i < x.n_values; i++) {
+                append_formatted_scalar(x.m_values[i], formatted_setup, formatted_args,
+                    formatted_post, formatted_arg_count);
             }
 
             src = formatted_setup;
