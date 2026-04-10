@@ -207,6 +207,11 @@ public:
 
     void allocate_array_members_of_struct(ASR::Struct_t* der_type_t, std::string& sub,
         std::string indent, std::string name) {
+        // File scope in C only permits declarations. Skip member-level runtime
+        // initialization there; static objects are already zero-initialized.
+        if (indentation_level == 0) {
+            return;
+        }
         for (size_t i = 0; i < der_type_t->n_members; i++) {
             if (der_type_t->m_members[i] == nullptr) {
                 continue;
@@ -541,6 +546,10 @@ public:
                 return get_function_pointer_declaration_from_type(
                     ASR::down_cast<ASR::FunctionType_t>(t2),
                     c_v_name);
+            }
+            if (ASR::is_a<ASR::StructType_t>(*t2) &&
+                    ASR::down_cast<ASR::StructType_t>(t2)->m_is_unlimited_polymorphic) {
+                return format_type_c("", "void*", decl_name, use_ref, dummy);
             }
             if (ASRUtils::is_integer(*t2)) {
                 ASR::Integer_t *t = ASR::down_cast<ASR::Integer_t>(ASRUtils::type_get_past_array(t2));
@@ -2499,6 +2508,29 @@ R"(    // Initialise Numpy
         for (size_t i=0; i<n_values; i++) {
             this->visit_expr(*(str_fmt->m_args[i]));
             ASR::ttype_t* value_type = ASRUtils::expr_type(str_fmt->m_args[i]);
+            if (ASRUtils::is_array(value_type)) {
+                tmp_gen += "\"";
+                if (!v.empty()) {
+                    for (auto &s: v) {
+                        tmp_gen += ", " + s;
+                    }
+                    tmp_gen += ");\n";
+                    out += tmp_gen;
+                    v.clear();
+                }
+                tmp_gen = indent + "printf(\"";
+                if (i != 0) {
+                    out += indent + "printf(\" \");\n";
+                }
+                std::string p_func = c_ds_api->get_print_func(value_type);
+                out += indent + p_func + "(" + src + ");\n";
+                if (i + 1 != n_values) {
+                    out += indent + "printf(\" \");\n";
+                } else {
+                    out += indent + "printf(\"\\n\");\n";
+                }
+                continue;
+            }
             if( ASRUtils::is_array(value_type) ) {
                 src += "->data";
             }
