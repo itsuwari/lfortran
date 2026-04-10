@@ -326,6 +326,20 @@ jobs:
             zstd-static=1.5.7
 
       - uses: mamba-org/setup-micromamba@v2.0.2
+        if: contains(matrix.os, 'macos')
+        with:
+          micromamba-version: '2.0.4-0'
+          environment-file: ci/environment.yml
+          create-args: >-
+            llvmdev=${{ matrix.llvm-version }}
+            bison=3.4
+            openblas=0.3.21
+            llvm-openmp=14.0.4
+            make=4.3
+            openmpi=5.0.10
+            zstd-static=1.5.7
+
+      - uses: mamba-org/setup-micromamba@v2.0.2
         if: contains(matrix.llvm-version, '12')
         with:
           micromamba-version: '2.0.4-0'
