@@ -649,6 +649,25 @@ class CCPPDSUtils {
                     }
                     break;
                 }
+                case ASR::ttypeType::Allocatable : {
+                    ASR::Allocatable_t *type_alloc = ASR::down_cast<ASR::Allocatable_t>(t);
+                    ASR::ttype_t *alloc_value_type = type_alloc->m_type;
+                    if (ASRUtils::is_array(alloc_value_type)) {
+                        result = get_deepcopy(alloc_value_type, value, target);
+                    } else if (ASRUtils::is_character(*alloc_value_type)) {
+                        result = "_lfortran_strcpy_alloc(_lfortran_get_default_allocator(), &"
+                            + target + ", NULL, true, true, " + value + ", strlen(" + value + "));";
+                    } else if (!ASRUtils::is_aggregate_type(alloc_value_type)) {
+                        std::string alloc_type_name = CUtils::get_c_type_from_ttype_t(alloc_value_type);
+                        result = "if (" + target + " == NULL) { " + target + " = ("
+                            + alloc_type_name + "*) _lfortran_malloc_alloc(_lfortran_get_default_allocator(), sizeof("
+                            + alloc_type_name + ")); }\n";
+                        result += "*(" + target + ") = " + value + ";";
+                    } else {
+                        result = target + " = " + value + ";";
+                    }
+                    break;
+                }
                 case ASR::ttypeType::Integer:
                 case ASR::ttypeType::Real:
                 case ASR::ttypeType::Complex:

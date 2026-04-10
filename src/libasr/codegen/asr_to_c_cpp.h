@@ -1360,6 +1360,100 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         return false;
     }
 
+    bool is_scalar_allocatable_storage_type(ASR::ttype_t *type) {
+        if (type == nullptr || !ASR::is_a<ASR::Allocatable_t>(*type)) {
+            return false;
+        }
+        ASR::ttype_t *value_type = ASRUtils::type_get_past_allocatable_pointer(type);
+        return value_type != nullptr
+            && !ASRUtils::is_array(type)
+            && !ASRUtils::is_character(*value_type)
+            && !ASRUtils::is_aggregate_type(value_type);
+    }
+
+    std::string get_c_var_storage_name(ASR::Variable_t *sv) {
+        ASR::asr_t *owner = sv->m_parent_symtab ? sv->m_parent_symtab->asr_owner : nullptr;
+        bool use_local_name = owner == nullptr
+            || ASRUtils::is_arg_dummy(sv->m_intent)
+            || ASR::is_a<ASR::Function_t>(*owner)
+            || ASR::is_a<ASR::Program_t>(*owner)
+            || ASR::is_a<ASR::Block_t>(*owner)
+            || ASR::is_a<ASR::AssociateBlock_t>(*owner)
+            || ASR::is_a<ASR::Struct_t>(*owner)
+            || ASR::is_a<ASR::Union_t>(*owner)
+            || ASR::is_a<ASR::Enum_t>(*owner);
+        if (use_local_name) {
+            return CUtils::sanitize_c_identifier(sv->m_name);
+        }
+        return CUtils::get_c_symbol_name(reinterpret_cast<ASR::symbol_t*>(sv));
+    }
+
+    std::string get_struct_instance_member_expr(const ASR::StructInstanceMember_t& x,
+            bool load_scalar_allocatable) {
+        std::string der_expr, member;
+        this->visit_expr(*x.m_v);
+        der_expr = std::move(src);
+        ASR::expr_t *base_v = unwrap_c_lvalue_expr(x.m_v);
+        member = CUtils::get_c_symbol_name(ASRUtils::symbol_get_past_external(x.m_m));
+        ASR::ttype_t *v_type = ASRUtils::expr_type(x.m_v);
+        ASR::ttype_t *v_type_unwrapped = ASRUtils::type_get_past_allocatable_pointer(v_type);
+        bool var_is_byref = false;
+        bool symbol_pointer_backed_struct = false;
+        if (base_v && ASR::is_a<ASR::Var_t>(*base_v)) {
+            ASR::symbol_t *v = ASRUtils::symbol_get_past_external(ASR::down_cast<ASR::Var_t>(base_v)->m_v);
+            if (ASR::is_a<ASR::Variable_t>(*v)) {
+                ASR::Variable_t *vv = ASR::down_cast<ASR::Variable_t>(v);
+                var_is_byref = ASRUtils::is_arg_dummy(vv->m_intent);
+                ASR::asr_t *owner = vv->m_parent_symtab ? vv->m_parent_symtab->asr_owner : nullptr;
+                bool force_value_struct_temp =
+                    std::string(vv->m_name).find("__libasr_created__struct_constructor_") != std::string::npos ||
+                    std::string(vv->m_name).find("temp_struct_var__") != std::string::npos;
+                symbol_pointer_backed_struct = var_is_byref
+                    || ASRUtils::is_pointer(vv->m_type)
+                    || ASRUtils::is_allocatable(vv->m_type)
+                    || (!force_value_struct_temp
+                        && owner
+                        && (ASR::is_a<ASR::Function_t>(*owner)
+                            || ASR::is_a<ASR::Block_t>(*owner)
+                            || ASR::is_a<ASR::AssociateBlock_t>(*owner))
+                        && (vv->m_intent == ASRUtils::intent_local
+                            || vv->m_intent == ASRUtils::intent_return_var));
+            }
+        }
+        bool is_parameter_value = false;
+        if (base_v && ASR::is_a<ASR::Var_t>(*base_v)) {
+            ASR::symbol_t *v = ASRUtils::symbol_get_past_external(ASR::down_cast<ASR::Var_t>(base_v)->m_v);
+            if (ASR::is_a<ASR::Variable_t>(*v)) {
+                ASR::Variable_t *vv = ASR::down_cast<ASR::Variable_t>(v);
+                is_parameter_value = vv->m_storage == ASR::storage_typeType::Parameter;
+            }
+        }
+        bool emitted_pointer_backed_struct = emitted_pointer_backed_struct_names.find(der_expr)
+            != emitted_pointer_backed_struct_names.end();
+        bool value_backed_struct = ASR::is_a<ASR::StructType_t>(*v_type_unwrapped)
+            && !(symbol_pointer_backed_struct
+                || emitted_pointer_backed_struct
+                || is_pointer_backed_struct_expr(base_v ? base_v : x.m_v));
+        bool base_expr_pointer_backed = is_pointer_backed_struct_expr(base_v ? base_v : x.m_v);
+        bool use_dot = (base_v && ASR::is_a<ASR::ArrayItem_t>(*base_v)) ||
+            (base_v && ASR::is_a<ASR::UnionInstanceMember_t>(*base_v)) ||
+            ((base_v && ASR::is_a<ASR::StructInstanceMember_t>(*base_v)) && !base_expr_pointer_backed) ||
+            value_backed_struct ||
+            ASR::is_a<ASR::EnumType_t>(*v_type_unwrapped) ||
+            (is_parameter_value && ASR::is_a<ASR::StructType_t>(*v_type_unwrapped)) ||
+            (!var_is_byref && !ASRUtils::is_pointer(v_type) && !ASRUtils::is_allocatable(v_type) &&
+                ASR::is_a<ASR::EnumType_t>(*v_type_unwrapped));
+        std::string member_expr = use_dot ? der_expr + "." + member : der_expr + "->" + member;
+        ASR::symbol_t *member_sym = ASRUtils::symbol_get_past_external(x.m_m);
+        if (load_scalar_allocatable && ASR::is_a<ASR::Variable_t>(*member_sym)) {
+            ASR::Variable_t *member_var = ASR::down_cast<ASR::Variable_t>(member_sym);
+            if (is_scalar_allocatable_storage_type(member_var->m_type)) {
+                return "(*(" + member_expr + "))";
+            }
+        }
+        return member_expr;
+    }
+
     std::string emit_c_array_constant_brace_init(ASR::expr_t *expr, ASR::ttype_t *target_type) {
         ASR::expr_t *value = ASRUtils::expr_value(expr);
         if (value == nullptr) {
@@ -2201,6 +2295,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             ASR::symbol_t *target_sym = ASRUtils::symbol_get_past_external(x_m_target->m_v);
             bool target_is_pointer_return_var = false;
             bool target_is_pointer_dummy_slot = false;
+            bool target_is_scalar_alloc_storage = false;
             if (current_function && current_function->m_return_var
                     && ASR::is_a<ASR::Var_t>(*current_function->m_return_var)
                     && ASRUtils::is_pointer(m_target_type)
@@ -2216,6 +2311,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                     && !ASRUtils::is_array(target_var->m_type)
                     && !ASR::is_a<ASR::FunctionType_t>(
                         *ASRUtils::type_get_past_pointer(target_var->m_type));
+                target_is_scalar_alloc_storage = is_scalar_allocatable_storage_type(target_var->m_type);
             }
             if (target_is_pointer_return_var) {
                 target = CUtils::get_c_variable_name(
@@ -2223,6 +2319,9 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             } else if (target_is_pointer_dummy_slot) {
                 target = "(*" + CUtils::get_c_variable_name(
                     *ASR::down_cast<ASR::Variable_t>(target_sym)) + ")";
+            } else if (target_is_scalar_alloc_storage) {
+                target = get_c_var_storage_name(
+                    ASR::down_cast<ASR::Variable_t>(target_sym));
             } else {
                 visit_Var(*x_m_target);
                 target = src;
@@ -2238,8 +2337,17 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             self().visit_ArrayItem(*ASR::down_cast<ASR::ArrayItem_t>(x.m_target));
             target = src;
         } else if (ASR::is_a<ASR::StructInstanceMember_t>(*x.m_target)) {
-            visit_StructInstanceMember(*ASR::down_cast<ASR::StructInstanceMember_t>(x.m_target));
-            target = src;
+            ASR::StructInstanceMember_t *member_target =
+                ASR::down_cast<ASR::StructInstanceMember_t>(x.m_target);
+            ASR::symbol_t *member_sym = ASRUtils::symbol_get_past_external(member_target->m_m);
+            if (is_c && ASR::is_a<ASR::Variable_t>(*member_sym)
+                    && is_scalar_allocatable_storage_type(
+                        ASR::down_cast<ASR::Variable_t>(member_sym)->m_type)) {
+                target = get_struct_instance_member_expr(*member_target, false);
+            } else {
+                visit_StructInstanceMember(*member_target);
+                target = src;
+            }
         } else if (ASR::is_a<ASR::UnionInstanceMember_t>(*x.m_target)) {
             visit_UnionInstanceMember(*ASR::down_cast<ASR::UnionInstanceMember_t>(x.m_target));
             target = src;
@@ -3144,22 +3252,8 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             return;
         }
         ASR::Variable_t* sv = ASR::down_cast<ASR::Variable_t>(s);
-        std::string var_name;
+        std::string var_name = get_c_var_storage_name(sv);
         ASR::asr_t *owner = sv->m_parent_symtab ? sv->m_parent_symtab->asr_owner : nullptr;
-        bool use_local_name = owner == nullptr
-            || ASRUtils::is_arg_dummy(sv->m_intent)
-            || ASR::is_a<ASR::Function_t>(*owner)
-            || ASR::is_a<ASR::Program_t>(*owner)
-            || ASR::is_a<ASR::Block_t>(*owner)
-            || ASR::is_a<ASR::AssociateBlock_t>(*owner)
-            || ASR::is_a<ASR::Struct_t>(*owner)
-            || ASR::is_a<ASR::Union_t>(*owner)
-            || ASR::is_a<ASR::Enum_t>(*owner);
-        if (use_local_name) {
-            var_name = CUtils::sanitize_c_identifier(sv->m_name);
-        } else {
-            var_name = CUtils::get_c_symbol_name(s);
-        }
         if (is_c) {
             if (owner && ASR::is_a<ASR::AssociateBlock_t>(*owner)
                 && ASRUtils::is_pointer(sv->m_type)
@@ -3204,6 +3298,8 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 } else {
                     src = var_name;
                 }
+            } else if (is_scalar_allocatable_storage_type(sv->m_type)) {
+                src = "(*" + var_name + ")";
             } else {
                 src = var_name;
             }
@@ -3215,64 +3311,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
 
     void visit_StructInstanceMember(const ASR::StructInstanceMember_t& x) {
         CHECK_FAST_C_CPP(compiler_options, x)
-        std::string der_expr, member;
-        this->visit_expr(*x.m_v);
-        der_expr = std::move(src);
-        ASR::expr_t *base_v = unwrap_c_lvalue_expr(x.m_v);
-        member = CUtils::get_c_symbol_name(ASRUtils::symbol_get_past_external(x.m_m));
-        ASR::ttype_t *v_type = ASRUtils::expr_type(x.m_v);
-        ASR::ttype_t *v_type_unwrapped = ASRUtils::type_get_past_allocatable_pointer(v_type);
-        bool var_is_byref = false;
-        bool symbol_pointer_backed_struct = false;
-        if (base_v && ASR::is_a<ASR::Var_t>(*base_v)) {
-            ASR::symbol_t *v = ASRUtils::symbol_get_past_external(ASR::down_cast<ASR::Var_t>(base_v)->m_v);
-            if (ASR::is_a<ASR::Variable_t>(*v)) {
-                ASR::Variable_t *vv = ASR::down_cast<ASR::Variable_t>(v);
-                var_is_byref = ASRUtils::is_arg_dummy(vv->m_intent);
-                ASR::asr_t *owner = vv->m_parent_symtab ? vv->m_parent_symtab->asr_owner : nullptr;
-                bool force_value_struct_temp =
-                    std::string(vv->m_name).find("__libasr_created__struct_constructor_") != std::string::npos ||
-                    std::string(vv->m_name).find("temp_struct_var__") != std::string::npos;
-                symbol_pointer_backed_struct = var_is_byref
-                    || ASRUtils::is_pointer(vv->m_type)
-                    || ASRUtils::is_allocatable(vv->m_type)
-                    || (!force_value_struct_temp
-                        && owner
-                        && (ASR::is_a<ASR::Function_t>(*owner)
-                            || ASR::is_a<ASR::Block_t>(*owner)
-                            || ASR::is_a<ASR::AssociateBlock_t>(*owner))
-                        && (vv->m_intent == ASRUtils::intent_local
-                            || vv->m_intent == ASRUtils::intent_return_var));
-            }
-        }
-        bool is_parameter_value = false;
-        if (base_v && ASR::is_a<ASR::Var_t>(*base_v)) {
-            ASR::symbol_t *v = ASRUtils::symbol_get_past_external(ASR::down_cast<ASR::Var_t>(base_v)->m_v);
-            if (ASR::is_a<ASR::Variable_t>(*v)) {
-                ASR::Variable_t *vv = ASR::down_cast<ASR::Variable_t>(v);
-                is_parameter_value = vv->m_storage == ASR::storage_typeType::Parameter;
-            }
-        }
-        bool emitted_pointer_backed_struct = emitted_pointer_backed_struct_names.find(der_expr)
-            != emitted_pointer_backed_struct_names.end();
-        bool value_backed_struct = ASR::is_a<ASR::StructType_t>(*v_type_unwrapped)
-            && !(symbol_pointer_backed_struct
-                || emitted_pointer_backed_struct
-                || is_pointer_backed_struct_expr(base_v ? base_v : x.m_v));
-        bool base_expr_pointer_backed = is_pointer_backed_struct_expr(base_v ? base_v : x.m_v);
-        bool use_dot = (base_v && ASR::is_a<ASR::ArrayItem_t>(*base_v)) ||
-            (base_v && ASR::is_a<ASR::UnionInstanceMember_t>(*base_v)) ||
-            ((base_v && ASR::is_a<ASR::StructInstanceMember_t>(*base_v)) && !base_expr_pointer_backed) ||
-            value_backed_struct ||
-            ASR::is_a<ASR::EnumType_t>(*v_type_unwrapped) ||
-            (is_parameter_value && ASR::is_a<ASR::StructType_t>(*v_type_unwrapped)) ||
-            (!var_is_byref && !ASRUtils::is_pointer(v_type) && !ASRUtils::is_allocatable(v_type) &&
-                ASR::is_a<ASR::EnumType_t>(*v_type_unwrapped));
-        if( use_dot ) {
-            src = der_expr + "." + member;
-        } else {
-            src = der_expr + "->" + member;
-        }
+        src = get_struct_instance_member_expr(x, true);
     }
 
     void visit_UnionInstanceMember(const ASR::UnionInstanceMember_t& x) {
