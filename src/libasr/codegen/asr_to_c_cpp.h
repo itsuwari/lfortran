@@ -123,6 +123,7 @@ public:
     bool gen_stdcomplex;
     bool is_c;
     std::set<std::string> headers, user_headers, user_defines;
+    std::set<std::string> emitted_pointer_backed_struct_names;
     std::vector<std::string> tmp_buffer_src;
 
     SymbolTable* global_scope;
@@ -2454,28 +2455,51 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         std::string der_expr, member;
         this->visit_expr(*x.m_v);
         der_expr = std::move(src);
+        ASR::expr_t *base_v = unwrap_c_lvalue_expr(x.m_v);
         member = CUtils::get_c_symbol_name(ASRUtils::symbol_get_past_external(x.m_m));
         ASR::ttype_t *v_type = ASRUtils::expr_type(x.m_v);
         ASR::ttype_t *v_type_unwrapped = ASRUtils::type_get_past_allocatable_pointer(v_type);
         bool var_is_byref = false;
-        if (ASR::is_a<ASR::Var_t>(*x.m_v)) {
-            ASR::symbol_t *v = ASRUtils::symbol_get_past_external(ASR::down_cast<ASR::Var_t>(x.m_v)->m_v);
+        bool symbol_pointer_backed_struct = false;
+        if (base_v && ASR::is_a<ASR::Var_t>(*base_v)) {
+            ASR::symbol_t *v = ASRUtils::symbol_get_past_external(ASR::down_cast<ASR::Var_t>(base_v)->m_v);
             if (ASR::is_a<ASR::Variable_t>(*v)) {
                 ASR::Variable_t *vv = ASR::down_cast<ASR::Variable_t>(v);
                 var_is_byref = ASRUtils::is_arg_dummy(vv->m_intent);
+                ASR::asr_t *owner = vv->m_parent_symtab ? vv->m_parent_symtab->asr_owner : nullptr;
+                bool force_value_struct_temp =
+                    std::string(vv->m_name).find("__libasr_created__struct_constructor_") != std::string::npos ||
+                    std::string(vv->m_name).find("temp_struct_var__") != std::string::npos;
+                symbol_pointer_backed_struct = var_is_byref
+                    || ASRUtils::is_pointer(vv->m_type)
+                    || ASRUtils::is_allocatable(vv->m_type)
+                    || (!force_value_struct_temp
+                        && owner
+                        && (ASR::is_a<ASR::Function_t>(*owner)
+                            || ASR::is_a<ASR::Block_t>(*owner)
+                            || ASR::is_a<ASR::AssociateBlock_t>(*owner))
+                        && (vv->m_intent == ASRUtils::intent_local
+                            || vv->m_intent == ASRUtils::intent_return_var));
             }
         }
         bool is_parameter_value = false;
-        if (ASR::is_a<ASR::Var_t>(*x.m_v)) {
-            ASR::symbol_t *v = ASRUtils::symbol_get_past_external(ASR::down_cast<ASR::Var_t>(x.m_v)->m_v);
+        if (base_v && ASR::is_a<ASR::Var_t>(*base_v)) {
+            ASR::symbol_t *v = ASRUtils::symbol_get_past_external(ASR::down_cast<ASR::Var_t>(base_v)->m_v);
             if (ASR::is_a<ASR::Variable_t>(*v)) {
                 ASR::Variable_t *vv = ASR::down_cast<ASR::Variable_t>(v);
                 is_parameter_value = vv->m_storage == ASR::storage_typeType::Parameter;
             }
         }
-        bool use_dot = ASR::is_a<ASR::ArrayItem_t>(*x.m_v) ||
-            ASR::is_a<ASR::UnionInstanceMember_t>(*x.m_v) ||
-            ASR::is_a<ASR::StructInstanceMember_t>(*x.m_v) ||
+        bool emitted_pointer_backed_struct = emitted_pointer_backed_struct_names.find(der_expr)
+            != emitted_pointer_backed_struct_names.end();
+        bool value_backed_struct = ASR::is_a<ASR::StructType_t>(*v_type_unwrapped)
+            && !(symbol_pointer_backed_struct
+                || emitted_pointer_backed_struct
+                || is_pointer_backed_struct_expr(base_v ? base_v : x.m_v));
+        bool use_dot = (base_v && ASR::is_a<ASR::ArrayItem_t>(*base_v)) ||
+            (base_v && ASR::is_a<ASR::UnionInstanceMember_t>(*base_v)) ||
+            (base_v && ASR::is_a<ASR::StructInstanceMember_t>(*base_v)) ||
+            value_backed_struct ||
             ASR::is_a<ASR::EnumType_t>(*v_type_unwrapped) ||
             (is_parameter_value && ASR::is_a<ASR::StructType_t>(*v_type_unwrapped)) ||
             (!var_is_byref && !ASRUtils::is_pointer(v_type) && !ASRUtils::is_allocatable(v_type) &&

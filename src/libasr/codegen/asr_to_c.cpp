@@ -757,6 +757,25 @@ public:
                 } else if( v.m_intent == ASRUtils::intent_local && pre_initialise_derived_type) {
                     bool is_fixed_size = true;
                     dims = convert_dims_c(n_dims, m_dims, v_m_type, is_fixed_size);
+                    bool force_value_struct_temp =
+                        std::string(v.m_name).find("__libasr_created__struct_constructor_") != std::string::npos ||
+                        std::string(v.m_name).find("temp_struct_var__") != std::string::npos;
+                    if (force_value_struct_temp) {
+                        sub = format_type_c(dims, "struct " + der_type_name,
+                                            c_v_name, false, dummy);
+                        if (v.m_symbolic_value && !do_not_initialize) {
+                            this->visit_expr(*v.m_symbolic_value);
+                            std::string init = src;
+                            sub += "=" + init;
+                        }
+                        sub += ";\n";
+                        ASR::Struct_t* der_type_t = ASR::down_cast<ASR::Struct_t>(
+                            ASRUtils::symbol_get_past_external(v.m_type_declaration));
+                        allocate_array_members_of_struct(der_type_t, sub, indent, "(&(" + c_v_name + "))");
+                        sub.pop_back();
+                        sub.pop_back();
+                        return sub;
+                    }
                     std::string value_var_name = v.m_parent_symtab->get_unique_name(c_v_name + "_value");
                     sub = format_type_c(dims, "struct " + der_type_name,
                                         value_var_name, use_ref, dummy);
@@ -774,6 +793,7 @@ public:
                     if( n_dims != 0 ) {
                         sub += " = " + value_var_name;
                     } else {
+                        emitted_pointer_backed_struct_names.insert(c_v_name);
                         sub += " = &" + value_var_name + ";\n";
                         ASR::Struct_t* der_type_t = ASR::down_cast<ASR::Struct_t>(
                         ASRUtils::symbol_get_past_external(v.m_type_declaration));
@@ -1623,6 +1643,7 @@ R"(    // Initialise Numpy
         std::pair<std::string, std::string> sign_arg = visit_string_arg(x.m_sign);
         std::pair<std::string, std::string> decimal_arg = visit_string_arg(x.m_decimal);
         std::pair<std::string, std::string> round_arg = visit_string_arg(x.m_round);
+        std::pair<std::string, std::string> pad_arg = visit_string_arg(x.m_pad);
 
         src = indent + "_lfortran_open("
             + unit + ", "
@@ -1640,7 +1661,8 @@ R"(    // Initialise Numpy
             + visit_scalar_ptr(x.m_recl) + ", "
             + sign_arg.first + ", " + sign_arg.second + ", "
             + decimal_arg.first + ", " + decimal_arg.second + ", "
-            + round_arg.first + ", " + round_arg.second + ");\n";
+            + round_arg.first + ", " + round_arg.second + ", "
+            + pad_arg.first + ", " + pad_arg.second + ");\n";
     }
 
     void visit_FileClose(const ASR::FileClose_t &x) {
