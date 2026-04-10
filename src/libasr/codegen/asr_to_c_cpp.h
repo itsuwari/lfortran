@@ -2948,8 +2948,9 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         ASR::Struct_t *st = ASR::down_cast<ASR::Struct_t>(x.m_dt_sym);
         for (size_t i = 0; i < x.n_args; i++) {
             if (x.m_args[i].m_value) {
+                ASR::symbol_t *member_sym = st->m_symtab->get_symbol(st->m_members[i]);
                 out += ".";
-                out += st->m_members[i];
+                out += CUtils::get_c_symbol_name(member_sym);
                 out += " = ";
                 self().visit_expr(*x.m_args[i].m_value);
                 out += src;
