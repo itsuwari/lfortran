@@ -184,8 +184,12 @@ R"(
                     }
                     try {
                         decls += get_global_extern_decl(*v);
-                    } catch (...) {
-                        continue;
+                    } catch (const CodeGenError &e) {
+                        throw CodeGenError(
+                            "Split C emission failed for module variable extern declaration `"
+                            + std::string(mod->m_name) + "::" + std::string(v->m_name)
+                            + "`: " + e.d.message
+                        );
                     }
                 }
             }
@@ -203,8 +207,11 @@ R"(
                 if (seen.insert(decl).second) {
                     decls += decl;
                 }
-            } catch (...) {
-                return;
+            } catch (const CodeGenError &e) {
+                throw CodeGenError(
+                    "Split C emission failed for function declaration `"
+                    + std::string(fn->m_name) + "`: " + e.d.message
+                );
             }
         };
 
