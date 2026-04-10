@@ -6,6 +6,7 @@
 #include <libasr/asr_utils.h>
 #include <libasr/pass/intrinsic_function_registry.h>
 #include <cctype>
+#include <set>
 
 namespace LCompilers {
 
@@ -46,6 +47,13 @@ namespace LCompilers {
 namespace CUtils {
 
     static inline std::string sanitize_c_identifier(const std::string &name) {
+        static const std::set<std::string> c_keywords = {
+            "auto","break","case","char","const","continue","default","do","double",
+            "else","enum","extern","float","for","goto","if","inline","int","long",
+            "register","restrict","return","short","signed","sizeof","static","struct",
+            "switch","typedef","union","unsigned","void","volatile","while","_Bool",
+            "_Complex","_Imaginary","bool"
+        };
         if (name.empty()) {
             return "_";
         }
@@ -67,11 +75,54 @@ namespace CUtils {
                 result += static_cast<char>(c);
             }
         }
+        if (c_keywords.find(result) != c_keywords.end()) {
+            result += "_id";
+        }
         return result;
     }
 
     static inline std::string get_c_symbol_name(const ASR::symbol_t *sym) {
-        return sanitize_c_identifier(ASRUtils::symbol_name(sym));
+        sym = ASRUtils::symbol_get_past_external(const_cast<ASR::symbol_t*>(sym));
+        std::string name = ASRUtils::symbol_name(sym);
+        const SymbolTable *scope = ASRUtils::symbol_parent_symtab(sym);
+        if (scope && scope->asr_owner) {
+            if (ASR::is_a<ASR::Module_t>(*scope->asr_owner)) {
+                const ASR::Module_t *m = ASR::down_cast<ASR::Module_t>(scope->asr_owner);
+                name = std::string(m->m_name) + "__" + name;
+            } else if (ASR::is_a<ASR::Program_t>(*scope->asr_owner)) {
+                const ASR::Program_t *p = ASR::down_cast<ASR::Program_t>(scope->asr_owner);
+                name = std::string(p->m_name) + "__" + name;
+            } else if (ASR::is_a<ASR::Struct_t>(*scope->asr_owner)
+                    || ASR::is_a<ASR::Union_t>(*scope->asr_owner)
+                    || ASR::is_a<ASR::Enum_t>(*scope->asr_owner)) {
+                const ASR::symbol_t *owner_sym =
+                    ASR::down_cast<ASR::symbol_t>(scope->asr_owner);
+                std::string owner_name = sanitize_c_identifier(ASRUtils::symbol_name(owner_sym));
+                std::string prefix = owner_name + "__";
+                if (name.rfind(prefix, 0) != 0) {
+                    name = prefix + name;
+                }
+            }
+        }
+        return sanitize_c_identifier(name);
+    }
+
+    static inline std::string get_c_variable_name(const ASR::Variable_t &v) {
+        ASR::asr_t *owner = v.m_parent_symtab ? v.m_parent_symtab->asr_owner : nullptr;
+        if (owner == nullptr) {
+            return sanitize_c_identifier(v.m_name);
+        }
+        if (ASRUtils::is_arg_dummy(v.m_intent)
+                || ASR::is_a<ASR::Function_t>(*owner)
+                || ASR::is_a<ASR::Program_t>(*owner)
+                || ASR::is_a<ASR::Block_t>(*owner)
+                || ASR::is_a<ASR::AssociateBlock_t>(*owner)
+                || ASR::is_a<ASR::Struct_t>(*owner)
+                || ASR::is_a<ASR::Union_t>(*owner)
+                || ASR::is_a<ASR::Enum_t>(*owner)) {
+            return sanitize_c_identifier(v.m_name);
+        }
+        return get_c_symbol_name(v.m_parent_symtab->get_symbol(v.m_name));
     }
 
     static inline std::string get_c_type_code(ASR::ttype_t *t,
@@ -507,7 +558,8 @@ class CCPPDSUtils {
                 }
                 case ASR::ttypeType::String : {
                     if (is_c) {
-                        result = "_lfortran_strcpy(&" + target + ", " + value + ", 1);";
+                        result = "_lfortran_strcpy_alloc(_lfortran_get_default_allocator(), &"
+                            + target + ", NULL, true, true, " + value + ", strlen(" + value + "));";
                     } else {
                         result = target + " = " + value  + ";";
                     }

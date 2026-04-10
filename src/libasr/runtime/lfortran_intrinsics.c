@@ -4448,6 +4448,7 @@ LFORTRAN_API void _lfortran_copy_str_and_pad(
     int64_t pad_amount = lhs_len - data_amount_to_copy;
     memset(lhs + data_amount_to_copy, ' ', pad_amount * sizeof(char));
 }
+
 // TODO : split them into three functions instead of making compile-time choices at runtime
 LFORTRAN_API void _lfortran_strcpy_alloc(
     lfortran_allocator_t* al,

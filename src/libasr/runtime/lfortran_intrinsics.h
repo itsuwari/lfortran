@@ -222,6 +222,35 @@ LFORTRAN_API void _lfortran_strrepeat_alloc(lfortran_allocator_t* al, char** s, 
 LFORTRAN_API char* _lfortran_strrepeat_c_alloc(lfortran_allocator_t* al, char* s, int32_t n);
 LFORTRAN_API char* _lfortran_strcat_alloc(lfortran_allocator_t* al, char* s1, int64_t s1_len, char* s2, int64_t s2_len);
 LFORTRAN_API void _lfortran_strcpy_alloc(lfortran_allocator_t* al, char** lhs, int64_t* lhs_len, bool is_lhs_allocatable, bool is_lhs_deferred, char* rhs, int64_t rhs_len);
+static inline int64_t _lfortran_cstr_len0(const char *s) {
+    int64_t n = 0;
+    if (s == NULL) {
+        return 0;
+    }
+    while (s[n] != '\0') {
+        n++;
+    }
+    return n;
+}
+static inline void _lfortran_strcpy_from_cstr(char **lhs, const char *rhs, int64_t rhs_len) {
+    int64_t lhs_len = _lfortran_cstr_len0(*lhs);
+    _lfortran_strcpy_alloc(_lfortran_get_default_allocator(), lhs, &lhs_len,
+        true, true, (char*)rhs, rhs_len);
+}
+static inline void _lfortran_strcpy_from_codepoint(char **lhs, int64_t rhs, int64_t rhs_len) {
+    char tmp[1];
+    int64_t lhs_len = _lfortran_cstr_len0(*lhs);
+    (void)rhs_len;
+    tmp[0] = (char)((unsigned char)rhs);
+    _lfortran_strcpy_alloc(_lfortran_get_default_allocator(), lhs, &lhs_len,
+        true, true, tmp, 1);
+}
+#ifndef __cplusplus
+#define _lfortran_strcpy(lhs, rhs, rhs_len) _Generic((rhs), \
+    char*: _lfortran_strcpy_from_cstr, \
+    const char*: _lfortran_strcpy_from_cstr, \
+    default: _lfortran_strcpy_from_codepoint)(lhs, rhs, rhs_len)
+#endif
 LFORTRAN_API int64_t _lfortran_str_len(char* s);
 LFORTRAN_API int64_t _lfortran_str_len_trim(char* s, int64_t len);
 LFORTRAN_API char* _lfortran_str_adjustl_alloc(lfortran_allocator_t* al, char* s, int64_t len);
@@ -380,7 +409,12 @@ LFORTRAN_API void print_stacktrace_addresses(char *filename, bool use_colors);
 LFORTRAN_API char *_lfortran_get_env_variable(char *name);
 LFORTRAN_API void _lfortran_get_environment_variable(fchar *name, int32_t name_len, char* receiver);
 LFORTRAN_API int32_t _lfortran_get_environment_variable_status(fchar *name, int32_t name_len);
+LFORTRAN_API int32_t _lfortran_get_length_of_environment_variable(fchar *name, int32_t name_len);
 LFORTRAN_API int _lfortran_exec_command(fchar *cmd, int64_t len);
+LFORTRAN_API int32_t _lfortran_command_argument_count();
+LFORTRAN_API void _lfortran_get_command_argument_value(int n, char* receiver);
+LFORTRAN_API int32_t _lfortran_get_command_argument_length(int n);
+LFORTRAN_API int32_t _lfortran_get_command_argument_status(int n, int arg_len, int len);
 LFORTRAN_API void _lfortran_get_command_command(char* receiver);
 LFORTRAN_API int32_t _lfortran_get_command_length();
 
@@ -474,6 +508,9 @@ LFORTRAN_API void _lcompilers_runtime_error(lfortran_allocator_t* al, Label *lab
 
 LFORTRAN_API char* _lcompilers_string_format_fortran(lfortran_allocator_t* al, const char* format, int64_t format_len, const char* serialization_string, int64_t *result_size, int32_t array_sizes_cnt, int32_t string_lengths_cnt, int32_t decimal_mode, int32_t sign_mode, int32_t round_mode, ...);
 LFORTRAN_API char* _lfortran_alloc_copy_free(lfortran_allocator_t* al, char* malloc_buf, int64_t size);
+LFORTRAN_API uint64_t _lfortran_i64sys_clock_count(void);
+LFORTRAN_API int64_t _lfortran_i64sys_clock_count_rate(void);
+LFORTRAN_API int64_t _lfortran_i64sys_clock_count_max(void);
 void lfortran_error(const char *message);
 
 
