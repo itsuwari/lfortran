@@ -1485,19 +1485,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
     }
 
     bool is_len_one_character_array_type(ASR::ttype_t *type) {
-        if (type == nullptr || !ASRUtils::is_array(type)) {
-            return false;
-        }
-        ASR::ttype_t *element_type = ASRUtils::extract_type(type);
-        if (element_type == nullptr || !ASRUtils::is_character(*element_type)) {
-            return false;
-        }
-        ASR::String_t *string_type = ASRUtils::get_string_type(element_type);
-        int64_t len = 0;
-        return string_type->m_len_kind == ASR::string_length_kindType::ExpressionLength
-            && string_type->m_len != nullptr
-            && ASRUtils::extract_value(string_type->m_len, len)
-            && len == 1;
+        return CUtils::is_len_one_character_array_type(type);
     }
 
     bool try_emit_scalar_to_char_array_bitcast_expr(ASR::expr_t *expr, std::string &out_expr) {
@@ -1820,6 +1808,32 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                     }
                 }
             }
+            ASR::expr_t *array_like_arg = call_arg;
+            if (ASR::is_a<ASR::Cast_t>(*array_like_arg)) {
+                ASR::Cast_t *cast_arg = ASR::down_cast<ASR::Cast_t>(array_like_arg);
+                if (cast_arg->m_kind == ASR::cast_kindType::StringToArray) {
+                    array_like_arg = cast_arg->m_arg;
+                }
+            }
+            bool scalar_string_to_cchar = is_c
+                && param_type && CUtils::is_len_one_character_array_type(param_type)
+                && ASR::is_a<ASR::StringPhysicalCast_t>(*array_like_arg);
+            if (is_c && param_type && CUtils::is_len_one_character_array_type(param_type)
+                    && ((type && CUtils::is_len_one_character_array_type(type))
+                        || scalar_string_to_cchar)) {
+                if (ASR::is_a<ASR::StringPhysicalCast_t>(*array_like_arg)) {
+                    array_like_arg = ASR::down_cast<ASR::StringPhysicalCast_t>(array_like_arg)->m_arg;
+                }
+                if (scalar_string_to_cchar || !ASRUtils::is_array(ASRUtils::expr_type(array_like_arg))) {
+                    args += src;
+                } else if (is_data_only_array_expr(call_arg)) {
+                    args += src;
+                } else {
+                    args += src + "->data";
+                }
+                if (i < n_args - 1) args += ", ";
+                continue;
+            }
             if (ASR::is_a<ASR::Var_t>(*call_arg)
                 && ASR::is_a<ASR::Variable_t>(
                     *ASRUtils::symbol_get_past_external(
@@ -1938,6 +1952,32 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                         raw_pointer_actual = true;
                     }
                 }
+            }
+            ASR::expr_t *array_like_arg = call_arg;
+            if (ASR::is_a<ASR::Cast_t>(*array_like_arg)) {
+                ASR::Cast_t *cast_arg = ASR::down_cast<ASR::Cast_t>(array_like_arg);
+                if (cast_arg->m_kind == ASR::cast_kindType::StringToArray) {
+                    array_like_arg = cast_arg->m_arg;
+                }
+            }
+            bool scalar_string_to_cchar = is_c
+                && param_type && CUtils::is_len_one_character_array_type(param_type)
+                && ASR::is_a<ASR::StringPhysicalCast_t>(*array_like_arg);
+            if (is_c && param_type && CUtils::is_len_one_character_array_type(param_type)
+                    && ((type && CUtils::is_len_one_character_array_type(type))
+                        || scalar_string_to_cchar)) {
+                if (ASR::is_a<ASR::StringPhysicalCast_t>(*array_like_arg)) {
+                    array_like_arg = ASR::down_cast<ASR::StringPhysicalCast_t>(array_like_arg)->m_arg;
+                }
+                if (scalar_string_to_cchar || !ASRUtils::is_array(ASRUtils::expr_type(array_like_arg))) {
+                    args += src;
+                } else if (is_data_only_array_expr(call_arg)) {
+                    args += src;
+                } else {
+                    args += src + "->data";
+                }
+                if (i < n_args - 1) args += ", ";
+                continue;
             }
             if (ASR::is_a<ASR::Var_t>(*call_arg)
                 && ASR::is_a<ASR::Variable_t>(
@@ -2272,6 +2312,16 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         std::string indent(indentation_level*indentation_spaces, ' ');
         ASR::expr_t *unwrapped_target_expr = unwrap_c_lvalue_expr(x.m_target);
         if (try_emit_vector_subscript_scalar_array_assignment(x, unwrapped_target_expr)) {
+            return;
+        }
+        if (is_c && is_len_one_character_array_type(m_target_type)
+                && ASR::is_a<ASR::BitCast_t>(*x.m_value)) {
+            self().visit_expr(*x.m_target);
+            std::string target_expr = src;
+            self().visit_expr(*x.m_value);
+            std::string value_expr = src;
+            src = check_tmp_buffer();
+            src += indent + c_ds_api->get_deepcopy(m_target_type, value_expr, target_expr) + "\n";
             return;
         }
         if (is_c && ASR::is_a<ASR::StringItem_t>(*x.m_target)) {
@@ -3621,6 +3671,13 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             return;
         }
         self().visit_expr(*x.m_arg);
+        if (is_c && ASR::is_a<ASR::ArrayItem_t>(*x.m_arg)) {
+            ASR::ArrayItem_t *item = ASR::down_cast<ASR::ArrayItem_t>(x.m_arg);
+            if (CUtils::is_len_one_character_array_type(ASRUtils::expr_type(item->m_v))) {
+                src = "((int32_t)(unsigned char)(" + src + "))";
+                return;
+            }
+        }
         src = "_lfortran_ichar(" + src + ")";
     }
 
@@ -3631,6 +3688,13 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             return;
         }
         self().visit_expr(*x.m_arg);
+        if (is_c && ASR::is_a<ASR::ArrayItem_t>(*x.m_arg)) {
+            ASR::ArrayItem_t *item = ASR::down_cast<ASR::ArrayItem_t>(x.m_arg);
+            if (CUtils::is_len_one_character_array_type(ASRUtils::expr_type(item->m_v))) {
+                src = "((int32_t)(unsigned char)(" + src + "))";
+                return;
+            }
+        }
         src = "_lfortran_iachar(" + src + ")";
     }
 

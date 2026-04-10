@@ -48,6 +48,33 @@ namespace LCompilers {
 
 namespace CUtils {
 
+    static inline bool is_len_one_character_type(ASR::ttype_t *t) {
+        if (t == nullptr) {
+            return false;
+        }
+        t = ASRUtils::type_get_past_allocatable_pointer(t);
+        if (!ASRUtils::is_character(*t)) {
+            return false;
+        }
+        ASR::String_t *string_type = ASRUtils::get_string_type(t);
+        int64_t len = 0;
+        return string_type->m_len_kind == ASR::string_length_kindType::ExpressionLength
+            && string_type->m_len != nullptr
+            && ASRUtils::extract_value(string_type->m_len, len)
+            && len == 1;
+    }
+
+    static inline bool is_len_one_character_array_type(ASR::ttype_t *t) {
+        if (t == nullptr) {
+            return false;
+        }
+        t = ASRUtils::type_get_past_allocatable_pointer(t);
+        if (!ASRUtils::is_array(t)) {
+            return false;
+        }
+        return is_len_one_character_type(ASRUtils::extract_type(t));
+    }
+
     static inline std::string sanitize_c_identifier(const std::string &name) {
         static const std::set<std::string> c_keywords = {
             "auto","break","case","char","const","continue","default","do","double",

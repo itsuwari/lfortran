@@ -429,6 +429,16 @@ public:
             ? force_declare_name : c_v_name;
         bool is_struct_type_member = ASR::is_a<ASR::Struct_t>(
             *ASR::down_cast<ASR::symbol_t>(v.m_parent_symtab->asr_owner));
+        bool is_bindc_dummy = false;
+        if (dummy && ASR::is_a<ASR::symbol_t>(*v.m_parent_symtab->asr_owner)) {
+            ASR::symbol_t *owner_sym = ASR::down_cast<ASR::symbol_t>(v.m_parent_symtab->asr_owner);
+            owner_sym = ASRUtils::symbol_get_past_external(owner_sym);
+            if (ASR::is_a<ASR::Function_t>(*owner_sym)) {
+                ASR::Function_t *owner_fn = ASR::down_cast<ASR::Function_t>(owner_sym);
+                is_bindc_dummy = ASRUtils::get_FunctionType(*owner_fn)->m_abi == ASR::abiType::BindC;
+            }
+        }
+        bool is_len_one_char_array = CUtils::is_len_one_character_array_type(v.m_type);
         ASR::dimension_t* m_dims = nullptr;
         size_t n_dims = ASRUtils::extract_dimensions_from_ttype(v.m_type, m_dims);
         ASR::ttype_t* v_storage_type = ASRUtils::type_get_past_allocatable_pointer(v.m_type);
@@ -759,6 +769,10 @@ public:
                     force_declare, force_declare_name, n_dims, m_dims, v_m_type, dims, sub);
             } else if (ASRUtils::is_character(*v_m_type)) {
                 if (is_array) {
+                    if (is_bindc_dummy && is_len_one_char_array) {
+                        sub = format_type_c("", "char*", decl_name, use_ref, dummy);
+                        return sub;
+                    }
                     bool is_fixed_size = true;
                     dims = convert_dims_c(n_dims, m_dims, v_m_type, is_fixed_size, true);
                     std::string encoded_type_name = CUtils::get_c_type_code(v.m_type);
@@ -821,6 +835,9 @@ public:
                 } else if( v.m_intent == ASRUtils::intent_local && pre_initialise_derived_type) {
                     bool is_fixed_size = true;
                     dims = convert_dims_c(n_dims, m_dims, v_m_type, is_fixed_size);
+                    bool is_file_scope_static = dims.empty()
+                        && v.m_storage == ASR::storage_typeType::Save
+                        && use_static;
                     bool force_value_struct_temp =
                         std::string(v.m_name).find("__libasr_created__struct_constructor_") != std::string::npos ||
                         std::string(v.m_name).find("temp_struct_var__") != std::string::npos;
@@ -853,6 +870,22 @@ public:
                         return sub;
                     }
                     std::string value_var_name = v.m_parent_symtab->get_unique_name(decl_name + "_value");
+                    if (is_file_scope_static) {
+                        sub = format_type_c(dims, "struct " + der_type_name,
+                                            value_var_name, use_ref, dummy);
+                        sub += " = { ." + get_runtime_type_tag_member_name()
+                            + " = " + std::to_string(get_struct_runtime_type_id(v.m_type_declaration))
+                            + " };\n";
+                        std::string ptr_char = "*";
+                        if( !use_ptr_for_derived_type ) {
+                            ptr_char.clear();
+                        }
+                        sub += indent + format_type_c("", "struct " + der_type_name + ptr_char,
+                            decl_name, use_ref, dummy);
+                        emitted_pointer_backed_struct_names.insert(decl_name);
+                        sub += " = &" + value_var_name;
+                        return sub;
+                    }
                     sub = format_type_c(dims, "struct " + der_type_name,
                                         value_var_name, use_ref, dummy);
                     if (v.m_symbolic_value && !do_not_initialize) {
