@@ -492,8 +492,8 @@ R"(#include <stdio.h>
         ASR::Block_t* block = ASR::down_cast<ASR::Block_t>(x.m_m);
         std::string decl, body;
         std::string indent(indentation_level*indentation_spaces, ' ');
-        std::string open_paranthesis = indent + "{\n";
-        std::string close_paranthesis = indent + "}\n";
+        std::string open_paranthesis = indent + "do {\n";
+        std::string close_paranthesis = indent + "} while (0);\n";
         if (x.m_label != -1) {
             std::string b_name;
             if (gotoid2name.find(x.m_label) != gotoid2name.end()) {
@@ -501,7 +501,7 @@ R"(#include <stdio.h>
             } else {
                 b_name = "__" +std::to_string(x.m_label);
             }
-            open_paranthesis = indent + b_name + ": {\n";
+            open_paranthesis = indent + b_name + ": do {\n";
         }
         indent += std::string(indentation_spaces, ' ');
         indentation_level += 1;
@@ -531,8 +531,8 @@ R"(#include <stdio.h>
         ASR::AssociateBlock_t* associate_block = ASR::down_cast<ASR::AssociateBlock_t>(x.m_m);
         std::string decl, body;
         std::string indent(indentation_level*indentation_spaces, ' ');
-        std::string open_paranthesis = indent + "{\n";
-        std::string close_paranthesis = indent + "}\n";
+        std::string open_paranthesis = indent + "do {\n";
+        std::string close_paranthesis = indent + "} while (0);\n";
         indent += std::string(indentation_spaces, ' ');
         indentation_level += 1;
         SymbolTable* current_scope_copy = current_scope;
@@ -2268,6 +2268,24 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 }
             }
         }
+        if (is_c && ASRUtils::is_pointer(m_target_type)
+                && !ASRUtils::is_array(m_target_type)
+                && !ASRUtils::is_pointer(ASRUtils::expr_type(x.m_value))) {
+            ASR::ttype_t *target_pointee_type = ASRUtils::type_get_past_allocatable_pointer(
+                ASRUtils::type_get_past_pointer(m_target_type));
+            ASR::expr_t *value_expr = unwrap_c_lvalue_expr(x.m_value);
+            bool value_is_addressable_lvalue = value_expr
+                && (ASR::is_a<ASR::Var_t>(*value_expr)
+                    || ASR::is_a<ASR::ArrayItem_t>(*value_expr)
+                    || ASR::is_a<ASR::StructInstanceMember_t>(*value_expr)
+                    || ASR::is_a<ASR::UnionInstanceMember_t>(*value_expr));
+            if (value_is_addressable_lvalue
+                    && !is_pointer_backed_struct_expr(x.m_value)
+                    && (ASR::is_a<ASR::StructType_t>(*target_pointee_type)
+                        || ASRUtils::is_class_type(target_pointee_type))) {
+                value = "&(" + value + ")";
+            }
+        }
         if( !from_std_vector_helper.empty() ) {
             src = from_std_vector_helper;
         } else {
@@ -2615,12 +2633,24 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             }
             if (ASRUtils::is_pointer(target_type)
                     && !ASRUtils::is_array(target_type)
-                    && !ASRUtils::is_aggregate_type(
-                        ASRUtils::type_get_past_allocatable_pointer(target_type))
-                    && !ASRUtils::is_character(
-                        *ASRUtils::type_get_past_allocatable_pointer(target_type))
                     && !ASRUtils::is_pointer(value_type)) {
-                value = "&(" + value + ")";
+                ASR::ttype_t *target_pointee_type = ASRUtils::type_get_past_allocatable_pointer(
+                    ASRUtils::type_get_past_pointer(target_type));
+                ASR::expr_t *value_expr = unwrap_c_lvalue_expr(x.m_value);
+                bool value_is_addressable_lvalue = value_expr
+                    && (ASR::is_a<ASR::Var_t>(*value_expr)
+                        || ASR::is_a<ASR::ArrayItem_t>(*value_expr)
+                        || ASR::is_a<ASR::StructInstanceMember_t>(*value_expr)
+                        || ASR::is_a<ASR::UnionInstanceMember_t>(*value_expr));
+                bool target_pointee_is_character = ASRUtils::is_character(*target_pointee_type);
+                bool target_pointee_is_aggregate =
+                    ASRUtils::is_aggregate_type(target_pointee_type);
+                if ((!target_pointee_is_character && !target_pointee_is_aggregate)
+                        || (target_pointee_is_aggregate
+                            && value_is_addressable_lvalue
+                            && !is_pointer_backed_struct_expr(x.m_value))) {
+                    value = "&(" + value + ")";
+                }
             }
             src = indent + target + " = " + value + ";\n";
         }
@@ -4238,7 +4268,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 } else if (right.empty()) {
                     out += var + " >= " + left;
                 } else {
-                    out += left + " <= " + var + " <= " + right;
+                    out += "(" + left + " <= " + var + ") && (" + var + " <= " + right + ")";
                 }
                 out += ") {\n";
                 bracket_open--;
