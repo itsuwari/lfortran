@@ -670,8 +670,16 @@ R"(#include <stdio.h>
 
     std::string get_c_function_target_name(const ASR::Function_t &x) {
         ASR::FunctionType_t *f_type = ASRUtils::get_FunctionType(x);
-        if (f_type->m_abi == ASR::abiType::BindC && f_type->m_bindc_name) {
-            return CUtils::sanitize_c_identifier(std::string(f_type->m_bindc_name));
+        if (f_type->m_abi == ASR::abiType::BindC) {
+            if (f_type->m_bindc_name && std::strlen(f_type->m_bindc_name) > 0) {
+                return CUtils::sanitize_c_identifier(std::string(f_type->m_bindc_name));
+            } else if (!f_type->m_bindc_name) {
+                return CUtils::sanitize_c_identifier(std::string(x.m_name));
+            }
+        }
+        if (f_type->m_deftype == ASR::deftypeType::Interface
+                && f_type->m_abi != ASR::abiType::Intrinsic) {
+            return CUtils::sanitize_c_identifier(std::string(x.m_name));
         }
         return get_emitted_function_name(x);
     }
@@ -1042,8 +1050,11 @@ R"(#include <stdio.h>
             if (decl.size() > 0 || current_body.size() > 0) {
                 sub += "{\n" + decl + current_body + "}\n";
             } else {
-                sub[sub.size()-1] = ';';
-                sub += "\n";
+                std::string empty_body = "";
+                if (!current_return_var_name.empty()) {
+                    empty_body = indent + "return " + get_current_return_var_name() + ";\n";
+                }
+                sub += "{\n" + empty_body + "}\n";
             }
             current_return_var_name.clear();
             indentation_level -= 1;

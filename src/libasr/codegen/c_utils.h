@@ -254,7 +254,7 @@ namespace CUtils {
                     return ;
                 }
                 array_size_func = util2func["array_size"];
-                std::string signature = "static inline int32_t " + array_size_func + "(struct dimension_descriptor dims[], size_t n)";
+                std::string signature = "int32_t " + array_size_func + "(struct dimension_descriptor dims[], size_t n)";
                 util_func_decls += indent + signature + ";\n";
                 std::string body = indent + signature + " {\n";
                 body += indent + tab + "int32_t size = 1;\n";
@@ -307,7 +307,7 @@ namespace CUtils {
                     return ;
                 }
                 array_reshape_func = util2func["array_reshape_" + array_type_code];
-                std::string signature = "static inline " + return_type + "* " + array_reshape_func + "(" +
+                std::string signature = return_type + "* " + array_reshape_func + "(" +
                                         array_type + " array" + ", " + shape_type + " shape)";
                 util_func_decls += indent + signature + ";\n";
                 std::string body = indent + signature + " {\n";
@@ -344,7 +344,7 @@ namespace CUtils {
                     return ;
                 }
                 array_const_func = util2func["array_constant_" + array_type_code];
-                std::string signature = "static inline " + return_type + "* " + array_const_func + "(int32_t n, ...)";
+                std::string signature = return_type + "* " + array_const_func + "(int32_t n, ...)";
                 util_func_decls += indent + signature + ";\n";
                 std::string body = indent + signature + " {\n";
                 body += indent + tab + return_type + "* const_array  = (" + return_type + "*) malloc(sizeof(" + return_type + "));\n";
@@ -396,7 +396,7 @@ namespace CUtils {
                     return util2func["bitcast_string_to_" + encoded_type];
                 }
                 helper_name = util2func["bitcast_string_to_" + encoded_type];
-                std::string signature = "static inline " + target_type + " " + helper_name + "(char *src)";
+                std::string signature = target_type + " " + helper_name + "(char *src)";
                 util_func_decls += indent + signature + ";\n";
                 std::string body = indent + signature + " {\n";
                 body += indent + tab + target_type + " out;\n";
@@ -421,7 +421,7 @@ namespace CUtils {
                     return util2func[key];
                 }
                 helper_name = util2func[key];
-                std::string signature = "static inline " + return_type + "* " + helper_name + "(" + source_type + " value)";
+                std::string signature = return_type + "* " + helper_name + "(" + source_type + " value)";
                 util_func_decls += indent + signature + ";\n";
                 std::string body = indent + signature + " {\n";
                 body += indent + tab + return_type + "* result = (" + return_type + "*) malloc(sizeof(" + return_type + "));\n";
