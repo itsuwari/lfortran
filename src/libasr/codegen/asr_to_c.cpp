@@ -179,7 +179,15 @@ R"(
             for (auto &scope_item : mod->m_symtab->get_scope()) {
                 if (ASR::is_a<ASR::Variable_t>(*scope_item.second)) {
                     ASR::Variable_t *v = ASR::down_cast<ASR::Variable_t>(scope_item.second);
-                    if (v->m_access == ASR::accessType::Private) {
+                    bool keep_parameter_struct_constant =
+                        v->m_storage == ASR::storage_typeType::Parameter
+                        && v->m_symbolic_value != nullptr
+                        && ASRUtils::expr_value(v->m_symbolic_value) != nullptr
+                        && ASR::is_a<ASR::StructConstant_t>(
+                            *ASRUtils::expr_value(v->m_symbolic_value));
+                    if (v->m_access == ASR::accessType::Private
+                            || (v->m_storage == ASR::storage_typeType::Parameter
+                                && !keep_parameter_struct_constant)) {
                         continue;
                     }
                     try {
@@ -203,7 +211,7 @@ R"(
         auto add_function_decl = [&](ASR::Function_t *fn) {
             bool has_typevar = false;
             try {
-                std::string decl = get_function_declaration(*fn, has_typevar, false) + ";\n";
+                std::string decl = get_function_declaration(*fn, has_typevar, false, false) + ";\n";
                 if (seen.insert(decl).second) {
                     decls += decl;
                 }
@@ -1555,6 +1563,11 @@ R"(
         }
 
         forward_decl_functions += "\n\n";
+        // Unit visitors mutate indentation and scope state. Reset before
+        // synthesizing shared declarations/prototypes at file scope.
+        indentation_level = 0;
+        bracket_open = 0;
+        current_scope = global_scope;
         std::string helper_defs;
         finalize_common_sections(helper_defs);
         std::string module_var_decls = collect_module_extern_decls(x);

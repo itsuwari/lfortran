@@ -677,7 +677,9 @@ R"(#include <stdio.h>
     }
 
     // Returns the declaration, no semi colon at the end
-    std::string get_function_declaration(const ASR::Function_t &x, bool &has_typevar, bool is_pointer=false) {
+    std::string get_function_declaration(const ASR::Function_t &x, bool &has_typevar,
+                                         bool is_pointer=false,
+                                         bool record_forward_decl=true) {
         template_for_Kokkos.clear();
         template_number = 0;
         std::string sub, inl, static_attr;
@@ -739,7 +741,8 @@ R"(#include <stdio.h>
                 }
             } else if (ASR::is_a<ASR::Function_t>(*sym)) {
                 ASR::Function_t *fun = ASR::down_cast<ASR::Function_t>(sym);
-                func += get_function_declaration(*fun, has_typevar, true);
+                func += get_function_declaration(*fun, has_typevar, true,
+                                                 record_forward_decl);
             } else {
                 throw CodeGenError("Unsupported function argument");
             }
@@ -747,7 +750,8 @@ R"(#include <stdio.h>
         }
         func += ")";
         bracket_open--;
-        if (is_c && f_type->m_abi == ASR::abiType::Source
+        if (record_forward_decl
+                && is_c && f_type->m_abi == ASR::abiType::Source
                 && f_type->m_deftype != ASR::deftypeType::Interface
                 && !is_pointer) {
             forward_decl_functions += func + ";\n";
