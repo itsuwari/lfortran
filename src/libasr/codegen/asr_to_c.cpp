@@ -449,11 +449,11 @@ public:
             }
             if (iface_fn) {
                 return get_function_pointer_declaration_from_interface(*iface_fn,
-                    CUtils::sanitize_c_identifier(v.m_name));
+                    c_v_name);
             }
             return get_function_pointer_declaration_from_type(
                 ASR::down_cast<ASR::FunctionType_t>(v_m_type),
-                CUtils::sanitize_c_identifier(v.m_name));
+                c_v_name);
         }
         if (ASRUtils::is_pointer(v_m_type)) {
             ASR::ttype_t *t2 = ASR::down_cast<ASR::Pointer_t>(v_m_type)->m_type;
@@ -468,11 +468,11 @@ public:
                 }
                 if (iface_fn) {
                     return get_function_pointer_declaration_from_interface(*iface_fn,
-                        CUtils::sanitize_c_identifier(v.m_name));
+                        c_v_name);
                 }
                 return get_function_pointer_declaration_from_type(
                     ASR::down_cast<ASR::FunctionType_t>(t2),
-                    CUtils::sanitize_c_identifier(v.m_name));
+                    c_v_name);
             }
             if (ASRUtils::is_integer(*t2)) {
                 ASR::Integer_t *t = ASR::down_cast<ASR::Integer_t>(ASRUtils::type_get_past_array(t2));
