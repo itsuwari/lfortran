@@ -1315,13 +1315,33 @@ R"(    // Initialise Numpy
         c_decl_options_.use_ptr_for_derived_type = false;
         c_decl_options_.use_static = false;
         c_decl_options_.do_not_initialize = true;
-        for( size_t i = 0; i < x.n_members; i++ ) {
-            ASR::symbol_t* member = x.m_symtab->get_symbol(x.m_members[i]);
-            LCOMPILERS_ASSERT(ASR::is_a<ASR::Variable_t>(*member));
-            body += indent + convert_variable_decl(
-                        *ASR::down_cast<ASR::Variable_t>(member),
-                        &c_decl_options_);
-            body += ";\n";
+        auto append_struct_members = [&](auto&& self_append, const ASR::Struct_t& struct_t) -> void {
+            if (struct_t.m_parent) {
+                ASR::symbol_t *parent_sym = ASRUtils::symbol_get_past_external(struct_t.m_parent);
+                if (ASR::is_a<ASR::Struct_t>(*parent_sym)) {
+                    self_append(self_append, *ASR::down_cast<ASR::Struct_t>(parent_sym));
+                }
+            }
+            for (size_t i = 0; i < struct_t.n_members; i++) {
+                ASR::symbol_t* member = struct_t.m_symtab->get_symbol(struct_t.m_members[i]);
+                LCOMPILERS_ASSERT(ASR::is_a<ASR::Variable_t>(*member));
+                body += indent + convert_variable_decl(
+                            *ASR::down_cast<ASR::Variable_t>(member),
+                            &c_decl_options_);
+                body += ";\n";
+            }
+        };
+        if constexpr (std::is_same_v<std::decay_t<T>, ASR::Struct_t>) {
+            append_struct_members(append_struct_members, x);
+        } else {
+            for( size_t i = 0; i < x.n_members; i++ ) {
+                ASR::symbol_t* member = x.m_symtab->get_symbol(x.m_members[i]);
+                LCOMPILERS_ASSERT(ASR::is_a<ASR::Variable_t>(*member));
+                body += indent + convert_variable_decl(
+                            *ASR::down_cast<ASR::Variable_t>(member),
+                            &c_decl_options_);
+                body += ";\n";
+            }
         }
         indentation_level -= 1;
         std::string end_struct = "};\n\n";
