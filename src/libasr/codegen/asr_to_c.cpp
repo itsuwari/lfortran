@@ -428,6 +428,10 @@ public:
             *ASR::down_cast<ASR::symbol_t>(v.m_parent_symtab->asr_owner));
         ASR::dimension_t* m_dims = nullptr;
         size_t n_dims = ASRUtils::extract_dimensions_from_ttype(v.m_type, m_dims);
+        ASR::ttype_t* v_storage_type = ASRUtils::type_get_past_allocatable_pointer(v.m_type);
+        bool force_pointer_backed_struct = ASRUtils::is_allocatable(v.m_type)
+            || ASRUtils::is_pointer(v.m_type)
+            || ASRUtils::is_class_type(v_storage_type);
         ASR::ttype_t* v_m_type = v.m_type;
         v_m_type = ASRUtils::type_get_past_array(ASRUtils::type_get_past_allocatable(v_m_type));
         if (!is_array && v.m_storage == ASR::storage_typeType::Parameter
@@ -755,7 +759,8 @@ public:
                 } else if (declaration_only) {
                     bool is_fixed_size = true;
                     dims = convert_dims_c(n_dims, m_dims, v_m_type, is_fixed_size);
-                    sub = format_type_c(dims, "struct " + der_type_name,
+                    std::string ptr_char = force_pointer_backed_struct ? "*" : "";
+                    sub = format_type_c(dims, "struct " + der_type_name + ptr_char,
                                         c_v_name, false, dummy);
                 } else if( v.m_intent == ASRUtils::intent_local && pre_initialise_derived_type) {
                     bool is_fixed_size = true;
@@ -780,6 +785,15 @@ public:
                         allocate_array_members_of_struct(der_type_t, sub, indent, "(&(" + c_v_name + "))");
                         sub.pop_back();
                         sub.pop_back();
+                        return sub;
+                    }
+                    if (force_pointer_backed_struct) {
+                        emitted_pointer_backed_struct_names.insert(c_v_name);
+                        sub = format_type_c(dims, "struct " + der_type_name + "*",
+                                            c_v_name, use_ref, dummy);
+                        if (!do_not_initialize) {
+                            sub += " = NULL";
+                        }
                         return sub;
                     }
                     std::string value_var_name = v.m_parent_symtab->get_unique_name(c_v_name + "_value");
@@ -821,7 +835,7 @@ public:
                         dims = "";
                     }
                     std::string ptr_char = "*";
-                    if( !use_ptr_for_derived_type ) {
+                    if( !use_ptr_for_derived_type && !force_pointer_backed_struct ) {
                         ptr_char.clear();
                     }
                     sub = format_type_c(dims, "struct " + der_type_name + ptr_char,
