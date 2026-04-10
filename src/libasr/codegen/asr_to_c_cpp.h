@@ -1541,10 +1541,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
 
     bool normalize_optional_alloc_scalar_ref_actual(ASR::expr_t *call_arg, ASR::ttype_t *type,
             bool wants_raw_pointer_actual, std::string &arg_src) {
-        bool is_pointer_scalar = type && ASRUtils::is_pointer(type) && !ASRUtils::is_array(type);
-        bool is_alloc_scalar_storage = is_scalar_allocatable_storage_type(type);
-        if (!is_c || !wants_raw_pointer_actual
-                || (!is_pointer_scalar && !is_alloc_scalar_storage)) {
+        if (!is_c || !wants_raw_pointer_actual) {
             return false;
         }
         ASR::expr_t *raw_arg = unwrap_c_lvalue_expr(call_arg);
@@ -1552,14 +1549,29 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             ASR::symbol_t *arg_sym = ASRUtils::symbol_get_past_external(
                 ASR::down_cast<ASR::Var_t>(raw_arg)->m_v);
             if (ASR::is_a<ASR::Variable_t>(*arg_sym)) {
-                arg_src = CUtils::get_c_variable_name(*ASR::down_cast<ASR::Variable_t>(arg_sym));
-                return true;
+                ASR::Variable_t *arg_var = ASR::down_cast<ASR::Variable_t>(arg_sym);
+                if (is_scalar_allocatable_storage_type(arg_var->m_type)) {
+                    arg_src = get_c_var_storage_name(arg_var);
+                    return true;
+                }
+                if (is_scalar_pointer_storage_type(arg_var->m_type)) {
+                    arg_src = CUtils::get_c_variable_name(*arg_var);
+                    return true;
+                }
             }
         }
         if (raw_arg && ASR::is_a<ASR::StructInstanceMember_t>(*raw_arg)) {
-            arg_src = get_struct_instance_member_expr(
-                *ASR::down_cast<ASR::StructInstanceMember_t>(raw_arg), false);
-            return true;
+            ASR::StructInstanceMember_t *member_arg =
+                ASR::down_cast<ASR::StructInstanceMember_t>(raw_arg);
+            ASR::symbol_t *member_sym = ASRUtils::symbol_get_past_external(member_arg->m_m);
+            if (ASR::is_a<ASR::Variable_t>(*member_sym)) {
+                ASR::Variable_t *member_var = ASR::down_cast<ASR::Variable_t>(member_sym);
+                if (is_scalar_allocatable_storage_type(member_var->m_type)
+                        || is_scalar_pointer_storage_type(member_var->m_type)) {
+                    arg_src = get_struct_instance_member_expr(*member_arg, false);
+                    return true;
+                }
+            }
         }
         if (arg_src.size() > 3
                 && arg_src.rfind("(*", 0) == 0
@@ -1568,6 +1580,17 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             return true;
         }
         return false;
+    }
+
+    bool is_scalar_pointer_storage_type(ASR::ttype_t *type) {
+        if (type == nullptr || !ASRUtils::is_pointer(type) || ASRUtils::is_array(type)) {
+            return false;
+        }
+        ASR::ttype_t *value_type = ASRUtils::type_get_past_pointer(type);
+        return value_type != nullptr
+            && !ASRUtils::is_aggregate_type(value_type)
+            && !ASRUtils::is_character(*value_type)
+            && !ASR::is_a<ASR::FunctionType_t>(*value_type);
     }
 
     bool is_scalar_base_array_type(ASR::ttype_t *type) {
@@ -1837,11 +1860,18 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                     ASR::down_cast<ASR::Var_t>(call_arg)->m_v);
                 if (ASR::is_a<ASR::Variable_t>(*arg_sym)) {
                     ASR::Variable_t *arg_var = ASR::down_cast<ASR::Variable_t>(arg_sym);
+                    bool arg_is_scalar_alloc_storage =
+                        is_scalar_allocatable_storage_type(arg_var->m_type);
+                    bool arg_is_scalar_pointer_storage =
+                        is_scalar_pointer_storage_type(arg_var->m_type);
                     if (((ASRUtils::is_pointer(param_type)
                                 && !ASRUtils::is_array(param_type))
                             || param_is_optional_alloc_scalar_ref)
-                            && is_scalar_allocatable_storage_type(arg_var->m_type)) {
-                        src = get_c_var_storage_name(arg_var);
+                            && (arg_is_scalar_alloc_storage
+                                || arg_is_scalar_pointer_storage)) {
+                        src = arg_is_scalar_alloc_storage
+                            ? get_c_var_storage_name(arg_var)
+                            : CUtils::get_c_variable_name(*arg_var);
                         raw_pointer_actual = true;
                     } else if (param_is_optional_alloc_scalar_ref
                             && ASRUtils::is_pointer(type)
@@ -1996,11 +2026,18 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                     ASR::down_cast<ASR::Var_t>(call_arg)->m_v);
                 if (ASR::is_a<ASR::Variable_t>(*arg_sym)) {
                     ASR::Variable_t *arg_var = ASR::down_cast<ASR::Variable_t>(arg_sym);
+                    bool arg_is_scalar_alloc_storage =
+                        is_scalar_allocatable_storage_type(arg_var->m_type);
+                    bool arg_is_scalar_pointer_storage =
+                        is_scalar_pointer_storage_type(arg_var->m_type);
                     if (((ASRUtils::is_pointer(param_type)
                                 && !ASRUtils::is_array(param_type))
                             || param_is_optional_alloc_scalar_ref)
-                            && is_scalar_allocatable_storage_type(arg_var->m_type)) {
-                        src = get_c_var_storage_name(arg_var);
+                            && (arg_is_scalar_alloc_storage
+                                || arg_is_scalar_pointer_storage)) {
+                        src = arg_is_scalar_alloc_storage
+                            ? get_c_var_storage_name(arg_var)
+                            : CUtils::get_c_variable_name(*arg_var);
                         raw_pointer_actual = true;
                     } else if (param_is_optional_alloc_scalar_ref
                             && ASRUtils::is_pointer(type)
