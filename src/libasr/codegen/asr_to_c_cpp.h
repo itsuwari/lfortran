@@ -1781,23 +1781,42 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             ASR::ttype_t* type = ASRUtils::expr_type(call_arg);
             ASR::ttype_t *type_unwrapped = ASRUtils::type_get_past_allocatable_pointer(type);
             ASR::ttype_t *param_type = i < f->n_args ? ASRUtils::expr_type(f->m_args[i]) : nullptr;
+            ASR::Variable_t *param = i < f->n_args ? ASRUtils::EXPR2VAR(f->m_args[i]) : nullptr;
             ASR::ttype_t *param_type_unwrapped = param_type ?
                 ASRUtils::type_get_past_allocatable_pointer(param_type) : nullptr;
+            bool raw_pointer_actual = false;
+            bool param_is_optional_scalar_ref = is_c && param
+                && param->m_presence == ASR::presenceType::Optional
+                && param_type_unwrapped
+                && !ASRUtils::is_array(param_type)
+                && !ASRUtils::is_aggregate_type(param_type)
+                && !ASRUtils::is_character(*param_type_unwrapped);
             bool pass_struct_address = is_c && i < f->n_args
                 && param_type_unwrapped
                 && ASR::is_a<ASR::StructType_t>(*param_type_unwrapped)
                 && ASR::is_a<ASR::StructType_t>(*type_unwrapped)
                 && !is_pointer_backed_struct_expr(call_arg);
             if (is_c && ASR::is_a<ASR::Var_t>(*call_arg) && i < f->n_args) {
+                ASR::symbol_t *arg_sym = ASRUtils::symbol_get_past_external(
+                    ASR::down_cast<ASR::Var_t>(call_arg)->m_v);
+                if (ASR::is_a<ASR::Variable_t>(*arg_sym)) {
+                    ASR::Variable_t *arg_var = ASR::down_cast<ASR::Variable_t>(arg_sym);
+                    if (((ASRUtils::is_pointer(param_type)
+                                && !ASRUtils::is_array(param_type))
+                            || param_is_optional_scalar_ref)
+                            && is_scalar_allocatable_storage_type(arg_var->m_type)) {
+                        src = get_c_var_storage_name(arg_var);
+                        raw_pointer_actual = true;
+                    }
+                }
                 if (ASRUtils::is_pointer(param_type)
                         && !ASRUtils::is_array(param_type)
                         && ASRUtils::is_pointer(type)
                         && !ASRUtils::is_array(type)) {
-                    ASR::symbol_t *arg_sym = ASRUtils::symbol_get_past_external(
-                        ASR::down_cast<ASR::Var_t>(call_arg)->m_v);
                     if (ASR::is_a<ASR::Variable_t>(*arg_sym)) {
                         src = CUtils::get_c_variable_name(
                             *ASR::down_cast<ASR::Variable_t>(arg_sym));
+                        raw_pointer_actual = true;
                     }
                 }
             }
@@ -1805,9 +1824,10 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 && ASR::is_a<ASR::Variable_t>(
                     *ASRUtils::symbol_get_past_external(
                         ASR::down_cast<ASR::Var_t>(m_args[i].m_value)->m_v))) {
-                ASR::Variable_t* param = ASRUtils::EXPR2VAR(f->m_args[i]);
                 if (pass_struct_address) {
                     args += "&" + src;
+                } else if (raw_pointer_actual) {
+                    args += src;
                 } else if( (is_c && (param->m_intent == ASRUtils::intent_inout
                     || param->m_intent == ASRUtils::intent_out)
                     && (!ASRUtils::is_aggregate_type(param->m_type)
@@ -1828,7 +1848,20 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             } else if (ASR::is_a<ASR::ArrayItem_t>(*call_arg)
                     || ASR::is_a<ASR::StructInstanceMember_t>(*call_arg)
                     || ASR::is_a<ASR::UnionInstanceMember_t>(*call_arg)) {
-                ASR::Variable_t* param = ASRUtils::EXPR2VAR(f->m_args[i]);
+                if (is_c && ASR::is_a<ASR::StructInstanceMember_t>(*call_arg)
+                        && (((ASRUtils::is_pointer(param_type)
+                                && !ASRUtils::is_array(param_type))
+                            || param_is_optional_scalar_ref))) {
+                    ASR::StructInstanceMember_t *member_arg =
+                        ASR::down_cast<ASR::StructInstanceMember_t>(call_arg);
+                    ASR::symbol_t *member_sym = ASRUtils::symbol_get_past_external(member_arg->m_m);
+                    if (ASR::is_a<ASR::Variable_t>(*member_sym)
+                            && is_scalar_allocatable_storage_type(
+                                ASR::down_cast<ASR::Variable_t>(member_sym)->m_type)) {
+                        src = get_struct_instance_member_expr(*member_arg, false);
+                        raw_pointer_actual = true;
+                    }
+                }
                 if (pass_struct_address
                     || (is_c && (param->m_intent == ASRUtils::intent_inout
                         || param->m_intent == ASRUtils::intent_out)
@@ -1836,7 +1869,11 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                             || (ASRUtils::is_pointer(param->m_type)
                                 && !ASRUtils::is_array(param->m_type))))
                     || ASR::is_a<ASR::StructType_t>(*type_unwrapped)) {
-                    args += "&" + src;
+                    if (raw_pointer_actual) {
+                        args += src;
+                    } else {
+                        args += "&" + src;
+                    }
                 } else {
                     args += src;
                 }
@@ -1863,23 +1900,42 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             ASR::ttype_t* type = ASRUtils::expr_type(call_arg);
             ASR::ttype_t *type_unwrapped = ASRUtils::type_get_past_allocatable_pointer(type);
             ASR::ttype_t *param_type = i < f->n_args ? ASRUtils::expr_type(f->m_args[i]) : nullptr;
+            ASR::Variable_t *param = i < f->n_args ? ASRUtils::EXPR2VAR(f->m_args[i]) : nullptr;
             ASR::ttype_t *param_type_unwrapped = param_type ?
                 ASRUtils::type_get_past_allocatable_pointer(param_type) : nullptr;
+            bool raw_pointer_actual = false;
+            bool param_is_optional_scalar_ref = is_c && param
+                && param->m_presence == ASR::presenceType::Optional
+                && param_type_unwrapped
+                && !ASRUtils::is_array(param_type)
+                && !ASRUtils::is_aggregate_type(param_type)
+                && !ASRUtils::is_character(*param_type_unwrapped);
             bool pass_struct_address = is_c && i < f->n_args
                 && param_type_unwrapped
                 && ASR::is_a<ASR::StructType_t>(*param_type_unwrapped)
                 && ASR::is_a<ASR::StructType_t>(*type_unwrapped)
                 && !is_pointer_backed_struct_expr(call_arg);
             if (is_c && ASR::is_a<ASR::Var_t>(*call_arg) && i < f->n_args) {
+                ASR::symbol_t *arg_sym = ASRUtils::symbol_get_past_external(
+                    ASR::down_cast<ASR::Var_t>(call_arg)->m_v);
+                if (ASR::is_a<ASR::Variable_t>(*arg_sym)) {
+                    ASR::Variable_t *arg_var = ASR::down_cast<ASR::Variable_t>(arg_sym);
+                    if (((ASRUtils::is_pointer(param_type)
+                                && !ASRUtils::is_array(param_type))
+                            || param_is_optional_scalar_ref)
+                            && is_scalar_allocatable_storage_type(arg_var->m_type)) {
+                        src = get_c_var_storage_name(arg_var);
+                        raw_pointer_actual = true;
+                    }
+                }
                 if (ASRUtils::is_pointer(param_type)
                         && !ASRUtils::is_array(param_type)
                         && ASRUtils::is_pointer(type)
                         && !ASRUtils::is_array(type)) {
-                    ASR::symbol_t *arg_sym = ASRUtils::symbol_get_past_external(
-                        ASR::down_cast<ASR::Var_t>(call_arg)->m_v);
                     if (ASR::is_a<ASR::Variable_t>(*arg_sym)) {
                         src = CUtils::get_c_variable_name(
                             *ASR::down_cast<ASR::Variable_t>(arg_sym));
+                        raw_pointer_actual = true;
                     }
                 }
             }
@@ -1887,9 +1943,10 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 && ASR::is_a<ASR::Variable_t>(
                     *ASRUtils::symbol_get_past_external(
                         ASR::down_cast<ASR::Var_t>(m_args[i].m_value)->m_v))) {
-                ASR::Variable_t* param = ASRUtils::EXPR2VAR(f->m_args[i]);
                 if (pass_struct_address) {
                     args += "&" + src;
+                } else if (raw_pointer_actual) {
+                    args += src;
                 } else if( (is_c && (param->m_intent == ASRUtils::intent_inout
                     || param->m_intent == ASRUtils::intent_out)
                     && (!ASRUtils::is_aggregate_type(param->m_type)
@@ -1910,7 +1967,20 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             } else if (ASR::is_a<ASR::ArrayItem_t>(*call_arg)
                     || ASR::is_a<ASR::StructInstanceMember_t>(*call_arg)
                     || ASR::is_a<ASR::UnionInstanceMember_t>(*call_arg)) {
-                ASR::Variable_t* param = ASRUtils::EXPR2VAR(f->m_args[i]);
+                if (is_c && ASR::is_a<ASR::StructInstanceMember_t>(*call_arg)
+                        && (((ASRUtils::is_pointer(param_type)
+                                && !ASRUtils::is_array(param_type))
+                            || param_is_optional_scalar_ref))) {
+                    ASR::StructInstanceMember_t *member_arg =
+                        ASR::down_cast<ASR::StructInstanceMember_t>(call_arg);
+                    ASR::symbol_t *member_sym = ASRUtils::symbol_get_past_external(member_arg->m_m);
+                    if (ASR::is_a<ASR::Variable_t>(*member_sym)
+                            && is_scalar_allocatable_storage_type(
+                                ASR::down_cast<ASR::Variable_t>(member_sym)->m_type)) {
+                        src = get_struct_instance_member_expr(*member_arg, false);
+                        raw_pointer_actual = true;
+                    }
+                }
                 if (pass_struct_address
                     || (is_c && (param->m_intent == ASRUtils::intent_inout
                         || param->m_intent == ASRUtils::intent_out)
@@ -1918,7 +1988,11 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                             || (ASRUtils::is_pointer(param->m_type)
                                 && !ASRUtils::is_array(param->m_type))))
                     || ASR::is_a<ASR::StructType_t>(*type_unwrapped)) {
-                    args += "&" + src;
+                    if (raw_pointer_actual) {
+                        args += src;
+                    } else {
+                        args += "&" + src;
+                    }
                 } else {
                     args += src;
                 }
@@ -4045,7 +4119,12 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 type = ASRUtils::expr_type(tmp_expr);
                 ASR::symbol_t *var_sym = ASRUtils::symbol_get_past_external(tmp_var->m_v);
                 if (ASR::is_a<ASR::Variable_t>(*var_sym)) {
-                    sym = CUtils::get_c_variable_name(*ASR::down_cast<ASR::Variable_t>(var_sym));
+                    ASR::Variable_t *var = ASR::down_cast<ASR::Variable_t>(var_sym);
+                    if (is_c && is_scalar_allocatable_storage_type(var->m_type)) {
+                        sym = get_c_var_storage_name(var);
+                    } else {
+                        sym = CUtils::get_c_variable_name(*var);
+                    }
                 } else {
                     sym = CUtils::get_c_symbol_name(var_sym);
                 }
@@ -4053,8 +4132,22 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                        ASR::is_a<ASR::UnionInstanceMember_t>(*tmp_expr) ||
                        ASR::is_a<ASR::ArrayItem_t>(*tmp_expr)) {
                 type = ASRUtils::expr_type(tmp_expr);
-                self().visit_expr(*tmp_expr);
-                sym = src;
+                if (is_c && ASR::is_a<ASR::StructInstanceMember_t>(*tmp_expr)) {
+                    ASR::StructInstanceMember_t *member_expr =
+                        ASR::down_cast<ASR::StructInstanceMember_t>(tmp_expr);
+                    ASR::symbol_t *member_sym = ASRUtils::symbol_get_past_external(member_expr->m_m);
+                    if (ASR::is_a<ASR::Variable_t>(*member_sym)
+                            && is_scalar_allocatable_storage_type(
+                                ASR::down_cast<ASR::Variable_t>(member_sym)->m_type)) {
+                        sym = get_struct_instance_member_expr(*member_expr, false);
+                    } else {
+                        self().visit_expr(*tmp_expr);
+                        sym = src;
+                    }
+                } else {
+                    self().visit_expr(*tmp_expr);
+                    sym = src;
+                }
             } else {
                 throw CodeGenError("Cannot deallocate variables in expression " +
                                     ASRUtils::type_to_str_python_expr(ASRUtils::expr_type(tmp_expr), tmp_expr),
