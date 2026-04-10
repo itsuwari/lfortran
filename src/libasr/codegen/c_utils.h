@@ -412,8 +412,7 @@ namespace CUtils {
             case ASR::ttypeType::StructType: {
                 ASR::StructType_t* struct_type = ASR::down_cast<ASR::StructType_t>(t);
                 if (struct_type->m_is_unlimited_polymorphic) {
-                    type_src = "struct "
-                        + sanitize_c_identifier("~unlimited_polymorphic_type");
+                    type_src = "void*";
                 } else {
                     type_src = "void*";
                 }

@@ -13,6 +13,7 @@
 
 #include <memory>
 #include <set>
+#include <vector>
 
 #include <libasr/asr.h>
 #include <libasr/containers.h>
@@ -125,6 +126,8 @@ public:
     std::set<std::string> headers, user_headers, user_defines;
     std::set<std::string> emitted_pointer_backed_struct_names;
     std::vector<std::string> tmp_buffer_src;
+    std::map<uint64_t, int32_t> emitted_struct_runtime_type_ids;
+    int32_t next_struct_runtime_type_id = 1;
 
     SymbolTable* global_scope;
     int64_t lower_bound;
@@ -218,6 +221,102 @@ public:
 
         return to_include + head + array_types_decls + forward_decl_functions + unit_src +
               ds_funcs_defined + util_funcs_defined;
+    }
+
+    std::string get_runtime_type_tag_member_name() const {
+        return "__lfortran_type_tag";
+    }
+
+    int32_t get_struct_runtime_type_id(ASR::symbol_t *struct_sym) {
+        struct_sym = ASRUtils::symbol_get_past_external(struct_sym);
+        uint64_t key = get_hash(reinterpret_cast<ASR::asr_t*>(struct_sym));
+        auto it = emitted_struct_runtime_type_ids.find(key);
+        if (it != emitted_struct_runtime_type_ids.end()) {
+            return it->second;
+        }
+        int32_t type_id = next_struct_runtime_type_id++;
+        emitted_struct_runtime_type_ids[key] = type_id;
+        return type_id;
+    }
+
+    bool struct_derives_from(ASR::Struct_t *struct_t, ASR::symbol_t *base_sym) {
+        base_sym = ASRUtils::symbol_get_past_external(base_sym);
+        while (struct_t != nullptr) {
+            if (reinterpret_cast<ASR::symbol_t*>(struct_t) == base_sym) {
+                return true;
+            }
+            if (struct_t->m_parent == nullptr) {
+                break;
+            }
+            ASR::symbol_t *parent_sym = ASRUtils::symbol_get_past_external(struct_t->m_parent);
+            if (!ASR::is_a<ASR::Struct_t>(*parent_sym)) {
+                break;
+            }
+            struct_t = ASR::down_cast<ASR::Struct_t>(parent_sym);
+        }
+        return false;
+    }
+
+    void collect_descendant_structs(SymbolTable *scope, ASR::symbol_t *base_sym,
+            std::vector<ASR::Struct_t*> &derived_structs, std::set<uint64_t> &seen) {
+        if (scope == nullptr) {
+            return;
+        }
+        for (auto &item: scope->get_scope()) {
+            ASR::symbol_t *sym = ASRUtils::symbol_get_past_external(item.second);
+            uint64_t key = get_hash(reinterpret_cast<ASR::asr_t*>(sym));
+            if (!seen.insert(key).second) {
+                continue;
+            }
+            if (ASR::is_a<ASR::Struct_t>(*sym)) {
+                ASR::Struct_t *struct_t = ASR::down_cast<ASR::Struct_t>(sym);
+                if (struct_t->m_parent != nullptr && struct_derives_from(struct_t, base_sym)) {
+                    derived_structs.push_back(struct_t);
+                }
+                collect_descendant_structs(struct_t->m_symtab, base_sym, derived_structs, seen);
+            } else if (ASR::is_a<ASR::Module_t>(*sym)) {
+                collect_descendant_structs(ASR::down_cast<ASR::Module_t>(sym)->m_symtab,
+                    base_sym, derived_structs, seen);
+            } else if (ASR::is_a<ASR::Function_t>(*sym)) {
+                collect_descendant_structs(ASR::down_cast<ASR::Function_t>(sym)->m_symtab,
+                    base_sym, derived_structs, seen);
+            } else if (ASR::is_a<ASR::Program_t>(*sym)) {
+                collect_descendant_structs(ASR::down_cast<ASR::Program_t>(sym)->m_symtab,
+                    base_sym, derived_structs, seen);
+            } else if (ASR::is_a<ASR::AssociateBlock_t>(*sym)) {
+                collect_descendant_structs(ASR::down_cast<ASR::AssociateBlock_t>(sym)->m_symtab,
+                    base_sym, derived_structs, seen);
+            } else if (ASR::is_a<ASR::Block_t>(*sym)) {
+                collect_descendant_structs(ASR::down_cast<ASR::Block_t>(sym)->m_symtab,
+                    base_sym, derived_structs, seen);
+            }
+        }
+    }
+
+    ASR::StructMethodDeclaration_t* find_concrete_struct_method(ASR::Struct_t *struct_t,
+            const std::string &method_name) {
+        while (struct_t != nullptr) {
+            ASR::symbol_t *sym = struct_t->m_symtab->resolve_symbol(method_name);
+            if (sym != nullptr) {
+                sym = ASRUtils::symbol_get_past_external(sym);
+                if (ASR::is_a<ASR::StructMethodDeclaration_t>(*sym)) {
+                    ASR::StructMethodDeclaration_t *method =
+                        ASR::down_cast<ASR::StructMethodDeclaration_t>(sym);
+                    if (!method->m_is_deferred) {
+                        return method;
+                    }
+                }
+            }
+            if (struct_t->m_parent == nullptr) {
+                break;
+            }
+            ASR::symbol_t *parent_sym = ASRUtils::symbol_get_past_external(struct_t->m_parent);
+            if (!ASR::is_a<ASR::Struct_t>(*parent_sym)) {
+                break;
+            }
+            struct_t = ASR::down_cast<ASR::Struct_t>(parent_sym);
+        }
+        return nullptr;
     }
     void visit_TranslationUnit(const ASR::TranslationUnit_t &x) {
         global_scope = x.m_symtab;
@@ -1298,9 +1397,190 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         return args;
     }
 
+    std::string construct_call_args_from_index(ASR::Function_t* f, size_t start_idx,
+            size_t n_args, ASR::call_arg_t* m_args) {
+        bracket_open++;
+        std::string args = "";
+        for (size_t i=start_idx; i<n_args; i++) {
+            ASR::expr_t* call_arg = m_args[i].m_value;
+            self().visit_expr(*call_arg);
+            ASR::ttype_t* type = ASRUtils::expr_type(call_arg);
+            if (is_c && ASR::is_a<ASR::Var_t>(*call_arg) && i < f->n_args) {
+                ASR::ttype_t *param_type = ASRUtils::expr_type(f->m_args[i]);
+                if (ASRUtils::is_pointer(param_type)
+                        && !ASRUtils::is_array(param_type)
+                        && ASRUtils::is_pointer(type)
+                        && !ASRUtils::is_array(type)) {
+                    ASR::symbol_t *arg_sym = ASRUtils::symbol_get_past_external(
+                        ASR::down_cast<ASR::Var_t>(call_arg)->m_v);
+                    if (ASR::is_a<ASR::Variable_t>(*arg_sym)) {
+                        src = CUtils::get_c_variable_name(
+                            *ASR::down_cast<ASR::Variable_t>(arg_sym));
+                    }
+                }
+            }
+            if (ASR::is_a<ASR::Var_t>(*call_arg)
+                && ASR::is_a<ASR::Variable_t>(
+                    *ASRUtils::symbol_get_past_external(
+                        ASR::down_cast<ASR::Var_t>(m_args[i].m_value)->m_v))) {
+                ASR::Variable_t* param = ASRUtils::EXPR2VAR(f->m_args[i]);
+                if( (is_c && (param->m_intent == ASRUtils::intent_inout
+                    || param->m_intent == ASRUtils::intent_out)
+                    && !ASRUtils::is_aggregate_type(param->m_type))) {
+                    args += "&" + src;
+                } else if (param->m_intent == ASRUtils::intent_out) {
+                    if (ASR::is_a<ASR::List_t>(*param->m_type) ||
+                        ASR::is_a<ASR::Dict_t>(*param->m_type) ||
+                        ASR::is_a<ASR::Tuple_t>(*param->m_type)) {
+                        args += "&" + src;
+                    } else {
+                        args += src;
+                    }
+                } else {
+                    args += src;
+                }
+            } else if (ASR::is_a<ASR::ArrayItem_t>(*call_arg)
+                    || ASR::is_a<ASR::StructInstanceMember_t>(*call_arg)
+                    || ASR::is_a<ASR::UnionInstanceMember_t>(*call_arg)) {
+                ASR::Variable_t* param = ASRUtils::EXPR2VAR(f->m_args[i]);
+                if ((is_c && (param->m_intent == ASRUtils::intent_inout
+                        || param->m_intent == ASRUtils::intent_out)
+                        && !ASRUtils::is_aggregate_type(param->m_type))
+                    || ASR::is_a<ASR::StructType_t>(*type)) {
+                    args += "&" + src;
+                } else {
+                    args += src;
+                }
+            } else {
+                if( ASR::is_a<ASR::StructType_t>(*type) ) {
+                    args += "&" + src;
+                } else {
+                    args += src;
+                }
+            }
+            if (i < n_args-1) args += ", ";
+        }
+        bracket_open--;
+        return args;
+    }
+
+    bool build_deferred_struct_method_dispatch(ASR::symbol_t *callee_sym, size_t n_args,
+            ASR::call_arg_t *m_args, std::string &out, bool is_subroutine) {
+        ASR::symbol_t *base_sym = ASRUtils::symbol_get_past_external(callee_sym);
+        if (!ASR::is_a<ASR::StructMethodDeclaration_t>(*base_sym) || n_args == 0) {
+            return false;
+        }
+        ASR::StructMethodDeclaration_t *base_method =
+            ASR::down_cast<ASR::StructMethodDeclaration_t>(base_sym);
+        if (!base_method->m_is_deferred) {
+            return false;
+        }
+        ASR::symbol_t *owner_sym = ASRUtils::symbol_get_past_external(
+            ASRUtils::get_asr_owner(reinterpret_cast<ASR::symbol_t*>(base_method)));
+        if (!ASR::is_a<ASR::Struct_t>(*owner_sym)) {
+            return false;
+        }
+        self().visit_expr(*m_args[0].m_value);
+        std::string self_expr = src;
+        if (self_expr.empty()) {
+            return false;
+        }
+
+        std::vector<ASR::Struct_t*> derived_structs;
+        std::set<uint64_t> seen;
+        collect_descendant_structs(global_scope, owner_sym, derived_structs, seen);
+        std::vector<std::pair<ASR::Struct_t*, ASR::Function_t*>> impls;
+        std::set<uint64_t> seen_impls;
+        for (ASR::Struct_t *derived_struct: derived_structs) {
+            ASR::StructMethodDeclaration_t *impl_method =
+                find_concrete_struct_method(derived_struct, std::string(base_method->m_name));
+            if (impl_method == nullptr) {
+                continue;
+            }
+            ASR::symbol_t *proc_sym = ASRUtils::symbol_get_past_external(impl_method->m_proc);
+            if (!ASR::is_a<ASR::Function_t>(*proc_sym)) {
+                continue;
+            }
+            uint64_t impl_key = get_hash(reinterpret_cast<ASR::asr_t*>(proc_sym));
+            if (!seen_impls.insert(impl_key).second) {
+                continue;
+            }
+            impls.push_back({derived_struct, ASR::down_cast<ASR::Function_t>(proc_sym)});
+        }
+        if (impls.empty()) {
+            return false;
+        }
+
+        if (is_subroutine) {
+            out = "if (0) {\n";
+            for (size_t i = 0; i < impls.size(); i++) {
+                ASR::Struct_t *derived_struct = impls[i].first;
+                ASR::Function_t *impl_fn = impls[i].second;
+                int32_t type_id = get_struct_runtime_type_id(
+                    reinterpret_cast<ASR::symbol_t*>(derived_struct));
+                std::string cast_self = "((struct "
+                    + CUtils::get_c_symbol_name(reinterpret_cast<ASR::symbol_t*>(derived_struct))
+                    + "*)" + self_expr + ")";
+                std::string tail_args = construct_call_args_from_index(impl_fn, 1, n_args, m_args);
+                out += "} else if ((" + self_expr + ")->" + get_runtime_type_tag_member_name()
+                    + " == " + std::to_string(type_id) + ") {\n    "
+                    + get_emitted_function_name(*impl_fn) + "(" + cast_self;
+                if (!tail_args.empty()) {
+                    out += ", " + tail_args;
+                }
+                out += ");\n";
+            }
+            out += "} else {\n    fprintf(stderr, \"Deferred type-bound dispatch failed for "
+                + CUtils::sanitize_c_identifier(base_method->m_name)
+                + "\\n\");\n    exit(1);\n}\n";
+            return true;
+        }
+
+        ASR::Function_t *iface_fn = get_procedure_interface_function(callee_sym);
+        if (iface_fn == nullptr || iface_fn->m_return_var == nullptr) {
+            return false;
+        }
+        ASR::ttype_t *ret_type = ASRUtils::type_get_past_allocatable_pointer(
+            ASRUtils::expr_type(iface_fn->m_return_var));
+        if (ASRUtils::is_aggregate_type(ret_type)) {
+            return false;
+        }
+        out = "";
+        for (size_t i = 0; i < impls.size(); i++) {
+            ASR::Struct_t *derived_struct = impls[i].first;
+            ASR::Function_t *impl_fn = impls[i].second;
+            int32_t type_id = get_struct_runtime_type_id(
+                reinterpret_cast<ASR::symbol_t*>(derived_struct));
+            std::string cast_self = "((struct "
+                + CUtils::get_c_symbol_name(reinterpret_cast<ASR::symbol_t*>(derived_struct))
+                + "*)" + self_expr + ")";
+            std::string tail_args = construct_call_args_from_index(impl_fn, 1, n_args, m_args);
+            out += "((" + self_expr + ")->" + get_runtime_type_tag_member_name()
+                + " == " + std::to_string(type_id) + ") ? "
+                + get_emitted_function_name(*impl_fn) + "(" + cast_self;
+            if (!tail_args.empty()) {
+                out += ", " + tail_args;
+            }
+            out += ") : ";
+        }
+        out += "((fprintf(stderr, \"Deferred type-bound dispatch failed for "
+            + CUtils::sanitize_c_identifier(base_method->m_name)
+            + "\\n\"), exit(1), 0))";
+        return true;
+    }
+
     void visit_FunctionCall(const ASR::FunctionCall_t &x) {
         CHECK_FAST_C_CPP(compiler_options, x)
         ASR::symbol_t *callee_sym = ASRUtils::symbol_get_past_external(x.m_name);
+        if (is_c) {
+            std::string deferred_dispatch;
+            if (build_deferred_struct_method_dispatch(x.m_name, x.n_args, x.m_args,
+                    deferred_dispatch, false)) {
+                src = check_tmp_buffer() + deferred_dispatch;
+                last_expr_precedence = 16;
+                return;
+            }
+        }
         ASR::Function_t *fn = get_procedure_interface_function(x.m_name);
         std::string fn_name;
         if (ASR::is_a<ASR::Variable_t>(*callee_sym)) {
@@ -3029,6 +3309,11 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
     void visit_StructConstructor(const ASR::StructConstructor_t &x) {
         std::string out = "{";
         ASR::Struct_t *st = ASR::down_cast<ASR::Struct_t>(x.m_dt_sym);
+        out += "." + get_runtime_type_tag_member_name() + " = "
+            + std::to_string(get_struct_runtime_type_id(x.m_dt_sym));
+        if (x.n_args > 0) {
+            out += ", ";
+        }
         for (size_t i = 0; i < x.n_args; i++) {
             if (x.m_args[i].m_value) {
                 ASR::symbol_t *member_sym = st->m_symtab->get_symbol(st->m_members[i]);
@@ -3049,6 +3334,11 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
     void visit_StructConstant(const ASR::StructConstant_t &x) {
         std::string out = "{";
         ASR::Struct_t *st = ASR::down_cast<ASR::Struct_t>(x.m_dt_sym);
+        out += "." + get_runtime_type_tag_member_name() + " = "
+            + std::to_string(get_struct_runtime_type_id(x.m_dt_sym));
+        if (x.n_args > 0) {
+            out += ", ";
+        }
         for (size_t i = 0; i < x.n_args; i++) {
             if (x.m_args[i].m_value) {
                 ASR::symbol_t *member_sym = st->m_symtab->get_symbol(st->m_members[i]);
@@ -3228,8 +3518,9 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 out += ";\n";
                 out += indent + sym + "->is_allocated = true;\n";
             } else {
+                ASR::ttype_t *past_alloc_type = ASRUtils::type_get_past_allocatable_pointer(type);
                 std::string ty = CUtils::get_c_type_from_ttype_t(type), size_str;
-                if (ASRUtils::is_character(*ASRUtils::type_get_past_allocatable_pointer(type))) {
+                if (ASRUtils::is_character(*past_alloc_type)) {
                     std::string len_str = "1";
                     if (x.m_args[i].n_dims > 0 && x.m_args[i].m_dims[0].m_length) {
                         self().visit_expr(*x.m_args[i].m_dims[0].m_length);
@@ -3239,6 +3530,16 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                         + len_str + ")";
                     out += ";\n";
                     continue;
+                }
+                if (ASR::is_a<ASR::StructType_t>(*past_alloc_type)) {
+                    ASR::StructType_t *struct_type = ASR::down_cast<ASR::StructType_t>(past_alloc_type);
+                    if (!struct_type->m_is_unlimited_polymorphic) {
+                        ASR::symbol_t *struct_sym = ASRUtils::symbol_get_past_external(
+                            ASRUtils::get_struct_sym_from_struct_expr(tmp_expr));
+                        if (struct_sym && ASR::is_a<ASR::Struct_t>(*struct_sym)) {
+                            ty = "struct " + CUtils::get_c_symbol_name(struct_sym);
+                        }
+                    }
                 }
                 if (ASRUtils::is_class_type(type)) {
                     size_str = "sizeof(void*)";
@@ -3794,6 +4095,14 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
     void visit_SubroutineCall(const ASR::SubroutineCall_t &x) {
         std::string indent(indentation_level*indentation_spaces, ' ');
         ASR::symbol_t *callee_sym = ASRUtils::symbol_get_past_external(x.m_name);
+        if (is_c) {
+            std::string deferred_dispatch;
+            if (build_deferred_struct_method_dispatch(x.m_name, x.n_args, x.m_args,
+                    deferred_dispatch, true)) {
+                src = indent + deferred_dispatch;
+                return;
+            }
+        }
         ASR::Function_t *s = get_procedure_interface_function(x.m_name);
         if (!s) {
             throw CodeGenError("Unsupported subroutine call target", x.base.base.loc);

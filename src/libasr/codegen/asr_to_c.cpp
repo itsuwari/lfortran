@@ -260,7 +260,10 @@ public:
         std::string &dims, std::string &sub) {
         std::string v_name = get_variable_c_name(v);
         std::string type_name;
-        if (ASR::is_a<ASR::StructType_t>(*v_m_type) && v.m_type_declaration) {
+        if (ASR::is_a<ASR::StructType_t>(*v_m_type) &&
+                ASR::down_cast<ASR::StructType_t>(v_m_type)->m_is_unlimited_polymorphic) {
+            type_name = CUtils::get_c_type_from_ttype_t(v_m_type);
+        } else if (ASR::is_a<ASR::StructType_t>(*v_m_type) && v.m_type_declaration) {
             type_name = "struct "
                 + CUtils::get_c_symbol_name(
                     ASRUtils::symbol_get_past_external(v.m_type_declaration));
@@ -769,6 +772,9 @@ public:
                             sub += "=" + init;
                         }
                         sub += ";\n";
+                        sub += indent + c_v_name + "." + get_runtime_type_tag_member_name()
+                            + " = " + std::to_string(get_struct_runtime_type_id(v.m_type_declaration))
+                            + ";\n";
                         ASR::Struct_t* der_type_t = ASR::down_cast<ASR::Struct_t>(
                             ASRUtils::symbol_get_past_external(v.m_type_declaration));
                         allocate_array_members_of_struct(der_type_t, sub, indent, "(&(" + c_v_name + "))");
@@ -785,6 +791,9 @@ public:
                         sub += "=" + init;
                     }
                     sub += ";\n";
+                    sub += indent + value_var_name + "." + get_runtime_type_tag_member_name()
+                        + " = " + std::to_string(get_struct_runtime_type_id(v.m_type_declaration))
+                        + ";\n";
                     std::string ptr_char = "*";
                     if( !use_ptr_for_derived_type ) {
                         ptr_char.clear();
@@ -1310,6 +1319,9 @@ R"(    // Initialise Numpy
             return;
         }
         indent.push_back(' ');
+        if constexpr (std::is_same_v<std::decay_t<T>, ASR::Struct_t>) {
+            body += indent + "int32_t " + get_runtime_type_tag_member_name() + ";\n";
+        }
         CDeclarationOptions c_decl_options_;
         c_decl_options_.pre_initialise_derived_type = false;
         c_decl_options_.use_ptr_for_derived_type = false;
