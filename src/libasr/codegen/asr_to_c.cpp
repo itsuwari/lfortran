@@ -835,6 +835,14 @@ public:
                                             v.m_intent != ASRUtils::intent_unspecified,
                                             is_fixed_size, false, ASR::abiType::Source, false);
                     }
+                } else if (ASR::down_cast<ASR::StructType_t>(v_m_type)->m_is_unlimited_polymorphic) {
+                    bool is_fixed_size = true;
+                    dims = convert_dims_c(n_dims, m_dims, v_m_type, is_fixed_size);
+                    std::string poly_type = "void*";
+                    sub = format_type_c(dims, poly_type, decl_name, use_ref, dummy);
+                    if (v.m_intent == ASRUtils::intent_local && !do_not_initialize) {
+                        sub += " = NULL";
+                    }
                 } else if (declaration_only) {
                     bool is_fixed_size = true;
                     dims = convert_dims_c(n_dims, m_dims, v_m_type, is_fixed_size);
@@ -845,8 +853,8 @@ public:
                     bool is_fixed_size = true;
                     dims = convert_dims_c(n_dims, m_dims, v_m_type, is_fixed_size);
                     bool is_file_scope_static = dims.empty()
-                        && v.m_storage == ASR::storage_typeType::Save
-                        && use_static;
+                        && use_static
+                        && indentation_level == 0;
                     bool force_value_struct_temp =
                         std::string(v.m_name).find("__libasr_created__struct_constructor_") != std::string::npos ||
                         std::string(v.m_name).find("temp_struct_var__") != std::string::npos;

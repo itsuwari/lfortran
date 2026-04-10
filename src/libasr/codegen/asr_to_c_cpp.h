@@ -2315,11 +2315,25 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             return;
         }
         if (is_c && is_len_one_character_array_type(m_target_type)
-                && ASR::is_a<ASR::BitCast_t>(*x.m_value)) {
+                && !ASRUtils::is_array(m_value_type)
+                && (ASRUtils::is_integer(*m_value_type)
+                    || ASRUtils::is_unsigned_integer(*m_value_type)
+                    || ASRUtils::is_real(*m_value_type)
+                    || ASRUtils::is_logical(*m_value_type))) {
             self().visit_expr(*x.m_target);
             std::string target_expr = src;
-            self().visit_expr(*x.m_value);
-            std::string value_expr = src;
+            std::string value_expr;
+            if (!try_emit_scalar_to_char_array_bitcast_expr(x.m_value, value_expr)) {
+                size_t nbytes = ASRUtils::get_fixed_size_of_array(m_target_type);
+                std::string target_type_name = CUtils::get_c_type_from_ttype_t(m_target_type);
+                std::string target_code = CUtils::get_c_type_code(m_target_type, true, false);
+                std::string source_type_name = CUtils::get_c_type_from_ttype_t(m_value_type);
+                std::string source_code = CUtils::get_c_type_code(m_value_type, false, false);
+                self().visit_expr(*x.m_value);
+                value_expr = c_utils_functions->get_bitcast_scalar_to_char_array(
+                    target_type_name, source_type_name, source_code, target_code, nbytes)
+                    + "(" + src + ")";
+            }
             src = check_tmp_buffer();
             src += indent + c_ds_api->get_deepcopy(m_target_type, value_expr, target_expr) + "\n";
             return;
