@@ -484,13 +484,14 @@ public:
             if (ASRUtils::is_integer(*t2)) {
                 ASR::Integer_t *t = ASR::down_cast<ASR::Integer_t>(ASRUtils::type_get_past_array(t2));
                 std::string type_name = "int" + std::to_string(t->m_kind * 8) + "_t";
-                if( !ASRUtils::is_array(v_m_type) ) {
+                if( !is_array ) {
                     type_name.append(" *");
                 }
                 if( is_array ) {
                     bool is_fixed_size = true;
                     std::string dims = convert_dims_c(n_dims, m_dims, v_m_type, is_fixed_size, true);
-                    std::string encoded_type_name = "i" + std::to_string(t->m_kind * 8);
+                    std::string encoded_type_name =
+                        CUtils::get_c_type_code(ASRUtils::type_get_past_allocatable_pointer(v_m_type));
                     if (declaration_only || dummy) {
                         std::string array_type =
                             c_ds_api->get_array_type(type_name, encoded_type_name, array_types_decls, true);
@@ -512,13 +513,14 @@ public:
             } else if (ASRUtils::is_unsigned_integer(*t2)) {
                 ASR::UnsignedInteger_t *t = ASR::down_cast<ASR::UnsignedInteger_t>(ASRUtils::type_get_past_array(t2));
                 std::string type_name = "uint" + std::to_string(t->m_kind * 8) + "_t";
-                if( !ASRUtils::is_array(v_m_type) ) {
+                if( !is_array ) {
                     type_name.append(" *");
                 }
                 if( is_array ) {
                     bool is_fixed_size = true;
                     std::string dims = convert_dims_c(n_dims, m_dims, v_m_type, is_fixed_size, true);
-                    std::string encoded_type_name = "u" + std::to_string(t->m_kind * 8);
+                    std::string encoded_type_name =
+                        CUtils::get_c_type_code(ASRUtils::type_get_past_allocatable_pointer(v_m_type));
                     if (declaration_only || dummy) {
                         std::string array_type =
                             c_ds_api->get_array_type(type_name, encoded_type_name, array_types_decls, true);
@@ -551,13 +553,14 @@ public:
                         + "' not supported", {v.base.base.loc}, "");
                     throw Abort();
                 }
-                if( !ASRUtils::is_array(v_m_type) ) {
+                if( !is_array ) {
                     type_name.append(" *");
                 }
                 if( is_array ) {
                     bool is_fixed_size = true;
                     std::string dims = convert_dims_c(n_dims, m_dims, v_m_type, is_fixed_size, true);
-                    std::string encoded_type_name = CUtils::get_c_type_code(t2);
+                    std::string encoded_type_name =
+                        CUtils::get_c_type_code(ASRUtils::type_get_past_allocatable_pointer(v_m_type));
                     bool is_simd_array = (ASR::is_a<ASR::Array_t>(*v_m_type) &&
                         ASR::down_cast<ASR::Array_t>(v_m_type)->m_physical_type
                             == ASR::array_physical_typeType::SIMDArray);
@@ -583,13 +586,14 @@ public:
             } else if (ASRUtils::is_logical(*t2)) {
                 headers.insert("stdbool.h");
                 std::string type_name = "bool";
-                if( !ASRUtils::is_array(v_m_type) ) {
+                if( !is_array ) {
                     type_name.append(" *");
                 }
                 if( is_array ) {
                     bool is_fixed_size = true;
                     std::string dims = convert_dims_c(n_dims, m_dims, v_m_type, is_fixed_size, true);
-                    std::string encoded_type_name = CUtils::get_c_type_code(t2);
+                    std::string encoded_type_name =
+                        CUtils::get_c_type_code(ASRUtils::type_get_past_allocatable_pointer(v_m_type));
                     if (declaration_only || dummy) {
                         std::string array_type =
                             c_ds_api->get_array_type(type_name, encoded_type_name, array_types_decls, true);
@@ -611,13 +615,14 @@ public:
                 }
             } else if (ASRUtils::is_character(*t2)) {
                 std::string type_name = "char *";
-                if( !ASRUtils::is_array(v_m_type) ) {
+                if( !is_array ) {
                     type_name.append("*");
                 }
                 if( is_array ) {
                     bool is_fixed_size = true;
                     std::string dims = convert_dims_c(n_dims, m_dims, v_m_type, is_fixed_size, true);
-                    std::string encoded_type_name = CUtils::get_c_type_code(t2);
+                    std::string encoded_type_name =
+                        CUtils::get_c_type_code(ASRUtils::type_get_past_allocatable_pointer(v_m_type));
                     if (declaration_only || dummy) {
                         std::string array_type =
                             c_ds_api->get_array_type(type_name, encoded_type_name, array_types_decls, true);
@@ -2821,6 +2826,24 @@ R"(    // Initialise Numpy
 
     void visit_ArrayItem(const ASR::ArrayItem_t &x) {
         CHECK_FAST_C(compiler_options, x)
+        auto get_scalar_index_src = [&](ASR::expr_t *idx_expr) {
+            this->visit_expr(*idx_expr);
+            std::string idx_src = src;
+            if (!ASRUtils::is_array(ASRUtils::expr_type(idx_expr))) {
+                return idx_src;
+            }
+            ASR::expr_t *unwrapped_idx = ASRUtils::expr_value(idx_expr);
+            if (unwrapped_idx == nullptr) {
+                unwrapped_idx = idx_expr;
+            }
+            if (ASR::is_a<ASR::ArrayConstant_t>(*unwrapped_idx)) {
+                return idx_src + "->data[" + idx_src + "->offset]";
+            }
+            if (is_data_only_array_expr(unwrapped_idx)) {
+                return idx_src + "[0]";
+            }
+            return idx_src + "->data[" + idx_src + "->offset]";
+        };
         auto get_dim_start_src = [&](const ASR::dimension_t &dim) {
             if (dim.m_start) {
                 this->visit_expr(*dim.m_start);
@@ -2854,10 +2877,14 @@ R"(    // Initialise Numpy
         if( is_data_only_array || is_raw_array_constant || ASRUtils::is_simd_array(x.m_v)) {
             std::string index = "";
             std::string out = array;
-            out += "[";
+            if (is_raw_array_constant) {
+                out += "->data[";
+            } else {
+                out += "[";
+            }
             for (size_t i=0; i<x.n_args; i++) {
                 if (x.m_args[i].m_right) {
-                    this->visit_expr(*x.m_args[i].m_right);
+                    src = get_scalar_index_src(x.m_args[i].m_right);
                 } else {
                     src = "/* FIXME right index */";
                 }
@@ -2889,8 +2916,7 @@ R"(    // Initialise Numpy
         if (array_section == nullptr) {
             for( size_t r = 0; r < x.n_args; r++ ) {
                 ASR::array_index_t curr_idx = x.m_args[r];
-                this->visit_expr(*curr_idx.m_right);
-                indices.push_back(src);
+                indices.push_back(get_scalar_index_src(curr_idx.m_right));
             }
         } else {
             ASR::dimension_t *section_dims = nullptr;
@@ -2900,14 +2926,12 @@ R"(    // Initialise Numpy
                 ASR::array_index_t curr_idx = array_section->m_args[r];
                 bool is_sliced_dim = curr_idx.m_left || curr_idx.m_step || curr_idx.m_right == nullptr;
                 if (!is_sliced_dim) {
-                    this->visit_expr(*curr_idx.m_right);
-                    indices.push_back(src);
+                    indices.push_back(get_scalar_index_src(curr_idx.m_right));
                     continue;
                 }
                 LCOMPILERS_ASSERT(sliced_dim < x.n_args);
                 LCOMPILERS_ASSERT((int)sliced_dim < section_rank);
-                this->visit_expr(*x.m_args[sliced_dim].m_right);
-                std::string item_idx = src;
+                std::string item_idx = get_scalar_index_src(x.m_args[sliced_dim].m_right);
 
                 std::string section_lb = "1";
                 if (section_dims && section_dims[sliced_dim].m_start) {

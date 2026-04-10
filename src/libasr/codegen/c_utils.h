@@ -83,28 +83,25 @@ namespace CUtils {
 
     static inline std::string get_c_symbol_name(const ASR::symbol_t *sym) {
         sym = ASRUtils::symbol_get_past_external(const_cast<ASR::symbol_t*>(sym));
-        std::string name = ASRUtils::symbol_name(sym);
+        std::string name = sanitize_c_identifier(ASRUtils::symbol_name(sym));
         const SymbolTable *scope = ASRUtils::symbol_parent_symtab(sym);
-        if (scope && scope->asr_owner) {
-            if (ASR::is_a<ASR::Module_t>(*scope->asr_owner)) {
-                const ASR::Module_t *m = ASR::down_cast<ASR::Module_t>(scope->asr_owner);
-                name = std::string(m->m_name) + "__" + name;
-            } else if (ASR::is_a<ASR::Program_t>(*scope->asr_owner)) {
-                const ASR::Program_t *p = ASR::down_cast<ASR::Program_t>(scope->asr_owner);
-                name = std::string(p->m_name) + "__" + name;
-            } else if (ASR::is_a<ASR::Struct_t>(*scope->asr_owner)
-                    || ASR::is_a<ASR::Union_t>(*scope->asr_owner)
-                    || ASR::is_a<ASR::Enum_t>(*scope->asr_owner)) {
+        while (scope && scope->asr_owner) {
+            ASR::asr_t *owner = scope->asr_owner;
+            if (ASR::is_a<ASR::symbol_t>(*owner)) {
                 const ASR::symbol_t *owner_sym =
-                    ASR::down_cast<ASR::symbol_t>(scope->asr_owner);
+                    ASR::down_cast<ASR::symbol_t>(owner);
                 std::string owner_name = sanitize_c_identifier(ASRUtils::symbol_name(owner_sym));
                 std::string prefix = owner_name + "__";
                 if (name.rfind(prefix, 0) != 0) {
                     name = prefix + name;
                 }
+                if (ASR::is_a<ASR::Program_t>(*owner)) {
+                    break;
+                }
             }
+            scope = scope->parent;
         }
-        return sanitize_c_identifier(name);
+        return name;
     }
 
     static inline std::string get_c_variable_name(const ASR::Variable_t &v) {
@@ -732,6 +729,8 @@ class CCPPDSUtils {
                                 "    bool is_allocated;\n};\n";
             if( make_ptr ) {
                 type_name = struct_name + "*";
+            } else {
+                type_name = struct_name;
             }
             eltypedims2arraytype[encoded_type_name] = struct_name;
             array_types_decls += "\n" + new_array_type + "\n";
