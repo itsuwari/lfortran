@@ -678,7 +678,8 @@ R"(#include <stdio.h>
             }
         }
         if (f_type->m_deftype == ASR::deftypeType::Interface
-                && f_type->m_abi != ASR::abiType::Intrinsic) {
+                && f_type->m_abi != ASR::abiType::Intrinsic
+                && !f_type->m_module) {
             return CUtils::sanitize_c_identifier(std::string(x.m_name));
         }
         return get_emitted_function_name(x);
@@ -864,6 +865,11 @@ R"(#include <stdio.h>
             if (ASR::is_a<ASR::Function_t>(*item.second)) {
                 ASR::Function_t *s = ASR::down_cast<ASR::Function_t>(item.second);
                 t = declare_all_functions(*s->m_symtab);
+                ASR::FunctionType_t *f_type = ASRUtils::get_FunctionType(*s);
+                if (f_type->m_deftype == ASR::deftypeType::Interface) {
+                    code += t;
+                    continue;
+                }
                 bool has_typevar = false;
                 t += get_function_declaration(*s, has_typevar);
                 if (!has_typevar) code += t  + ";\n";

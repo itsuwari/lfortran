@@ -209,6 +209,10 @@ R"(
         std::string decls;
         std::set<std::string> seen;
         auto add_function_decl = [&](ASR::Function_t *fn) {
+            ASR::FunctionType_t *f_type = ASRUtils::get_FunctionType(*fn);
+            if (f_type->m_deftype == ASR::deftypeType::Interface) {
+                return;
+            }
             bool has_typevar = false;
             try {
                 std::string decl = get_function_declaration(*fn, has_typevar, false, false) + ";\n";
