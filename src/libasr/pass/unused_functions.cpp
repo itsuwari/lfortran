@@ -23,6 +23,56 @@ public:
     std::map<uint64_t, std::string> fn_declarations;
     std::map<uint64_t, std::string> fn_used;
 
+    template <typename T>
+    void mark_used_symbol(const T *sym, const std::string &name="") {
+        if (sym == nullptr) {
+            return;
+        }
+        uint64_t h = get_hash((ASR::asr_t*)sym);
+        std::string used_name = name.empty() ? "" : name;
+        fn_used[h] = used_name;
+    }
+
+    void mark_public_module_exports_used(const ASR::Module_t &x) {
+        if (x.m_parent_module) {
+            return;
+        }
+        for (const auto &item : x.m_symtab->get_scope()) {
+            ASR::symbol_t *sym = item.second;
+            if (ASR::is_a<ASR::Function_t>(*sym)) {
+                ASR::Function_t *fn = ASR::down_cast<ASR::Function_t>(sym);
+                if (fn->m_access == ASR::accessType::Public) {
+                    mark_used_symbol(fn, item.first);
+                }
+            } else if (ASR::is_a<ASR::GenericProcedure_t>(*sym)) {
+                ASR::GenericProcedure_t *gp = ASR::down_cast<ASR::GenericProcedure_t>(sym);
+                if (gp->m_access == ASR::accessType::Public) {
+                    mark_used_symbol(gp, item.first);
+                    for (size_t i = 0; i < gp->n_procs; i++) {
+                        ASR::symbol_t *proc =
+                            ASRUtils::symbol_get_past_external(gp->m_procs[i]);
+                        if (ASR::is_a<ASR::Function_t>(*proc)
+                                || ASR::is_a<ASR::GenericProcedure_t>(*proc)) {
+                            mark_used_symbol(proc, ASRUtils::symbol_name(proc));
+                        }
+                        mark_used_symbol(gp->m_procs[i], ASRUtils::symbol_name(gp->m_procs[i]));
+                    }
+                }
+            } else if (ASR::is_a<ASR::ExternalSymbol_t>(*sym)) {
+                ASR::ExternalSymbol_t *ext = ASR::down_cast<ASR::ExternalSymbol_t>(sym);
+                if (ext->m_access != ASR::accessType::Public) {
+                    continue;
+                }
+                ASR::symbol_t *external = ext->m_external;
+                if (ASR::is_a<ASR::Function_t>(*external)
+                        || ASR::is_a<ASR::GenericProcedure_t>(*external)) {
+                    mark_used_symbol(ext, item.first);
+                    mark_used_symbol(external, ASRUtils::symbol_name(external));
+                }
+            }
+        }
+    }
+
     void visit_Function(const ASR::Function_t &x) {
         uint64_t h = get_hash((ASR::asr_t*)&x);
         if (ASRUtils::get_FunctionType(x)->m_abi != ASR::abiType::BindC
@@ -170,6 +220,13 @@ public:
             fn_used[h] = name;
             h = get_hash((ASR::asr_t*)x.m_v);
             fn_used[h] = name;
+        }
+    }
+
+    void visit_Module(const ASR::Module_t &x) {
+        mark_public_module_exports_used(x);
+        for (auto &a : x.m_symtab->get_scope()) {
+            this->visit_symbol(*a.second);
         }
     }
 

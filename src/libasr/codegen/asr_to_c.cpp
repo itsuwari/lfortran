@@ -1,6 +1,7 @@
 #include <fstream>
 #include <filesystem>
 #include <memory>
+#include <sstream>
 
 #include <libasr/asr.h>
 #include <libasr/containers.h>
@@ -133,6 +134,15 @@ R"(
         return kind + "_" + CUtils::sanitize_c_identifier(name) + ".c";
     }
 
+    std::string make_scoped_unit_filename(const std::string &kind,
+            const std::string &scope_name, const std::string &name) const {
+        std::string file_stem = kind + "_" + CUtils::sanitize_c_identifier(scope_name);
+        if (!name.empty()) {
+            file_stem += "__" + CUtils::sanitize_c_identifier(name);
+        }
+        return file_stem + ".c";
+    }
+
     std::string get_unit_file_prelude(const std::string &header_name) const {
         return "#include \"" + header_name + "\"\n\n";
     }
@@ -228,7 +238,7 @@ R"(
         };
 
         std::vector<std::string> global_func_order =
-            ASRUtils::determine_function_definition_order(x.m_symtab);
+            get_complete_function_definition_order(x.m_symtab);
         for (const auto &func_name : global_func_order) {
             ASR::symbol_t *sym = x.m_symtab->get_symbol(func_name);
             if (sym == nullptr || ASR::is_a<ASR::ExternalSymbol_t>(*sym)
@@ -247,7 +257,7 @@ R"(
             }
             ASR::Module_t *mod = ASR::down_cast<ASR::Module_t>(mod_sym);
             std::vector<std::string> func_order =
-                ASRUtils::determine_function_definition_order(mod->m_symtab);
+                get_complete_function_definition_order(mod->m_symtab);
             for (const auto &func_name : func_order) {
                 ASR::symbol_t *sym = mod->m_symtab->get_symbol(func_name);
                 if (sym == nullptr || !ASR::is_a<ASR::Function_t>(*sym)) {
@@ -264,6 +274,471 @@ R"(
         std::ofstream out_file(path);
         out_file << contents;
         out_file.close();
+    }
+
+    std::string emit_module_variable_defs(const ASR::Module_t &x) {
+        std::string unit_src;
+        for (auto &item : x.m_symtab->get_scope()) {
+            if (!ASR::is_a<ASR::Variable_t>(*item.second)) {
+                continue;
+            }
+            ASR::Variable_t *v = ASR::down_cast<ASR::Variable_t>(item.second);
+            std::string decl = convert_variable_decl(*v);
+            unit_src += decl;
+            if (!decl.empty()) {
+                unit_src += ";\n";
+            }
+        }
+        return unit_src;
+    }
+
+    std::vector<std::string> get_complete_function_definition_order(
+            SymbolTable *symtab) {
+        std::vector<std::string> func_order =
+            ASRUtils::determine_function_definition_order(symtab);
+        std::vector<std::string> complete_order;
+        std::set<std::string> seen;
+
+        auto add_if_function = [&](const std::string &name, ASR::symbol_t *sym) {
+            if (sym == nullptr || !ASR::is_a<ASR::Function_t>(*sym)) {
+                return;
+            }
+            if (seen.insert(name).second) {
+                complete_order.push_back(name);
+            }
+        };
+
+        for (const auto &name : func_order) {
+            add_if_function(name, symtab->get_symbol(name));
+        }
+        for (const auto &item : symtab->get_scope()) {
+            add_if_function(item.first, item.second);
+        }
+        return complete_order;
+    }
+
+    std::vector<std::pair<std::string, std::string>> emit_module_split_units(
+            const ASR::Module_t &x) {
+        std::vector<std::pair<std::string, std::string>> units;
+        bool intrinsic_module_copy = intrinsic_module;
+        intrinsic_module = x.m_intrinsic;
+
+        std::string module_name = x.m_name;
+        std::string module_name_lower = to_lower(module_name);
+        if (module_name_lower == "omp_lib") {
+            headers.insert("omp.h");
+            intrinsic_module = intrinsic_module_copy;
+            return units;
+        } else if (module_name_lower == "iso_c_binding"
+                || module_name_lower == "lfortran_intrinsic_iso_c_binding") {
+            intrinsic_module = intrinsic_module_copy;
+            return units;
+        }
+
+        std::string variable_defs = emit_module_variable_defs(x);
+        if (!variable_defs.empty()) {
+            units.push_back({
+                make_scoped_unit_filename("module", module_name, "data"),
+                variable_defs
+            });
+        }
+
+        std::vector<std::string> func_order =
+            get_complete_function_definition_order(x.m_symtab);
+        for (const auto &func_name : func_order) {
+            ASR::symbol_t *sym = x.m_symtab->get_symbol(func_name);
+            if (sym == nullptr || !ASR::is_a<ASR::Function_t>(*sym)) {
+                continue;
+            }
+            ASR::Function_t *fn = ASR::down_cast<ASR::Function_t>(sym);
+            visit_Function(*fn);
+            if (!src.empty()) {
+                std::string unit_filename =
+                    make_scoped_unit_filename("module", module_name, func_name);
+                auto fn_units = maybe_split_large_subroutine_unit(
+                    unit_filename, *fn, src);
+                for (auto &unit : fn_units) {
+                    if (!unit.second.empty()) {
+                        units.push_back(std::move(unit));
+                    }
+                }
+            }
+        }
+
+        intrinsic_module = intrinsic_module_copy;
+        return units;
+    }
+
+    size_t count_lines(const std::string &text) const {
+        return static_cast<size_t>(std::count(text.begin(), text.end(), '\n')) + 1;
+    }
+
+    std::vector<std::string> split_lines_keep_newlines(const std::string &text) const {
+        std::vector<std::string> lines;
+        size_t start = 0;
+        while (start < text.size()) {
+            size_t end = text.find('\n', start);
+            if (end == std::string::npos) {
+                lines.push_back(text.substr(start));
+                break;
+            }
+            lines.push_back(text.substr(start, end - start + 1));
+            start = end + 1;
+        }
+        if (text.empty()) {
+            lines.push_back("");
+        }
+        return lines;
+    }
+
+    std::string trim_copy(const std::string &line) const {
+        size_t start = 0;
+        while (start < line.size() && std::isspace(static_cast<unsigned char>(line[start]))) {
+            start++;
+        }
+        size_t end = line.size();
+        while (end > start && std::isspace(static_cast<unsigned char>(line[end - 1]))) {
+            end--;
+        }
+        return line.substr(start, end - start);
+    }
+
+    bool line_contains_word(const std::string &line, const std::string &word) const {
+        size_t pos = line.find(word);
+        while (pos != std::string::npos) {
+            bool left_ok = pos == 0
+                || !(std::isalnum(static_cast<unsigned char>(line[pos - 1])) || line[pos - 1] == '_');
+            size_t end_pos = pos + word.size();
+            bool right_ok = end_pos >= line.size()
+                || !(std::isalnum(static_cast<unsigned char>(line[end_pos])) || line[end_pos] == '_');
+            if (left_ok && right_ok) {
+                return true;
+            }
+            pos = line.find(word, pos + 1);
+        }
+        return false;
+    }
+
+    std::string strip_initializer_from_decl(std::string decl) const {
+        size_t eq_pos = decl.find(" = ");
+        if (eq_pos != std::string::npos) {
+            decl = decl.substr(0, eq_pos);
+        }
+        while (!decl.empty() && std::isspace(static_cast<unsigned char>(decl.back()))) {
+            decl.pop_back();
+        }
+        if (!decl.empty() && decl.back() == ';') {
+            decl.pop_back();
+        }
+        while (!decl.empty() && std::isspace(static_cast<unsigned char>(decl.back()))) {
+            decl.pop_back();
+        }
+        return decl;
+    }
+
+    std::vector<ASR::Variable_t*> collect_function_local_vars(const ASR::Function_t &x) {
+        std::vector<ASR::Variable_t*> locals;
+        std::vector<std::string> var_order = ASRUtils::determine_variable_declaration_order(x.m_symtab);
+        for (const auto &item : var_order) {
+            ASR::symbol_t *var_sym = x.m_symtab->get_symbol(item);
+            if (var_sym == nullptr || !ASR::is_a<ASR::Variable_t>(*var_sym)) {
+                continue;
+            }
+            ASR::Variable_t *v = ASR::down_cast<ASR::Variable_t>(var_sym);
+            if (v->m_intent == ASRUtils::intent_local
+                    || v->m_intent == ASRUtils::intent_return_var) {
+                locals.push_back(v);
+            }
+        }
+        return locals;
+    }
+
+    bool contains_early_return_or_labels(const std::string &body_text) const {
+        for (const auto &line : split_lines_keep_newlines(body_text)) {
+            std::string trimmed = trim_copy(line);
+            if (trimmed.empty()) {
+                continue;
+            }
+            if (trimmed == "return;" || trimmed.rfind("return ", 0) == 0) {
+                return true;
+            }
+            if (!trimmed.empty() && trimmed.back() == ':') {
+                return true;
+            }
+            if (trimmed.find("goto ") != std::string::npos) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    std::string make_pointer_field_decl(const ASR::Variable_t &v) {
+        std::string decl = strip_initializer_from_decl(convert_variable_decl(v));
+        std::string emitted_name = CUtils::get_c_variable_name(v);
+        size_t pos = decl.rfind(emitted_name);
+        if (pos == std::string::npos) {
+            throw CodeGenError("Failed to build split helper context for local variable `"
+                + std::string(v.m_name) + "`");
+        }
+        decl.replace(pos, emitted_name.size(), "(*" + emitted_name + ")");
+        return decl;
+    }
+
+    std::string build_large_function_ctx_struct(const std::string &ctx_name,
+            const std::vector<ASR::Variable_t*> &locals) {
+        if (locals.empty()) {
+            return "";
+        }
+        std::string out = "struct " + ctx_name + " {\n";
+        for (ASR::Variable_t *v : locals) {
+            out += "    " + make_pointer_field_decl(*v) + ";\n";
+        }
+        out += "};\n\n";
+        return out;
+    }
+
+    std::string build_large_function_ctx_init(const std::string &ctx_name,
+            const std::vector<ASR::Variable_t*> &locals,
+            const std::string &indent) {
+        if (locals.empty()) {
+            return "";
+        }
+        std::string out = indent + "struct " + ctx_name + " __ctx = {\n";
+        for (ASR::Variable_t *v : locals) {
+            std::string emitted_name = CUtils::get_c_variable_name(*v);
+            out += indent + "    ." + emitted_name + " = &" + emitted_name + ",\n";
+        }
+        out += indent + "};\n";
+        return out;
+    }
+
+    std::vector<std::string> collect_function_param_decls(const ASR::Function_t &x) {
+        std::vector<std::string> param_decls;
+        for (size_t i = 0; i < x.n_args; i++) {
+            ASR::expr_t *arg = x.m_args[i];
+            if (arg == nullptr || !ASR::is_a<ASR::Var_t>(*arg)) {
+                continue;
+            }
+            ASR::symbol_t *arg_sym = ASRUtils::symbol_get_past_external(
+                ASR::down_cast<ASR::Var_t>(arg)->m_v);
+            if (!ASR::is_a<ASR::Variable_t>(*arg_sym)) {
+                continue;
+            }
+            param_decls.push_back(convert_variable_decl(*ASR::down_cast<ASR::Variable_t>(arg_sym)));
+        }
+        return param_decls;
+    }
+
+    std::vector<std::string> collect_function_param_names(const ASR::Function_t &x) {
+        std::vector<std::string> param_names;
+        for (size_t i = 0; i < x.n_args; i++) {
+            ASR::expr_t *arg = x.m_args[i];
+            if (arg == nullptr || !ASR::is_a<ASR::Var_t>(*arg)) {
+                continue;
+            }
+            ASR::symbol_t *arg_sym = ASRUtils::symbol_get_past_external(
+                ASR::down_cast<ASR::Var_t>(arg)->m_v);
+            if (!ASR::is_a<ASR::Variable_t>(*arg_sym)) {
+                continue;
+            }
+            param_names.push_back(CUtils::get_c_variable_name(
+                *ASR::down_cast<ASR::Variable_t>(arg_sym)));
+        }
+        return param_names;
+    }
+
+    std::vector<std::string> split_top_level_statements(const std::string &body_text) const {
+        std::vector<std::string> stmts;
+        std::string current_stmt;
+        int brace_depth = 0;
+        for (const auto &line : split_lines_keep_newlines(body_text)) {
+            current_stmt += line;
+            for (char c : line) {
+                if (c == '{') {
+                    brace_depth++;
+                } else if (c == '}') {
+                    brace_depth--;
+                }
+            }
+            std::string trimmed = trim_copy(line);
+            if (brace_depth == 0 && !trimmed.empty()
+                    && (trimmed.back() == ';' || trimmed == "}")) {
+                stmts.push_back(current_stmt);
+                current_stmt.clear();
+            }
+        }
+        if (!current_stmt.empty()) {
+            stmts.push_back(current_stmt);
+        }
+        return stmts;
+    }
+
+    std::vector<std::string> group_statements_into_chunks(
+            const std::vector<std::string> &stmts, size_t max_chunk_lines) const {
+        std::vector<std::string> chunks;
+        std::string current_chunk;
+        size_t current_lines = 0;
+        for (const auto &stmt : stmts) {
+            size_t stmt_lines = count_lines(stmt);
+            if (!current_chunk.empty() && current_lines + stmt_lines > max_chunk_lines) {
+                chunks.push_back(current_chunk);
+                current_chunk.clear();
+                current_lines = 0;
+            }
+            current_chunk += stmt;
+            current_lines += stmt_lines;
+        }
+        if (!current_chunk.empty()) {
+            chunks.push_back(current_chunk);
+        }
+        return chunks;
+    }
+
+    std::vector<std::pair<std::string, std::string>> maybe_split_large_subroutine_unit(
+            const std::string &unit_filename, const ASR::Function_t &fn,
+            const std::string &function_src) {
+        static const size_t large_function_line_threshold = 8000;
+        static const size_t large_function_chunk_lines = 4000;
+        std::vector<std::pair<std::string, std::string>> units;
+        if (fn.m_return_var != nullptr || count_lines(function_src) <= large_function_line_threshold) {
+            units.push_back({unit_filename, function_src});
+            return units;
+        }
+
+        bool has_typevar = false;
+        std::string decl_header = get_function_declaration(fn, has_typevar);
+        if (has_typevar) {
+            units.push_back({unit_filename, function_src});
+            return units;
+        }
+        size_t decl_pos = function_src.rfind(decl_header);
+        if (decl_pos == std::string::npos) {
+            units.push_back({unit_filename, function_src});
+            return units;
+        }
+        size_t brace_open = function_src.find("{\n", decl_pos + decl_header.size());
+        size_t brace_close = function_src.rfind("}\n");
+        if (brace_open == std::string::npos || brace_close == std::string::npos
+                || brace_close <= brace_open) {
+            units.push_back({unit_filename, function_src});
+            return units;
+        }
+
+        std::string prefix = function_src.substr(0, decl_pos);
+        std::string body_text = function_src.substr(brace_open + 2, brace_close - (brace_open + 2));
+        if (contains_early_return_or_labels(body_text)) {
+            units.push_back({unit_filename, function_src});
+            return units;
+        }
+
+        std::vector<ASR::Variable_t*> locals = collect_function_local_vars(fn);
+        std::vector<std::string> local_names;
+        for (ASR::Variable_t *v : locals) {
+            local_names.push_back(CUtils::get_c_variable_name(*v));
+        }
+
+        std::vector<std::string> body_lines = split_lines_keep_newlines(body_text);
+        std::string decl_block;
+        size_t stmt_start = 0;
+        for (; stmt_start < body_lines.size(); stmt_start++) {
+            std::string trimmed = trim_copy(body_lines[stmt_start]);
+            if (trimmed.empty()) {
+                decl_block += body_lines[stmt_start];
+                continue;
+            }
+            bool is_decl = false;
+            if (!trimmed.empty() && trimmed.back() == ';') {
+                for (const auto &local_name : local_names) {
+                    if (line_contains_word(trimmed, local_name)) {
+                        is_decl = true;
+                        break;
+                    }
+                }
+            }
+            if (!is_decl) {
+                break;
+            }
+            decl_block += body_lines[stmt_start];
+        }
+
+        std::string stmt_text;
+        for (size_t i = stmt_start; i < body_lines.size(); i++) {
+            stmt_text += body_lines[i];
+        }
+        std::vector<std::string> stmts = split_top_level_statements(stmt_text);
+        if (stmts.size() < 2) {
+            units.push_back({unit_filename, function_src});
+            return units;
+        }
+        std::vector<std::string> chunks = group_statements_into_chunks(stmts, large_function_chunk_lines);
+        if (chunks.size() < 2) {
+            units.push_back({unit_filename, function_src});
+            return units;
+        }
+
+        std::string unit_stem = unit_filename;
+        if (endswith(unit_stem, ".c")) {
+            unit_stem = unit_stem.substr(0, unit_stem.size() - 2);
+        }
+        std::string ctx_name = CUtils::sanitize_c_identifier(unit_stem + "__locals");
+        std::string ctx_struct = build_large_function_ctx_struct(ctx_name, locals);
+        std::vector<std::string> param_decls = collect_function_param_decls(fn);
+        std::vector<std::string> param_names = collect_function_param_names(fn);
+
+        std::vector<std::string> helper_prototypes;
+        for (size_t i = 0; i < chunks.size(); i++) {
+            std::string helper_name = CUtils::sanitize_c_identifier(
+                unit_stem + "__chunk_" + std::to_string(i));
+            std::string signature = "void " + helper_name + "(";
+            for (size_t j = 0; j < param_decls.size(); j++) {
+                if (j > 0) signature += ", ";
+                signature += param_decls[j];
+            }
+            if (!param_decls.empty()) {
+                signature += ", ";
+            }
+            signature += "struct " + ctx_name + "* __ctx)";
+            helper_prototypes.push_back(signature + ";");
+
+            std::string helper_src = ctx_struct + signature + "\n{\n";
+            for (const auto &local_name : local_names) {
+                helper_src += "#define " + local_name + " (*__ctx->" + local_name + ")\n";
+            }
+            helper_src += chunks[i];
+            for (const auto &local_name : local_names) {
+                helper_src += "#undef " + local_name + "\n";
+            }
+            helper_src += "}\n";
+            units.push_back({unit_stem + "__chunk_" + std::to_string(i) + ".c", helper_src});
+        }
+
+        std::string main_src = prefix + ctx_struct;
+        for (const auto &proto : helper_prototypes) {
+            main_src += proto + "\n";
+        }
+        if (!helper_prototypes.empty()) {
+            main_src += "\n";
+        }
+        main_src += decl_header + "\n{\n";
+        main_src += decl_block;
+        std::string indent = "    ";
+        main_src += build_large_function_ctx_init(ctx_name, locals, indent);
+        for (size_t i = 0; i < chunks.size(); i++) {
+            std::string helper_name = CUtils::sanitize_c_identifier(
+                unit_stem + "__chunk_" + std::to_string(i));
+            main_src += indent + helper_name + "(";
+            for (size_t j = 0; j < param_names.size(); j++) {
+                if (j > 0) main_src += ", ";
+                main_src += param_names[j];
+            }
+            if (!param_names.empty()) {
+                main_src += ", ";
+            }
+            main_src += "&__ctx);\n";
+        }
+        main_src += "}\n";
+        units.push_back({unit_filename, main_src});
+        return units;
     }
 
     template <typename T>
@@ -1373,7 +1848,7 @@ R"(
 
         // Topologically sort all global functions
         // and then define them in the right order
-        std::vector<std::string> global_func_order = ASRUtils::determine_function_definition_order(x.m_symtab);
+        std::vector<std::string> global_func_order = get_complete_function_definition_order(x.m_symtab);
 
         unit_src += "\n";
         unit_src += "// Implementations\n";
@@ -1503,7 +1978,7 @@ R"(
 
         std::vector<std::pair<std::string, std::string>> unit_bodies;
         std::vector<std::string> global_func_order =
-            ASRUtils::determine_function_definition_order(x.m_symtab);
+            get_complete_function_definition_order(x.m_symtab);
 
         std::vector<std::string> build_order =
             ASRUtils::determine_module_dependencies(x);
@@ -1514,11 +1989,12 @@ R"(
             if (startswith(item, "lfortran_intrinsic")) {
                 ASR::symbol_t *mod = x.m_symtab->get_symbol(item);
                 if( ASRUtils::get_body_size(mod) != 0 ) {
-                    visit_symbol(*mod);
-                    if (!src.empty()) {
-                        unit_bodies.push_back({
-                            make_unit_filename("intrinsic", item), src
-                        });
+                    ASR::Module_t *module_t = ASR::down_cast<ASR::Module_t>(mod);
+                    auto module_units = emit_module_split_units(*module_t);
+                    for (auto &unit : module_units) {
+                        if (!unit.second.empty()) {
+                            unit_bodies.push_back(std::move(unit));
+                        }
                     }
                 }
             }
@@ -1544,11 +2020,12 @@ R"(
                 != x.m_symtab->get_scope().end());
             if (!startswith(item, "lfortran_intrinsic")) {
                 ASR::symbol_t *mod = x.m_symtab->get_symbol(item);
-                visit_symbol(*mod);
-                if (!src.empty()) {
-                    unit_bodies.push_back({
-                        make_unit_filename("module", item), src
-                    });
+                ASR::Module_t *module_t = ASR::down_cast<ASR::Module_t>(mod);
+                auto module_units = emit_module_split_units(*module_t);
+                for (auto &unit : module_units) {
+                    if (!unit.second.empty()) {
+                        unit_bodies.push_back(std::move(unit));
+                    }
                 }
             }
         }
@@ -1692,7 +2169,7 @@ R"(
 
         // Topologically sort all module functions
         // and then define them in the right order
-        std::vector<std::string> func_order = ASRUtils::determine_function_definition_order(x.m_symtab);
+        std::vector<std::string> func_order = get_complete_function_definition_order(x.m_symtab);
         for (auto &item : func_order) {
             ASR::symbol_t* sym = x.m_symtab->get_symbol(item);
             ASR::Function_t *s = ASR::down_cast<ASR::Function_t>(sym);
@@ -1706,7 +2183,7 @@ R"(
     void visit_Program(const ASR::Program_t &x) {
         // Topologically sort all program functions
         // and then define them in the right order
-        std::vector<std::string> func_order = ASRUtils::determine_function_definition_order(x.m_symtab);
+        std::vector<std::string> func_order = get_complete_function_definition_order(x.m_symtab);
 
         // Generate code for nested subroutines and functions first:
         std::string contains;
