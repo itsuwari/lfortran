@@ -4332,6 +4332,24 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         handle_BinOp(x);
     }
 
+    void visit_RealCopySign(const ASR::RealCopySign_t &x) {
+        CHECK_FAST_C_CPP(compiler_options, x)
+        if (x.m_value) {
+            self().visit_expr(*x.m_value);
+            return;
+        }
+        self().visit_expr(*x.m_target);
+        std::string target = std::move(src);
+        self().visit_expr(*x.m_source);
+        std::string source = std::move(src);
+        headers.insert("math.h");
+        src = "copysign(" + target + ", " + source + ")";
+        if (!is_c) {
+            src = "std::" + src;
+        }
+        last_expr_precedence = 2;
+    }
+
     void visit_ComplexBinOp(const ASR::ComplexBinOp_t &x) {
         handle_BinOp(x);
     }
