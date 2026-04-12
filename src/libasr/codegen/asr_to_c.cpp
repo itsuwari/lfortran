@@ -189,17 +189,6 @@ R"(
             for (auto &scope_item : mod->m_symtab->get_scope()) {
                 if (ASR::is_a<ASR::Variable_t>(*scope_item.second)) {
                     ASR::Variable_t *v = ASR::down_cast<ASR::Variable_t>(scope_item.second);
-                    bool keep_parameter_struct_constant =
-                        v->m_storage == ASR::storage_typeType::Parameter
-                        && v->m_symbolic_value != nullptr
-                        && ASRUtils::expr_value(v->m_symbolic_value) != nullptr
-                        && ASR::is_a<ASR::StructConstant_t>(
-                            *ASRUtils::expr_value(v->m_symbolic_value));
-                    if (v->m_access == ASR::accessType::Private
-                            || (v->m_storage == ASR::storage_typeType::Parameter
-                                && !keep_parameter_struct_constant)) {
-                        continue;
-                    }
                     try {
                         decls += get_global_extern_decl(*v);
                     } catch (const CodeGenError &e) {
@@ -472,6 +461,27 @@ R"(
         return false;
     }
 
+    bool looks_like_c_decl_stmt(const std::string &stmt_text) const {
+        std::string trimmed = trim_copy(stmt_text);
+        if (trimmed.empty() || trimmed.back() != ';') {
+            return false;
+        }
+        if (trimmed.find('{') != std::string::npos || trimmed.find('}') != std::string::npos) {
+            return false;
+        }
+        static const std::vector<std::string> decl_prefixes = {
+            "struct ", "union ", "enum ", "int ", "int32_t ", "int64_t ",
+            "float ", "double ", "bool ", "char ", "const ", "static ",
+            "unsigned ", "signed ", "complex ", "_Complex "
+        };
+        for (const auto &prefix : decl_prefixes) {
+            if (trimmed.rfind(prefix, 0) == 0) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     std::string make_pointer_field_decl(const ASR::Variable_t &v) {
         std::string decl = strip_initializer_from_decl(convert_variable_decl(v));
         std::string emitted_name = CUtils::get_c_variable_name(v);
@@ -594,6 +604,60 @@ R"(
         return chunks;
     }
 
+    std::string dedupe_decl_lines(const std::string &text) const {
+        std::string out;
+        std::set<std::string> seen;
+        for (const auto &line : split_lines_keep_newlines(text)) {
+            std::string trimmed = trim_copy(line);
+            if (trimmed.empty()) {
+                continue;
+            }
+            if (seen.insert(trimmed).second) {
+                out += trimmed + "\n";
+            }
+        }
+        if (!out.empty()) {
+            out += "\n";
+        }
+        return out;
+    }
+
+    std::string collect_module_aggregate_decls(const ASR::TranslationUnit_t &x) {
+        std::string decls;
+        std::vector<std::string> build_order =
+            ASRUtils::determine_module_dependencies(x);
+        for (const auto &item : build_order) {
+            ASR::symbol_t *mod_sym = x.m_symtab->get_symbol(item);
+            if (mod_sym == nullptr || !ASR::is_a<ASR::Module_t>(*mod_sym)) {
+                continue;
+            }
+            ASR::Module_t *mod = ASR::down_cast<ASR::Module_t>(mod_sym);
+            std::map<std::string, std::vector<std::string>> struct_dep_graph;
+            for (auto &scope_item : mod->m_symtab->get_scope()) {
+                if (ASR::is_a<ASR::Struct_t>(*scope_item.second) ||
+                    ASR::is_a<ASR::Enum_t>(*scope_item.second) ||
+                    ASR::is_a<ASR::Union_t>(*scope_item.second)) {
+                    std::vector<std::string> struct_deps_vec;
+                    std::pair<char**, size_t> struct_deps_ptr =
+                        ASRUtils::symbol_dependencies(scope_item.second);
+                    for (size_t i = 0; i < struct_deps_ptr.second; i++) {
+                        struct_deps_vec.push_back(std::string(struct_deps_ptr.first[i]));
+                    }
+                    struct_dep_graph[scope_item.first] = struct_deps_vec;
+                }
+            }
+            for (const auto &dep_name : ASRUtils::order_deps(struct_dep_graph)) {
+                ASR::symbol_t *struct_sym = mod->m_symtab->get_symbol(dep_name);
+                if (struct_sym == nullptr) {
+                    continue;
+                }
+                visit_symbol(*struct_sym);
+                decls += src;
+            }
+        }
+        return decls;
+    }
+
     std::vector<std::pair<std::string, std::string>> maybe_split_large_subroutine_unit(
             const std::string &unit_filename, const ASR::Function_t &fn,
             const std::string &function_src) {
@@ -637,35 +701,21 @@ R"(
             local_names.push_back(CUtils::get_c_variable_name(*v));
         }
 
-        std::vector<std::string> body_lines = split_lines_keep_newlines(body_text);
         std::string decl_block;
+        std::vector<std::string> stmts = split_top_level_statements(body_text);
         size_t stmt_start = 0;
-        for (; stmt_start < body_lines.size(); stmt_start++) {
-            std::string trimmed = trim_copy(body_lines[stmt_start]);
-            if (trimmed.empty()) {
-                decl_block += body_lines[stmt_start];
+        for (; stmt_start < stmts.size(); stmt_start++) {
+            std::string trimmed_stmt = trim_copy(stmts[stmt_start]);
+            if (trimmed_stmt.empty()) {
+                decl_block += stmts[stmt_start];
                 continue;
             }
-            bool is_decl = false;
-            if (!trimmed.empty() && trimmed.back() == ';') {
-                for (const auto &local_name : local_names) {
-                    if (line_contains_word(trimmed, local_name)) {
-                        is_decl = true;
-                        break;
-                    }
-                }
-            }
-            if (!is_decl) {
+            if (!looks_like_c_decl_stmt(trimmed_stmt)) {
                 break;
             }
-            decl_block += body_lines[stmt_start];
+            decl_block += stmts[stmt_start];
         }
-
-        std::string stmt_text;
-        for (size_t i = stmt_start; i < body_lines.size(); i++) {
-            stmt_text += body_lines[i];
-        }
-        std::vector<std::string> stmts = split_top_level_statements(stmt_text);
+        stmts.erase(stmts.begin(), stmts.begin() + stmt_start);
         if (stmts.size() < 2) {
             units.push_back({unit_filename, function_src});
             return units;
@@ -2064,10 +2114,13 @@ R"(
         std::transform(header_guard.begin(), header_guard.end(), header_guard.begin(), ::toupper);
         header_guard += "_GENERATED_H";
 
+        std::string module_aggregate_decls = collect_module_aggregate_decls(x);
+        std::string function_decls = dedupe_decl_lines(forward_decl_functions + split_func_decls);
+
         std::string header_src = "#ifndef " + header_guard + "\n#define "
             + header_guard + "\n\n"
             + get_include_block() + get_default_head() + "\n"
-            + array_types_decls + forward_decl_functions + split_func_decls + global_var_decls
+            + array_types_decls + module_aggregate_decls + function_decls + global_var_decls
             + module_var_decls
             + "\n#endif\n";
         write_text_file(fs::path(output_dir) / header_name, header_src);
