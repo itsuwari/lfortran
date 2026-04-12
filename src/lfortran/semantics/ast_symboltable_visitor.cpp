@@ -1273,7 +1273,7 @@ public:
         }
         current_procedure_abi_type = ASR::abiType::Source;
         char *bindc_name=nullptr;
-        extract_bind(x, current_procedure_abi_type, bindc_name, diag);
+        extract_bind(al, current_scope, x, current_procedure_abi_type, bindc_name, diag);
 
         // iterate over declarations and check if global save is present
         bool is_global_save_enabled_copy = is_global_save_enabled;
@@ -1772,7 +1772,7 @@ public:
         // Determine the ABI (Source or BindC for now)
         current_procedure_abi_type = ASR::abiType::Source;
         char *bindc_name=nullptr;
-        extract_bind(x, current_procedure_abi_type, bindc_name, diag);
+        extract_bind(al, current_scope, x, current_procedure_abi_type, bindc_name, diag);
 
         // iterate over declarations and check if global save is present
         bool is_global_save_enabled_copy = is_global_save_enabled;

@@ -33,8 +33,63 @@ static std::map<std::string, std::vector<ASR::Variable_t*>> vars_with_deferred_s
 static std::map<std::string, int> assumed_rank_arrays;
 static int PDT_SENTINEL = 1000;
 
+static inline bool extract_bindc_name_constant_from_asr(ASR::expr_t *value,
+        std::string &result) {
+    value = value ? ASRUtils::expr_value(value) : nullptr;
+    if (!value || !ASR::is_a<ASR::StringConstant_t>(*value)) {
+        return false;
+    }
+    result = ASR::down_cast<ASR::StringConstant_t>(value)->m_s;
+    return true;
+}
+
+static inline bool extract_bindc_name_constant(AST::expr_t *value,
+        SymbolTable *current_scope, std::set<std::string> &active_names,
+        std::string &result) {
+    if (AST::is_a<AST::String_t>(*value)) {
+        result = AST::down_cast<AST::String_t>(value)->m_s;
+        return true;
+    }
+
+    if (AST::is_a<AST::StrOp_t>(*value)) {
+        AST::StrOp_t *str_op = AST::down_cast<AST::StrOp_t>(value);
+        if (str_op->m_op != AST::stroperatorType::Concat) {
+            return false;
+        }
+        std::string left, right;
+        if (!extract_bindc_name_constant(str_op->m_left, current_scope, active_names, left) ||
+                !extract_bindc_name_constant(str_op->m_right, current_scope, active_names, right)) {
+            return false;
+        }
+        result = left + right;
+        return true;
+    }
+
+    if (AST::is_a<AST::Name_t>(*value) && current_scope) {
+        std::string name = to_lower(AST::down_cast<AST::Name_t>(value)->m_id);
+        if (!active_names.insert(name).second) {
+            return false;
+        }
+
+        ASR::symbol_t *sym = current_scope->resolve_symbol(name);
+        sym = sym ? ASRUtils::symbol_get_past_external(sym) : nullptr;
+        bool ok = false;
+        if (sym && ASR::is_a<ASR::Variable_t>(*sym)) {
+            ASR::Variable_t *var = ASR::down_cast<ASR::Variable_t>(sym);
+            ASR::expr_t *expr = var->m_symbolic_value ? var->m_symbolic_value : var->m_value;
+            ok = extract_bindc_name_constant_from_asr(expr, result);
+        }
+
+        active_names.erase(name);
+        return ok;
+    }
+
+    return false;
+}
+
 template <typename T>
-void extract_bind(T &x, ASR::abiType &abi_type, char *&bindc_name, diag::Diagnostics &diag) {
+void extract_bind(Allocator &al, SymbolTable *current_scope, T &x,
+        ASR::abiType &abi_type, char *&bindc_name, diag::Diagnostics &diag) {
     if (x.m_bind) {
         AST::Bind_t *bind = AST::down_cast<AST::Bind_t>(x.m_bind);
         if (bind->n_args == 1) {
@@ -70,12 +125,14 @@ void extract_bind(T &x, ASR::abiType &abi_type, char *&bindc_name, diag::Diagnos
             char *arg = bind->m_kwargs[0].m_arg;
             AST::expr_t *value = bind->m_kwargs[0].m_value;
             if (to_lower(std::string(arg)) == "name") {
-                if (AST::is_a<AST::String_t>(*value)) {
-                    AST::String_t *name = AST::down_cast<AST::String_t>(value);
-                    bindc_name = name->m_s;
+                std::string bindc_name_value;
+                std::set<std::string> active_names;
+                if (extract_bindc_name_constant(value, current_scope, active_names,
+                        bindc_name_value)) {
+                    bindc_name = s2c(al, bindc_name_value);
                 } else {
                     diag.add(diag::Diagnostic(
-                        "The value of the 'name' keyword argument in bind(c) must be a string",
+                        "The value of the 'name' keyword argument in bind(c) must be a string constant expression",
                         diag::Level::Error, diag::Stage::Semantic, {
                             diag::Label("", {x.base.base.loc})}));
                     throw SemanticAbort();
@@ -6538,7 +6595,7 @@ public:
                     AST::AttrBind_t *attr_bind = AST::down_cast<AST::AttrBind_t>(x.m_attributes[i]);
                     ASR::abiType abi_type = ASR::abiType::Source;
                     char *bindc_name = nullptr;
-                    extract_bind(*attr_bind, abi_type, bindc_name, diag);
+                    extract_bind(al, current_scope, *attr_bind, abi_type, bindc_name, diag);
                     for (size_t j = 0; j < x.n_syms; j++) {
                         if (x.m_syms[j].m_sym == AST::symbolType::Slash) {
                             std::string common_block_name = to_lower(x.m_syms[j].m_name);
@@ -6879,7 +6936,7 @@ public:
                                 s_intent == ASRUtils::intent_inout) || is_argument, s.m_name);
                         } else if (AST::is_a<AST::AttrBind_t>(*a)) {
                             AST::AttrBind_t attr_bd = *AST::down_cast<AST::AttrBind_t>(a);
-                            extract_bind(attr_bd, s_abi, bindc_name, diag);
+                            extract_bind(al, current_scope, attr_bd, s_abi, bindc_name, diag);
                         } else if (AST::is_a<AST::AttrPass_t>(*a)) {
                             AST::AttrPass_t *ap = AST::down_cast<AST::AttrPass_t>(a);
                             if (ap->m_name) {
