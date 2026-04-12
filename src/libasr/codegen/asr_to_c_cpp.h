@@ -318,6 +318,34 @@ public:
         }
         return nullptr;
     }
+
+    ASR::StructMethodDeclaration_t* find_struct_method_by_proc_or_name(
+            ASR::Struct_t *struct_t, ASR::symbol_t *proc_sym, const std::string &proc_name) {
+        proc_sym = ASRUtils::symbol_get_past_external(proc_sym);
+        while (struct_t != nullptr) {
+            for (auto &item: struct_t->m_symtab->get_scope()) {
+                ASR::symbol_t *sym = ASRUtils::symbol_get_past_external(item.second);
+                if (!ASR::is_a<ASR::StructMethodDeclaration_t>(*sym)) {
+                    continue;
+                }
+                ASR::StructMethodDeclaration_t *method =
+                    ASR::down_cast<ASR::StructMethodDeclaration_t>(sym);
+                ASR::symbol_t *method_proc = ASRUtils::symbol_get_past_external(method->m_proc);
+                if (method_proc == proc_sym || std::string(method->m_name) == proc_name) {
+                    return method;
+                }
+            }
+            if (struct_t->m_parent == nullptr) {
+                break;
+            }
+            ASR::symbol_t *parent_sym = ASRUtils::symbol_get_past_external(struct_t->m_parent);
+            if (!ASR::is_a<ASR::Struct_t>(*parent_sym)) {
+                break;
+            }
+            struct_t = ASR::down_cast<ASR::Struct_t>(parent_sym);
+        }
+        return nullptr;
+    }
     void visit_TranslationUnit(const ASR::TranslationUnit_t &x) {
         global_scope = x.m_symtab;
         // All loose statements must be converted to a function, so the items
@@ -2205,16 +2233,43 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
     bool build_deferred_struct_method_dispatch(ASR::symbol_t *callee_sym, size_t n_args,
             ASR::call_arg_t *m_args, std::string &out, bool is_subroutine) {
         ASR::symbol_t *base_sym = ASRUtils::symbol_get_past_external(callee_sym);
-        if (!ASR::is_a<ASR::StructMethodDeclaration_t>(*base_sym) || n_args == 0) {
+        if (n_args == 0) {
             return false;
         }
-        ASR::StructMethodDeclaration_t *base_method =
-            ASR::down_cast<ASR::StructMethodDeclaration_t>(base_sym);
+        ASR::StructMethodDeclaration_t *base_method = nullptr;
+        ASR::symbol_t *owner_sym = nullptr;
+        if (ASR::is_a<ASR::StructMethodDeclaration_t>(*base_sym)) {
+            base_method = ASR::down_cast<ASR::StructMethodDeclaration_t>(base_sym);
+            owner_sym = ASRUtils::symbol_get_past_external(
+                ASRUtils::get_asr_owner(reinterpret_cast<ASR::symbol_t*>(base_method)));
+        } else if (ASR::is_a<ASR::Function_t>(*base_sym)) {
+            ASR::expr_t *recv_expr = unwrap_c_lvalue_expr(m_args[0].m_value);
+            if (recv_expr == nullptr) {
+                return false;
+            }
+            ASR::ttype_t *recv_type = ASRUtils::type_get_past_allocatable_pointer(
+                ASRUtils::expr_type(recv_expr));
+            if (!(ASR::is_a<ASR::StructType_t>(*ASRUtils::extract_type(recv_type))
+                    || ASRUtils::is_class_type(recv_type))) {
+                return false;
+            }
+            owner_sym = ASRUtils::symbol_get_past_external(
+                ASRUtils::get_struct_sym_from_struct_expr(recv_expr));
+            if (owner_sym == nullptr || !ASR::is_a<ASR::Struct_t>(*owner_sym)) {
+                return false;
+            }
+            base_method = find_struct_method_by_proc_or_name(
+                ASR::down_cast<ASR::Struct_t>(owner_sym), base_sym,
+                ASRUtils::symbol_name(base_sym));
+        } else {
+            return false;
+        }
+        if (base_method == nullptr) {
+            return false;
+        }
         if (!base_method->m_is_deferred) {
             return false;
         }
-        ASR::symbol_t *owner_sym = ASRUtils::symbol_get_past_external(
-            ASRUtils::get_asr_owner(reinterpret_cast<ASR::symbol_t*>(base_method)));
         if (!ASR::is_a<ASR::Struct_t>(*owner_sym)) {
             return false;
         }
@@ -2245,11 +2300,13 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             }
             impls.push_back({derived_struct, ASR::down_cast<ASR::Function_t>(proc_sym)});
         }
-        if (impls.empty()) {
-            return false;
-        }
-
         if (is_subroutine) {
+            if (impls.empty()) {
+                out = "fprintf(stderr, \"Deferred type-bound dispatch failed for "
+                    + CUtils::sanitize_c_identifier(base_method->m_name)
+                    + "\\n\");\nexit(1);\n";
+                return true;
+            }
             out = "if (0) {\n";
             for (size_t i = 0; i < impls.size(); i++) {
                 ASR::Struct_t *derived_struct = impls[i].first;
@@ -2282,6 +2339,12 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             ASRUtils::expr_type(iface_fn->m_return_var));
         if (ASRUtils::is_aggregate_type(ret_type)) {
             return false;
+        }
+        if (impls.empty()) {
+            out = "((fprintf(stderr, \"Deferred type-bound dispatch failed for "
+                + CUtils::sanitize_c_identifier(base_method->m_name)
+                + "\\n\"), exit(1), 0))";
+            return true;
         }
         out = "";
         for (size_t i = 0; i < impls.size(); i++) {
