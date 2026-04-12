@@ -11533,6 +11533,154 @@ public:
 
     }
 
+    bool lower_standard_sequence_association_arg(ASR::Function_t* f,
+            Vec<ASR::call_arg_t>& args, bool callee_is_external_symbol, size_t arg_index,
+            ASR::call_arg_t &arg, const Location &loc) {
+        if (!arg.m_value || !ASR::is_a<ASR::ArrayItem_t>(*arg.m_value) ||
+                ASRUtils::is_array(ASRUtils::expr_type(arg.m_value))) {
+            return false;
+        }
+        if (!ASRUtils::is_array(ASRUtils::expr_type(f->m_args[arg_index]))) {
+            return false;
+        }
+
+        ASR::ttype_t* dummy_type = ASRUtils::type_get_past_allocatable(
+            ASRUtils::type_get_past_pointer(ASRUtils::expr_type(f->m_args[arg_index])));
+        ASR::array_physical_typeType dummy_phys = ASRUtils::extract_physical_type(dummy_type);
+        if (dummy_phys != ASR::array_physical_typeType::UnboundedPointerArray) {
+            return false;
+        }
+
+        ASR::ArrayItem_t* array_item = ASR::down_cast<ASR::ArrayItem_t>(arg.m_value);
+        ASR::expr_t* array_expr = array_item->m_v;
+        ASR::ttype_t* expected_arg_type = ASRUtils::duplicate_type(
+            al, ASRUtils::expr_type(f->m_args[arg_index]), nullptr, dummy_phys, true);
+        ASR::array_physical_typeType expected_phys_type = dummy_phys;
+        if (callee_is_external_symbol) {
+            expected_phys_type = ASR::array_physical_typeType::PointerArray;
+            expected_arg_type = ASRUtils::duplicate_type(al,
+                ASRUtils::expr_type(f->m_args[arg_index]), nullptr, expected_phys_type, true);
+        }
+
+        ASR::ttype_t* expected_arg_type_past_ptr = ASRUtils::type_get_past_allocatable(
+            ASRUtils::type_get_past_pointer(expected_arg_type));
+        ASR::Array_t* array_t = ASR::down_cast<ASR::Array_t>(expected_arg_type_past_ptr);
+
+        SetChar temp_function_dependencies;
+        ASRUtils::ReplaceFunctionParamWithArg r(al, args.p, args.n);
+        ASRUtils::CheckSymbolReplacer c(al, current_scope, temp_function_dependencies);
+        bool valid_symbols = true;
+        Vec<ASR::dimension_t> dimensions_;
+        dimensions_.reserve(al, array_t->n_dims);
+        for (size_t dim_i = 0; dim_i < array_t->n_dims; dim_i++) {
+            ASR::dimension_t dim;
+            dim.loc = array_t->m_dims[dim_i].loc;
+            dim.m_start = r.replace_FunctionParam_with_arg(array_t->m_dims[dim_i].m_start);
+            dim.m_length = r.replace_FunctionParam_with_arg(array_t->m_dims[dim_i].m_length);
+            valid_symbols = c.check_and_update_symbols(dim.m_length)
+                && c.check_and_update_symbols(dim.m_start);
+            if (!valid_symbols) {
+                break;
+            }
+            dimensions_.push_back(al, dim);
+        }
+        if (valid_symbols) {
+            for (size_t dim_i = 0; dim_i < array_t->n_dims; dim_i++) {
+                array_t->m_dims[dim_i] = dimensions_[dim_i];
+            }
+            for (size_t dep_i = 0; dep_i < temp_function_dependencies.n; dep_i++) {
+                current_function_dependencies.push_back(al, temp_function_dependencies[dep_i]);
+            }
+        } else {
+            expected_arg_type = ASRUtils::duplicate_type_with_empty_dims(
+                al, ASRUtils::expr_type(f->m_args[arg_index]), expected_phys_type, true);
+            expected_arg_type_past_ptr = ASRUtils::type_get_past_allocatable(
+                ASRUtils::type_get_past_pointer(expected_arg_type));
+            array_t = ASR::down_cast<ASR::Array_t>(expected_arg_type_past_ptr);
+        }
+
+        ASR::asr_t* expected_array = ASR::make_Array_t(al, loc,
+            ASRUtils::type_get_past_array(expected_arg_type_past_ptr),
+            array_t->m_dims, array_t->n_dims,
+            ASRUtils::extract_physical_type(expected_arg_type_past_ptr));
+
+        Vec<ASR::array_index_t> array_indices;
+        array_indices.reserve(al, array_item->n_args);
+        ASRUtils::ASRBuilder builder(al, loc);
+        ASR::ttype_t* int_type = ASRUtils::TYPE(
+            ASR::make_Integer_t(al, loc, compiler_options.po.default_integer_kind));
+        ASR::expr_t* one = builder.i_t(1, int_type);
+
+        for (size_t dim_i = 0; dim_i < array_item->n_args; dim_i++) {
+            ASR::array_index_t array_idx;
+            array_idx.loc = array_item->m_args[dim_i].loc;
+            array_idx.m_left = array_item->m_args[dim_i].m_right;
+            array_idx.m_right = ASRUtils::get_bound<SemanticAbort>(
+                array_expr, dim_i + 1, "ubound", al, diag,
+                compiler_options.po.default_integer_kind);
+            array_idx.m_step = one;
+            array_indices.push_back(al, array_idx);
+        }
+
+        ASR::ttype_t* section_type = nullptr;
+        ASR::ttype_t* cast_target_type = nullptr;
+        int expected_n_dims = ASRUtils::extract_n_dims_from_ttype(dummy_type);
+        if (expected_n_dims == 1 && array_indices.size() > 1) {
+            ASR::expr_t* total_size = nullptr;
+            for (size_t dim_i = 0; dim_i < array_indices.size(); dim_i++) {
+                ASR::expr_t* dim_size = builder.Add(
+                    builder.Sub(array_indices.p[dim_i].m_right,
+                                array_indices.p[dim_i].m_left),
+                    one);
+                total_size = total_size ? builder.Mul(total_size, dim_size) : dim_size;
+            }
+            Vec<ASR::dimension_t> dims;
+            dims.reserve(al, 1);
+            ASR::dimension_t dim;
+            dim.loc = array_item->base.base.loc;
+            dim.m_start = one;
+            dim.m_length = total_size;
+            dims.push_back(al, dim);
+            ASR::ttype_t* elem_type = ASRUtils::type_get_past_array(expected_arg_type);
+            section_type = ASRUtils::make_Array_t_util(al, array_item->base.base.loc,
+                elem_type, dims.p, dims.n, ASR::abiType::Source, false,
+                ASR::array_physical_typeType::DescriptorArray);
+
+            Vec<ASR::dimension_t> empty_dims;
+            empty_dims.reserve(al, 1);
+            ASR::dimension_t empty_dim;
+            empty_dim.loc = array_item->base.base.loc;
+            empty_dim.m_start = nullptr;
+            empty_dim.m_length = nullptr;
+            empty_dims.push_back(al, empty_dim);
+            cast_target_type = ASRUtils::make_Array_t_util(al, array_item->base.base.loc,
+                elem_type, empty_dims.p, empty_dims.n, ASR::abiType::Source, false,
+                expected_phys_type);
+        } else {
+            section_type = ASRUtils::duplicate_type_with_empty_dims(
+                al, expected_arg_type, ASR::array_physical_typeType::DescriptorArray, true);
+            cast_target_type = ASRUtils::TYPE(expected_array);
+        }
+
+        if (callee_is_external_symbol &&
+                expected_phys_type == ASR::array_physical_typeType::PointerArray &&
+                !ASRUtils::is_character(*ASRUtils::type_get_past_array(expected_arg_type))) {
+            arg.m_value = ASRUtils::EXPR(ASR::make_GetPointer_t(
+                al, array_item->base.base.loc, arg.m_value, cast_target_type, nullptr));
+            return true;
+        }
+
+        ASR::expr_t* array_section = ASRUtils::EXPR(ASR::make_ArraySection_t(
+            al, array_item->base.base.loc, array_expr, array_indices.p,
+            array_indices.size(), section_type, nullptr));
+        ASR::asr_t* array_cast = ASRUtils::make_ArrayPhysicalCast_t_util(
+            al, array_item->base.base.loc, array_section,
+            ASRUtils::extract_physical_type(section_type), expected_phys_type,
+            cast_target_type, nullptr);
+        arg.m_value = ASRUtils::EXPR(array_cast);
+        return true;
+    }
+
     void legacy_array_sections_helper(ASR::symbol_t *v, Vec<ASR::call_arg_t>& args, const Location &loc) {
         bool callee_is_external_symbol = ASR::is_a<ASR::ExternalSymbol_t>(*v);
         ASR::Function_t* f = ASR::down_cast<ASR::Function_t>(ASRUtils::symbol_get_past_external(v));
@@ -11792,6 +11940,12 @@ public:
                         args[i].m_value &&
                         ASR::is_a<ASR::ArrayItem_t>(*args[i].m_value) &&
                         !ASRUtils::is_array(ASRUtils::expr_type(args[i].m_value))) {
+                    ASR::call_arg_t lowered_arg = args[i];
+                    if (lower_standard_sequence_association_arg(
+                            f, args, callee_is_external_symbol, i, lowered_arg, loc)) {
+                        args.p[i] = lowered_arg;
+                        continue;
+                    }
                     diag.add(diag::Diagnostic(
                         "Passing a scalar argument to an array dummy argument is not allowed. "
                         "Use --legacy-array-sections to enable sequence association",

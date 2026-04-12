@@ -4288,6 +4288,10 @@ llvm = true
 options = "--legacy-array-sections"
 
 [[test]]
+filename = "../integration_tests/sequence_assoc_01.f90"
+llvm = true
+
+[[test]]
 filename = "format2.f90"
 llvm = true
 
