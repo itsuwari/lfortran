@@ -12,6 +12,7 @@
  */
 
 #include <memory>
+#include <cmath>
 #include <set>
 #include <vector>
 
@@ -800,6 +801,21 @@ R"(#include <stdio.h>
         template_for_Kokkos.pop_back();
         template_for_Kokkos.pop_back();
         return "\ntemplate <" + template_for_Kokkos + ">\n" + func;
+    }
+
+    void record_forward_decl_for_function(const ASR::Function_t &x) {
+        if (!is_c) {
+            return;
+        }
+        bool has_typevar = false;
+        std::string decl = get_function_declaration(x, has_typevar, false, false);
+        if (has_typevar || decl.empty()) {
+            return;
+        }
+        std::string decl_line = decl + ";\n";
+        if (forward_decl_functions.find(decl_line) == std::string::npos) {
+            forward_decl_functions += decl_line;
+        }
     }
 
     std::string get_arg_conv_bind_python(const ASR::Function_t &x) {
@@ -2298,6 +2314,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             if (!seen_impls.insert(impl_key).second) {
                 continue;
             }
+            record_forward_decl_for_function(*ASR::down_cast<ASR::Function_t>(proc_sym));
             impls.push_back({derived_struct, ASR::down_cast<ASR::Function_t>(proc_sym)});
         }
         if (is_subroutine) {
@@ -3319,8 +3336,17 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
     }
 
     void visit_RealConstant(const ASR::RealConstant_t &x) {
-        // TODO: remove extra spaces from the front of double_to_scientific result
-        src = double_to_scientific(x.m_r);
+        if (std::isnan(x.m_r)) {
+            headers.insert("math.h");
+            src = "((" + CUtils::get_c_type_from_ttype_t(x.m_type) + ")NAN)";
+        } else if (std::isinf(x.m_r)) {
+            headers.insert("math.h");
+            src = "((" + CUtils::get_c_type_from_ttype_t(x.m_type) + ")"
+                + std::string(std::signbit(x.m_r) ? "(-INFINITY)" : "INFINITY") + ")";
+        } else {
+            // TODO: remove extra spaces from the front of double_to_scientific result
+            src = double_to_scientific(x.m_r);
+        }
         last_expr_precedence = 2;
     }
 
