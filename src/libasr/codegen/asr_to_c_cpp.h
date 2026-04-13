@@ -705,6 +705,12 @@ R"(#include <stdio.h>
             } else if (!f_type->m_bindc_name) {
                 return CUtils::sanitize_c_identifier(std::string(x.m_name));
             }
+        } else if (f_type->m_deftype == ASR::deftypeType::Interface
+                && f_type->m_abi != ASR::abiType::Intrinsic) {
+            // Match LLVM lowering for external interface procedures:
+            // use the external symbol name directly instead of emitting a
+            // mangled LFortran wrapper that has no implementation.
+            return CUtils::sanitize_c_identifier(std::string(x.m_name));
         }
         return get_emitted_function_name(x);
     }
