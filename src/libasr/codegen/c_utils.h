@@ -588,6 +588,32 @@ namespace CUtils {
         }
         return type_src;
     }
+
+    static inline ASR::ttype_t* get_c_array_type_for_wrapper(ASR::ttype_t *t) {
+        t = ASRUtils::type_get_past_allocatable_pointer(t);
+        if (t != nullptr && ASRUtils::is_array(t)) {
+            return t;
+        }
+        return nullptr;
+    }
+
+    static inline std::string get_c_array_element_type_from_ttype_t(ASR::ttype_t *t,
+            bool is_c=true) {
+        ASR::ttype_t *array_type = get_c_array_type_for_wrapper(t);
+        if (array_type == nullptr) {
+            return get_c_type_from_ttype_t(t, is_c);
+        }
+        return get_c_type_from_ttype_t(ASRUtils::type_get_past_array(array_type), is_c);
+    }
+
+    static inline std::string get_c_array_type_code(ASR::ttype_t *t,
+            bool encode_kind=true, bool encode_dimensions=true) {
+        ASR::ttype_t *array_type = get_c_array_type_for_wrapper(t);
+        if (array_type == nullptr) {
+            return get_c_type_code(t, encode_kind, encode_dimensions, false);
+        }
+        return get_c_type_code(array_type, encode_kind, encode_dimensions, false);
+    }
 } // namespace CUtils
 
 class CCPPDSUtils {
@@ -921,8 +947,8 @@ class CCPPDSUtils {
 
         std::string get_array_deepcopy_func(ASR::ttype_t* array_type_asr) {
             LCOMPILERS_ASSERT(is_c);
-            std::string array_type_name = CUtils::get_c_type_from_ttype_t(array_type_asr);
-            std::string array_encoded_type_name = CUtils::get_c_type_code(array_type_asr, true, false, false);
+            std::string array_type_name = CUtils::get_c_array_element_type_from_ttype_t(array_type_asr);
+            std::string array_encoded_type_name = CUtils::get_c_array_type_code(array_type_asr, true, false);
             std::string array_types_decls = "";
             std::string array_type_str = get_array_type(array_type_name, array_encoded_type_name,
                                                             array_types_decls, true, false);
@@ -2143,7 +2169,8 @@ namespace BindPyUtils {
             case ASR::ttypeType::Array: {
                 ASR::ttype_t* array_t = ASR::down_cast<ASR::Array_t>(t)->m_type;
                 std::string array_type_name = CUtils::get_c_type_from_ttype_t(array_t);
-                std::string array_encoded_type_name = CUtils::get_c_type_code(array_t, true, false);
+                std::string array_encoded_type_name = CUtils::get_c_type_code(
+                    t, true, false, false);
                 std::string return_type = c_ds_api->get_array_type(array_type_name, array_encoded_type_name, array_types_decls, true);
                 type_src = bind_py_utils_functions->get_conv_py_arr_to_c(return_type, array_type_name,
                     array_encoded_type_name);

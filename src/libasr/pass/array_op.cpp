@@ -14,6 +14,22 @@
 
 namespace LCompilers {
 
+static inline bool is_unlimited_polymorphic_array_type(ASR::ttype_t *type) {
+    type = ASRUtils::type_get_past_allocatable_pointer(type);
+    if (type == nullptr || !ASRUtils::is_array(type)) {
+        return false;
+    }
+    ASR::ttype_t *element_type = ASRUtils::extract_type(type);
+    return element_type != nullptr
+        && ASR::is_a<ASR::StructType_t>(*element_type)
+        && ASR::down_cast<ASR::StructType_t>(element_type)->m_is_unlimited_polymorphic;
+}
+
+static inline bool is_unlimited_polymorphic_array_expr(ASR::expr_t *expr) {
+    return expr != nullptr
+        && is_unlimited_polymorphic_array_type(ASRUtils::expr_type(expr));
+}
+
 class ArrayVarAddressReplacer: public ASR::BaseExprReplacer<ArrayVarAddressReplacer> {
 
     public:
@@ -299,7 +315,7 @@ class ReplaceArrayOp: public ASR::BaseExprReplacer<ReplaceArrayOp> {
 
     void replace_ArrayConstant(ASR::ArrayConstant_t* x) {
         remove_original_stmt_if_size_0(x->m_type)
-        if (result_expr == nullptr) {
+        if (result_expr == nullptr || is_unlimited_polymorphic_array_expr(result_expr)) {
             return;
         }
         pass_result.reserve(al, x->m_n_data);
@@ -362,6 +378,9 @@ class ReplaceArrayOp: public ASR::BaseExprReplacer<ReplaceArrayOp> {
     }
 
     void replace_ArrayConstructor(ASR::ArrayConstructor_t* x) {
+        if (result_expr != nullptr && is_unlimited_polymorphic_array_expr(result_expr)) {
+            return;
+        }
         // TODO: Remove this because the ArrayConstructor node should
         // be replaced with its value already (if present) in array_struct_temporary pass.
         if( x->m_value == nullptr ) {
@@ -1448,6 +1467,9 @@ class ArrayOpVisitor: public ASR::CallReplacerOnExpressionsVisitor<ArrayOpVisito
             if ( ar->m_value != nullptr ) {
                 xx.m_value = ar->m_value;
             }
+        }
+        if (is_unlimited_polymorphic_array_type(ASRUtils::expr_type(xx.m_target))) {
+            return;
         }
         if( !ASRUtils::is_array(ASRUtils::expr_type(xx.m_target)) ||
             std::find(skip_exprs.begin(), skip_exprs.end(), xx.m_value->type) != skip_exprs.end() ||
