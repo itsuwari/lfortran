@@ -4462,7 +4462,7 @@ LFORTRAN_API void _lfortran_strcpy_alloc(
         if (*lhs == NULL) *lhs = (char*)ALLOCATOR_ALLOC(al, MAX((*lhs_len), 1));
         _lfortran_copy_str_and_pad(*lhs, *lhs_len, rhs, rhs_len);
     } else if (is_lhs_deferred && is_lhs_allocatable) {
-        if (*lhs != NULL && rhs != NULL) {
+        if (lhs_len != NULL && *lhs != NULL && rhs != NULL) {
             char* lhs_start = *lhs;
             char* lhs_end = lhs_start + (*lhs_len);
             if (rhs >= lhs_start && rhs < lhs_end) {
@@ -4482,7 +4482,9 @@ LFORTRAN_API void _lfortran_strcpy_alloc(
             }
         }
         *lhs = (char*)ALLOCATOR_REALLOC(al, *lhs, MAX(rhs_len, 1));
-        *lhs_len = rhs_len;
+        if (lhs_len != NULL) {
+            *lhs_len = rhs_len;
+        }
         for(int64_t i = 0; i < rhs_len; i++) {(*lhs)[i] = rhs[i];}
     } else if(is_lhs_deferred && !is_lhs_allocatable) {
         lfortran_assert(*lhs != NULL, "Runtime Error : Non-allocatable string isn't allocated.")

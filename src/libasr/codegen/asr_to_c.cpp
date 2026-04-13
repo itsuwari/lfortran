@@ -1299,6 +1299,8 @@ R"(
                 c_decl_options_.do_not_initialize = true;
                 sub += indent + convert_variable_decl(*mem_var, &c_decl_options_) + ";\n";
                 if( !ASRUtils::is_fixed_size_array(m_dims, n_dims) ) {
+                    sub += indent + mem_var_name + " = _lfortran_malloc_alloc(_lfortran_get_default_allocator(), sizeof(*" + mem_var_name + "));\n";
+                    sub += indent + "memset(" + mem_var_name + ", 0, sizeof(*" + mem_var_name + "));\n";
                     sub += indent + name + "->" + emitted_member_name + " = " + mem_var_name + ";\n";
                 }
             } else if( ASR::is_a<ASR::StructType_t>(*mem_type) ) {
@@ -1478,6 +1480,14 @@ R"(
         std::string sub;
         bool use_ref = (v.m_intent == ASRUtils::intent_out ||
                         v.m_intent == ASRUtils::intent_inout);
+        ASR::asr_t *owner = v.m_parent_symtab ? v.m_parent_symtab->asr_owner : nullptr;
+        if (is_c && owner && ASR::is_a<ASR::Function_t>(*owner)
+                && std::string(ASR::down_cast<ASR::Function_t>(owner)->m_name)
+                    .rfind("_lcompilers_move_alloc_", 0) == 0
+                && get_variable_c_name(v) == "to"
+                && !ASRUtils::is_array(v.m_type)) {
+            use_ref = true;
+        }
         bool declaration_only = do_not_initialize;
         bool is_array = ASRUtils::is_array(v.m_type);
         bool dummy = ASRUtils::is_arg_dummy(v.m_intent);
@@ -1982,12 +1992,6 @@ R"(
                 } else {
                     bool is_fixed_size = true;
                     dims = convert_dims_c(n_dims, m_dims, v_m_type, is_fixed_size);
-                    if( v.m_intent == ASRUtils::intent_in ||
-                        v.m_intent == ASRUtils::intent_inout ||
-                        v.m_intent == ASRUtils::intent_out ) {
-                        use_ref = false;
-                        dims = "";
-                    }
                     std::string ptr_char = "*";
                     if( !use_ptr_for_derived_type && !force_pointer_backed_struct ) {
                         ptr_char.clear();
@@ -2068,9 +2072,9 @@ R"(
                     ASR::StructConstant_t *sc = ASR::down_cast<ASR::StructConstant_t>(init_expr);
                     std::string der_type_name = CUtils::get_c_symbol_name(
                         ASRUtils::symbol_get_past_external(sc->m_dt_sym));
-                    sub = format_type_c("", "struct " + der_type_name, c_v_name, false, false);
+                    sub = format_type_c("", "struct " + der_type_name, c_v_name, use_ref, dummy);
                 } else {
-                    sub = format_type_c("", "void*", c_v_name, false, false);
+                    sub = format_type_c("", "void*", c_v_name, use_ref, dummy);
                 }
             } else if (ASR::is_a<ASR::EnumType_t>(*v_m_type)) {
                 ASR::EnumType_t* enum_ = ASR::down_cast<ASR::EnumType_t>(v_m_type);
