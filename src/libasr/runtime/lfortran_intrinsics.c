@@ -5828,7 +5828,7 @@ _lfortran_open(int32_t unit_num,
         (const fchar*)f_name, f_name_len, file_exists, -1, NULL, NULL, NULL,
         NULL, 0, NULL, 0, NULL, 0, NULL, 0, NULL, 0, NULL, 0, NULL, 0, NULL,
         NULL, 0, NULL, 0, NULL, 0, NULL, 0, NULL, 0, NULL, NULL, NULL, 0, NULL, 0, NULL, 0,
-        NULL, 0, NULL, 0, NULL, 0, NULL, 0, NULL, NULL, 0, NULL, 0, NULL, 0);
+        NULL, 0, NULL, 0, NULL, 0, NULL, 0, NULL, NULL, 0, NULL, 0, NULL, 0, NULL, 0);
     char* access_mode = NULL;
     /*
      STATUS=`specifier` in the OPEN statement
@@ -6219,7 +6219,8 @@ LFORTRAN_API void _lfortran_inquire(const fchar* f_name_data, int64_t f_name_len
                                     bool *pending,
                                     char *asynchronous, int64_t asynchronous_len,
                                     char *action, int64_t action_len,
-                                    char *position, int64_t position_len) {
+                                    char *position, int64_t position_len,
+                                    char *delim, int64_t delim_len) {
     if (f_name_data && unit_num != -1) {
         if (iostat != NULL) {
             *iostat = 1;
@@ -6237,7 +6238,7 @@ LFORTRAN_API void _lfortran_inquire(const fchar* f_name_data, int64_t f_name_len
         int access_id = -1;
         bool read_access;
         bool write_access;
-        int delim;
+        int delim_mode;
         bool blank_zero;
         int sign_mode;
         int decimal_mode;
@@ -6278,7 +6279,7 @@ LFORTRAN_API void _lfortran_inquire(const fchar* f_name_data, int64_t f_name_len
             *number = u_num;
         }
         
-        fp = get_file_pointer_from_unit(u_num, &unit_file_bin, &access_id, &read_access, &write_access, &delim, &blank_zero, &unit_recl, &sign_mode, &decimal_mode, &encoding_mode, &round_mode_val, &pad_mode);
+        fp = get_file_pointer_from_unit(u_num, &unit_file_bin, &access_id, &read_access, &write_access, &delim_mode, &blank_zero, &unit_recl, &sign_mode, &decimal_mode, &encoding_mode, &round_mode_val, &pad_mode);
         if (write != NULL) {
             if (write_access) {
                 _lfortran_copy_str_and_pad(write, write_len, "YES", 3);
@@ -6319,6 +6320,17 @@ LFORTRAN_API void _lfortran_inquire(const fchar* f_name_data, int64_t f_name_len
                 } else {
                     _lfortran_copy_str_and_pad(blank, blank_len, "NULL", 4);
                 }
+            }
+        }
+        if (delim != NULL) {
+            if (unit_file_bin) {
+                _lfortran_copy_str_and_pad(delim, delim_len, "UNDEFINED", 9);
+            } else if (delim_mode == 1) {
+                _lfortran_copy_str_and_pad(delim, delim_len, "APOSTROPHE", 10);
+            } else if (delim_mode == 2) {
+                _lfortran_copy_str_and_pad(delim, delim_len, "QUOTE", 5);
+            } else {
+                _lfortran_copy_str_and_pad(delim, delim_len, "NONE", 4);
             }
         }
         if (pad != NULL) {
@@ -6512,7 +6524,7 @@ LFORTRAN_API void _lfortran_inquire(const fchar* f_name_data, int64_t f_name_len
         int access_id = -1;
         bool read_access;
         bool write_access;
-        int delim;
+        int delim_mode;
         bool blank_zero;
         int decimal_mode;
         int sign_mode;
@@ -6520,7 +6532,7 @@ LFORTRAN_API void _lfortran_inquire(const fchar* f_name_data, int64_t f_name_len
         int round_mode_val;
         int pad_mode;
         int32_t unit_recl = 0;
-        FILE *fp = get_file_pointer_from_unit(unit_num, &unit_file_bin, &access_id, &read_access, &write_access, &delim, &blank_zero, &unit_recl, &sign_mode, &decimal_mode, &encoding_mode, &round_mode_val, &pad_mode);
+        FILE *fp = get_file_pointer_from_unit(unit_num, &unit_file_bin, &access_id, &read_access, &write_access, &delim_mode, &blank_zero, &unit_recl, &sign_mode, &decimal_mode, &encoding_mode, &round_mode_val, &pad_mode);
         if (get_file_name_from_unit(unit_num, &unit_file_bin) != NULL) {
             *exists = true;
         } else {
@@ -6581,6 +6593,17 @@ LFORTRAN_API void _lfortran_inquire(const fchar* f_name_data, int64_t f_name_len
                 } else {
                     _lfortran_copy_str_and_pad(blank, blank_len, "NULL", 4);
                 }
+            }
+        }
+        if (delim != NULL) {
+            if (unit_file_bin || fp == NULL) {
+                _lfortran_copy_str_and_pad(delim, delim_len, "UNDEFINED", 9);
+            } else if (delim_mode == 1) {
+                _lfortran_copy_str_and_pad(delim, delim_len, "APOSTROPHE", 10);
+            } else if (delim_mode == 2) {
+                _lfortran_copy_str_and_pad(delim, delim_len, "QUOTE", 5);
+            } else {
+                _lfortran_copy_str_and_pad(delim, delim_len, "NONE", 4);
             }
         }
         if (pad != NULL) {
