@@ -257,6 +257,29 @@ R"(
         return get_split_visible_definition(v) + ";\n";
     }
 
+    void hoist_split_header_enum_name_defs(std::string &type_decls,
+            std::string &shared_defs) {
+        std::string kept_decls;
+        for (const auto &line : split_lines_keep_newlines(type_decls)) {
+            std::string trimmed = trim_copy(line);
+            if (trimmed.empty()) {
+                kept_decls += line;
+                continue;
+            }
+            if (trimmed.rfind("char enum_names_", 0) == 0
+                    && trimmed.find('=') != std::string::npos) {
+                kept_decls += "extern " + strip_initializer_from_decl(trimmed) + ";\n";
+                shared_defs += line;
+                if (shared_defs.empty() || shared_defs.back() != '\n') {
+                    shared_defs += "\n";
+                }
+                continue;
+            }
+            kept_decls += line;
+        }
+        type_decls = kept_decls;
+    }
+
     std::string collect_module_extern_decls(const ASR::TranslationUnit_t &x) {
         std::string decls;
         std::vector<std::string> build_order =
@@ -2402,6 +2425,8 @@ R"(
         header_guard += "_GENERATED_H";
 
         std::string module_aggregate_decls = collect_module_aggregate_decls(x);
+        std::string split_owned_defs;
+        hoist_split_header_enum_name_defs(array_types_decls, split_owned_defs);
         std::string function_decls = dedupe_decl_lines(forward_decl_functions + split_func_decls);
 
         std::string header_src = "#ifndef " + header_guard + "\n#define "
@@ -2414,6 +2439,9 @@ R"(
 
         std::vector<std::string> source_files;
         std::string shared_body;
+        if (!split_owned_defs.empty()) {
+            shared_body += split_owned_defs + "\n";
+        }
         if (!global_var_defs.empty()) {
             shared_body += global_var_defs + "\n";
         }
