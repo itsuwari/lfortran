@@ -1897,6 +1897,46 @@ R"(
                     std::string dims = convert_dims_c(n_dims, m_dims, v_m_type, is_fixed_size);
                     sub = format_type_c(dims, type_name, decl_name, use_ref, dummy);
                 }
+            } else if (ASRUtils::is_complex(*t2)) {
+                ASR::Complex_t *t = ASR::down_cast<ASR::Complex_t>(t2);
+                std::string type_name;
+                if (t->m_kind == 4) {
+                    type_name = "float complex";
+                } else if (t->m_kind == 8) {
+                    type_name = "double complex";
+                } else {
+                    diag.codegen_error_label("Complex kind '"
+                        + std::to_string(t->m_kind)
+                        + "' not supported", {v.base.base.loc}, "");
+                    throw Abort();
+                }
+                headers.insert("complex.h");
+                if( !is_array ) {
+                    type_name.append(" *");
+                }
+                if( is_array ) {
+                    bool is_fixed_size = true;
+                    std::string dims = convert_dims_c(n_dims, m_dims, v_m_type, is_fixed_size, true);
+                    std::string encoded_type_name = CUtils::get_c_array_type_code(v.m_type);
+                    if (declaration_only || dummy) {
+                        std::string array_type =
+                            c_ds_api->get_array_type(type_name, encoded_type_name, array_types_decls, true);
+                        sub = format_type_c("", array_type, decl_name, use_ref, dummy);
+                    } else {
+                        generate_array_decl(sub, decl_name, type_name, dims,
+                                            encoded_type_name, m_dims, n_dims,
+                                            use_ref, dummy,
+                                            v.m_intent != ASRUtils::intent_in &&
+                                            v.m_intent != ASRUtils::intent_inout &&
+                                            v.m_intent != ASRUtils::intent_out &&
+                                            v.m_intent != ASRUtils::intent_unspecified,
+                                            is_fixed_size, true, ASR::abiType::Source, false, &v);
+                    }
+                } else {
+                    bool is_fixed_size = true;
+                    std::string dims = convert_dims_c(n_dims, m_dims, v_m_type, is_fixed_size);
+                    sub = format_type_c(dims, type_name, decl_name, use_ref, dummy);
+                }
             } else if (ASRUtils::is_logical(*t2)) {
                 headers.insert("stdbool.h");
                 std::string type_name = "bool";
@@ -3416,12 +3456,295 @@ R"(    // Initialise Numpy
             std::string format_arg = x.m_fmt ? fmt_arg.first : "NULL";
             std::string offset_name = get_unique_local_name("__lfortran_read_offset");
             std::string internal_read_code;
-            internal_read_code += indent + "int64_t " + offset_name + " = 0;\n";
             if (x.m_iomsg) {
                 internal_read_code += indent + "if (" + iomsg_arg.first + " == NULL) " + iomsg_arg.first
                     + " = (char*) _lfortran_string_malloc_alloc(_lfortran_get_default_allocator(), "
                     + iomsg_arg.second + ");\n";
             }
+
+            if (x.m_is_formatted && x.m_fmt) {
+                std::string formatted_args;
+                std::string formatted_post;
+                int formatted_arg_count = 0;
+
+                auto append_internal_formatted_arg = [&](ASR::expr_t *value_expr,
+                                                         std::string &args,
+                                                         std::string &post,
+                                                         int &arg_count) {
+                    ASR::expr_t *value_expr_unwrapped = value_expr;
+                    while (value_expr_unwrapped != nullptr) {
+                        if (ASR::is_a<ASR::ArrayPhysicalCast_t>(*value_expr_unwrapped)) {
+                            value_expr_unwrapped = ASR::down_cast<ASR::ArrayPhysicalCast_t>(value_expr_unwrapped)->m_arg;
+                        } else if (ASR::is_a<ASR::GetPointer_t>(*value_expr_unwrapped)) {
+                            value_expr_unwrapped = ASR::down_cast<ASR::GetPointer_t>(value_expr_unwrapped)->m_arg;
+                        } else if (ASR::is_a<ASR::Cast_t>(*value_expr_unwrapped)) {
+                            value_expr_unwrapped = ASR::down_cast<ASR::Cast_t>(value_expr_unwrapped)->m_arg;
+                        } else if (ASR::is_a<ASR::BitCast_t>(*value_expr_unwrapped)) {
+                            value_expr_unwrapped = ASR::down_cast<ASR::BitCast_t>(value_expr_unwrapped)->m_source;
+                        } else if (ASR::is_a<ASR::StringPhysicalCast_t>(*value_expr_unwrapped)) {
+                            value_expr_unwrapped = ASR::down_cast<ASR::StringPhysicalCast_t>(value_expr_unwrapped)->m_arg;
+                        } else {
+                            break;
+                        }
+                    }
+
+                    ASR::ttype_t *value_type = ASRUtils::expr_type(value_expr_unwrapped);
+                    ASR::ttype_t *value_type_past_allocatable =
+                        ASRUtils::type_get_past_allocatable_pointer(value_type);
+
+                    if (ASR::is_a<ASR::ArraySection_t>(*value_expr_unwrapped) ||
+                        ASR::is_a<ASR::Array_t>(*value_type_past_allocatable)) {
+                        ASR::ArraySection_t *section = nullptr;
+                        ASR::expr_t *base_expr = value_expr_unwrapped;
+                        if (ASR::is_a<ASR::ArraySection_t>(*value_expr_unwrapped)) {
+                            section = ASR::down_cast<ASR::ArraySection_t>(value_expr_unwrapped);
+                            if (section->n_args != 1) {
+                                throw CodeGenError("C backend FileRead currently supports only rank-1 array sections for formatted internal string reads",
+                                    value_expr->base.loc);
+                            }
+                            base_expr = section->m_v;
+                        }
+
+                        ASR::ttype_t *base_type = ASRUtils::expr_type(base_expr);
+                        ASR::ttype_t *element_type = ASRUtils::extract_type(value_type_past_allocatable);
+                        int n_dims = ASRUtils::extract_n_dims_from_ttype(value_type_past_allocatable);
+                        if (n_dims != 1) {
+                            throw CodeGenError("C backend FileRead currently supports only rank-1 arrays for formatted internal string reads",
+                                value_expr->base.loc);
+                        }
+
+                        this->visit_expr(*base_expr);
+                        std::string base = src;
+                        ASR::array_physical_typeType base_phys = ASRUtils::extract_physical_type(base_type);
+                        std::string data_ptr = base;
+                        if (base_phys == ASR::array_physical_typeType::DescriptorArray ||
+                            base_phys == ASR::array_physical_typeType::PointerArray ||
+                            base_phys == ASR::array_physical_typeType::UnboundedPointerArray) {
+                            data_ptr += "->data";
+                        }
+
+                        std::string lower_bound_expr;
+                        if (base_phys == ASR::array_physical_typeType::DescriptorArray ||
+                            base_phys == ASR::array_physical_typeType::PointerArray ||
+                            base_phys == ASR::array_physical_typeType::UnboundedPointerArray) {
+                            lower_bound_expr = base + "->dims[0].lower_bound";
+                        } else {
+                            ASR::dimension_t *base_dims = nullptr;
+                            int base_n_dims = ASRUtils::extract_dimensions_from_ttype(base_type, base_dims);
+                            if (base_n_dims < 1) {
+                                throw CodeGenError("C backend FileRead expected array dimensions for formatted internal string-read array base",
+                                    value_expr->base.loc);
+                            }
+                            if (base_dims[0].m_start) {
+                                this->visit_expr(*base_dims[0].m_start);
+                                lower_bound_expr = src;
+                            } else {
+                                lower_bound_expr = std::to_string(lower_bound);
+                            }
+                        }
+
+                        std::string start_expr = lower_bound_expr;
+                        if (section && section->m_args[0].m_left) {
+                            this->visit_expr(*section->m_args[0].m_left);
+                            start_expr = src;
+                        }
+
+                        std::string end_expr;
+                        if (section && section->m_args[0].m_right) {
+                            this->visit_expr(*section->m_args[0].m_right);
+                            end_expr = src;
+                        } else if (base_phys == ASR::array_physical_typeType::DescriptorArray ||
+                                   base_phys == ASR::array_physical_typeType::PointerArray ||
+                                   base_phys == ASR::array_physical_typeType::UnboundedPointerArray) {
+                            end_expr = "(" + base + "->dims[0].lower_bound + " + base + "->dims[0].length - 1)";
+                        } else {
+                            ASR::dimension_t *base_dims = nullptr;
+                            int base_n_dims = ASRUtils::extract_dimensions_from_ttype(base_type, base_dims);
+                            if (base_n_dims < 1) {
+                                throw CodeGenError("C backend FileRead expected array dimensions for formatted internal string-read array base",
+                                    value_expr->base.loc);
+                            }
+                            if (base_dims[0].m_length) {
+                                this->visit_expr(*base_dims[0].m_length);
+                                end_expr = "((" + lower_bound_expr + ") + (" + src + ") - 1)";
+                            } else {
+                                throw CodeGenError("C backend FileRead expected array extent for formatted internal string-read array base",
+                                    value_expr->base.loc);
+                            }
+                        }
+
+                        std::string step_expr = "1";
+                        if (section && section->m_args[0].m_step) {
+                            this->visit_expr(*section->m_args[0].m_step);
+                            step_expr = src;
+                        }
+
+                        std::string array_size = "(((" + end_expr + ") - (" + start_expr + ")) / (" + step_expr + ") + 1)";
+                        std::string start_offset = "((" + start_expr + ") - (" + lower_bound_expr + "))";
+                        std::string array_data_ptr = "(" + data_ptr + " + " + start_offset + ")";
+
+                        if (ASR::is_a<ASR::Integer_t>(*element_type)) {
+                            int kind = ASR::down_cast<ASR::Integer_t>(element_type)->m_kind;
+                            if (kind == 4) {
+                                args += ", 1, 2, " + array_data_ptr + ", " + array_size + ", " + step_expr;
+                            } else if (kind == 8) {
+                                args += ", 1, 3, " + array_data_ptr + ", " + array_size + ", " + step_expr;
+                            } else {
+                                throw CodeGenError("C backend FileRead supports formatted internal integer-array reads only for kind=4 or kind=8",
+                                    value_expr->base.loc);
+                            }
+                            arg_count++;
+                            return;
+                        }
+
+                        if (ASR::is_a<ASR::Real_t>(*element_type)) {
+                            int kind = ASR::down_cast<ASR::Real_t>(element_type)->m_kind;
+                            if (kind == 4) {
+                                args += ", 1, 4, " + array_data_ptr + ", " + array_size + ", " + step_expr;
+                            } else if (kind == 8) {
+                                args += ", 1, 5, " + array_data_ptr + ", " + array_size + ", " + step_expr;
+                            } else {
+                                throw CodeGenError("C backend FileRead supports formatted internal real-array reads only for kind=4 or kind=8",
+                                    value_expr->base.loc);
+                            }
+                            arg_count++;
+                            return;
+                        }
+
+                        if (ASR::is_a<ASR::Complex_t>(*element_type)) {
+                            int kind = ASR::down_cast<ASR::Complex_t>(element_type)->m_kind;
+                            if (kind == 4) {
+                                args += ", 1, 6, " + array_data_ptr + ", " + array_size + ", " + step_expr;
+                            } else if (kind == 8) {
+                                args += ", 1, 7, " + array_data_ptr + ", " + array_size + ", " + step_expr;
+                            } else {
+                                throw CodeGenError("C backend FileRead supports formatted internal complex-array reads only for kind=4 or kind=8",
+                                    value_expr->base.loc);
+                            }
+                            arg_count++;
+                            return;
+                        }
+
+                        if (ASR::is_a<ASR::Logical_t>(*element_type)) {
+                            int kind = ASR::down_cast<ASR::Logical_t>(element_type)->m_kind;
+                            args += ", 1, 1, " + array_data_ptr + ", " + array_size + ", " + step_expr;
+                            if (kind != 4) {
+                                throw CodeGenError("C backend FileRead supports formatted internal logical-array reads only for kind=4",
+                                    value_expr->base.loc);
+                            }
+                            arg_count++;
+                            return;
+                        }
+
+                        throw CodeGenError("C backend FileRead currently supports only numeric/logical arrays for formatted internal string reads",
+                            value_expr->base.loc);
+                    }
+
+                    this->visit_expr(*value_expr);
+                    std::string value = src;
+
+                    if (ASRUtils::is_character(*value_type_past_allocatable)) {
+                        ASR::String_t *value_str_type = ASRUtils::get_string_type(value_expr);
+                        std::string value_len = "strlen(" + value + ")";
+                        if (value_str_type && value_str_type->m_len) {
+                            this->visit_expr(*value_str_type->m_len);
+                            value_len = src;
+                        }
+                        std::string tmp_name, setup_readback, post_readback;
+                        if (prepare_string_readback_target(value_expr, value_len,
+                                tmp_name, setup_readback, post_readback)) {
+                            internal_read_code += setup_readback;
+                            args += ", 0, 0, &(" + tmp_name + "), " + value_len;
+                            post += post_readback;
+                            arg_count++;
+                            return;
+                        }
+                        value = get_c_mutable_scalar_expr(value_expr);
+                        internal_read_code += indent + "if (" + value + " == NULL) " + value
+                            + " = (char*) _lfortran_string_malloc_alloc(_lfortran_get_default_allocator(), "
+                            + value_len + ");\n";
+                        args += ", 0, 0, &(" + value + "), " + value_len;
+                        arg_count++;
+                        return;
+                    }
+
+                    if (ASR::is_a<ASR::Logical_t>(*value_type_past_allocatable)) {
+                        std::string tmp_name = get_unique_local_name("__lfortran_fmt_logical");
+                        internal_read_code += indent + "int32_t " + tmp_name + " = 0;\n";
+                        args += ", 0, 1, &" + tmp_name;
+                        post += indent + value + " = (" + tmp_name + " != 0);\n";
+                        arg_count++;
+                        return;
+                    }
+
+                    if (ASR::is_a<ASR::Integer_t>(*value_type_past_allocatable)) {
+                        int kind = ASR::down_cast<ASR::Integer_t>(value_type_past_allocatable)->m_kind;
+                        if (kind == 4) {
+                            args += ", 0, 2, &(" + value + ")";
+                        } else if (kind == 8) {
+                            args += ", 0, 3, &(" + value + ")";
+                        } else {
+                            throw CodeGenError("C backend FileRead supports formatted internal scalar integer reads only for kind=4 or kind=8",
+                                value_expr->base.loc);
+                        }
+                        arg_count++;
+                        return;
+                    }
+
+                    if (ASR::is_a<ASR::Real_t>(*value_type_past_allocatable)) {
+                        int kind = ASR::down_cast<ASR::Real_t>(value_type_past_allocatable)->m_kind;
+                        if (kind == 4) {
+                            args += ", 0, 4, &(" + value + ")";
+                        } else if (kind == 8) {
+                            args += ", 0, 5, &(" + value + ")";
+                        } else {
+                            throw CodeGenError("C backend FileRead supports formatted internal scalar real reads only for kind=4 or kind=8",
+                                value_expr->base.loc);
+                        }
+                        arg_count++;
+                        return;
+                    }
+
+                    if (ASR::is_a<ASR::Complex_t>(*value_type_past_allocatable)) {
+                        int kind = ASR::down_cast<ASR::Complex_t>(value_type_past_allocatable)->m_kind;
+                        if (kind == 4) {
+                            args += ", 0, 6, &(" + value + ")";
+                        } else if (kind == 8) {
+                            args += ", 0, 7, &(" + value + ")";
+                        } else {
+                            throw CodeGenError("C backend FileRead supports formatted internal scalar complex reads only for kind=4 or kind=8",
+                                value_expr->base.loc);
+                        }
+                        arg_count++;
+                        return;
+                    }
+
+                    throw CodeGenError("C backend FileRead currently supports only scalar integer/real/complex/logical/character values for formatted internal string reads",
+                        value_expr->base.loc);
+                };
+
+                for (size_t i = 0; i < x.n_values; i++) {
+                    append_internal_formatted_arg(x.m_values[i], formatted_args, formatted_post,
+                        formatted_arg_count);
+                }
+
+                internal_read_code += indent + "_lfortran_string_formatted_read("
+                    + unit_arg.first + ", " + unit_arg.second + ", "
+                    + iostat_ptr + ", " + size_ptr + ", "
+                    + advance_arg.first + ", " + advance_arg.second + ", "
+                    + fmt_arg.first + ", " + fmt_arg.second + ", "
+                    + std::to_string(formatted_arg_count) + ", NULL, 0"
+                    + formatted_args + ");\n";
+                internal_read_code += formatted_post;
+                if (x.m_iomsg && x.m_iostat) {
+                    internal_read_code += indent + "_lfortran_set_read_iomsg(" + iostat_val + ", "
+                        + iomsg_arg.first + ", " + iomsg_arg.second + ");\n";
+                }
+                src = std::move(internal_read_code);
+                return;
+            }
+
+            internal_read_code += indent + "int64_t " + offset_name + " = 0;\n";
 
             for (size_t i = 0; i < x.n_values; i++) {
                 ASR::expr_t *value_expr = x.m_values[i];
