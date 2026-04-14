@@ -1949,9 +1949,6 @@ R"(
                 }
             } else if (ASRUtils::is_character(*t2)) {
                 std::string type_name = "char *";
-                if( !is_array ) {
-                    type_name.append("*");
-                }
                 if( is_array ) {
                     bool is_fixed_size = true;
                     std::string dims = convert_dims_c(n_dims, m_dims, v_m_type, is_fixed_size, true);

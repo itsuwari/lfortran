@@ -556,7 +556,15 @@ namespace CUtils {
             }
             case ASR::ttypeType::Pointer: {
                 ASR::Pointer_t* ptr_type = ASR::down_cast<ASR::Pointer_t>(t);
-                type_src = get_c_type_from_ttype_t(ptr_type->m_type) + "*";
+                ASR::ttype_t *pointee_type = ptr_type->m_type;
+                if (pointee_type != nullptr
+                        && !ASRUtils::is_array(pointee_type)
+                        && ASRUtils::is_character(
+                            *ASRUtils::type_get_past_allocatable_pointer(pointee_type))) {
+                    type_src = get_c_type_from_ttype_t(pointee_type, is_c);
+                } else {
+                    type_src = get_c_type_from_ttype_t(pointee_type, is_c) + "*";
+                }
                 break;
             }
             case ASR::ttypeType::CPtr: {

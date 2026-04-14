@@ -741,8 +741,16 @@ R"(#include <stdio.h>
         bool is_array = ASRUtils::is_array(return_var->m_type);
         if (ASR::is_a<ASR::Pointer_t>(*return_var->m_type)) {
             ASR::Pointer_t* ptr_type = ASR::down_cast<ASR::Pointer_t>(return_var->m_type);
-            std::string pointer_type_str = CUtils::get_c_type_from_ttype_t(ptr_type->m_type);
-            sub = pointer_type_str + "* ";
+            ASR::ttype_t *pointee_type = ptr_type->m_type;
+            if (pointee_type != nullptr
+                    && !ASRUtils::is_array(pointee_type)
+                    && ASRUtils::is_character(
+                        *ASRUtils::type_get_past_allocatable_pointer(pointee_type))) {
+                sub = "char* ";
+            } else {
+                std::string pointer_type_str = CUtils::get_c_type_from_ttype_t(pointee_type);
+                sub = pointer_type_str + "* ";
+            }
         } else if (ASRUtils::is_integer(*return_var->m_type)) {
             int kind = ASRUtils::extract_kind_from_ttype_t(return_var->m_type);
             if (is_array) {
@@ -2780,13 +2788,6 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 if (i < n_args - 1) args += ", ";
                 continue;
             }
-            if (!ASRUtils::is_allocatable(param_type)
-                    && is_scalar_character_dummy_type(param_type, param_type_unwrapped)
-                    && is_scalar_character_pointer_type(type)) {
-                args += "(*" + canonicalize_raw_pointer_actual_src(src) + ")";
-                if (i < n_args - 1) args += ", ";
-                continue;
-            }
             auto pass_wrapper_arg = [&](const std::string &value_expr) -> std::string {
                 return cast_c_array_wrapper_ptr_to_target_type(param_type, type, value_expr);
             };
@@ -3109,13 +3110,6 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                         ? arg_src + "->data"
                         : cast_c_array_wrapper_ptr_to_target_type(param_type, type, arg_src);
                 }
-                if (i < n_args - 1) args += ", ";
-                continue;
-            }
-            if (!ASRUtils::is_allocatable(param_type)
-                    && is_scalar_character_dummy_type(param_type, param_type_unwrapped)
-                    && is_scalar_character_pointer_type(type)) {
-                args += "(*" + canonicalize_raw_pointer_actual_src(src) + ")";
                 if (i < n_args - 1) args += ", ";
                 continue;
             }
@@ -3540,6 +3534,12 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             step = src;
         } else {
             step = "1";
+        }
+        if (left_present == "true") {
+            left = "((" + left + ") - 1)";
+        }
+        if (rig_present == "true" && x.m_step) {
+            right = "((" + step + ") > 0 ? (" + right + ") : ((" + right + ") - 2))";
         }
         src = "_lfortran_str_slice_alloc(_lfortran_get_default_allocator(), "
             + arg + ", strlen(" + arg + "), " + left + ", " + right + ", "
@@ -4064,8 +4064,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                     || ASR::is_a<ASR::UnionInstanceMember_t>(*value_expr));
             if (value_is_addressable_lvalue
                     && !is_pointer_backed_struct_expr(x.m_value)
-                    && (ASRUtils::is_character(*target_pointee_type)
-                        || ASR::is_a<ASR::StructType_t>(*target_pointee_type)
+                    && (ASR::is_a<ASR::StructType_t>(*target_pointee_type)
                         || ASRUtils::is_class_type(target_pointee_type))) {
                 value = "&(" + value + ")";
             }
@@ -4492,8 +4491,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 bool target_pointee_is_character = ASRUtils::is_character(*target_pointee_type);
                 bool target_pointee_is_aggregate =
                     ASRUtils::is_aggregate_type(target_pointee_type);
-                if ((target_pointee_is_character && value_is_addressable_lvalue)
-                        || (!target_pointee_is_character && !target_pointee_is_aggregate)
+                if ((!target_pointee_is_character && !target_pointee_is_aggregate)
                         || (target_pointee_is_aggregate
                             && value_is_addressable_lvalue
                             && (!is_pointer_backed_struct_expr(x.m_value)
