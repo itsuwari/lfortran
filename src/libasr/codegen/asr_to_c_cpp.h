@@ -4694,8 +4694,13 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             return;
         }
         ASR::Variable_t* sv = ASR::down_cast<ASR::Variable_t>(s);
-        std::string var_name = get_c_var_storage_name(sv);
         ASR::asr_t *owner = sv->m_parent_symtab ? sv->m_parent_symtab->asr_owner : nullptr;
+        if (owner && CUtils::is_symbol_owner<ASR::Enum_t>(owner)) {
+            src = CUtils::get_c_enum_member_name(*sv);
+            last_expr_precedence = 2;
+            return;
+        }
+        std::string var_name = get_c_var_storage_name(sv);
         if (is_c) {
             if (current_function
                     && std::string(current_function->m_name).rfind("_lcompilers_move_alloc_", 0) == 0

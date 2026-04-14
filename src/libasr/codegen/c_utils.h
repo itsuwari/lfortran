@@ -97,7 +97,9 @@ namespace CUtils {
             "else","enum","extern","float","for","goto","if","inline","int","long",
             "register","restrict","return","short","signed","sizeof","static","struct",
             "switch","typedef","union","unsigned","void","volatile","while","_Bool",
-            "_Complex","_Imaginary","bool"
+            "_Complex","_Imaginary","bool",
+            // Runtime headers used by emitted C define these as macros.
+            "complex","imaginary","I","true","false"
         };
         if (name.empty()) {
             return "_";
@@ -201,6 +203,14 @@ namespace CUtils {
     static inline std::string get_c_member_name(const ASR::symbol_t *sym) {
         sym = ASRUtils::symbol_get_past_external(const_cast<ASR::symbol_t*>(sym));
         return sanitize_c_identifier(ASRUtils::symbol_name(sym));
+    }
+
+    static inline std::string get_c_enum_member_name(const ASR::Variable_t &member_var) {
+        ASR::asr_t *owner = member_var.m_parent_symtab ?
+            member_var.m_parent_symtab->asr_owner : nullptr;
+        LCOMPILERS_ASSERT(owner && is_symbol_owner<ASR::Enum_t>(owner));
+        const ASR::symbol_t *enum_sym = get_symbol_owner(owner);
+        return get_c_symbol_name(enum_sym) + "__" + get_c_member_name(&member_var.base);
     }
 
     static inline std::string get_c_type_code(ASR::ttype_t *t,

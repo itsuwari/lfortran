@@ -1505,8 +1505,8 @@ RUN(NAME intrinsics_271 LABELS gfortran llvm llvm_wasm llvm_wasm_emcc fortran) #
 RUN(NAME intrinsics_272 LABELS gfortran llvm llvm_wasm llvm_wasm_emcc fortran) # trailz
 RUN(NAME intrinsics_273 LABELS gfortran llvm llvm_wasm llvm_wasm_emcc) # dprod
 RUN(NAME intrinsics_274 LABELS gfortran llvm llvm_wasm llvm_wasm_emcc) # epsilon refer: #5222
-RUN(NAME intrinsics_275 LABELS gfortran llvm llvm_wasm llvm_wasm_emcc fortran) # and
-RUN(NAME intrinsics_276 LABELS gfortran llvm llvm_wasm llvm_wasm_emcc fortran) # or
+RUN(NAME intrinsics_275 LABELS gfortran llvm llvm_wasm llvm_wasm_emcc c fortran) # and
+RUN(NAME intrinsics_276 LABELS gfortran llvm llvm_wasm llvm_wasm_emcc c fortran) # or
 RUN(NAME intrinsics_277 LABELS gfortran llvm llvm_wasm llvm_wasm_emcc fortran) # xor
 RUN(NAME intrinsics_278 LABELS gfortran llvm fortran) # tiny
 RUN(NAME intrinsics_279 LABELS gfortran llvm llvm_wasm llvm_wasm_emcc) # sinh

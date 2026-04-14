@@ -1165,12 +1165,7 @@ R"(
     }
 
     std::string get_enum_member_c_name(const ASR::Variable_t &member_var) {
-        const ASR::symbol_t *owner =
-            ASR::down_cast<ASR::symbol_t>(member_var.m_parent_symtab->asr_owner);
-        ASR::Enum_t *enum_type = ASR::down_cast<ASR::Enum_t>(
-            const_cast<ASR::symbol_t*>(owner));
-        return get_enum_c_name(*enum_type) + "__"
-            + CUtils::sanitize_c_identifier(member_var.m_name);
+        return CUtils::get_c_enum_member_name(member_var);
     }
 
     bool should_emit_struct_definition(const ASR::Struct_t &x) {
