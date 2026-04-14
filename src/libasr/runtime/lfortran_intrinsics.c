@@ -6256,14 +6256,18 @@ LFORTRAN_API void _lfortran_inquire(const fchar* f_name_data, int64_t f_name_len
         FILE *fp = fopen(c_f_name_data, "r");
 
         if (fp != NULL) {
-            *exists = true;
+            if (exists != NULL) {
+                *exists = true;
+            }
             if (size != NULL) {
                 fseek(fp, 0, SEEK_END);
                 *size = ftell(fp);
             }
             fclose(fp); // close the file
         } else {
-            *exists = false;
+            if (exists != NULL) {
+                *exists = false;
+            }
         }
         int u_num = -1;
         for(int i=0; i<1000; i++) {
@@ -6533,10 +6537,12 @@ LFORTRAN_API void _lfortran_inquire(const fchar* f_name_data, int64_t f_name_len
         int pad_mode;
         int32_t unit_recl = 0;
         FILE *fp = get_file_pointer_from_unit(unit_num, &unit_file_bin, &access_id, &read_access, &write_access, &delim_mode, &blank_zero, &unit_recl, &sign_mode, &decimal_mode, &encoding_mode, &round_mode_val, &pad_mode);
-        if (get_file_name_from_unit(unit_num, &unit_file_bin) != NULL) {
-            *exists = true;
-        } else {
-            *exists = false;
+        if (exists != NULL) {
+            if (get_file_name_from_unit(unit_num, &unit_file_bin) != NULL) {
+                *exists = true;
+            } else {
+                *exists = false;
+            }
         }
         if (number != NULL) {
             *number = unit_num;

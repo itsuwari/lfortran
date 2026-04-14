@@ -3153,6 +3153,8 @@ R"(    // Initialise Numpy
     void visit_FileInquire(const ASR::FileInquire_t &x) {
         headers.insert("string.h");
         std::string indent(indentation_level * indentation_spaces, ' ');
+        std::string setup_code;
+        std::string post_code;
 
         auto visit_scalar_ptr = [&](ASR::expr_t *expr) -> std::string {
             if (!expr) return "NULL";
@@ -3164,29 +3166,61 @@ R"(    // Initialise Numpy
             if (!expr) return {"NULL", "0"};
             this->visit_expr(*expr);
             std::string value = src;
+            ASR::String_t *str_type = ASRUtils::get_string_type(expr);
+            if (str_type && str_type->m_len) {
+                this->visit_expr(*str_type->m_len);
+                return {value, src};
+            }
             return {value, "strlen(" + value + ")"};
         };
 
+        auto visit_string_output_arg = [&](ASR::expr_t *expr) -> std::pair<std::string, std::string> {
+            if (!expr) return {"NULL", "0"};
+            this->visit_expr(*expr);
+            std::string value = src;
+            ASR::String_t *str_type = ASRUtils::get_string_type(expr);
+            std::string value_len = "strlen(" + value + ")";
+            if (str_type && str_type->m_len) {
+                this->visit_expr(*str_type->m_len);
+                value_len = src;
+            }
+            std::string tmp_name, setup_readback, post_readback;
+            if (prepare_string_readback_target(expr, value_len,
+                    tmp_name, setup_readback, post_readback)) {
+                setup_code += setup_readback;
+                post_code += post_readback;
+                return {tmp_name, value_len};
+            }
+            value = get_c_mutable_scalar_expr(expr);
+            setup_code += indent + "if (" + value + " == NULL) " + value
+                + " = (char*) _lfortran_string_malloc_alloc(_lfortran_get_default_allocator(), "
+                + value_len + ");\n";
+            return {value, value_len};
+        };
+
         std::pair<std::string, std::string> file_arg = visit_string_arg(x.m_file);
-        std::pair<std::string, std::string> write_arg = visit_string_arg(x.m_write);
-        std::pair<std::string, std::string> read_arg = visit_string_arg(x.m_read);
-        std::pair<std::string, std::string> readwrite_arg = visit_string_arg(x.m_readwrite);
-        std::pair<std::string, std::string> access_arg = visit_string_arg(x.m_access);
-        std::pair<std::string, std::string> name_arg = visit_string_arg(x.m_name);
-        std::pair<std::string, std::string> blank_arg = visit_string_arg(x.m_blank);
-        std::pair<std::string, std::string> sequential_arg = visit_string_arg(x.m_sequential);
-        std::pair<std::string, std::string> direct_arg = visit_string_arg(x.m_direct);
-        std::pair<std::string, std::string> form_arg = visit_string_arg(x.m_form);
-        std::pair<std::string, std::string> formatted_arg = visit_string_arg(x.m_formatted);
-        std::pair<std::string, std::string> unformatted_arg = visit_string_arg(x.m_unformatted);
-        std::pair<std::string, std::string> decimal_arg = visit_string_arg(x.m_decimal);
-        std::pair<std::string, std::string> sign_arg = visit_string_arg(x.m_sign);
-        std::pair<std::string, std::string> encoding_arg = visit_string_arg(x.m_encoding);
-        std::pair<std::string, std::string> stream_arg = visit_string_arg(x.m_stream);
-        std::pair<std::string, std::string> iomsg_arg = visit_string_arg(x.m_iomsg);
-        std::pair<std::string, std::string> round_arg = visit_string_arg(x.m_round);
-        std::pair<std::string, std::string> pad_arg = visit_string_arg(x.m_pad);
-        std::pair<std::string, std::string> asynchronous_arg = visit_string_arg(x.m_asynchronous);
+        std::pair<std::string, std::string> write_arg = visit_string_output_arg(x.m_write);
+        std::pair<std::string, std::string> read_arg = visit_string_output_arg(x.m_read);
+        std::pair<std::string, std::string> readwrite_arg = visit_string_output_arg(x.m_readwrite);
+        std::pair<std::string, std::string> access_arg = visit_string_output_arg(x.m_access);
+        std::pair<std::string, std::string> name_arg = visit_string_output_arg(x.m_name);
+        std::pair<std::string, std::string> blank_arg = visit_string_output_arg(x.m_blank);
+        std::pair<std::string, std::string> sequential_arg = visit_string_output_arg(x.m_sequential);
+        std::pair<std::string, std::string> direct_arg = visit_string_output_arg(x.m_direct);
+        std::pair<std::string, std::string> form_arg = visit_string_output_arg(x.m_form);
+        std::pair<std::string, std::string> formatted_arg = visit_string_output_arg(x.m_formatted);
+        std::pair<std::string, std::string> unformatted_arg = visit_string_output_arg(x.m_unformatted);
+        std::pair<std::string, std::string> decimal_arg = visit_string_output_arg(x.m_decimal);
+        std::pair<std::string, std::string> sign_arg = visit_string_output_arg(x.m_sign);
+        std::pair<std::string, std::string> encoding_arg = visit_string_output_arg(x.m_encoding);
+        std::pair<std::string, std::string> stream_arg = visit_string_output_arg(x.m_stream);
+        std::pair<std::string, std::string> iomsg_arg = visit_string_output_arg(x.m_iomsg);
+        std::pair<std::string, std::string> round_arg = visit_string_output_arg(x.m_round);
+        std::pair<std::string, std::string> pad_arg = visit_string_output_arg(x.m_pad);
+        std::pair<std::string, std::string> asynchronous_arg = visit_string_output_arg(x.m_asynchronous);
+        std::pair<std::string, std::string> action_arg = visit_string_output_arg(x.m_action);
+        std::pair<std::string, std::string> position_arg = visit_string_output_arg(x.m_position);
+        std::pair<std::string, std::string> delim_arg = visit_string_output_arg(x.m_delim);
 
         std::string unit = "-1";
         if (x.m_unit) {
@@ -3194,7 +3228,7 @@ R"(    // Initialise Numpy
             unit = src;
         }
 
-        src = indent + "_lfortran_inquire("
+        src = setup_code + indent + "_lfortran_inquire("
             + file_arg.first + ", " + file_arg.second + ", "
             + visit_scalar_ptr(x.m_exist) + ", " + unit + ", "
             + visit_scalar_ptr(x.m_opened) + ", "
@@ -3224,7 +3258,11 @@ R"(    // Initialise Numpy
             + round_arg.first + ", " + round_arg.second + ", "
             + pad_arg.first + ", " + pad_arg.second + ", "
             + visit_scalar_ptr(x.m_pending) + ", "
-            + asynchronous_arg.first + ", " + asynchronous_arg.second + ");\n";
+            + asynchronous_arg.first + ", " + asynchronous_arg.second + ", "
+            + action_arg.first + ", " + action_arg.second + ", "
+            + position_arg.first + ", " + position_arg.second + ", "
+            + delim_arg.first + ", " + delim_arg.second + ");\n"
+            + post_code;
     }
 
     void visit_FileOpen(const ASR::FileOpen_t &x) {
