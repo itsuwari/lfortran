@@ -3142,6 +3142,9 @@ RUN(NAME enum_07 LABELS gfortran llvm_submodule EXTRAFILES
 RUN(NAME enum_08 LABELS gfortran llvm c)
 RUN(NAME c_aggregate_out_01 LABELS gfortran llvm c fortran)
 RUN(NAME c_wrapper_numeric_01 LABELS gfortran llvm c fortran)
+RUN(NAME c_wrapper_optional_alloc_scalar_01 LABELS gfortran llvm c fortran)
+RUN(NAME c_wrapper_optional_scalar_value_01 LABELS gfortran llvm c fortran)
+RUN(NAME c_wrapper_alloc_class_out_01 LABELS gfortran llvm c fortran)
 RUN(NAME c_wrapper_string_01 LABELS gfortran llvm c fortran)
 
 RUN(NAME array_section_01 LABELS gfortran llvm llvm_wasm llvm_wasm_emcc llvmStackArray fortran)

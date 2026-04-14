@@ -137,6 +137,7 @@ public:
     std::string template_for_Kokkos;
     size_t template_number;
     std::string from_std_vector_helper;
+    bool force_storage_expr_in_call_args = false;
 
     std::unique_ptr<CCPPDSUtils> c_ds_api;
     std::unique_ptr<CUtils::CUtilFunctions> c_utils_functions;
@@ -2155,6 +2156,12 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         return arg_src;
     }
 
+    bool is_compiler_created_scalar_storage_temp(const std::string &arg_src) {
+        return arg_src.rfind("(*__libasr_created_variable_", 0) == 0
+            && arg_src.rfind("(*__libasr_created_variable_pointer_", 0) != 0
+            && arg_src.back() == ')';
+    }
+
     std::string get_addressable_call_arg_src(ASR::expr_t *shape_call_arg,
             const std::string &arg_src) {
         if (shape_call_arg == nullptr) {
@@ -2592,8 +2599,6 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             auto address_of_src = [&](const std::string &current_src) -> std::string {
                 return "&" + get_addressable_call_arg_src(shape_call_arg, current_src);
             };
-            self().visit_expr(*call_arg);
-            std::string arg_src = src;
             ASR::ttype_t* type = ASRUtils::expr_type(call_arg);
             ASR::ttype_t *type_unwrapped = ASRUtils::type_get_past_allocatable_pointer(type);
             ASR::ttype_t *param_type = i < f->n_args ? ASRUtils::expr_type(f->m_args[i]) : nullptr;
@@ -2624,6 +2629,15 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 && is_struct_or_class_type(type_unwrapped)
                 && !wants_pointer_dummy_slot_actual
                 && !wants_aggregate_dummy_slot_actual;
+            bool saved_force_storage_expr_in_call_args = force_storage_expr_in_call_args;
+            force_storage_expr_in_call_args = is_c && wants_raw_pointer_actual;
+            self().visit_expr(*call_arg);
+            std::string arg_src = src;
+            force_storage_expr_in_call_args = saved_force_storage_expr_in_call_args;
+            if (is_c && is_compiler_created_scalar_storage_temp(arg_src)) {
+                src = canonicalize_raw_pointer_actual_src(arg_src);
+                arg_src = src;
+            }
             bool pointer_backed_aggregate_actual = is_c
                 && is_struct_or_class_type(type_unwrapped)
                 && is_pointer_backed_struct_expr(call_arg);
@@ -2681,8 +2695,16 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                     wants_raw_pointer_actual, src)) {
                 raw_pointer_actual = true;
             }
+            if (!raw_pointer_actual
+                    && param_is_optional_alloc_scalar_ref
+                    && ASRUtils::is_pointer(type)
+                    && !ASRUtils::is_array(type)) {
+                src = canonicalize_raw_pointer_actual_src(arg_src);
+                raw_pointer_actual = true;
+            }
             if (raw_pointer_actual || wants_raw_pointer_actual) {
                 src = canonicalize_raw_pointer_actual_src(src);
+                arg_src = src;
             }
             ASR::expr_t *array_like_arg = call_arg;
             if (ASR::is_a<ASR::Cast_t>(*array_like_arg)) {
@@ -2769,7 +2791,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                         args += "&" + src;
                     }
                 } else if (wants_aggregate_dummy_slot_actual) {
-                    if (aggregate_dummy_slot_actual || pointer_backed_aggregate_actual) {
+                    if (aggregate_dummy_slot_actual) {
                         args += canonicalize_raw_pointer_actual_src(src);
                     } else {
                         args += address_of_src(src);
@@ -2831,7 +2853,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                         args += address_of_src(src);
                     }
                 } else if (wants_aggregate_dummy_slot_actual) {
-                    if (raw_pointer_actual || pointer_backed_aggregate_actual) {
+                    if (raw_pointer_actual) {
                         args += canonicalize_raw_pointer_actual_src(src);
                     } else {
                         args += address_of_src(src);
@@ -2904,8 +2926,6 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             auto address_of_src = [&](const std::string &current_src) -> std::string {
                 return "&" + get_addressable_call_arg_src(shape_call_arg, current_src);
             };
-            self().visit_expr(*call_arg);
-            std::string arg_src = src;
             ASR::ttype_t* type = ASRUtils::expr_type(call_arg);
             ASR::ttype_t *type_unwrapped = ASRUtils::type_get_past_allocatable_pointer(type);
             ASR::ttype_t *param_type = i < f->n_args ? ASRUtils::expr_type(f->m_args[i]) : nullptr;
@@ -2936,6 +2956,15 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 && is_struct_or_class_type(type_unwrapped)
                 && !wants_pointer_dummy_slot_actual
                 && !wants_aggregate_dummy_slot_actual;
+            bool saved_force_storage_expr_in_call_args = force_storage_expr_in_call_args;
+            force_storage_expr_in_call_args = is_c && wants_raw_pointer_actual;
+            self().visit_expr(*call_arg);
+            std::string arg_src = src;
+            force_storage_expr_in_call_args = saved_force_storage_expr_in_call_args;
+            if (is_c && is_compiler_created_scalar_storage_temp(arg_src)) {
+                src = canonicalize_raw_pointer_actual_src(arg_src);
+                arg_src = src;
+            }
             bool pointer_backed_aggregate_actual = is_c
                 && is_struct_or_class_type(type_unwrapped)
                 && is_pointer_backed_struct_expr(call_arg);
@@ -2993,8 +3022,16 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                     wants_raw_pointer_actual, src)) {
                 raw_pointer_actual = true;
             }
+            if (!raw_pointer_actual
+                    && param_is_optional_alloc_scalar_ref
+                    && ASRUtils::is_pointer(type)
+                    && !ASRUtils::is_array(type)) {
+                src = canonicalize_raw_pointer_actual_src(arg_src);
+                raw_pointer_actual = true;
+            }
             if (raw_pointer_actual || wants_raw_pointer_actual) {
                 src = canonicalize_raw_pointer_actual_src(src);
+                arg_src = src;
             }
             ASR::expr_t *array_like_arg = call_arg;
             if (ASR::is_a<ASR::Cast_t>(*array_like_arg)) {
@@ -3081,7 +3118,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                         args += "&" + src;
                     }
                 } else if (wants_aggregate_dummy_slot_actual) {
-                    if (aggregate_dummy_slot_actual || pointer_backed_aggregate_actual) {
+                    if (aggregate_dummy_slot_actual) {
                         args += canonicalize_raw_pointer_actual_src(src);
                     } else {
                         args += address_of_src(src);
@@ -3143,7 +3180,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                         args += address_of_src(src);
                     }
                 } else if (wants_aggregate_dummy_slot_actual) {
-                    if (raw_pointer_actual || pointer_backed_aggregate_actual) {
+                    if (raw_pointer_actual) {
                         args += canonicalize_raw_pointer_actual_src(src);
                     } else {
                         args += address_of_src(src);
@@ -4875,6 +4912,12 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                     && var_name == "to"
                     && !ASRUtils::is_array(sv->m_type)) {
                 src = "(*((void**)" + var_name + "))";
+            } else if (force_storage_expr_in_call_args
+                && ASRUtils::is_pointer(sv->m_type)
+                && !ASRUtils::is_array(sv->m_type)
+                && !ASR::is_a<ASR::FunctionType_t>(
+                    *ASRUtils::type_get_past_pointer(sv->m_type))) {
+                src = var_name;
             } else
             if (is_bindc_optional_scalar_dummy(sv)) {
                 src = "(*" + var_name + ")";
@@ -4949,7 +4992,9 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                     src = var_name;
                 }
             } else if (is_scalar_allocatable_storage_type(sv->m_type)) {
-                src = "(*" + var_name + ")";
+                src = force_storage_expr_in_call_args
+                    ? var_name
+                    : "(*" + var_name + ")";
             } else {
                 src = var_name;
             }
