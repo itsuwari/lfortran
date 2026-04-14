@@ -48,6 +48,22 @@ namespace LCompilers {
 
 namespace CUtils {
 
+    static inline ASR::symbol_t* get_symbol_owner(ASR::asr_t *owner) {
+        return (owner && ASR::is_a<ASR::symbol_t>(*owner))
+            ? ASR::down_cast<ASR::symbol_t>(owner) : nullptr;
+    }
+
+    static inline const ASR::symbol_t* get_symbol_owner(const ASR::asr_t *owner) {
+        return (owner && ASR::is_a<ASR::symbol_t>(*owner))
+            ? ASR::down_cast<ASR::symbol_t>(owner) : nullptr;
+    }
+
+    template <typename T>
+    static inline bool is_symbol_owner(const ASR::asr_t *owner) {
+        const ASR::symbol_t *owner_sym = get_symbol_owner(owner);
+        return owner_sym && ASR::is_a<T>(*owner_sym);
+    }
+
     static inline bool is_len_one_character_type(ASR::ttype_t *t) {
         if (t == nullptr) {
             return false;
@@ -149,15 +165,13 @@ namespace CUtils {
         const SymbolTable *scope = ASRUtils::symbol_parent_symtab(sym);
         while (scope && scope->asr_owner) {
             ASR::asr_t *owner = scope->asr_owner;
-            if (ASR::is_a<ASR::symbol_t>(*owner)) {
-                const ASR::symbol_t *owner_sym =
-                    ASR::down_cast<ASR::symbol_t>(owner);
+            if (const ASR::symbol_t *owner_sym = get_symbol_owner(owner)) {
                 std::string owner_name = sanitize_c_identifier(ASRUtils::symbol_name(owner_sym));
                 std::string prefix = owner_name + "__";
                 if (name.rfind(prefix, 0) != 0) {
                     name = prefix + name;
                 }
-                if (ASR::is_a<ASR::Program_t>(*owner)) {
+                if (ASR::is_a<ASR::Program_t>(*owner_sym)) {
                     break;
                 }
             }
@@ -172,13 +186,13 @@ namespace CUtils {
             return sanitize_c_identifier(v.m_name);
         }
         if (ASRUtils::is_arg_dummy(v.m_intent)
-                || ASR::is_a<ASR::Function_t>(*owner)
-                || ASR::is_a<ASR::Program_t>(*owner)
-                || ASR::is_a<ASR::Block_t>(*owner)
-                || ASR::is_a<ASR::AssociateBlock_t>(*owner)
-                || ASR::is_a<ASR::Struct_t>(*owner)
-                || ASR::is_a<ASR::Union_t>(*owner)
-                || ASR::is_a<ASR::Enum_t>(*owner)) {
+                || is_symbol_owner<ASR::Function_t>(owner)
+                || is_symbol_owner<ASR::Program_t>(owner)
+                || is_symbol_owner<ASR::Block_t>(owner)
+                || is_symbol_owner<ASR::AssociateBlock_t>(owner)
+                || is_symbol_owner<ASR::Struct_t>(owner)
+                || is_symbol_owner<ASR::Union_t>(owner)
+                || is_symbol_owner<ASR::Enum_t>(owner)) {
             return sanitize_c_identifier(v.m_name);
         }
         return get_c_symbol_name(v.m_parent_symtab->get_symbol(v.m_name));

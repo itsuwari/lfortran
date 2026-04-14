@@ -1308,28 +1308,6 @@ R"(#include <stdio.h>
                 return;
             }
 
-            if (is_c && std::string(x.m_name) == "mindless01") {
-                std::cerr << "CDBG visit_Function_entry fn=" << x.m_name
-                          << " symtab=" << x.m_symtab
-                          << std::endl;
-                for (const auto &item : x.m_symtab->get_scope()) {
-                    if (!ASR::is_a<ASR::Variable_t>(*item.second)) {
-                        continue;
-                    }
-                    ASR::Variable_t *v = ASR::down_cast<ASR::Variable_t>(item.second);
-                    std::string name = v->m_name;
-                    if (name == "nat" || name == "sym" || name == "xyz") {
-                        std::cerr << "CDBG visit_Function_entry key=" << item.first
-                                  << " var=" << v->m_name
-                                  << " c_name=" << CUtils::get_c_variable_name(*v)
-                                  << " storage=" << static_cast<int>(v->m_storage)
-                                  << " value=" << (v->m_value != nullptr)
-                                  << " symbolic=" << (v->m_symbolic_value != nullptr)
-                                  << std::endl;
-                    }
-                }
-            }
-
             current_function = &x;
 
             for (size_t i=0; i<x.n_body; i++) {
@@ -1665,9 +1643,9 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 || emitted_pointer_backed_struct
                 || (owner
                     && !force_value_struct_temp
-                    && (ASR::is_a<ASR::Function_t>(*owner)
-                        || ASR::is_a<ASR::Block_t>(*owner)
-                        || ASR::is_a<ASR::AssociateBlock_t>(*owner))
+                    && (CUtils::is_symbol_owner<ASR::Function_t>(owner)
+                        || CUtils::is_symbol_owner<ASR::Block_t>(owner)
+                        || CUtils::is_symbol_owner<ASR::AssociateBlock_t>(owner))
                     && (v->m_intent == ASRUtils::intent_local
                         || v->m_intent == ASRUtils::intent_return_var));
         }
@@ -1703,13 +1681,13 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         ASR::asr_t *owner = sv->m_parent_symtab ? sv->m_parent_symtab->asr_owner : nullptr;
         bool use_local_name = owner == nullptr
             || ASRUtils::is_arg_dummy(sv->m_intent)
-            || ASR::is_a<ASR::Function_t>(*owner)
-            || ASR::is_a<ASR::Program_t>(*owner)
-            || ASR::is_a<ASR::Block_t>(*owner)
-            || ASR::is_a<ASR::AssociateBlock_t>(*owner)
-            || ASR::is_a<ASR::Struct_t>(*owner)
-            || ASR::is_a<ASR::Union_t>(*owner)
-            || ASR::is_a<ASR::Enum_t>(*owner);
+            || CUtils::is_symbol_owner<ASR::Function_t>(owner)
+            || CUtils::is_symbol_owner<ASR::Program_t>(owner)
+            || CUtils::is_symbol_owner<ASR::Block_t>(owner)
+            || CUtils::is_symbol_owner<ASR::AssociateBlock_t>(owner)
+            || CUtils::is_symbol_owner<ASR::Struct_t>(owner)
+            || CUtils::is_symbol_owner<ASR::Union_t>(owner)
+            || CUtils::is_symbol_owner<ASR::Enum_t>(owner);
         if (use_local_name) {
             return CUtils::sanitize_c_identifier(sv->m_name);
         }
@@ -1772,9 +1750,9 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                     || ASRUtils::is_allocatable(vv->m_type)
                     || (!force_value_struct_temp
                         && owner
-                        && (ASR::is_a<ASR::Function_t>(*owner)
-                            || ASR::is_a<ASR::Block_t>(*owner)
-                            || ASR::is_a<ASR::AssociateBlock_t>(*owner))
+                        && (CUtils::is_symbol_owner<ASR::Function_t>(owner)
+                            || CUtils::is_symbol_owner<ASR::Block_t>(owner)
+                            || CUtils::is_symbol_owner<ASR::AssociateBlock_t>(owner))
                         && (vv->m_intent == ASRUtils::intent_local
                             || vv->m_intent == ASRUtils::intent_return_var));
             }
@@ -1852,9 +1830,9 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                     || ASRUtils::is_allocatable(vv->m_type)
                     || (!force_value_struct_temp
                         && owner
-                        && (ASR::is_a<ASR::Function_t>(*owner)
-                            || ASR::is_a<ASR::Block_t>(*owner)
-                            || ASR::is_a<ASR::AssociateBlock_t>(*owner))
+                        && (CUtils::is_symbol_owner<ASR::Function_t>(owner)
+                            || CUtils::is_symbol_owner<ASR::Block_t>(owner)
+                            || CUtils::is_symbol_owner<ASR::AssociateBlock_t>(owner))
                         && (vv->m_intent == ASRUtils::intent_local
                             || vv->m_intent == ASRUtils::intent_return_var));
             }
@@ -4740,7 +4718,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                     src = "(*" + var_name + ")";
                 }
             } else
-            if (owner && ASR::is_a<ASR::AssociateBlock_t>(*owner)
+            if (owner && CUtils::is_symbol_owner<ASR::AssociateBlock_t>(owner)
                 && ASRUtils::is_pointer(sv->m_type)
                 && !ASRUtils::is_array(sv->m_type)) {
                 ASR::ttype_t *ptr_target = ASR::down_cast<ASR::Pointer_t>(sv->m_type)->m_type;

@@ -1611,8 +1611,9 @@ R"(
             use_ref = true;
         }
         ASR::asr_t *owner = v.m_parent_symtab ? v.m_parent_symtab->asr_owner : nullptr;
-        if (is_c && owner && ASR::is_a<ASR::Function_t>(*owner)
-                && std::string(ASR::down_cast<ASR::Function_t>(owner)->m_name)
+        ASR::symbol_t *owner_sym = CUtils::get_symbol_owner(owner);
+        if (is_c && owner_sym && ASR::is_a<ASR::Function_t>(*owner_sym)
+                && std::string(ASR::down_cast<ASR::Function_t>(owner_sym)->m_name)
                     .rfind("_lcompilers_move_alloc_", 0) == 0
                 && get_variable_c_name(v) == "to"
                 && !ASRUtils::is_array(v.m_type)) {
@@ -1654,21 +1655,6 @@ R"(
             && !ASRUtils::is_allocatable(v.m_type)
             && !ASRUtils::is_character(*ASRUtils::type_get_past_allocatable_pointer(v.m_type))
             && !ASR::is_a<ASR::CPtr_t>(*ASRUtils::type_get_past_allocatable_pointer(v.m_type));
-        if (current_function
-                && std::string(current_function->m_name) == "mindless01"
-                && (std::string(v.m_name) == "nat"
-                    || std::string(v.m_name) == "sym"
-                    || std::string(v.m_name) == "xyz")) {
-            std::cerr << "CDBG convert_variable_decl " << v.m_name
-                      << " c_name=" << c_v_name
-                      << " parent_symtab=" << v.m_parent_symtab
-                      << " raw=" << (var_init_raw != nullptr)
-                      << " value=" << (var_init_value != nullptr)
-                      << " storage=" << static_cast<int>(v.m_storage)
-                      << " is_array=" << is_array
-                      << " do_not_initialize=" << do_not_initialize
-                      << std::endl;
-        }
         if (!is_array && v.m_storage == ASR::storage_typeType::Parameter
                 && var_init_raw
                 && var_init_raw->type == ASR::exprType::StructConstant) {
