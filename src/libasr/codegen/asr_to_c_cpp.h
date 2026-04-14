@@ -1550,6 +1550,14 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             std::string cast = arr_element_type + " __attribute__ (( vector_size(sizeof("
                 + arr_element_type + ") * " + std::to_string(size) + ") ))";
             src = "(" + cast + ") " + src;
+        } else if (is_c && ASRUtils::is_array(x.m_type)
+                && ASRUtils::is_array(ASRUtils::expr_type(x.m_arg))) {
+            ASR::ttype_t *source_type = ASRUtils::expr_type(x.m_arg);
+            if (are_compatible_c_array_wrapper_types(x.m_type, source_type)) {
+                src = cast_c_array_wrapper_ptr_to_target_type(x.m_type, source_type, src);
+            } else {
+                src = build_c_array_wrapper_from_cast_target(x.m_type, x.m_arg, src);
+            }
         }
      }
 
@@ -1937,6 +1945,17 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             == CUtils::get_c_type_from_ttype_t(ASRUtils::type_get_past_array(value_base));
     }
 
+    bool have_compatible_c_array_wrapper_element_type(ASR::ttype_t *target_type,
+            ASR::ttype_t *value_type) {
+        ASR::ttype_t *target_base = get_c_array_wrapper_base_type(target_type);
+        ASR::ttype_t *value_base = get_c_array_wrapper_base_type(value_type);
+        if (target_base == nullptr || value_base == nullptr) {
+            return false;
+        }
+        return CUtils::get_c_type_from_ttype_t(ASRUtils::type_get_past_array(target_base))
+            == CUtils::get_c_type_from_ttype_t(ASRUtils::type_get_past_array(value_base));
+    }
+
     std::string get_c_declared_array_wrapper_type_name(ASR::ttype_t *type) {
         ASR::ttype_t *array_base = get_c_array_wrapper_base_type(type);
         if (array_base == nullptr) {
@@ -1966,6 +1985,78 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             return value_expr;
         }
         return "((" + target_wrapper + "*)(" + value_expr + "))";
+    }
+
+    std::string get_c_array_is_allocated_expr(ASR::expr_t *expr, const std::string &expr_src) {
+        expr = unwrap_c_lvalue_expr(expr);
+        if (expr == nullptr) {
+            return "false";
+        }
+        ASR::expr_t *unwrapped_expr = ASRUtils::expr_value(expr);
+        if (unwrapped_expr == nullptr) {
+            unwrapped_expr = expr;
+        }
+        if (is_data_only_array_expr(unwrapped_expr)) {
+            return "false";
+        }
+        return expr_src + "->is_allocated";
+    }
+
+    std::string build_c_array_wrapper_from_cast_target(ASR::ttype_t *target_type,
+            ASR::expr_t *source_expr, const std::string &source_src) {
+        if (!is_c || target_type == nullptr || source_expr == nullptr) {
+            return source_src;
+        }
+        ASR::ttype_t *source_type = ASRUtils::expr_type(source_expr);
+        if (!have_compatible_c_array_wrapper_element_type(target_type, source_type)) {
+            return source_src;
+        }
+        std::string target_wrapper = get_c_declared_array_wrapper_type_name(target_type);
+        if (target_wrapper.empty()) {
+            return source_src;
+        }
+        ASR::dimension_t *target_dims = nullptr;
+        int target_rank = ASRUtils::extract_dimensions_from_ttype(target_type, target_dims);
+        if (target_rank <= 0) {
+            return source_src;
+        }
+
+        std::string source_data = get_c_array_data_expr(source_expr, source_src);
+        std::string source_offset = get_c_array_offset_expr(source_expr, source_src);
+        std::string source_is_allocated = get_c_array_is_allocated_expr(source_expr, source_src);
+        std::string saved_src = src;
+        std::vector<std::string> dim_inits(target_rank);
+        std::string stride = "1";
+        for (int i = target_rank - 1; i >= 0; i--) {
+            std::string lower_bound = "1";
+            std::string length = "1";
+            if (target_dims[i].m_start != nullptr) {
+                self().visit_expr(*target_dims[i].m_start);
+                lower_bound = src;
+            }
+            if (target_dims[i].m_length != nullptr) {
+                self().visit_expr(*target_dims[i].m_length);
+                length = src;
+            }
+            dim_inits[i] = "{"
+                + lower_bound + ", "
+                + length + ", "
+                + stride + "}";
+            stride = "(" + stride + " * (" + length + "))";
+        }
+        src = saved_src;
+
+        std::string dims_init;
+        for (int i = 0; i < target_rank; i++) {
+            if (i > 0) {
+                dims_init += ", ";
+            }
+            dims_init += dim_inits[i];
+        }
+        return "(&(" + target_wrapper + "){ .data = " + source_data
+            + ", .dims = {" + dims_init + "}, .n_dims = " + std::to_string(target_rank)
+            + ", .offset = " + source_offset
+            + ", .is_allocated = " + source_is_allocated + " })";
     }
 
     bool try_emit_scalar_to_char_array_bitcast_expr(ASR::expr_t *expr, std::string &out_expr) {
