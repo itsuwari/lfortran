@@ -3141,6 +3141,7 @@ RUN(NAME enum_07 LABELS gfortran llvm_submodule EXTRAFILES
          enum_07_module.f90 enum_07_submodule.f90)
 RUN(NAME enum_08 LABELS gfortran llvm c)
 RUN(NAME c_aggregate_out_01 LABELS gfortran llvm c fortran)
+RUN(NAME c_wrapper_string_01 LABELS gfortran llvm c fortran)
 
 RUN(NAME array_section_01 LABELS gfortran llvm llvm_wasm llvm_wasm_emcc llvmStackArray fortran)
 RUN(NAME array_section_02 LABELS gfortran llvm llvm_wasm llvm_wasm_emcc llvmStackArray fortran)

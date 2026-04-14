@@ -1908,6 +1908,66 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         return c_ds_api->get_array_type(array_type_name, array_type_code, array_types_decls, false);
     }
 
+    ASR::ttype_t *get_c_array_wrapper_base_type(ASR::ttype_t *type) {
+        if (!is_c || type == nullptr) {
+            return nullptr;
+        }
+        if (ASRUtils::is_pointer(type) && !ASRUtils::is_array(type)) {
+            type = ASRUtils::type_get_past_pointer(type);
+        }
+        type = ASRUtils::type_get_past_allocatable_pointer(type);
+        if (type == nullptr || !ASRUtils::is_array(type)) {
+            return nullptr;
+        }
+        return type;
+    }
+
+    bool are_compatible_c_array_wrapper_types(ASR::ttype_t *target_type,
+            ASR::ttype_t *value_type) {
+        ASR::ttype_t *target_base = get_c_array_wrapper_base_type(target_type);
+        ASR::ttype_t *value_base = get_c_array_wrapper_base_type(value_type);
+        if (target_base == nullptr || value_base == nullptr) {
+            return false;
+        }
+        if (ASRUtils::extract_n_dims_from_ttype(target_base)
+                != ASRUtils::extract_n_dims_from_ttype(value_base)) {
+            return false;
+        }
+        return CUtils::get_c_type_from_ttype_t(ASRUtils::type_get_past_array(target_base))
+            == CUtils::get_c_type_from_ttype_t(ASRUtils::type_get_past_array(value_base));
+    }
+
+    std::string get_c_declared_array_wrapper_type_name(ASR::ttype_t *type) {
+        ASR::ttype_t *array_base = get_c_array_wrapper_base_type(type);
+        if (array_base == nullptr) {
+            return "";
+        }
+        if (!ASRUtils::is_allocatable(type)) {
+            return get_c_array_wrapper_type_name(array_base);
+        }
+        std::string array_type_name =
+            CUtils::get_c_array_element_type_from_ttype_t(array_base);
+        std::string array_type_code = CUtils::get_c_type_code(type);
+        return c_ds_api->get_array_type(array_type_name, array_type_code,
+            array_types_decls, false);
+    }
+
+    std::string cast_c_array_wrapper_ptr_to_target_type(ASR::ttype_t *target_type,
+            ASR::ttype_t *value_type, const std::string &value_expr) {
+        if (!are_compatible_c_array_wrapper_types(target_type, value_type)) {
+            return value_expr;
+        }
+        std::string target_wrapper = get_c_declared_array_wrapper_type_name(target_type);
+        std::string value_wrapper = get_c_declared_array_wrapper_type_name(value_type);
+        if (target_wrapper.empty() || value_wrapper.empty()) {
+            return value_expr;
+        }
+        if (target_wrapper == value_wrapper) {
+            return value_expr;
+        }
+        return "((" + target_wrapper + "*)(" + value_expr + "))";
+    }
+
     bool try_emit_scalar_to_char_array_bitcast_expr(ASR::expr_t *expr, std::string &out_expr) {
         if (!is_c || expr == nullptr || !ASR::is_a<ASR::BitCast_t>(*expr)) {
             return false;
@@ -2586,7 +2646,9 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 } else if (param_is_raw_c_char_array && is_data_only_array_expr(call_arg)) {
                     args += arg_src;
                 } else {
-                    args += param_is_raw_c_char_array ? arg_src + "->data" : arg_src;
+                    args += param_is_raw_c_char_array
+                        ? arg_src + "->data"
+                        : cast_c_array_wrapper_ptr_to_target_type(param_type, type, arg_src);
                 }
                 if (i < n_args - 1) args += ", ";
                 continue;
@@ -2598,6 +2660,9 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 if (i < n_args - 1) args += ", ";
                 continue;
             }
+            auto pass_wrapper_arg = [&](const std::string &value_expr) -> std::string {
+                return cast_c_array_wrapper_ptr_to_target_type(param_type, type, value_expr);
+            };
             if (shape_call_arg && ASR::is_a<ASR::Var_t>(*shape_call_arg)
                 && ASR::is_a<ASR::Variable_t>(
                     *ASRUtils::symbol_get_past_external(
@@ -2638,10 +2703,10 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                         ASR::is_a<ASR::Tuple_t>(*param->m_type)) {
                         args += address_of_src(src);
                     } else {
-                        args += src;
+                        args += pass_wrapper_arg(src);
                     }
                 } else {
-                    args += src;
+                    args += pass_wrapper_arg(src);
                 }
             } else if (shape_call_arg && (ASR::is_a<ASR::ArrayItem_t>(*shape_call_arg)
                     || ASR::is_a<ASR::StructInstanceMember_t>(*shape_call_arg)
@@ -2708,7 +2773,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                         args += address_of_src(src);
                     }
                 } else {
-                    args += src;
+                    args += pass_wrapper_arg(src);
                 }
             } else {
                 if (wants_aggregate_pointer_actual) {
@@ -2721,7 +2786,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 } else if (ASR::is_a<ASR::StructType_t>(*type_unwrapped)) {
                     args += address_of_src(src);
                 } else {
-                    args += src;
+                    args += pass_wrapper_arg(src);
                 }
             }
             if (i < n_args-1) args += ", ";
@@ -2893,7 +2958,9 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 } else if (param_is_raw_c_char_array && is_data_only_array_expr(call_arg)) {
                     args += arg_src;
                 } else {
-                    args += param_is_raw_c_char_array ? arg_src + "->data" : arg_src;
+                    args += param_is_raw_c_char_array
+                        ? arg_src + "->data"
+                        : cast_c_array_wrapper_ptr_to_target_type(param_type, type, arg_src);
                 }
                 if (i < n_args - 1) args += ", ";
                 continue;
@@ -2905,6 +2972,9 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 if (i < n_args - 1) args += ", ";
                 continue;
             }
+            auto pass_wrapper_arg = [&](const std::string &value_expr) -> std::string {
+                return cast_c_array_wrapper_ptr_to_target_type(param_type, type, value_expr);
+            };
             if (shape_call_arg && ASR::is_a<ASR::Var_t>(*shape_call_arg)
                 && ASR::is_a<ASR::Variable_t>(
                     *ASRUtils::symbol_get_past_external(
@@ -2940,15 +3010,15 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                             && !ASRUtils::is_array(param->m_type))))) {
                     args += address_of_src(src);
                 } else if (param->m_intent == ASRUtils::intent_out) {
-                    if (ASR::is_a<ASR::List_t>(*param->m_type) ||
-                        ASR::is_a<ASR::Dict_t>(*param->m_type) ||
+                    if (ASR::is_a<ASR::List_t>(*param->m_type) || 
+                        ASR::is_a<ASR::Dict_t>(*param->m_type) || 
                         ASR::is_a<ASR::Tuple_t>(*param->m_type)) {
                         args += address_of_src(src);
                     } else {
-                        args += src;
+                        args += pass_wrapper_arg(src);
                     }
                 } else {
-                    args += src;
+                    args += pass_wrapper_arg(src);
                 }
             } else if (shape_call_arg && (ASR::is_a<ASR::ArrayItem_t>(*shape_call_arg)
                     || ASR::is_a<ASR::StructInstanceMember_t>(*shape_call_arg)
@@ -3015,7 +3085,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                         args += address_of_src(src);
                     }
                 } else {
-                    args += src;
+                    args += pass_wrapper_arg(src);
                 }
             } else {
                 if (wants_aggregate_pointer_actual) {
@@ -3028,7 +3098,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 } else if (ASR::is_a<ASR::StructType_t>(*type_unwrapped)) {
                     args += address_of_src(src);
                 } else {
-                    args += src;
+                    args += pass_wrapper_arg(src);
                 }
             }
             if (i < n_args-1) args += ", ";
@@ -4282,6 +4352,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                     value = "&(" + value + ")";
                 }
             }
+            value = cast_c_array_wrapper_ptr_to_target_type(target_type, value_type, value);
             src = indent + target + " = " + value + ";\n";
         }
     }
