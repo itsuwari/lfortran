@@ -9449,6 +9449,108 @@ LFORTRAN_API void _lfortran_string_formatted_read(
 //     void*   data_ptr        (i8* / void* to first element)
 //     int32_t n_elems         (total number of elements)
 //     int32_t stride_elems    (stride in elements between consecutive items)
+static void handle_list_directed_read_args(
+    int32_t unit_num, int32_t* iostat, int32_t no_of_args, va_list *args)
+{
+    for (int32_t arg_idx = 0; arg_idx < no_of_args; arg_idx++) {
+        int32_t is_descriptor_array = va_arg(*args, int32_t);
+        int32_t type_code = va_arg(*args, int32_t);
+
+        if (!is_descriptor_array) {
+            switch (type_code) {
+                case 0: {
+                    char **ptr = va_arg(*args, char**);
+                    int64_t str_len = va_arg(*args, int64_t);
+                    _lfortran_read_char(ptr, str_len, unit_num, iostat);
+                    break;
+                }
+                case 1: {
+                    bool *ptr = va_arg(*args, bool*);
+                    _lfortran_read_logical(ptr, unit_num, iostat);
+                    break;
+                }
+                case 2: {
+                    int32_t *ptr = va_arg(*args, int32_t*);
+                    _lfortran_read_int32(ptr, unit_num, iostat);
+                    break;
+                }
+                case 3: {
+                    int64_t *ptr = va_arg(*args, int64_t*);
+                    _lfortran_read_int64(ptr, unit_num, iostat);
+                    break;
+                }
+                case 4: {
+                    float *ptr = va_arg(*args, float*);
+                    _lfortran_read_float(ptr, unit_num, iostat);
+                    break;
+                }
+                case 5: {
+                    double *ptr = va_arg(*args, double*);
+                    _lfortran_read_double(ptr, unit_num, iostat);
+                    break;
+                }
+                case 6: {
+                    struct _lfortran_complex_32 *ptr =
+                        va_arg(*args, struct _lfortran_complex_32*);
+                    _lfortran_read_complex_float(ptr, unit_num, iostat);
+                    break;
+                }
+                case 7: {
+                    struct _lfortran_complex_64 *ptr =
+                        va_arg(*args, struct _lfortran_complex_64*);
+                    _lfortran_read_complex_double(ptr, unit_num, iostat);
+                    break;
+                }
+                default:
+                    if (iostat) {
+                        *iostat = 1;
+                        return;
+                    }
+                    fprintf(stderr, "Error: Unsupported list-directed scalar type code %d.\n", type_code);
+                    exit(1);
+            }
+        } else {
+            void *data_ptr = va_arg(*args, void*);
+            int32_t n_elems = va_arg(*args, int32_t);
+            int32_t stride_elems = va_arg(*args, int32_t);
+            switch (type_code) {
+                case 1:
+                    _lfortran_read_array_logical(data_ptr, n_elems, 4, stride_elems, unit_num, iostat);
+                    break;
+                case 2:
+                    _lfortran_read_array_int32((int32_t*)data_ptr, n_elems, stride_elems, unit_num, iostat);
+                    break;
+                case 3:
+                    _lfortran_read_array_int64((int64_t*)data_ptr, n_elems, stride_elems, unit_num, iostat);
+                    break;
+                case 4:
+                    _lfortran_read_array_float((float*)data_ptr, n_elems, stride_elems, unit_num, iostat);
+                    break;
+                case 5:
+                    _lfortran_read_array_double((double*)data_ptr, n_elems, stride_elems, unit_num, iostat);
+                    break;
+                case 6:
+                    _lfortran_read_array_complex_float((struct _lfortran_complex_32*)data_ptr, n_elems, stride_elems, unit_num, iostat);
+                    break;
+                case 7:
+                    _lfortran_read_array_complex_double((struct _lfortran_complex_64*)data_ptr, n_elems, stride_elems, unit_num, iostat);
+                    break;
+                default:
+                    if (iostat) {
+                        *iostat = 1;
+                        return;
+                    }
+                    fprintf(stderr, "Error: Unsupported list-directed array type code %d.\n", type_code);
+                    exit(1);
+            }
+        }
+
+        if (iostat && *iostat != 0) {
+            return;
+        }
+    }
+}
+
 LFORTRAN_API void _lfortran_formatted_read(
     int32_t unit_num, int32_t* iostat, int32_t* chunk,
     fchar* advance, int64_t advance_length,
@@ -9498,6 +9600,14 @@ LFORTRAN_API void _lfortran_formatted_read(
     int decimal_mode = 0;
     if (unit_num != -1) {
         decimal_mode = _lfortran_get_decimal_mode(unit_num);
+    }
+
+    if (fmt == NULL || fmt_len == 0) {
+        if (chunk) *chunk = 0;
+        if (iostat) *iostat = 0;
+        handle_list_directed_read_args(unit_num, iostat, no_of_args, &args);
+        va_end(args);
+        return;
     }
     
     common_formatted_read(&inputSource, iostat, chunk,

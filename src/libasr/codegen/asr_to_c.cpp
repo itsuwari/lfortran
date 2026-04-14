@@ -2292,9 +2292,13 @@ R"(
             if (dims.size() == 0 && var_init_raw && !do_not_initialize) {
                 ASR::expr_t* init_expr = var_init_value;
                 if( v.m_storage != ASR::storage_typeType::Parameter ) {
+                    SymbolTable *dep_scope = v.m_parent_symtab ? v.m_parent_symtab : current_scope;
                     for( size_t i = 0; i < v.n_dependencies; i++ ) {
                         std::string variable_name = v.m_dependencies[i];
-                        ASR::symbol_t* dep_sym = current_scope->resolve_symbol(variable_name);
+                        if (dep_scope == nullptr || variable_name.empty()) {
+                            continue;
+                        }
+                        ASR::symbol_t* dep_sym = dep_scope->resolve_symbol(variable_name);
                         if( (dep_sym && ASR::is_a<ASR::Variable_t>(*dep_sym) &&
                             !ASR::down_cast<ASR::Variable_t>(dep_sym)->m_symbolic_value) )  {
                             init_expr = nullptr;
@@ -2748,6 +2752,8 @@ R"(
     }
 
     void visit_Program(const ASR::Program_t &x) {
+        SymbolTable *current_scope_copy = current_scope;
+        current_scope = x.m_symtab;
         // Topologically sort all program functions
         // and then define them in the right order
         std::vector<std::string> func_order = get_complete_function_definition_order(x.m_symtab);
@@ -2875,6 +2881,7 @@ R"(    // Initialise Numpy
                 + decl + body
                 + indent1 + "return 0;\n}\n";
         indentation_level -= 2;
+        current_scope = current_scope_copy;
     }
 
     template <typename T>

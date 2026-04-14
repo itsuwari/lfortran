@@ -5213,7 +5213,18 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         }
         std::string op_str = ASRUtils::cmpop_to_str(x.m_op);
         if( T::class_type == ASR::exprType::StringCompare && is_c ) {
-            src = "strcmp(" + left + ", " + right + ") " + op_str + " 0";
+            auto get_string_length = [&](ASR::expr_t *expr, const std::string &expr_src) -> std::string {
+                ASR::String_t *str_type = ASRUtils::get_string_type(expr);
+                if (str_type && str_type->m_len) {
+                    self().visit_expr(*str_type->m_len);
+                    return src;
+                }
+                return "strlen(" + expr_src + ")";
+            };
+            std::string left_len = get_string_length(x.m_left, left);
+            std::string right_len = get_string_length(x.m_right, right);
+            src = "str_compare(" + left + ", " + left_len + ", "
+                + right + ", " + right_len + ") " + op_str + " 0";
         } else {
             src += op_str;
             if (right_precedence < last_expr_precedence) {
