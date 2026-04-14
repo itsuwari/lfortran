@@ -95,12 +95,41 @@ std::string get_runtime_library_c_header_dir()
     char *env_p = std::getenv("LFORTRAN_RUNTIME_LIBRARY_HEADER_DIR");
     if (env_p) return env_p;
 
+    auto resolve_header_dir = [](const std::string &candidate) -> std::string {
+        namespace fs = std::filesystem;
+        if (fs::exists(fs::path(candidate) / "lfortran_intrinsics.h")) {
+            return candidate;
+        }
+        return "";
+    };
+
     switch (execution_mode)
     {
-        case ExecutionMode::LFortranDevelopment:
-            return lfortran_exec_path_dir + "/../libasr/runtime";
-        case ExecutionMode::LFortranCtest:
-            return lfortran_exec_path_dir + "/../../libasr/runtime";
+        case ExecutionMode::LFortranDevelopment: {
+            std::string build_runtime_headers =
+                lfortran_exec_path_dir + "/../libasr/runtime";
+            std::string resolved = resolve_header_dir(build_runtime_headers);
+            if (!resolved.empty()) {
+                return resolved;
+            }
+            std::string source_runtime_headers =
+                (std::filesystem::path(__FILE__).parent_path().parent_path()
+                    / "libasr" / "runtime").string();
+            resolved = resolve_header_dir(source_runtime_headers);
+            if (!resolved.empty()) {
+                return resolved;
+            }
+            return build_runtime_headers;
+        }
+        case ExecutionMode::LFortranCtest: {
+            std::string ctest_runtime_headers =
+                lfortran_exec_path_dir + "/../../libasr/runtime";
+            std::string resolved = resolve_header_dir(ctest_runtime_headers);
+            if (!resolved.empty()) {
+                return resolved;
+            }
+            return ctest_runtime_headers;
+        }
         case ExecutionMode::LFortranInstalled:
             return lfortran_exec_path_dir + "/" + CMAKE_INSTALL_INCLUDEDIR_RELATIVE + "/lfortran/impure";
         default:

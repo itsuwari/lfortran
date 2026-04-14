@@ -6,3 +6,5 @@ if (WITH_LSP)
 endif()
 add_subdirectory(bin)
 add_subdirectory(runtime/legacy)
+
+add_dependencies(lfortran lfortran_runtime)

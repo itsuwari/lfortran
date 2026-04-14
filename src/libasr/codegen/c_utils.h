@@ -110,6 +110,14 @@ namespace CUtils {
         return result;
     }
 
+    static inline bool is_standard_c_runtime_function(const std::string &name) {
+        static const std::set<std::string> c_runtime_functions = {
+            "strlen", "strcmp", "strncmp", "strcpy", "strncpy",
+            "memcpy", "memmove", "memcmp"
+        };
+        return c_runtime_functions.find(name) != c_runtime_functions.end();
+    }
+
     static inline std::string escape_c_string_literal(const std::string &s) {
         std::ostringstream o;
         o << std::hex << std::setfill('0');

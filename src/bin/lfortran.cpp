@@ -1743,35 +1743,6 @@ int compile_to_object_file_cpp(const std::string &infile,
         if (err) return err;
     }
 
-    if (!LCompilers::ASRUtils::main_program_present(*asr)) {
-        // Create an empty object file (things will be actually
-        // compiled and linked when the main program is present):
-        if (compiler_options.platform == LCompilers::Platform::Windows) {
-            {
-                std::ofstream out;
-                out.open(outfile);
-                out << " ";
-            }
-        } else {
-            std::string outfile_empty = outfile + ".empty.c";
-            {
-                std::ofstream out;
-                out.open(outfile_empty);
-                out << " ";
-            }
-	    std::string CC = "cc";
-            char *env_CC = std::getenv("LFORTRAN_CC");
-            if (env_CC) CC = env_CC;
-            std::string cmd = CC + " -c '" + outfile_empty + "' -o '" + outfile + "'";
-            int err = system(cmd.c_str());
-            if (err) {
-                std::cout << "The command '" + cmd + "' failed." << std::endl;
-                return 11;
-            }
-        }
-        return 0;
-    }
-
     // ASR -> C++
     std::string src;
     diagnostics.diagnostics.clear();
@@ -1826,6 +1797,7 @@ int compile_to_object_file_c(const std::string &infile,
         LCompilers::PassManager pass_manager,
         CompilerOptions &compiler_options)
 {
+    namespace fs = std::filesystem;
     std::string input = read_file_ok(infile);
 
     LCompilers::FortranEvaluator fe(compiler_options);
@@ -1854,31 +1826,101 @@ int compile_to_object_file_c(const std::string &infile,
         if (err) return err;
     }
 
-    if (!LCompilers::ASRUtils::main_program_present(*asr)) {
-        // Create an empty object file (things will be actually
-        // compiled and linked when the main program is present):
-        if (compiler_options.platform == LCompilers::Platform::Windows) {
-            {
-                std::ofstream out;
-                out.open(outfile);
-                out << " ";
+    if (compiler_options.separate_compilation) {
+        std::string effective_rtlib_header_dir = rtlib_header_dir;
+        if (!fs::exists(fs::path(effective_rtlib_header_dir) / "lfortran_intrinsics.h")) {
+            effective_rtlib_header_dir =
+                (fs::path(__FILE__).parent_path().parent_path() / "libasr" / "runtime").string();
+        }
+
+        fs::path outfile_path(outfile);
+        fs::path split_dir = outfile_path;
+        split_dir += ".tmp.split";
+        std::error_code ec;
+        fs::remove_all(split_dir, ec);
+        ec.clear();
+        fs::create_directories(split_dir, ec);
+        if (ec) {
+            std::cerr << "Failed to create split C build directory `"
+                      << split_dir.string() << "`: " << ec.message() << std::endl;
+            return 11;
+        }
+
+        std::string project_name = outfile_path.stem().string();
+        project_name = LCompilers::CUtils::sanitize_c_identifier(project_name);
+        if (project_name.empty()) {
+            project_name = "lfortran_c_object";
+        }
+
+        Allocator c_al(64*1024*1024);
+        compiler_options.po.always_run = false;
+        compiler_options.po.run_fun = "f";
+        pass_manager.skip_c_passes();
+        pass_manager.apply_passes(c_al, asr, compiler_options.po, diagnostics);
+        std::cerr << diagnostics.render(lm, compiler_options);
+        if (diagnostics.has_error()) {
+            return 1;
+        }
+        diagnostics.diagnostics.clear();
+
+        LCompilers::Result<LCompilers::CTranslationUnitSplitResult> split_result =
+            LCompilers::asr_to_c_split(c_al, *asr, diagnostics,
+                compiler_options, 1, split_dir.string(), project_name);
+        std::cerr << diagnostics.render(lm, compiler_options);
+        if (!split_result.ok) {
+            LCOMPILERS_ASSERT(diagnostics.has_error())
+            return 5;
+        }
+
+        std::string CC = "gcc";
+        std::vector<std::string> object_files;
+        object_files.reserve(split_result.result.source_files.size());
+        for (const auto &src_file : split_result.result.source_files) {
+            fs::path src_path = split_dir / src_file;
+            fs::path obj_path = split_dir / fs::path(src_file).replace_extension(".o");
+            std::string cmd = CC
+                + " -I" + effective_rtlib_header_dir
+                + " -I" + split_dir.string()
+                + " -o " + obj_path.string()
+                + " -c " + src_path.string();
+            if (verbose) {
+                std::cout << cmd << std::endl;
             }
-        } else {
-            std::string outfile_empty = outfile + ".empty.c";
-            {
-                std::ofstream out;
-                out.open(outfile_empty);
-                out << " ";
-            }
-	    std::string CC = "cc";
-            char *env_CC = std::getenv("LFORTRAN_CC");
-            if (env_CC) CC = env_CC;
-            std::string cmd = CC + " -c '" + outfile_empty + "' -o '" + outfile + "'";
             int err = system(cmd.c_str());
             if (err) {
                 std::cout << "The command '" + cmd + "' failed." << std::endl;
                 return 11;
             }
+            object_files.push_back(obj_path.string());
+        }
+
+        if (object_files.empty()) {
+            std::cerr << "Split C emission produced no object files for `" << infile << "`." << std::endl;
+            return 11;
+        }
+
+        if (object_files.size() == 1) {
+            fs::copy_file(object_files[0], outfile,
+                fs::copy_options::overwrite_existing, ec);
+            if (ec) {
+                std::cerr << "Failed to materialize object file `" << outfile
+                          << "`: " << ec.message() << std::endl;
+                return 11;
+            }
+            return 0;
+        }
+
+        std::string combine_cmd = CC + " -r -o " + outfile;
+        for (const auto &obj_file : object_files) {
+            combine_cmd += " " + obj_file;
+        }
+        if (verbose) {
+            std::cout << combine_cmd << std::endl;
+        }
+        int err = system(combine_cmd.c_str());
+        if (err) {
+            std::cout << "The command '" + combine_cmd + "' failed." << std::endl;
+            return 11;
         }
         return 0;
     }

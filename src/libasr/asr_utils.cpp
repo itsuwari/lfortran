@@ -1316,6 +1316,28 @@ Result<ASR::TranslationUnit_t*, ErrorMessage> find_and_load_module(Allocator &al
                                                 SymbolTable &symtab, bool intrinsic,
                                                 LCompilers::PassOptions& pass_options,
                                                 LCompilers::LocationManager &lm) {
+    auto find_cmake_mod_stamp = [](const std::filesystem::path &search_dir,
+                                   const std::filesystem::path &mod_filename) -> std::filesystem::path {
+        if (search_dir.filename() != "include") {
+            return {};
+        }
+        std::filesystem::path cmake_files_dir = search_dir.parent_path() / "CMakeFiles";
+        if (!std::filesystem::is_directory(cmake_files_dir)) {
+            return {};
+        }
+        std::string stamp_filename = mod_filename.string() + ".stamp";
+        for (auto const &entry : std::filesystem::recursive_directory_iterator(
+                cmake_files_dir, std::filesystem::directory_options::skip_permission_denied)) {
+            if (!entry.is_regular_file()) {
+                continue;
+            }
+            if (entry.path().filename() == stamp_filename) {
+                return entry.path();
+            }
+        }
+        return {};
+    };
+
     std::filesystem::path runtime_library_dir { pass_options.runtime_library_dir };
     std::filesystem::path filename {msym + ".mod"};
     std::vector<std::filesystem::path> mod_files_dirs;
@@ -1330,7 +1352,18 @@ Result<ASR::TranslationUnit_t*, ErrorMessage> find_and_load_module(Allocator &al
     for (auto path : mod_files_dirs) {
         std::string modfile;
         std::filesystem::path full_path = path / filename;
-        if (read_file(full_path.string(), modfile)) {
+        std::filesystem::path resolved_path = full_path;
+        bool modfile_loaded = read_file(full_path.string(), modfile);
+        if (!modfile_loaded) {
+            std::filesystem::path stamp_path = find_cmake_mod_stamp(path, filename);
+            if (!stamp_path.empty()) {
+                modfile_loaded = read_file(stamp_path.string(), modfile);
+                if (modfile_loaded) {
+                    resolved_path = stamp_path;
+                }
+            }
+        }
+        if (modfile_loaded) {
             if (modfile.empty()) {
                 found_empty_mod = true;
                 continue;
@@ -1343,7 +1376,7 @@ Result<ASR::TranslationUnit_t*, ErrorMessage> find_and_load_module(Allocator &al
                 }
                 return asr;
             } else {
-                return ErrorMessage("While loading modfile '" + full_path.string()
+                return ErrorMessage("While loading modfile '" + resolved_path.string()
                     + "': " + res.error.message);
             }
         }

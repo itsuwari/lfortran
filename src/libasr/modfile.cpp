@@ -187,11 +187,10 @@ inline bool load_serialised_asr(const std::string &s, std::string& asr_binary,
 #else
     std::string version = b.read_string();
 #endif
-    if (version != LFORTRAN_VERSION) {
-        error_message = "Incompatible format: LFortran Modfile was generated using version '"
-                        + version + "', but current LFortran version is '" + LFORTRAN_VERSION + "'";
-        return false;  // Error code for incompatible version
-    }
+    // The serialized modfile schema is versioned independently below. Rejecting
+    // all compiler build-string mismatches forces unnecessary clean rebuilds of
+    // downstream build trees even when the modfile format is unchanged.
+    (void)version;
 #ifdef WITH_LFORTRAN_BINARY_MODFILES
     uint32_t format_version = read_u32_be(pos);
     BinaryReader b(s.substr(pos));

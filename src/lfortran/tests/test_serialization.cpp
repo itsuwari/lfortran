@@ -1,4 +1,5 @@
 #include <tests/doctest.h>
+#include <cstring>
 #include <iostream>
 
 #include <libasr/bwriter.h>
@@ -331,6 +332,67 @@ end subroutine
 end module
 )""");
 
+}
+
+TEST_CASE("ASR modfile preserves procedure-local parameter values") {
+    asr_mod(R"""(
+module local_params_mod
+implicit none
+
+contains
+
+subroutine mindless01()
+    integer, parameter :: nat = 3
+    integer, parameter :: sym(nat) = [1, 8, 6]
+    real(8), parameter :: xyz(3, nat) = reshape([ &
+        1.0d0, 2.0d0, 3.0d0, &
+        4.0d0, 5.0d0, 6.0d0, &
+        7.0d0, 8.0d0, 9.0d0 ], [3, nat])
+    print *, nat, sym(1), xyz(1, 1)
+end subroutine
+
+end module
+)""");
+}
+
+TEST_CASE("ASR modfile accepts compiler version drift when schema matches") {
+    Allocator al(4*1024);
+
+    LCompilers::LFortran::AST::TranslationUnit_t* ast0;
+    LCompilers::diag::Diagnostics diagnostics;
+    LCompilers::CompilerOptions compiler_options;
+    ast0 = TRY(LCompilers::LFortran::parse(al, R"""(
+module a
+implicit none
+contains
+subroutine b()
+print *, "b()"
+end subroutine
+end module
+)""", diagnostics, compiler_options));
+
+    LCompilers::LocationManager lm;
+    lm.file_ends.push_back(0);
+    LCompilers::LocationManager::FileLocations file;
+    file.out_start.push_back(0); file.in_start.push_back(0); file.in_newlines.push_back(0);
+    file.in_filename = "test"; file.current_line = 1; file.preprocessor = false; file.out_start0.push_back(0);
+    file.in_start0.push_back(0); file.in_size0.push_back(0); file.interval_type0.push_back(0);
+    file.in_newlines0.push_back(0);
+    lm.files.push_back(file);
+
+    LCompilers::ASR::TranslationUnit_t* asr = TRY(LCompilers::LFortran::ast_to_asr(al, *ast0,
+        diagnostics, nullptr, false, compiler_options, lm));
+
+    std::string modfile = LCompilers::save_modfile(*asr, lm);
+    std::string fake_version(std::strlen(LFORTRAN_VERSION), 'x');
+    size_t version_pos = modfile.find(LFORTRAN_VERSION);
+    REQUIRE(version_pos != std::string::npos);
+    modfile.replace(version_pos, std::strlen(LFORTRAN_VERSION), fake_version);
+
+    LCompilers::SymbolTable symtab(nullptr);
+    LCompilers::Result<LCompilers::ASR::TranslationUnit_t*, LCompilers::ErrorMessage> res
+        = LCompilers::load_modfile(al, modfile, true, symtab, lm);
+    CHECK(res.ok);
 }
 
 TEST_CASE("Topological sorting mod_int") {

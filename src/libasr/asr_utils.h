@@ -7154,7 +7154,7 @@ inline std::string fetch_ArrayConstant_value(void *data, ASR::ttype_t* type, int
                 new_char[j] = data_char[j];
             }
             new_char[len] = '\0';
-            return '\"' + std::string(new_char) + '\"';
+            return '\"' + str_escape_c(std::string(new_char)) + '\"';
         }
         default:
             throw LCompilersException("Unsupported type for array constant.");

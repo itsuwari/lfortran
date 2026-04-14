@@ -395,6 +395,9 @@ LFORTRAN_API void _lfortran_string_read_c64(char *str, int64_t len, char *format
 LFORTRAN_API void _lfortran_empty_read(int32_t unit_num, int32_t* iostat);
 LFORTRAN_API void _lfortran_set_read_iomsg(int32_t iostat, char* iomsg, int64_t iomsg_len);
 LFORTRAN_API void _lfortran_file_seek(int32_t unit_num, int64_t pos, int32_t* iostat);
+LFORTRAN_API void _lfortran_rewind(int32_t unit_num);
+LFORTRAN_API void _lfortran_endfile(int32_t unit_num);
+LFORTRAN_API void _lfortran_backspace(int32_t unit_num);
 LFORTRAN_API void _lpython_close(int64_t fd);
 LFORTRAN_API void _lfortran_close(int32_t unit_num, char* status, int64_t status_len, int32_t* iostat);
 LFORTRAN_API int32_t _lfortran_ichar(char *c);
