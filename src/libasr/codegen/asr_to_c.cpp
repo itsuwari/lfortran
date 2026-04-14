@@ -2568,6 +2568,10 @@ R"(
                 != x.m_symtab->get_scope().end());
             if (startswith(item, "lfortran_intrinsic")) {
                 ASR::symbol_t *mod = x.m_symtab->get_symbol(item);
+                if (ASR::is_a<ASR::Module_t>(*mod)
+                        && ASR::down_cast<ASR::Module_t>(mod)->m_loaded_from_mod) {
+                    continue;
+                }
                 if( ASRUtils::get_body_size(mod) != 0 ) {
                     ASR::Module_t *module_t = ASR::down_cast<ASR::Module_t>(mod);
                     auto module_units = emit_module_split_units(*module_t);
@@ -2600,6 +2604,10 @@ R"(
                 != x.m_symtab->get_scope().end());
             if (!startswith(item, "lfortran_intrinsic")) {
                 ASR::symbol_t *mod = x.m_symtab->get_symbol(item);
+                if (ASR::is_a<ASR::Module_t>(*mod)
+                        && ASR::down_cast<ASR::Module_t>(mod)->m_loaded_from_mod) {
+                    continue;
+                }
                 ASR::Module_t *module_t = ASR::down_cast<ASR::Module_t>(mod);
                 auto module_units = emit_module_split_units(*module_t);
                 for (auto &unit : module_units) {

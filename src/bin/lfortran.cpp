@@ -1798,6 +1798,9 @@ int compile_to_object_file_c(const std::string &infile,
         CompilerOptions &compiler_options)
 {
     namespace fs = std::filesystem;
+    if (assembly) {
+        throw LCompilers::LCompilersException("Not implemented");
+    }
     std::string input = read_file_ok(infile);
 
     LCompilers::FortranEvaluator fe(compiler_options);
@@ -1826,7 +1829,11 @@ int compile_to_object_file_c(const std::string &infile,
         if (err) return err;
     }
 
-    if (compiler_options.separate_compilation) {
+    {
+        // Object compilation with the C backend must keep imported modules as
+        // external references. The split-C pipeline already materializes
+        // module-owned definitions once and emits extern declarations for
+        // consumers, so use it consistently for `-c`.
         std::string effective_rtlib_header_dir = rtlib_header_dir;
         if (!fs::exists(fs::path(effective_rtlib_header_dir) / "lfortran_intrinsics.h")) {
             effective_rtlib_header_dir =
@@ -1924,45 +1931,6 @@ int compile_to_object_file_c(const std::string &infile,
         }
         return 0;
     }
-
-    // ASR -> C
-    std::string src;
-    diagnostics.diagnostics.clear();
-    LCompilers::Result<std::string> res
-        = fe.get_c3(*asr, diagnostics, pass_manager, 1);
-    std::cerr << diagnostics.render(lm, compiler_options);
-    if (res.ok) {
-        src = res.result;
-    } else {
-        LCOMPILERS_ASSERT(diagnostics.has_error())
-        return 5;
-    }
-
-    // C -> Machine code (saves to an object file)
-    if (assembly) {
-        throw LCompilers::LCompilersException("Not implemented");
-    } else {
-        std::string cfile = outfile + ".tmp.c";
-        {
-            std::ofstream out;
-            out.open(cfile);
-            out << src;
-        }
-
-        std::string CXX = "gcc";
-        std::string options = " -I" + rtlib_header_dir;
-        std::string cmd = CXX + " " + options + " -o " + outfile + " -c " + cfile;
-        if (verbose) {
-            std::cout << cmd << std::endl;
-        }
-        int err = system(cmd.c_str());
-        if (err) {
-            std::cout << "The command '" + cmd + "' failed." << std::endl;
-            return 11;
-        }
-    }
-
-    return 0;
 }
 
 int compile_to_binary_fortran(const std::string &infile,

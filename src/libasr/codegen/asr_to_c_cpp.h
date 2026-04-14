@@ -1757,6 +1757,15 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             ASR::symbol_t *v = ASRUtils::symbol_get_past_external(ASR::down_cast<ASR::Var_t>(base_v)->m_v);
             if (ASR::is_a<ASR::Variable_t>(*v)) {
                 ASR::Variable_t *vv = ASR::down_cast<ASR::Variable_t>(v);
+                if (is_c && is_pointer_dummy_slot_type(vv)) {
+                    ASR::ttype_t *ptr_target = ASRUtils::type_get_past_pointer(vv->m_type);
+                    if (ptr_target != nullptr && ASRUtils::is_aggregate_type(ptr_target)) {
+                        der_expr = "(*" + get_c_var_storage_name(vv) + ")";
+                    }
+                } else if (is_c && (is_aggregate_dummy_slot_type(vv)
+                        || is_plain_aggregate_dummy_pointee_type(vv))) {
+                    der_expr = "(*" + get_c_var_storage_name(vv) + ")";
+                }
                 var_is_byref = ASRUtils::is_arg_dummy(vv->m_intent);
                 ASR::asr_t *owner = vv->m_parent_symtab ? vv->m_parent_symtab->asr_owner : nullptr;
                 bool force_value_struct_temp =

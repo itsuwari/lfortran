@@ -1318,21 +1318,33 @@ Result<ASR::TranslationUnit_t*, ErrorMessage> find_and_load_module(Allocator &al
                                                 LCompilers::LocationManager &lm) {
     auto find_cmake_mod_stamp = [](const std::filesystem::path &search_dir,
                                    const std::filesystem::path &mod_filename) -> std::filesystem::path {
-        if (search_dir.filename() != "include") {
-            return {};
-        }
-        std::filesystem::path cmake_files_dir = search_dir.parent_path() / "CMakeFiles";
-        if (!std::filesystem::is_directory(cmake_files_dir)) {
-            return {};
-        }
         std::string stamp_filename = mod_filename.string() + ".stamp";
-        for (auto const &entry : std::filesystem::recursive_directory_iterator(
-                cmake_files_dir, std::filesystem::directory_options::skip_permission_denied)) {
-            if (!entry.is_regular_file()) {
+        std::vector<std::filesystem::path> cmake_files_dirs;
+        std::filesystem::path resolved_dir = search_dir.empty()
+            ? std::filesystem::path(".")
+            : search_dir;
+
+        // CMake Fortran targets commonly place copied module stamps under
+        // <build>/CMakeFiles/<target>.dir/*.mod.stamp. The search_dir can be
+        // either the build/include directory or the target build directory
+        // itself, so probe both layouts.
+        cmake_files_dirs.push_back(resolved_dir / "CMakeFiles");
+        if (resolved_dir.filename() == "include") {
+            cmake_files_dirs.push_back(resolved_dir.parent_path() / "CMakeFiles");
+        }
+
+        for (const auto &cmake_files_dir : cmake_files_dirs) {
+            if (!std::filesystem::is_directory(cmake_files_dir)) {
                 continue;
             }
-            if (entry.path().filename() == stamp_filename) {
-                return entry.path();
+            for (auto const &entry : std::filesystem::recursive_directory_iterator(
+                    cmake_files_dir, std::filesystem::directory_options::skip_permission_denied)) {
+                if (!entry.is_regular_file()) {
+                    continue;
+                }
+                if (entry.path().filename() == stamp_filename) {
+                    return entry.path();
+                }
             }
         }
         return {};
