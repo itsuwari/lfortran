@@ -2162,6 +2162,17 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             && arg_src.back() == ')';
     }
 
+    bool is_plain_pointer_backed_local_aggregate_actual(ASR::Variable_t *actual_var,
+            bool pointer_backed_aggregate_actual) {
+        if (!is_c || actual_var == nullptr || !pointer_backed_aggregate_actual) {
+            return false;
+        }
+        return !ASRUtils::is_arg_dummy(actual_var->m_intent)
+            && !ASRUtils::is_pointer(actual_var->m_type)
+            && !ASRUtils::is_allocatable(actual_var->m_type)
+            && is_struct_or_class_type(actual_var->m_type);
+    }
+
     std::string get_addressable_call_arg_src(ASR::expr_t *shape_call_arg,
             const std::string &arg_src) {
         if (shape_call_arg == nullptr) {
@@ -2695,6 +2706,9 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                     wants_raw_pointer_actual, src)) {
                 raw_pointer_actual = true;
             }
+            bool plain_pointer_backed_local_aggregate_actual =
+                is_plain_pointer_backed_local_aggregate_actual(
+                    actual_var, pointer_backed_aggregate_actual);
             if (!raw_pointer_actual
                     && param_is_optional_alloc_scalar_ref
                     && ASRUtils::is_pointer(type)
@@ -2793,6 +2807,8 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 } else if (wants_aggregate_dummy_slot_actual) {
                     if (aggregate_dummy_slot_actual) {
                         args += canonicalize_raw_pointer_actual_src(src);
+                    } else if (plain_pointer_backed_local_aggregate_actual) {
+                        args += src;
                     } else {
                         args += address_of_src(src);
                     }
@@ -3022,6 +3038,9 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                     wants_raw_pointer_actual, src)) {
                 raw_pointer_actual = true;
             }
+            bool plain_pointer_backed_local_aggregate_actual =
+                is_plain_pointer_backed_local_aggregate_actual(
+                    actual_var, pointer_backed_aggregate_actual);
             if (!raw_pointer_actual
                     && param_is_optional_alloc_scalar_ref
                     && ASRUtils::is_pointer(type)
@@ -3120,6 +3139,8 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 } else if (wants_aggregate_dummy_slot_actual) {
                     if (aggregate_dummy_slot_actual) {
                         args += canonicalize_raw_pointer_actual_src(src);
+                    } else if (plain_pointer_backed_local_aggregate_actual) {
+                        args += src;
                     } else {
                         args += address_of_src(src);
                     }
