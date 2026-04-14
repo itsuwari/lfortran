@@ -2473,8 +2473,11 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 && is_struct_or_class_type(type_unwrapped)
                 && !wants_pointer_dummy_slot_actual
                 && !wants_aggregate_dummy_slot_actual;
+            bool pointer_backed_aggregate_actual = is_c
+                && is_struct_or_class_type(type_unwrapped)
+                && is_pointer_backed_struct_expr(call_arg);
             bool actual_emits_aggregate_value = wants_aggregate_pointer_actual
-                && (!is_pointer_backed_struct_expr(call_arg)
+                && (!pointer_backed_aggregate_actual
                     || emits_plain_aggregate_dummy_pointee_value(call_arg));
             if (is_c && raw_call_arg && ASR::is_a<ASR::Var_t>(*raw_call_arg) && i < f->n_args) {
                 ASR::symbol_t *arg_sym = ASRUtils::symbol_get_past_external(
@@ -2610,7 +2613,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                         args += "&" + src;
                     }
                 } else if (wants_aggregate_dummy_slot_actual) {
-                    if (aggregate_dummy_slot_actual) {
+                    if (aggregate_dummy_slot_actual || pointer_backed_aggregate_actual) {
                         args += canonicalize_raw_pointer_actual_src(src);
                     } else {
                         args += address_of_src(src);
@@ -2672,7 +2675,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                         args += address_of_src(src);
                     }
                 } else if (wants_aggregate_dummy_slot_actual) {
-                    if (raw_pointer_actual) {
+                    if (raw_pointer_actual || pointer_backed_aggregate_actual) {
                         args += canonicalize_raw_pointer_actual_src(src);
                     } else {
                         args += address_of_src(src);
@@ -2777,8 +2780,11 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 && is_struct_or_class_type(type_unwrapped)
                 && !wants_pointer_dummy_slot_actual
                 && !wants_aggregate_dummy_slot_actual;
+            bool pointer_backed_aggregate_actual = is_c
+                && is_struct_or_class_type(type_unwrapped)
+                && is_pointer_backed_struct_expr(call_arg);
             bool actual_emits_aggregate_value = wants_aggregate_pointer_actual
-                && (!is_pointer_backed_struct_expr(call_arg)
+                && (!pointer_backed_aggregate_actual
                     || emits_plain_aggregate_dummy_pointee_value(call_arg));
             if (is_c && raw_call_arg && ASR::is_a<ASR::Var_t>(*raw_call_arg) && i < f->n_args) {
                 ASR::symbol_t *arg_sym = ASRUtils::symbol_get_past_external(
@@ -2914,7 +2920,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                         args += "&" + src;
                     }
                 } else if (wants_aggregate_dummy_slot_actual) {
-                    if (aggregate_dummy_slot_actual) {
+                    if (aggregate_dummy_slot_actual || pointer_backed_aggregate_actual) {
                         args += canonicalize_raw_pointer_actual_src(src);
                     } else {
                         args += address_of_src(src);
@@ -2976,7 +2982,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                         args += address_of_src(src);
                     }
                 } else if (wants_aggregate_dummy_slot_actual) {
-                    if (raw_pointer_actual) {
+                    if (raw_pointer_actual || pointer_backed_aggregate_actual) {
                         args += canonicalize_raw_pointer_actual_src(src);
                     } else {
                         args += address_of_src(src);

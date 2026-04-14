@@ -3022,11 +3022,6 @@ R"(    // Initialise Numpy
             throw CodeGenError("C backend only supports uniquely valued integer EnumType. " +
                 std::string(x.m_name) + " EnumType is having duplicate values for its members.");
         }
-        if( x.m_enum_value_type == ASR::enumtypeType::IntegerUnique &&
-            x.m_abi == ASR::abiType::BindC ) {
-            throw CodeGenError("C-interoperation support for non-consecutive but uniquely "
-                               "valued integer enums isn't available yet.");
-        }
         std::string indent(indentation_level*indentation_spaces, ' ');
         std::string tab(indentation_spaces, ' ');
         std::string meta_data = " = {";
