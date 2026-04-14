@@ -1384,14 +1384,14 @@ R"(
             if (!ASR::is_a<ASR::Variable_t>(*sym)) {
                 continue;
             }
-            const std::string emitted_member_name = CUtils::get_c_symbol_name(sym);
+            const std::string emitted_member_name = CUtils::get_c_member_name(sym);
             ASR::ttype_t* mem_type = ASRUtils::symbol_type(sym);
             if( ASRUtils::is_character(*mem_type) ) {
                 sub += indent + name + "->" + emitted_member_name + " = NULL;\n";
             } else if( ASRUtils::is_array(mem_type) &&
                         ASR::is_a<ASR::Variable_t>(*member_sym) ) {
                 ASR::Variable_t* mem_var = ASR::down_cast<ASR::Variable_t>(member_sym);
-                std::string safe_member_name = CUtils::get_c_symbol_name(sym);
+                std::string safe_member_name = CUtils::get_c_member_name(sym);
                 std::string mem_var_name = CUtils::sanitize_c_identifier(
                     "struct_member_" + safe_member_name + "_" + std::to_string(counter));
                 counter += 1;

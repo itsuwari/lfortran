@@ -1731,7 +1731,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         ASR::expr_t *base_v = unwrap_c_lvalue_expr(x.m_v);
         bool plain_aggregate_dummy_pointee =
             emits_plain_aggregate_dummy_pointee_value(base_v ? base_v : x.m_v);
-        member = CUtils::get_c_symbol_name(ASRUtils::symbol_get_past_external(x.m_m));
+        member = CUtils::get_c_member_name(ASRUtils::symbol_get_past_external(x.m_m));
         ASR::ttype_t *v_type = ASRUtils::expr_type(x.m_v);
         ASR::ttype_t *v_type_unwrapped = ASRUtils::type_get_past_allocatable_pointer(v_type);
         bool var_is_byref = false;
@@ -1863,7 +1863,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             (is_parameter_value && ASR::is_a<ASR::StructType_t>(*v_type_unwrapped)) ||
             (!var_is_byref && !ASRUtils::is_pointer(v_type) && !ASRUtils::is_allocatable(v_type) &&
                 ASR::is_a<ASR::EnumType_t>(*v_type_unwrapped));
-        std::string member = CUtils::get_c_symbol_name(ASRUtils::symbol_get_past_external(callee_sym));
+        std::string member = CUtils::get_c_member_name(ASRUtils::symbol_get_past_external(callee_sym));
         return use_dot ? der_expr + "." + member : der_expr + "->" + member;
     }
 
@@ -4796,7 +4796,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         std::string der_expr, member;
         this->visit_expr(*x.m_v);
         der_expr = std::move(src);
-        member = CUtils::get_c_symbol_name(x.m_m);
+        member = CUtils::get_c_member_name(x.m_m);
         src = der_expr + "." + member;
     }
 
@@ -5425,7 +5425,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             if (x.m_args[i].m_value) {
                 ASR::symbol_t *member_sym = st->m_symtab->get_symbol(st->m_members[i]);
                 out += ".";
-                out += CUtils::get_c_symbol_name(member_sym);
+                out += CUtils::get_c_member_name(member_sym);
                 out += " = ";
                 std::string array_init = emit_c_array_constant_brace_init(
                     x.m_args[i].m_value, ASRUtils::symbol_type(member_sym));
@@ -5456,7 +5456,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             if (x.m_args[i].m_value) {
                 ASR::symbol_t *member_sym = st->m_symtab->get_symbol(st->m_members[i]);
                 out += ".";
-                out += CUtils::get_c_symbol_name(member_sym);
+                out += CUtils::get_c_member_name(member_sym);
                 out += " = ";
                 std::string array_init = emit_c_array_constant_brace_init(
                     x.m_args[i].m_value, ASRUtils::symbol_type(member_sym));

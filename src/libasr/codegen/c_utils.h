@@ -198,6 +198,11 @@ namespace CUtils {
         return get_c_symbol_name(v.m_parent_symtab->get_symbol(v.m_name));
     }
 
+    static inline std::string get_c_member_name(const ASR::symbol_t *sym) {
+        sym = ASRUtils::symbol_get_past_external(const_cast<ASR::symbol_t*>(sym));
+        return sanitize_c_identifier(ASRUtils::symbol_name(sym));
+    }
+
     static inline std::string get_c_type_code(ASR::ttype_t *t,
             bool encode_kind=true, bool encode_dimensions=true,
             bool encode_physical_type=true) {
