@@ -6,6 +6,7 @@
 #include <libasr/alloc.h>
 #include <libasr/containers.h>
 extern std::string lcompilers_commandline_options;
+extern std::string lcompilers_unique_ID_separate_compilation;
 
 namespace LCompilers  {
 

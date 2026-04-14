@@ -308,13 +308,16 @@ namespace CUtils {
                 std::string indent(indentation_level * indentation_spaces, ' ');
                 std::string tab(indentation_spaces, ' ');
                 std::string array_reshape_func;
-                if( util2func.find("array_reshape_" + array_type_code) == util2func.end() ) {
-                    array_reshape_func = global_scope->get_unique_name("array_reshape_" + array_type_code);
-                    util2func["array_reshape_" + array_type_code] = array_reshape_func;
+                std::string reshape_key = "array_reshape_" + array_type_code + "__"
+                    + array_type + "__" + shape_type + "__" + return_type;
+                if( util2func.find(reshape_key) == util2func.end() ) {
+                    array_reshape_func = global_scope->get_unique_name(
+                        sanitize_c_identifier(reshape_key));
+                    util2func[reshape_key] = array_reshape_func;
                 } else {
                     return ;
                 }
-                array_reshape_func = util2func["array_reshape_" + array_type_code];
+                array_reshape_func = util2func[reshape_key];
                 std::string signature = return_type + "* " + array_reshape_func + "(" +
                                         array_type + " array" + ", " + shape_type + " shape)";
                 util_func_decls += indent + signature + ";\n";
@@ -380,10 +383,12 @@ namespace CUtils {
                 std::string array_type, std::string shape_type,
                 std::string return_type, std::string element_type,
                 std::string array_type_code) {
+                std::string reshape_key = "array_reshape_" + array_type_code + "__"
+                    + array_type + "__" + shape_type + "__" + return_type;
                 array_reshape(array_type, shape_type,
                             return_type, element_type,
                             array_type_code);
-                return util2func["array_reshape_" + array_type_code];
+                return util2func[reshape_key];
             }
 
             std::string get_array_constant(std::string return_type,

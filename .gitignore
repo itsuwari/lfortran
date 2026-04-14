@@ -133,7 +133,12 @@ src/libasr/libasr.a.*
 *.html
 *.o.tmp.c
 *.o.tmp.cpp
+*.tmp.c
+*.tmp.cpp
+*.tmp.split/
+*.o.tmp.split/
 *.tmp.f90
+*.mod.stamp
 *.clj
 pass_*.f90
 pass_json_*.json
@@ -230,6 +235,7 @@ ext/
 extsrc/
 tmp/
 tmpdebug/
+tblite.json
 gentests/
 *.tlog
 *.filters

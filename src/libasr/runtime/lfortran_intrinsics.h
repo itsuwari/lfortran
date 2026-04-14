@@ -18,7 +18,7 @@ struct _lfortran_complex_64 {
     double re, im;
 };
 
-typedef int8_t fchar;
+typedef char fchar;
 
 #ifdef _MSC_VER
 typedef _Fcomplex float_complex_t;

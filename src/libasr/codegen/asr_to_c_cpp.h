@@ -115,6 +115,7 @@ public:
     std::map<uint64_t, std::string> const_var_names;
     std::map<int32_t, std::string> gotoid2name;
     std::map<std::string, std::string> emit_headers;
+    std::map<SymbolTable*, std::set<std::string>> emitted_local_names;
     std::string array_types_decls;
     std::string forward_decl_functions;
 
@@ -206,7 +207,7 @@ public:
         }
         if( is_string_concat_present ) {
             std::string strcat_def = "";
-            strcat_def += "    char* " + global_scope->get_unique_name("strcat_", false) + "(char* x, char* y) {\n";
+            strcat_def += "    char* " + global_scope->get_unique_name("strcat_", false) + "(const char* x, const char* y) {\n";
             strcat_def += "        char* str_tmp = (char*) malloc((strlen(x) + strlen(y) + 2) * sizeof(char));\n";
             strcat_def += "        strcpy(str_tmp, x);\n";
             strcat_def += "        return strcat(str_tmp, y);\n";
@@ -248,6 +249,28 @@ public:
                 + "*)(" + expr + "))->" + get_runtime_type_tag_member_name();
         }
         return "(" + expr + ")." + get_runtime_type_tag_member_name();
+    }
+
+    std::string get_unique_local_name(const std::string &name,
+            bool use_unique_id=true) {
+        SymbolTable *scope = current_scope ? current_scope : global_scope;
+        LCOMPILERS_ASSERT(scope != nullptr);
+        std::set<std::string> &used_names = emitted_local_names[scope];
+        std::string unique_name = name;
+        if (use_unique_id && !lcompilers_unique_ID_separate_compilation.empty()) {
+            unique_name += "_" + lcompilers_unique_ID_separate_compilation;
+        }
+        int counter = 1;
+        while (scope->get_symbol(unique_name) != nullptr
+                || used_names.find(unique_name) != used_names.end()) {
+            unique_name = name + std::to_string(counter);
+            if (use_unique_id && !lcompilers_unique_ID_separate_compilation.empty()) {
+                unique_name += "_" + lcompilers_unique_ID_separate_compilation;
+            }
+            counter++;
+        }
+        used_names.insert(unique_name);
+        return unique_name;
     }
 
     std::string get_c_array_constant_init_element(ASR::ArrayConstant_t *arr,
@@ -2394,7 +2417,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         std::string val_data = get_c_array_data_expr(x.m_value, value_src);
         std::string val_offset = get_c_array_offset_expr(x.m_value, value_src);
         std::string val_stride = get_c_array_stride_expr(x.m_value, value_src);
-        std::string loop_var = current_scope->get_unique_name("vec_assign_i");
+        std::string loop_var = get_unique_local_name("vec_assign_i");
 
         std::vector<std::string> indices;
         indices.reserve(target_item->n_args);
@@ -2587,7 +2610,8 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 if (i < n_args - 1) args += ", ";
                 continue;
             }
-            if (is_scalar_character_dummy_type(param_type, param_type_unwrapped)
+            if (!ASRUtils::is_allocatable(param_type)
+                    && is_scalar_character_dummy_type(param_type, param_type_unwrapped)
                     && is_scalar_character_pointer_type(type)) {
                 args += "(*" + canonicalize_raw_pointer_actual_src(src) + ")";
                 if (i < n_args - 1) args += ", ";
@@ -2890,7 +2914,8 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 if (i < n_args - 1) args += ", ";
                 continue;
             }
-            if (is_scalar_character_dummy_type(param_type, param_type_unwrapped)
+            if (!ASRUtils::is_allocatable(param_type)
+                    && is_scalar_character_dummy_type(param_type, param_type_unwrapped)
                     && is_scalar_character_pointer_type(type)) {
                 args += "(*" + canonicalize_raw_pointer_actual_src(src) + ")";
                 if (i < n_args - 1) args += ", ";
@@ -3260,7 +3285,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             ASR::List_t* list_type = ASR::down_cast<ASR::List_t>(x.m_type);
             const_name += std::to_string(const_vars_count);
             const_vars_count += 1;
-            const_name = current_scope->get_unique_name(const_name);
+            const_name = get_unique_local_name(const_name);
             std::string indent(indentation_level*indentation_spaces, ' ');
             tmp_buffer_src.push_back(check_tmp_buffer() + indent + c_ds_api->get_list_type(list_type) + " " +
                                 const_name + " = " + src + ";\n");
@@ -3270,7 +3295,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             ASR::Dict_t* dict_type = ASR::down_cast<ASR::Dict_t>(x.m_type);
             const_name += std::to_string(const_vars_count);
             const_vars_count += 1;
-            const_name = current_scope->get_unique_name(const_name);
+            const_name = get_unique_local_name(const_name);
             std::string indent(indentation_level*indentation_spaces, ' ');
             tmp_buffer_src.push_back(check_tmp_buffer() + indent + c_ds_api->get_dict_type(dict_type) +
                                 " " + const_name + " = " + src + ";\n");
@@ -3643,7 +3668,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 std::string tuple_type_c = c_ds_api->get_tuple_type(t);
                 const_name += std::to_string(const_vars_count);
                 const_vars_count += 1;
-                const_name = current_scope->get_unique_name(const_name);
+                const_name = get_unique_local_name(const_name);
                 src_tmp += indent + tuple_type_c + " " + const_name + " = " + src + ";\n";
                 val_name = const_name;
             } else {
@@ -3715,9 +3740,9 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                     self().visit_expr(*scalar_source);
                     std::string scalar_expr = src;
                     size_t nbytes = ASRUtils::get_fixed_size_of_array(m_target_type);
-                    std::string bytes_name = current_scope->get_unique_name("__lfortran_bitcast_bytes");
-                    std::string char_name = current_scope->get_unique_name("__lfortran_bitcast_char");
-                    std::string idx_name = current_scope->get_unique_name("__lfortran_bitcast_i");
+                    std::string bytes_name = get_unique_local_name("__lfortran_bitcast_bytes");
+                    std::string char_name = get_unique_local_name("__lfortran_bitcast_char");
+                    std::string idx_name = get_unique_local_name("__lfortran_bitcast_i");
                     src = check_tmp_buffer();
                     src += indent + "{\n";
                     indentation_level++;
@@ -4169,9 +4194,54 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         }
     }
 
+    void handle_array_pointer_remap_association(const ASR::Associate_t& x) {
+        ASR::ArraySection_t* target_section = ASR::down_cast<ASR::ArraySection_t>(x.m_target);
+        self().visit_expr(*target_section->m_v);
+        std::string target_desc = src;
+        self().visit_expr(*x.m_value);
+        std::string value_desc = src;
+
+        std::string indent(indentation_level * indentation_spaces, ' ');
+        std::string update_target_desc;
+        update_target_desc += indent + target_desc + "->data = " + value_desc + "->data;\n";
+        update_target_desc += indent + target_desc + "->offset = " + value_desc + "->offset;\n";
+        update_target_desc += indent + target_desc + "->is_allocated = " + value_desc + "->is_allocated;\n";
+
+        std::string stride = "1";
+        for (size_t i = 0; i < target_section->n_args; i++) {
+            std::string lb = "1";
+            std::string ub = "1";
+            std::string step = "1";
+            if (target_section->m_args[i].m_left) {
+                self().visit_expr(*target_section->m_args[i].m_left);
+                lb = src;
+            }
+            if (target_section->m_args[i].m_right) {
+                self().visit_expr(*target_section->m_args[i].m_right);
+                ub = src;
+            }
+            if (target_section->m_args[i].m_step) {
+                self().visit_expr(*target_section->m_args[i].m_step);
+                step = src;
+            }
+            std::string length = "(((" + ub + ") - (" + lb + "))/(" + step + ") + 1)";
+            std::string dim_desc = target_desc + "->dims[" + std::to_string(i) + "]";
+            update_target_desc += indent + dim_desc + ".lower_bound = " + lb + ";\n";
+            update_target_desc += indent + dim_desc + ".length = " + length + ";\n";
+            update_target_desc += indent + dim_desc + ".stride = (" + stride + ");\n";
+            stride = "(" + stride + " * " + length + ")";
+        }
+        update_target_desc += indent + target_desc + "->n_dims = " + std::to_string(target_section->n_args) + ";\n";
+        src = update_target_desc;
+    }
+
     void visit_Associate(const ASR::Associate_t &x) {
         if (ASR::is_a<ASR::ArraySection_t>(*x.m_value)) {
             handle_array_section_association_to_pointer(x);
+        } else if (ASR::is_a<ASR::ArraySection_t>(*x.m_target)
+                && ASRUtils::is_array(ASRUtils::expr_type(x.m_target))
+                && ASRUtils::is_array(ASRUtils::expr_type(x.m_value))) {
+            handle_array_pointer_remap_association(x);
         } else {
             std::string indent(indentation_level*indentation_spaces, ' ');
             ASR::ttype_t *target_type = ASRUtils::expr_type(x.m_target);
@@ -4260,7 +4330,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
 
     void visit_StringConstant(const ASR::StringConstant_t &x) {
         if (is_c) {
-            src = "\"" + CUtils::escape_c_string_literal(x.m_s) + "\"";
+            src = "(char*)\"" + CUtils::escape_c_string_literal(x.m_s) + "\"";
         } else {
             src = "\"" + str_escape_c(x.m_s) + "\"";
         }
@@ -4286,7 +4356,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         std::string tab(indentation_spaces, ' ');
         const_name += std::to_string(const_vars_count);
         const_vars_count += 1;
-        const_name = current_scope->get_unique_name(const_name);
+        const_name = get_unique_local_name(const_name);
         std::string var_name = const_name;
         const_var_names[get_hash((ASR::asr_t*)&x)] = var_name;
         ASR::List_t* t = ASR::down_cast<ASR::List_t>(x.m_type);
@@ -4314,7 +4384,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         std::string tab(indentation_spaces, ' ');
         const_name += std::to_string(const_vars_count);
         const_vars_count += 1;
-        const_name = current_scope->get_unique_name(const_name);
+        const_name = get_unique_local_name(const_name);
         std::string var_name = const_name;
         const_var_names[get_hash((ASR::asr_t*)&x)] = var_name;
         ASR::Tuple_t* t = ASR::down_cast<ASR::Tuple_t>(x.m_type);
@@ -4339,7 +4409,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         std::string tab(indentation_spaces, ' ');
         const_name += std::to_string(const_vars_count);
         const_vars_count += 1;
-        const_name = current_scope->get_unique_name(const_name);
+        const_name = get_unique_local_name(const_name);
         std::string var_name = const_name;
         const_var_names[get_hash((ASR::asr_t*)&x)] = var_name;
         ASR::Dict_t* t = ASR::down_cast<ASR::Dict_t>(x.m_type);
@@ -4480,7 +4550,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         std::string indent(indentation_level * indentation_spaces, ' ');
         const_name += std::to_string(const_vars_count);
         const_vars_count += 1;
-        const_name = current_scope->get_unique_name(const_name);
+        const_name = get_unique_local_name(const_name);
         std::string var_name = const_name, tmp_src_gen = "";
         tmp_src_gen = indent + list_type_c + "* " + var_name + " = ";
         tmp_src_gen += list_section_func + "(&" + list_var + ", " + left + ", " +
@@ -6280,7 +6350,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             std::string increment_ = std::move(src);
             self().visit_expr(*b);
             std::string do_loop_end = std::move(src);
-            std::string do_loop_end_name = current_scope->get_unique_name(
+            std::string do_loop_end_name = get_unique_local_name(
                 "loop_end___" + std::to_string(loop_end_count));
             loop_end_count += 1;
             loop_end_decl = indent + CUtils::get_c_type_from_ttype_t(ASRUtils::expr_type(b), is_c) +
@@ -6414,7 +6484,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         };
 
         if (ASR::is_a<ASR::List_t>(*container_type_past_alloc)) {
-            std::string idx_name = current_scope->get_unique_name("foreach_i");
+            std::string idx_name = get_unique_local_name("foreach_i");
             out += indent + "for (int32_t " + idx_name + " = 0; " + idx_name + " < "
                 + container + ".current_end_point; " + idx_name + "++) {\n";
             out += emit_body(iter_var + " = " + container + ".data[" + idx_name + "];");
@@ -6429,8 +6499,8 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         } else if (ASRUtils::is_array(container_type)) {
             ASR::dimension_t* m_dims = nullptr;
             int n_dims = ASRUtils::extract_dimensions_from_ttype(container_type, m_dims);
-            std::string idx_name = current_scope->get_unique_name("foreach_i");
-            std::string total_name = current_scope->get_unique_name("foreach_n");
+            std::string idx_name = get_unique_local_name("foreach_i");
+            std::string total_name = get_unique_local_name("foreach_n");
             out += indent + "int32_t " + total_name + " = 1;\n";
             std::string container_desc = container;
             if (!ASR::is_a<ASR::Array_t>(*container_type_past_alloc)) {

@@ -90,7 +90,7 @@ public:
             return false;
         }
 
-        tmp_name = current_scope->get_unique_name("__lfortran_read_str_tmp");
+        tmp_name = get_unique_local_name("__lfortran_read_str_tmp");
         setup += indent() + "char* " + tmp_name
             + " = (char*) _lfortran_string_malloc_alloc(_lfortran_get_default_allocator(), "
             + value_len + ");\n";
@@ -1305,14 +1305,14 @@ R"(
                 if (needs_runtime_init && init_expr != nullptr) {
                     this->visit_expr(*init_expr);
                     std::string init_src = src;
-                    std::string init_name = current_scope->get_unique_name(v_m_name + "__init");
+                    std::string init_name = get_unique_local_name(v_m_name + "__init");
                     sub += indent + format_type_c("", type_name, init_name, false, false)
                         + " = " + init_src + ";\n";
                     size_t total_size = ASRUtils::get_fixed_size_of_array(var->m_type);
                     std::string init_data = get_c_array_data_expr(init_expr, init_name);
                     std::string init_offset = get_c_array_offset_expr(init_expr, init_name);
                     std::string init_stride = get_c_array_stride_expr(init_expr, init_name);
-                    std::string loop_var = current_scope->get_unique_name("array_init_i");
+                    std::string loop_var = get_unique_local_name("array_init_i");
                     sub += indent + "for (int32_t " + loop_var + " = 0; " + loop_var + " < "
                         + std::to_string(total_size) + "; " + loop_var + "++) {\n";
                     std::string inner_indent = indent + std::string(indentation_spaces, ' ');
@@ -3369,7 +3369,7 @@ R"(    // Initialise Numpy
         if (is_internal_string_read) {
             auto unit_arg = visit_string_arg(x.m_unit);
             std::string format_arg = x.m_fmt ? fmt_arg.first : "NULL";
-            std::string offset_name = current_scope->get_unique_name("__lfortran_read_offset");
+            std::string offset_name = get_unique_local_name("__lfortran_read_offset");
             std::string internal_read_code;
             internal_read_code += indent + "int64_t " + offset_name + " = 0;\n";
             if (x.m_iomsg) {
@@ -3491,8 +3491,8 @@ R"(    // Initialise Numpy
                         step_expr = src;
                     }
 
-                    std::string idx_name = current_scope->get_unique_name("__lfortran_read_idx");
-                    std::string off_name = current_scope->get_unique_name("__lfortran_read_off");
+                    std::string idx_name = get_unique_local_name("__lfortran_read_idx");
+                    std::string off_name = get_unique_local_name("__lfortran_read_off");
                     internal_read_code += indent + "for (int32_t " + idx_name + " = " + start_expr + ", "
                         + off_name + " = ((" + start_expr + ") - (" + lower_bound_expr + ")); "
                         + "(((" + step_expr + ") >= 0) && (" + idx_name + " <= " + end_expr + ")) || "
@@ -3544,7 +3544,7 @@ R"(    // Initialise Numpy
                                 value_expr->base.loc);
                         }
                     } else if (ASR::is_a<ASR::Logical_t>(*element_type)) {
-                        std::string tmp_name = current_scope->get_unique_name("__lfortran_read_logical");
+                        std::string tmp_name = get_unique_local_name("__lfortran_read_logical");
                         internal_read_code += inner_indent + "int32_t " + tmp_name + " = 0;\n";
                         internal_read_code += inner_indent + "_lfortran_string_read_bool(" + unit_arg.first + ", " + unit_arg.second + ", "
                             + format_arg + ", &" + tmp_name + ", " + iostat_ptr + ", &" + offset_name + ");\n";
@@ -3592,7 +3592,7 @@ R"(    // Initialise Numpy
                             value_expr->base.loc);
                     }
                 } else if (ASR::is_a<ASR::Logical_t>(*value_type_past_allocatable)) {
-                    std::string tmp_name = current_scope->get_unique_name("__lfortran_read_logical");
+                    std::string tmp_name = get_unique_local_name("__lfortran_read_logical");
                     internal_read_code += indent + "int32_t " + tmp_name + " = 0;\n";
                     emit_scalar_read("_lfortran_string_read_bool", "&" + tmp_name);
                     internal_read_code += indent + value + " = (" + tmp_name + " != 0);\n";
@@ -3864,7 +3864,7 @@ R"(    // Initialise Numpy
                 }
 
                 if (ASR::is_a<ASR::Logical_t>(*value_type_past_allocatable)) {
-                    std::string tmp_name = current_scope->get_unique_name("__lfortran_fmt_logical");
+                    std::string tmp_name = get_unique_local_name("__lfortran_fmt_logical");
                     setup += indent + "int32_t " + tmp_name + " = 0;\n";
                     args += ", 0, 1, &" + tmp_name;
                     post += indent + value + " = (" + tmp_name + " != 0);\n";
@@ -4247,7 +4247,7 @@ R"(    // Initialise Numpy
             auto unit_arg = visit_string_arg(x.m_unit);
             unit = unit_arg.first;
             unit_len = unit_arg.second;
-            unit_len_name = current_scope->get_unique_name("__lfortran_unit_len");
+            unit_len_name = get_unique_local_name("__lfortran_unit_len");
             unit_setup += indent + "int64_t " + unit_len_name + " = (int64_t)(" + unit_len + ");\n";
             if (ASR::is_a<ASR::Var_t>(*x.m_unit)) {
                 unit_setup += indent + "if (" + unit + " == NULL) " + unit
@@ -4388,26 +4388,44 @@ R"(    // Initialise Numpy
                 std::string arg_value = src;
                 ASR::ttype_t* value_type = ASRUtils::expr_type(str_fmt->m_args[i]);
                 ASR::ttype_t* printable_type = ASRUtils::type_get_past_allocatable_pointer(value_type);
-                if (ASRUtils::is_array(value_type)) {
-                    printable_type = ASRUtils::extract_type(value_type);
-                }
                 if (ASR::is_a<ASR::List_t>(*value_type) || ASR::is_a<ASR::Tuple_t>(*value_type)) {
                     throw CodeGenError("C backend FileWrite does not support list/tuple values in StringFormat yet",
                         str_fmt->m_args[i]->base.loc);
                 }
-                if (i != 0 || has_hash_prefix) {
-                    snprintf_fmt += " ";
-                }
-                snprintf_fmt += c_ds_api->get_print_type(printable_type,
-                    ASR::is_a<ASR::ArrayItem_t>(*(str_fmt->m_args[i])));
                 if (ASRUtils::is_array(value_type)) {
-                    arg_value += "->data";
-                }
-                if (ASR::is_a<ASR::Complex_t>(*printable_type)) {
-                    fmt_args.push_back("creal(" + arg_value + ")");
-                    fmt_args.push_back("cimag(" + arg_value + ")");
+                    printable_type = ASRUtils::extract_type(value_type);
+                    int64_t fixed_size = ASRUtils::get_fixed_size_of_array(value_type);
+                    if (fixed_size <= 0) fixed_size = 1;
+                    for (int64_t j = 0; j < fixed_size; j++) {
+                        if ((i != 0 || has_hash_prefix) || j != 0) {
+                            snprintf_fmt += " ";
+                        }
+                        snprintf_fmt += c_ds_api->get_print_type(printable_type, false);
+                        std::string elem_value = arg_value + "->data[" + arg_value + "->offset";
+                        if (j != 0) {
+                            elem_value += " + (" + arg_value + "->dims[0].stride * "
+                                + std::to_string(j) + ")";
+                        }
+                        elem_value += "]";
+                        if (ASR::is_a<ASR::Complex_t>(*printable_type)) {
+                            fmt_args.push_back("creal(" + elem_value + ")");
+                            fmt_args.push_back("cimag(" + elem_value + ")");
+                        } else {
+                            fmt_args.push_back(elem_value);
+                        }
+                    }
                 } else {
-                    fmt_args.push_back(arg_value);
+                    if (i != 0 || has_hash_prefix) {
+                        snprintf_fmt += " ";
+                    }
+                    snprintf_fmt += c_ds_api->get_print_type(printable_type,
+                        ASR::is_a<ASR::ArrayItem_t>(*(str_fmt->m_args[i])));
+                    if (ASR::is_a<ASR::Complex_t>(*printable_type)) {
+                        fmt_args.push_back("creal(" + arg_value + ")");
+                        fmt_args.push_back("cimag(" + arg_value + ")");
+                    } else {
+                        fmt_args.push_back(arg_value);
+                    }
                 }
             }
             snprintf_fmt += "\"";
@@ -4510,13 +4528,16 @@ R"(    // Initialise Numpy
 
         ASR::ttype_t* array_type_asr = ASRUtils::expr_type(x.m_array);
         std::string array_type_name = CUtils::get_c_array_element_type_from_ttype_t(array_type_asr);
-        std::string array_encoded_type_name = CUtils::get_c_array_type_code(array_type_asr, true, false);
+        std::string array_encoded_type_name = CUtils::get_c_array_type_code(array_type_asr, true, true);
         std::string array_type = c_ds_api->get_array_type(array_type_name, array_encoded_type_name, array_types_decls, true);
-        std::string return_type = c_ds_api->get_array_type(array_type_name, array_encoded_type_name, array_types_decls, false);
+        ASR::ttype_t* return_type_asr = x.m_type;
+        std::string return_type_name = CUtils::get_c_array_element_type_from_ttype_t(return_type_asr);
+        std::string return_encoded_type_name = CUtils::get_c_array_type_code(return_type_asr, true, true);
+        std::string return_type = c_ds_api->get_array_type(return_type_name, return_encoded_type_name, array_types_decls, false);
 
         ASR::ttype_t* shape_type_asr = ASRUtils::expr_type(x.m_shape);
         std::string shape_type_name = CUtils::get_c_array_element_type_from_ttype_t(shape_type_asr);
-        std::string shape_encoded_type_name = CUtils::get_c_array_type_code(shape_type_asr, true, false);
+        std::string shape_encoded_type_name = CUtils::get_c_array_type_code(shape_type_asr, true, true);
         std::string shape_type = c_ds_api->get_array_type(shape_type_name, shape_encoded_type_name, array_types_decls, true);
 
         std::string array_reshape_func = c_utils_functions->get_array_reshape(array_type, shape_type,
@@ -4565,7 +4586,7 @@ R"(    // Initialise Numpy
 
         ASR::ttype_t* array_type_asr = x.m_type;
         std::string array_type_name = CUtils::get_c_array_element_type_from_ttype_t(array_type_asr);
-        std::string array_encoded_type_name = CUtils::get_c_array_type_code(array_type_asr, true, false);
+        std::string array_encoded_type_name = CUtils::get_c_array_type_code(array_type_asr, true, true);
         std::string return_type = c_ds_api->get_array_type(array_type_name, array_encoded_type_name,array_types_decls, false);
 
         src = c_utils_functions->get_array_constant(return_type, array_type_name, array_encoded_type_name) +
@@ -4578,7 +4599,7 @@ R"(    // Initialise Numpy
 
         ASR::ttype_t* array_type_asr = x.m_type;
         std::string array_type_name = CUtils::get_c_array_element_type_from_ttype_t(array_type_asr);
-        std::string array_encoded_type_name = CUtils::get_c_array_type_code(array_type_asr, true, false);
+        std::string array_encoded_type_name = CUtils::get_c_array_type_code(array_type_asr, true, true);
         std::string return_type = c_ds_api->get_array_type(
             array_type_name, array_encoded_type_name, array_types_decls, false);
 
