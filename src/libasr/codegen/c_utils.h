@@ -46,7 +46,7 @@ namespace LCompilers {
 
     class Abort {};
 
-namespace CUtils {
+    namespace CUtils {
 
     static inline ASR::symbol_t* get_symbol_owner(ASR::asr_t *owner) {
         return (owner && ASR::is_a<ASR::symbol_t>(*owner))
@@ -249,7 +249,6 @@ namespace CUtils {
                 || is_symbol_owner<ASR::Function_t>(owner)
                 || is_symbol_owner<ASR::Program_t>(owner)
                 || is_symbol_owner<ASR::Block_t>(owner)
-                || is_symbol_owner<ASR::AssociateBlock_t>(owner)
                 || is_symbol_owner<ASR::Struct_t>(owner)
                 || is_symbol_owner<ASR::Union_t>(owner)
                 || is_symbol_owner<ASR::Enum_t>(owner)) {
@@ -566,9 +565,19 @@ namespace CUtils {
     }
 
     static inline std::string get_struct_type_code(ASR::expr_t* struct_expr) {
-        ASR::Variable_t* v = ASR::down_cast<ASR::Variable_t>(
-            ASRUtils::symbol_get_past_external(ASRUtils::get_struct_sym_from_struct_expr(struct_expr)));
-        return get_c_symbol_name(v->m_type_declaration);
+        ASR::symbol_t *sym = ASRUtils::symbol_get_past_external(
+            ASRUtils::get_struct_sym_from_struct_expr(struct_expr));
+        if (sym == nullptr) {
+            return "";
+        }
+        if (ASR::is_a<ASR::Variable_t>(*sym)) {
+            ASR::Variable_t *v = ASR::down_cast<ASR::Variable_t>(sym);
+            return get_c_symbol_name(v->m_type_declaration);
+        }
+        if (ASR::is_a<ASR::Struct_t>(*sym)) {
+            return get_c_symbol_name(sym);
+        }
+        throw CodeGenError("Unsupported symbol kind for struct type code generation");
     }
 
     static inline std::string get_c_type_from_ttype_t(ASR::ttype_t* t,
@@ -1275,43 +1284,67 @@ class CCPPDSUtils {
         }
 
         void struct_deepcopy(ASR::expr_t* struct_expr) {
-            ASR::ttype_t* struct_type_asr = ASRUtils::expr_type(struct_expr);
             ASR::Struct_t* struct_t = ASR::down_cast<ASR::Struct_t>(ASRUtils::symbol_get_past_external(ASRUtils::get_struct_sym_from_struct_expr(struct_expr)));
             std::string struct_type_code = CUtils::get_struct_type_code(struct_expr);
             std::string indent(indentation_level * indentation_spaces, ' ');
             std::string tab(indentation_spaces, ' ');
             std::string struct_dc_func = global_scope->get_unique_name("struct_deepcopy_" + struct_type_code);
             typecodeToDSfuncs[struct_type_code]["struct_deepcopy"] = struct_dc_func;
-            std::string struct_type_str = CUtils::get_c_type_from_ttype_t(struct_type_asr);
-            std::string signature = "void " + struct_dc_func + "("
-                                + struct_type_str + "* src, "
-                                + struct_type_str + "* dest)";
-            func_decls += "inline " + signature + ";\n";
+            std::string struct_type_str = "struct " + struct_type_code;
+            std::string signature = "void " + struct_dc_func + "(void* src_void, void* dest_void)";
+            func_decls += signature + ";\n";
             std::string tmp_generated = indent + signature + " {\n";
+            tmp_generated += indent + tab + struct_type_str + "* src = (" + struct_type_str + "*) src_void;\n";
+            tmp_generated += indent + tab + struct_type_str + "* dest = (" + struct_type_str + "*) dest_void;\n";
             Allocator al(4*1024);
             for(size_t i=0; i < struct_t->n_members; i++) {
                 std::string mem_name = std::string(struct_t->m_members[i]);
                 ASR::symbol_t* member = struct_t->m_symtab->get_symbol(mem_name);
+                std::string emitted_mem_name = CUtils::get_c_member_name(member);
                 ASR::expr_t* member_expr = ASRUtils::EXPR(ASR::make_Var_t(al, member->base.loc, member));
                 ASR::ttype_t* member_type_asr = ASRUtils::expr_type(member_expr);
-                if( CUtils::is_non_primitive_DT(member_type_asr) ||
-                    ASR::is_a<ASR::String_t>(*member_type_asr) ) {
-                    tmp_generated += indent + tab + get_struct_deepcopy(member_expr, "&(src->" + mem_name + ")",
-                                 "&(dest->" + mem_name + ")") + ";\n";
+                ASR::ttype_t* member_value_type = ASRUtils::type_get_past_allocatable_pointer(member_type_asr);
+                if( ASR::is_a<ASR::String_t>(*member_value_type) ) {
+                    tmp_generated += indent + tab + get_deepcopy(member_type_asr,
+                                 "src->" + emitted_mem_name, "dest->" + emitted_mem_name) + ";\n";
                 } else if( ASRUtils::is_array(member_type_asr) ) {
                     ASR::dimension_t* m_dims = nullptr;
                     size_t n_dims = ASRUtils::extract_dimensions_from_ttype(member_type_asr, m_dims);
                     if( ASRUtils::is_fixed_size_array(m_dims, n_dims) ) {
                         std::string array_size = std::to_string(ASRUtils::get_fixed_size_of_array(m_dims, n_dims));
                         array_size += "*sizeof(" + CUtils::get_c_type_from_ttype_t(member_type_asr) + ")";
-                        tmp_generated += indent + tab + "memcpy(dest->" + mem_name + ", src->" + mem_name +
+                        tmp_generated += indent + tab + "memcpy(dest->" + emitted_mem_name + ", src->" + emitted_mem_name +
                                             ", " + array_size + ");\n";
                     } else {
-                        tmp_generated += indent + tab + get_struct_deepcopy(member_expr, "src->" + mem_name,
-                                            "dest->" + mem_name) + ";\n";
+                        tmp_generated += indent + tab + get_deepcopy(member_type_asr,
+                                            "src->" + emitted_mem_name, "dest->" + emitted_mem_name) + ";\n";
                     }
+                } else if( ASR::is_a<ASR::StructType_t>(*member_value_type) ) {
+                    if( ASR::is_a<ASR::Allocatable_t>(*member_type_asr) ||
+                        ASR::is_a<ASR::Pointer_t>(*member_type_asr) ) {
+                        std::string member_struct_type = "struct " + CUtils::get_struct_type_code(member_expr);
+                        tmp_generated += indent + tab + "if (src->" + emitted_mem_name + " != NULL) {\n";
+                        tmp_generated += indent + tab + tab + "if (dest->" + emitted_mem_name + " == NULL) {\n";
+                        tmp_generated += indent + tab + tab + tab + "dest->" + emitted_mem_name + " = (" + member_struct_type
+                            + "*) _lfortran_malloc_alloc(_lfortran_get_default_allocator(), sizeof("
+                            + member_struct_type + "));\n";
+                        tmp_generated += indent + tab + tab + tab + "memset(dest->" + emitted_mem_name + ", 0, sizeof("
+                            + member_struct_type + "));\n";
+                        tmp_generated += indent + tab + tab + "}\n";
+                        tmp_generated += indent + tab + tab + get_struct_deepcopy(member_expr,
+                            "src->" + emitted_mem_name, "dest->" + emitted_mem_name) + ";\n";
+                        tmp_generated += indent + tab + "} else {\n";
+                        tmp_generated += indent + tab + tab + "dest->" + emitted_mem_name + " = NULL;\n";
+                        tmp_generated += indent + tab + "}\n";
+                    } else {
+                        tmp_generated += indent + tab + get_struct_deepcopy(member_expr, "&(src->" + emitted_mem_name + ")",
+                                     "&(dest->" + emitted_mem_name + ")") + ";\n";
+                    }
+                } else if( CUtils::is_non_primitive_DT(member_type_asr) ) {
+                    tmp_generated += indent + tab + get_deepcopy(member_type_asr,
+                                 "src->" + emitted_mem_name, "dest->" + emitted_mem_name) + ";\n";
                 } else {
-                    tmp_generated += indent + tab + "dest->" + mem_name + " = " + " src->" + mem_name + ";\n";
+                    tmp_generated += indent + tab + "dest->" + emitted_mem_name + " = " + " src->" + emitted_mem_name + ";\n";
                 }
             }
             tmp_generated += indent + "}\n\n";

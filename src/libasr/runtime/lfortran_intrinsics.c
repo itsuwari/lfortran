@@ -4468,24 +4468,27 @@ LFORTRAN_API void _lfortran_strcpy_alloc(
             if (rhs >= lhs_start && rhs < lhs_end) {
                 if (rhs_len <= *lhs_len) {
                     memmove(*lhs, rhs, rhs_len * sizeof(char));
+                    (*lhs)[rhs_len] = '\0';
                     *lhs_len = rhs_len;
                     return;
                 } else {
-                    char* tmp = (char*)internal_malloc(MAX(rhs_len, 1) * sizeof(char));
+                    char* tmp = (char*)internal_malloc((MAX(rhs_len, 1) + 1) * sizeof(char));
                     memcpy(tmp, rhs, rhs_len * sizeof(char));
-                    *lhs = (char*)ALLOCATOR_REALLOC(al, *lhs, MAX(rhs_len, 1));
+                    tmp[rhs_len] = '\0';
+                    *lhs = (char*)ALLOCATOR_REALLOC(al, *lhs, MAX(rhs_len, 1) + 1);
                     *lhs_len = rhs_len;
-                    memcpy(*lhs, tmp, rhs_len * sizeof(char));
+                    memcpy(*lhs, tmp, (rhs_len + 1) * sizeof(char));
                     internal_free(tmp);
                     return;
                 }
             }
         }
-        *lhs = (char*)ALLOCATOR_REALLOC(al, *lhs, MAX(rhs_len, 1));
+        *lhs = (char*)ALLOCATOR_REALLOC(al, *lhs, MAX(rhs_len, 1) + 1);
         if (lhs_len != NULL) {
             *lhs_len = rhs_len;
         }
         for(int64_t i = 0; i < rhs_len; i++) {(*lhs)[i] = rhs[i];}
+        (*lhs)[rhs_len] = '\0';
     } else if(is_lhs_deferred && !is_lhs_allocatable) {
         lfortran_assert(*lhs != NULL, "Runtime Error : Non-allocatable string isn't allocated.")
         _lfortran_copy_str_and_pad(*lhs, *lhs_len, rhs, rhs_len);

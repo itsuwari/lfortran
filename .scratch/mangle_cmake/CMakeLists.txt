@@ -1,0 +1,6 @@
+cmake_minimum_required(VERSION 3.16)
+project(mangle_repro Fortran C)
+add_executable(mangle_repro mod_a.f90 main.f90)
+set_target_properties(mangle_repro PROPERTIES Fortran_MODULE_DIRECTORY ${CMAKE_BINARY_DIR}/mod)
+target_compile_options(mangle_repro PRIVATE $<$<COMPILE_LANGUAGE:Fortran>:--backend=c>)
+target_include_directories(mangle_repro PRIVATE ${CMAKE_BINARY_DIR}/mod /Users/boyu/code/lfortran/src /Users/boyu/code/lfortran/src/libasr/runtime)

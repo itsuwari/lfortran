@@ -174,17 +174,6 @@ R"(
             helper_defs += "\n" + bind_py_utils_functions->get_generated_code() + "\n";
         }
 
-        if( is_string_concat_present ) {
-            if (string_concat_helper_name.empty()) {
-                string_concat_helper_name = global_scope->get_unique_name("strcat_", false);
-            }
-            helper_defs += "char* " + string_concat_helper_name + "(char* x, char* y) {\n";
-            helper_defs += "    char* str_tmp = (char*) malloc((strlen(x) + strlen(y) + 2) * sizeof(char));\n";
-            helper_defs += "    strcpy(str_tmp, x);\n";
-            helper_defs += "    return strcat(str_tmp, y);\n";
-            helper_defs += "}\n\n";
-        }
-
         if (array_types_decls.size() != 0) {
             array_types_decls = "\nstruct dimension_descriptor\n"
                 "{\n    int32_t lower_bound, length, stride;\n};\n" + array_types_decls;
@@ -203,6 +192,15 @@ R"(
             file_stem += "__" + CUtils::sanitize_c_identifier(name);
         }
         return file_stem + ".c";
+    }
+
+    std::string make_function_unit_filename(const std::string &kind,
+            const std::string &scope_name, const ASR::Function_t &fn) const {
+        uint64_t fn_hash = get_hash(
+            reinterpret_cast<ASR::asr_t*>(const_cast<ASR::Function_t*>(&fn)));
+        return make_scoped_unit_filename(
+            kind, scope_name,
+            std::string(fn.m_name) + "__" + std::to_string(fn_hash));
     }
 
     std::string get_unit_file_prelude(const std::string &header_name) const {
@@ -335,15 +333,10 @@ R"(
             }
         };
 
-        std::vector<std::string> global_func_order =
-            get_complete_function_definition_order(x.m_symtab);
-        for (const auto &func_name : global_func_order) {
-            ASR::symbol_t *sym = x.m_symtab->get_symbol(func_name);
-            if (sym == nullptr || ASR::is_a<ASR::ExternalSymbol_t>(*sym)
-                    || !ASR::is_a<ASR::Function_t>(*sym)) {
-                continue;
-            }
-            add_function_decl(ASR::down_cast<ASR::Function_t>(sym));
+        std::vector<ASR::Function_t*> global_functions =
+            get_complete_function_definitions(x.m_symtab);
+        for (ASR::Function_t *fn : global_functions) {
+            add_function_decl(fn);
         }
 
         std::vector<std::string> build_order =
@@ -354,14 +347,10 @@ R"(
                 continue;
             }
             ASR::Module_t *mod = ASR::down_cast<ASR::Module_t>(mod_sym);
-            std::vector<std::string> func_order =
-                get_complete_function_definition_order(mod->m_symtab);
-            for (const auto &func_name : func_order) {
-                ASR::symbol_t *sym = mod->m_symtab->get_symbol(func_name);
-                if (sym == nullptr || !ASR::is_a<ASR::Function_t>(*sym)) {
-                    continue;
-                }
-                add_function_decl(ASR::down_cast<ASR::Function_t>(sym));
+            std::vector<ASR::Function_t*> functions =
+                get_complete_function_definitions(mod->m_symtab);
+            for (ASR::Function_t *fn : functions) {
+                add_function_decl(fn);
             }
         }
 
@@ -370,14 +359,10 @@ R"(
                 continue;
             }
             ASR::Program_t *program = ASR::down_cast<ASR::Program_t>(item.second);
-            std::vector<std::string> func_order =
-                get_complete_function_definition_order(program->m_symtab);
-            for (const auto &func_name : func_order) {
-                ASR::symbol_t *sym = program->m_symtab->get_symbol(func_name);
-                if (sym == nullptr || !ASR::is_a<ASR::Function_t>(*sym)) {
-                    continue;
-                }
-                add_function_decl(ASR::down_cast<ASR::Function_t>(sym));
+            std::vector<ASR::Function_t*> functions =
+                get_complete_function_definitions(program->m_symtab);
+            for (ASR::Function_t *fn : functions) {
+                add_function_decl(fn);
             }
         }
         return decls;
@@ -406,34 +391,158 @@ R"(
         return unit_src;
     }
 
-    std::vector<std::string> get_complete_function_definition_order(
+    std::vector<ASR::Function_t*> get_complete_function_definitions(
             SymbolTable *symtab) {
         std::vector<std::string> func_order =
             ASRUtils::determine_function_definition_order(symtab);
-        std::vector<std::string> complete_order;
-        std::set<std::string> seen;
+        std::vector<ASR::Function_t*> complete_functions;
+        std::set<uint64_t> seen;
 
-        auto add_if_function = [&](const std::string &name, ASR::symbol_t *sym) {
-            if (sym == nullptr || !ASR::is_a<ASR::Function_t>(*sym)) {
+        std::function<void(ASR::symbol_t*)> add_symbol;
+        std::function<void(ASR::Function_t*)> add_function;
+
+        auto owned_by_scope = [&](const ASR::symbol_t *sym) -> bool {
+            if (sym == nullptr) {
+                return false;
+            }
+            SymbolTable *owner = ASRUtils::symbol_parent_symtab(
+                const_cast<ASR::symbol_t*>(sym));
+            while (owner != nullptr) {
+                if (owner == symtab) {
+                    return true;
+                }
+                owner = owner->parent;
+            }
+            return false;
+        };
+
+        auto resolve_dependency = [&](ASR::Function_t *fn, const char *dep_name) -> ASR::symbol_t* {
+            if (fn == nullptr || fn->m_symtab == nullptr || dep_name == nullptr) {
+                return nullptr;
+            }
+            return fn->m_symtab->resolve_symbol(std::string(dep_name));
+        };
+
+        add_function = [&](ASR::Function_t *fn) {
+            if (fn == nullptr) {
                 return;
             }
-            if (seen.insert(name).second) {
-                complete_order.push_back(name);
+            uint64_t key = get_hash(reinterpret_cast<ASR::asr_t*>(fn));
+            if (!seen.insert(key).second) {
+                return;
+            }
+
+            for (size_t i = 0; i < fn->n_dependencies; i++) {
+                add_symbol(resolve_dependency(fn, fn->m_dependencies[i]));
+            }
+
+            complete_functions.push_back(fn);
+        };
+
+        add_symbol = [&](ASR::symbol_t *sym) {
+            sym = ASRUtils::symbol_get_past_external(sym);
+            if (sym == nullptr) {
+                return;
+            }
+
+            if (ASR::is_a<ASR::Function_t>(*sym)) {
+                if (!owned_by_scope(sym)) {
+                    return;
+                }
+                add_function(ASR::down_cast<ASR::Function_t>(sym));
+                return;
+            }
+
+            auto add_procs = [&](ASR::symbol_t **procs, size_t n_procs) {
+                for (size_t i = 0; i < n_procs; i++) {
+                    add_symbol(procs[i]);
+                }
+            };
+
+            if (ASR::is_a<ASR::GenericProcedure_t>(*sym)) {
+                ASR::GenericProcedure_t *gp = ASR::down_cast<ASR::GenericProcedure_t>(sym);
+                add_procs(gp->m_procs, gp->n_procs);
+            } else if (ASR::is_a<ASR::CustomOperator_t>(*sym)) {
+                ASR::CustomOperator_t *op = ASR::down_cast<ASR::CustomOperator_t>(sym);
+                add_procs(op->m_procs, op->n_procs);
+            } else if (ASR::is_a<ASR::StructMethodDeclaration_t>(*sym)) {
+                ASR::StructMethodDeclaration_t *md =
+                    ASR::down_cast<ASR::StructMethodDeclaration_t>(sym);
+                add_symbol(md->m_proc);
             }
         };
 
+        // Preserve the dependency order where we have it first.
         for (const auto &name : func_order) {
-            add_if_function(name, symtab->get_symbol(name));
+            add_symbol(symtab->get_symbol(name));
         }
+
+        // Then scan the local scope directly so private/local procedures that
+        // never enter the dependency order still get emitted in split mode.
         for (const auto &item : symtab->get_scope()) {
-            add_if_function(item.first, item.second);
+            if (ASR::is_a<ASR::Function_t>(*item.second)) {
+                add_function(ASR::down_cast<ASR::Function_t>(item.second));
+                continue;
+            }
+            ASR::symbol_t *sym = ASRUtils::symbol_get_past_external(item.second);
+            if (sym == nullptr) {
+                continue;
+            }
+            add_symbol(sym);
         }
-        return complete_order;
+        return complete_functions;
+    }
+
+    static bool scope_contains(SymbolTable *scope, SymbolTable *candidate) {
+        while (candidate != nullptr) {
+            if (candidate == scope) {
+                return true;
+            }
+            candidate = candidate->parent;
+        }
+        return false;
+    }
+
+    std::vector<ASR::Function_t*> consume_pending_function_definitions(
+            SymbolTable *scope, std::set<uint64_t> &emitted,
+            bool helpers_only=false) {
+        std::vector<ASR::Function_t*> ready;
+        std::vector<ASR::Function_t*> remaining;
+        std::set<uint64_t> remaining_hashes;
+        for (ASR::Function_t *fn : pending_function_definitions) {
+            if (fn == nullptr) {
+                continue;
+            }
+            uint64_t key = get_hash(reinterpret_cast<ASR::asr_t*>(fn));
+            if (emitted.find(key) != emitted.end()) {
+                continue;
+            }
+            SymbolTable *parent_scope = fn->m_symtab ? fn->m_symtab->parent : nullptr;
+            bool ready_for_emission = false;
+            if (helpers_only) {
+                ready_for_emission = startswith(fn->m_name, "_lcompilers_merge_");
+            } else {
+                ready_for_emission = parent_scope != nullptr
+                    && scope_contains(scope, parent_scope);
+            }
+            if (ready_for_emission) {
+                emitted.insert(key);
+                ready.push_back(fn);
+                continue;
+            }
+            if (remaining_hashes.insert(key).second) {
+                remaining.push_back(fn);
+            }
+        }
+        pending_function_definitions = std::move(remaining);
+        pending_function_definition_hashes = std::move(remaining_hashes);
+        return ready;
     }
 
     std::vector<std::pair<std::string, std::string>> emit_module_split_units(
             const ASR::Module_t &x) {
         std::vector<std::pair<std::string, std::string>> units;
+        std::set<uint64_t> emitted_functions;
         bool intrinsic_module_copy = intrinsic_module;
         intrinsic_module = x.m_intrinsic;
 
@@ -457,14 +566,16 @@ R"(
             });
         }
 
-        std::vector<std::string> func_order =
-            get_complete_function_definition_order(x.m_symtab);
-        for (const auto &func_name : func_order) {
-            ASR::symbol_t *sym = x.m_symtab->get_symbol(func_name);
-            if (sym == nullptr || !ASR::is_a<ASR::Function_t>(*sym)) {
-                continue;
+        std::vector<ASR::Function_t*> functions =
+            get_complete_function_definitions(x.m_symtab);
+        auto emit_function_unit = [&](ASR::Function_t *fn) {
+            if (fn == nullptr) {
+                return;
             }
-            ASR::Function_t *fn = ASR::down_cast<ASR::Function_t>(sym);
+            uint64_t key = get_hash(reinterpret_cast<ASR::asr_t*>(fn));
+            if (!emitted_functions.insert(key).second) {
+                return;
+            }
             bool has_typevar = false;
             std::string expected_decl =
                 get_function_declaration(*fn, has_typevar, false, false);
@@ -480,7 +591,7 @@ R"(
                     );
                 }
                 std::string unit_filename =
-                    make_scoped_unit_filename("module", module_name, func_name);
+                    make_function_unit_filename("module", module_name, *fn);
                 auto fn_units = maybe_split_large_subroutine_unit(
                     unit_filename, *fn, src);
                 for (auto &unit : fn_units) {
@@ -489,6 +600,9 @@ R"(
                     }
                 }
             }
+        };
+        for (ASR::Function_t *fn : functions) {
+            emit_function_unit(fn);
         }
 
         intrinsic_module = intrinsic_module_copy;
@@ -509,18 +623,13 @@ R"(
             return units;
         }
 
-        std::vector<std::string> func_order =
-            get_complete_function_definition_order(x.m_symtab);
-        for (const auto &func_name : func_order) {
-            ASR::symbol_t *sym = x.m_symtab->get_symbol(func_name);
-            if (sym == nullptr || !ASR::is_a<ASR::Function_t>(*sym)) {
-                continue;
-            }
-            ASR::Function_t *fn = ASR::down_cast<ASR::Function_t>(sym);
+        std::vector<ASR::Function_t*> functions =
+            get_complete_function_definitions(x.m_symtab);
+        auto emit_function_unit = [&](ASR::Function_t *fn) {
             visit_Function(*fn);
             if (!src.empty()) {
                 std::string unit_filename =
-                    make_scoped_unit_filename("program", x.m_name, func_name);
+                    make_function_unit_filename("program", x.m_name, *fn);
                 auto fn_units = maybe_split_large_subroutine_unit(
                     unit_filename, *fn, src);
                 for (auto &unit : fn_units) {
@@ -529,6 +638,9 @@ R"(
                     }
                 }
             }
+        };
+        for (ASR::Function_t *fn : functions) {
+            emit_function_unit(fn);
         }
 
         current_scope = x.m_symtab;
@@ -1415,6 +1527,51 @@ R"(
         }
     }
 
+    void initialize_struct_instance_members(ASR::Struct_t* der_type_t, std::string& sub,
+        std::string indent, std::string name) {
+        if (der_type_t == nullptr) {
+            return;
+        }
+        if (der_type_t->m_parent != nullptr) {
+            ASR::symbol_t *parent_sym = ASRUtils::symbol_get_past_external(der_type_t->m_parent);
+            if (parent_sym != nullptr && ASR::is_a<ASR::Struct_t>(*parent_sym)) {
+                initialize_struct_instance_members(
+                    ASR::down_cast<ASR::Struct_t>(parent_sym), sub, indent, name);
+            }
+        }
+        for (size_t i = 0; i < der_type_t->n_members; i++) {
+            if (der_type_t->m_members[i] == nullptr) {
+                continue;
+            }
+            ASR::symbol_t *member_sym = der_type_t->m_symtab->get_symbol(der_type_t->m_members[i]);
+            if (member_sym == nullptr) {
+                continue;
+            }
+            member_sym = ASRUtils::symbol_get_past_external(member_sym);
+            if (!ASR::is_a<ASR::Variable_t>(*member_sym)) {
+                continue;
+            }
+            ASR::Variable_t *member_var = ASR::down_cast<ASR::Variable_t>(member_sym);
+            ASR::expr_t *init_expr = get_variable_init_value_expr(*member_var);
+            if (init_expr == nullptr) {
+                continue;
+            }
+            ASR::ttype_t *member_type = ASRUtils::type_get_past_allocatable_pointer(member_var->m_type);
+            if (ASRUtils::is_array(member_var->m_type)
+                    || ASRUtils::is_allocatable(member_var->m_type)
+                    || ASRUtils::is_pointer(member_var->m_type)
+                    || ASR::is_a<ASR::StructType_t>(*member_type)
+                    || ASRUtils::is_class_type(member_type)
+                    || ASR::is_a<ASR::UnionType_t>(*member_type)) {
+                continue;
+            }
+            this->visit_expr(*init_expr);
+            sub += indent + name + "->" + CUtils::get_c_member_name(member_sym)
+                + " = " + src + ";\n";
+        }
+        allocate_array_members_of_struct(der_type_t, sub, indent, name);
+    }
+
     void convert_variable_decl_util(const ASR::Variable_t &v,
         bool is_array, bool declare_as_constant, bool use_ref, bool dummy,
         bool force_declare, std::string &force_declare_name,
@@ -1497,6 +1654,29 @@ R"(
             dims = convert_dims_c(n_dims, m_dims, v_m_type, is_fixed_size);
             sub = format_type_c(dims, type_name, v_m_name, use_ref, dummy);
         }
+    }
+
+    bool needs_null_init_for_local_pointer_like_variable(const ASR::Variable_t &v,
+            ASR::ttype_t *storage_type, bool is_array, bool dummy,
+            bool is_struct_type_member, bool do_not_initialize) {
+        if (do_not_initialize || dummy || is_array || is_struct_type_member
+                || v.m_intent != ASRUtils::intent_local) {
+            return false;
+        }
+        ASR::expr_t *init_expr = get_variable_init_value_expr(v);
+        if (init_expr != nullptr) {
+            return false;
+        }
+        if (ASRUtils::is_character(*storage_type)) {
+            return false;
+        }
+        if (ASRUtils::is_allocatable(v.m_type) || ASRUtils::is_pointer(v.m_type)) {
+            return true;
+        }
+        if (ASRUtils::is_class_type(storage_type) || ASR::is_a<ASR::CPtr_t>(*storage_type)) {
+            return true;
+        }
+        return false;
     }
 
     std::string get_function_pointer_type_from_type(const ASR::FunctionType_t *ft) {
@@ -1684,13 +1864,16 @@ R"(
                 && !ASR::is_a<ASR::UnionType_t>(*v_m_type)
                 && !ASR::is_a<ASR::EnumType_t>(*v_m_type)) {
             std::string dims;
+            bool null_init_local_pointer_like =
+                needs_null_init_for_local_pointer_like_variable(
+                    v, v_m_type, is_array, dummy, is_struct_type_member, do_not_initialize);
             if (ASRUtils::is_integer(*v_m_type)) {
                 ASR::Integer_t *t = ASR::down_cast<ASR::Integer_t>(v_m_type);
-                return format_type_c(dims, "int" + std::to_string(t->m_kind * 8) + "_t *",
+                sub = format_type_c(dims, "int" + std::to_string(t->m_kind * 8) + "_t *",
                     decl_name, use_ref, dummy);
             } else if (ASRUtils::is_unsigned_integer(*v_m_type)) {
                 ASR::UnsignedInteger_t *t = ASR::down_cast<ASR::UnsignedInteger_t>(v_m_type);
-                return format_type_c(dims, "uint" + std::to_string(t->m_kind * 8) + "_t *",
+                sub = format_type_c(dims, "uint" + std::to_string(t->m_kind * 8) + "_t *",
                     decl_name, use_ref, dummy);
             } else if (ASRUtils::is_real(*v_m_type)) {
                 ASR::Real_t *t = ASR::down_cast<ASR::Real_t>(v_m_type);
@@ -1705,7 +1888,7 @@ R"(
                         + "' not supported", {v.base.base.loc}, "");
                     throw Abort();
                 }
-                return format_type_c(dims, type_name, decl_name, use_ref, dummy);
+                sub = format_type_c(dims, type_name, decl_name, use_ref, dummy);
             } else if (ASRUtils::is_complex(*v_m_type)) {
                 ASR::Complex_t *t = ASR::down_cast<ASR::Complex_t>(v_m_type);
                 std::string type_name;
@@ -1720,11 +1903,15 @@ R"(
                     throw Abort();
                 }
                 headers.insert("complex.h");
-                return format_type_c(dims, type_name, decl_name, use_ref, dummy);
+                sub = format_type_c(dims, type_name, decl_name, use_ref, dummy);
             } else if (ASRUtils::is_logical(*v_m_type)) {
                 headers.insert("stdbool.h");
-                return format_type_c(dims, "bool *", decl_name, use_ref, dummy);
+                sub = format_type_c(dims, "bool *", decl_name, use_ref, dummy);
             }
+            if (null_init_local_pointer_like) {
+                sub += " = NULL";
+            }
+            return sub;
         }
         if (is_bindc_optional_scalar) {
             std::string dims;
@@ -2307,6 +2494,12 @@ R"(
             if (dims.size() == 0 && v.m_storage == ASR::storage_typeType::Save && use_static) {
                 sub = "static " + sub;
             }
+            if (dims.size() == 0
+                    && needs_null_init_for_local_pointer_like_variable(
+                        v, v_storage_type, is_array, dummy,
+                        is_struct_type_member, do_not_initialize)) {
+                sub += " = NULL";
+            }
             if (dims.size() == 0 && var_init_raw && !do_not_initialize) {
                 ASR::expr_t* init_expr = var_init_value;
                 if( v.m_storage != ASR::storage_typeType::Parameter ) {
@@ -2427,7 +2620,8 @@ R"(
 
         // Topologically sort all global functions
         // and then define them in the right order
-        std::vector<std::string> global_func_order = get_complete_function_definition_order(x.m_symtab);
+        std::vector<ASR::Function_t*> global_functions =
+            get_complete_function_definitions(x.m_symtab);
 
         unit_src += "\n";
         unit_src += "// Implementations\n";
@@ -2450,14 +2644,8 @@ R"(
         }
 
         // Process global functions
-        size_t i;
-        for (i = 0; i < global_func_order.size(); i++) {
-            ASR::symbol_t* sym = x.m_symtab->get_symbol(global_func_order[i]);
-            // Ignore external symbols because they are already defined by the loop above.
-            if( !sym || ASR::is_a<ASR::ExternalSymbol_t>(*sym) ) {
-                continue ;
-            }
-            visit_symbol(*sym);
+        for (ASR::Function_t *function : global_functions) {
+            visit_Function(*function);
             unit_src += src;
         }
 
@@ -2572,8 +2760,8 @@ R"(
         }
 
         std::vector<std::pair<std::string, std::string>> unit_bodies;
-        std::vector<std::string> global_func_order =
-            get_complete_function_definition_order(x.m_symtab);
+        std::vector<ASR::Function_t*> global_functions =
+            get_complete_function_definitions(x.m_symtab);
 
         std::vector<std::string> build_order =
             ASRUtils::determine_module_dependencies(x);
@@ -2583,10 +2771,6 @@ R"(
                 != x.m_symtab->get_scope().end());
             if (startswith(item, "lfortran_intrinsic")) {
                 ASR::symbol_t *mod = x.m_symtab->get_symbol(item);
-                if (ASR::is_a<ASR::Module_t>(*mod)
-                        && ASR::down_cast<ASR::Module_t>(mod)->m_loaded_from_mod) {
-                    continue;
-                }
                 if( ASRUtils::get_body_size(mod) != 0 ) {
                     ASR::Module_t *module_t = ASR::down_cast<ASR::Module_t>(mod);
                     auto module_units = emit_module_split_units(*module_t);
@@ -2600,18 +2784,14 @@ R"(
         }
 
         std::string global_functions_body;
-        for (size_t i = 0; i < global_func_order.size(); i++) {
-            ASR::symbol_t* sym = x.m_symtab->get_symbol(global_func_order[i]);
-            if( !sym || ASR::is_a<ASR::ExternalSymbol_t>(*sym) ) {
-                continue;
-            }
-            visit_symbol(*sym);
+        std::set<uint64_t> emitted_global_functions;
+        for (ASR::Function_t *function : global_functions) {
+            emitted_global_functions.insert(
+                get_hash(reinterpret_cast<ASR::asr_t*>(function)));
+            visit_Function(*function);
             if (!src.empty()) {
                 global_functions_body += src;
             }
-        }
-        if (!global_functions_body.empty()) {
-            unit_bodies.push_back({"global_procedures.c", global_functions_body});
         }
 
         for (auto &item : build_order) {
@@ -2633,6 +2813,21 @@ R"(
             }
         }
 
+        while (true) {
+            std::vector<ASR::Function_t*> pending =
+                consume_pending_function_definitions(
+                    x.m_symtab, emitted_global_functions, true);
+            if (pending.empty()) {
+                break;
+            }
+            for (ASR::Function_t *function : pending) {
+                visit_Function(*function);
+                if (!src.empty()) {
+                    global_functions_body += src;
+                }
+            }
+        }
+
         bool has_main_program = false;
         for (auto &item : x.m_symtab->get_scope()) {
             if (ASR::is_a<ASR::Program_t>(*item.second)) {
@@ -2646,6 +2841,43 @@ R"(
                 }
             }
         }
+        while (true) {
+            std::vector<ASR::Function_t*> pending =
+                consume_pending_function_definitions(
+                    x.m_symtab, emitted_global_functions, true);
+            if (pending.empty()) {
+                break;
+            }
+            for (ASR::Function_t *function : pending) {
+                visit_Function(*function);
+                if (!src.empty()) {
+                    global_functions_body += src;
+                }
+            }
+        }
+        if (!global_functions_body.empty()) {
+            unit_bodies.push_back({"global_procedures.c", global_functions_body});
+        }
+
+        std::vector<std::pair<std::string, std::string>> unique_unit_bodies;
+        std::map<std::string, size_t> unit_index_by_name;
+        for (auto &unit : unit_bodies) {
+            auto it = unit_index_by_name.find(unit.first);
+            if (it == unit_index_by_name.end()) {
+                unit_index_by_name[unit.first] = unique_unit_bodies.size();
+                unique_unit_bodies.push_back(std::move(unit));
+                continue;
+            }
+            std::pair<std::string, std::string> &existing =
+                unique_unit_bodies[it->second];
+            if (existing.second != unit.second) {
+                throw CodeGenError(
+                    "Split C emission produced conflicting unit bodies for `"
+                    + unit.first + "`."
+                );
+            }
+        }
+        unit_bodies = std::move(unique_unit_bodies);
 
         forward_decl_functions += "\n\n";
         // Unit visitors mutate indentation and scope state. Reset before
@@ -2657,10 +2889,6 @@ R"(
         finalize_common_sections(helper_defs);
         std::string module_var_decls = collect_module_extern_decls(x);
         std::string split_func_decls = collect_split_function_decls(x);
-        if (!string_concat_helper_name.empty()) {
-            forward_decl_functions += "char* " + string_concat_helper_name + "(char* x, char* y);\n";
-        }
-
         std::string safe_project_name =
             CUtils::sanitize_c_identifier(project_name.empty() ? "lfortran_c_project" : project_name);
         std::string header_name = safe_project_name + "_generated.h";
@@ -2669,14 +2897,29 @@ R"(
         header_guard += "_GENERATED_H";
 
         std::string module_aggregate_decls = collect_module_aggregate_decls(x);
+        std::string header_array_type_decls = array_types_decls;
+        const std::string dimension_descriptor_decl =
+            "\nstruct dimension_descriptor\n"
+            "{\n    int32_t lower_bound, length, stride;\n};\n";
+        if (!header_array_type_decls.empty()
+                && header_array_type_decls.find(dimension_descriptor_decl) == std::string::npos) {
+            header_array_type_decls = dimension_descriptor_decl + header_array_type_decls;
+        }
         std::string split_owned_defs;
-        hoist_split_header_enum_name_defs(array_types_decls, split_owned_defs);
+        hoist_split_header_enum_name_defs(header_array_type_decls, split_owned_defs);
         std::string function_decls = dedupe_decl_lines(forward_decl_functions + split_func_decls);
+        if (is_string_concat_present) {
+            function_decls += "static inline char* strcat_(const char* x, const char* y) {\n";
+            function_decls += "    char* str_tmp = (char*) malloc((strlen(x) + strlen(y) + 2) * sizeof(char));\n";
+            function_decls += "    strcpy(str_tmp, x);\n";
+            function_decls += "    return strcat(str_tmp, y);\n";
+            function_decls += "}\n\n";
+        }
 
         std::string header_src = "#ifndef " + header_guard + "\n#define "
             + header_guard + "\n\n"
             + get_include_block() + get_default_head() + "\n"
-            + array_types_decls + module_aggregate_decls + function_decls + global_var_decls
+            + header_array_type_decls + module_aggregate_decls + function_decls + global_var_decls
             + module_var_decls
             + "\n#endif\n";
         write_text_file(fs::path(output_dir) / header_name, header_src);
@@ -2781,10 +3024,9 @@ R"(
 
         // Topologically sort all module functions
         // and then define them in the right order
-        std::vector<std::string> func_order = get_complete_function_definition_order(x.m_symtab);
-        for (auto &item : func_order) {
-            ASR::symbol_t* sym = x.m_symtab->get_symbol(item);
-            ASR::Function_t *s = ASR::down_cast<ASR::Function_t>(sym);
+        std::vector<ASR::Function_t*> functions =
+            get_complete_function_definitions(x.m_symtab);
+        for (ASR::Function_t *s : functions) {
             visit_Function(*s);
             unit_src += src;
         }
@@ -2797,7 +3039,8 @@ R"(
         current_scope = x.m_symtab;
         // Topologically sort all program functions
         // and then define them in the right order
-        std::vector<std::string> func_order = get_complete_function_definition_order(x.m_symtab);
+        std::vector<ASR::Function_t*> functions =
+            get_complete_function_definitions(x.m_symtab);
 
         // Generate code for nested subroutines and functions first:
         std::string contains;
@@ -2827,10 +3070,8 @@ R"(
             }
             visit_symbol(*struct_sym);
         }
-        for (auto &item : func_order) {
-            ASR::symbol_t* sym = x.m_symtab->get_symbol(item);
-            ASR::Function_t *s = ASR::down_cast<ASR::Function_t>(sym);
-            visit_Function(*s);
+        for (ASR::Function_t *function : functions) {
+            visit_Function(*function);
             contains += src;
         }
 
@@ -2956,7 +3197,7 @@ R"(    // Initialise Numpy
         }
         indent.push_back(' ');
         if constexpr (std::is_same_v<std::decay_t<T>, ASR::Struct_t>) {
-            body += indent + "int32_t " + get_runtime_type_tag_member_name() + ";\n";
+            body += indent + "int64_t " + get_runtime_type_tag_member_name() + ";\n";
         }
         CDeclarationOptions c_decl_options_;
         c_decl_options_.pre_initialise_derived_type = false;
@@ -5662,7 +5903,6 @@ Result<std::string> asr_to_c(Allocator &al, ASR::TranslationUnit_t &asr,
     int64_t default_lower_bound)
 {
     co.po.always_run = true;
-    pass_unused_functions(al, asr, co.po);
     ASRToCVisitor v(diagnostics, co, default_lower_bound);
     try {
         v.visit_asr((ASR::asr_t &)asr);
@@ -5681,7 +5921,6 @@ Result<CTranslationUnitSplitResult> asr_to_c_split(Allocator &al,
     const std::string &output_dir, const std::string &project_name)
 {
     co.po.always_run = true;
-    pass_unused_functions(al, asr, co.po);
     ASRToCVisitor v(diagnostics, co, default_lower_bound);
     try {
         return v.emit_split_translation_unit(asr, output_dir, project_name);
