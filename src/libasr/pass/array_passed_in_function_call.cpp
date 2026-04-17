@@ -425,7 +425,9 @@ public:
                     }
                 }
     
-                LCOMPILERS_ASSERT(arrays_with_maximum_rank.size() > 0);
+                if( arrays_with_maximum_rank.size() == 0 ) {
+                    return false;
+                }
                 ASR::expr_t* selected_array = arrays_with_maximum_rank[0];
                 allocate_dims.reserve(al, target_n_dims);
                 for( size_t i = 0; i < target_n_dims; i++ ) {
@@ -855,7 +857,7 @@ public:
                     if( !set_allocation_size(al, arg_expr_past_cast, allocate_dims, target_n_dims, len_expr) ) {
                         current_body->push_back(al, ASRUtils::STMT(ASR::make_Associate_t(
                             al, loc, array_var_temporary, arg_expr_past_cast)));
-                        return;
+                        continue;
                     }
                     LCOMPILERS_ASSERT(target_n_dims == allocate_dims.size());
                     Vec<ASR::alloc_arg_t> alloc_args; alloc_args.reserve(al, 1);
