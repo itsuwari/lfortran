@@ -3502,13 +3502,14 @@ inline ASR::asr_t* make_Variable_t_util(Allocator &al, const Location &a_loc,
     ASR::ttype_t* a_type, ASR::symbol_t* a_type_declaration, ASR::abiType a_abi, ASR::accessType a_access, ASR::presenceType a_presence,
     bool a_value_attr, bool a_target_attr = false, bool a_contiguous_attr = false,
     char* a_bindc_name=nullptr, bool a_is_volatile = false, bool a_is_protected = false,
-    ASR::pass_attrType a_pass_attr = ASR::pass_attrType::NotMethod, char* a_self_argument = nullptr
+    ASR::pass_attrType a_pass_attr = ASR::pass_attrType::NotMethod, char* a_self_argument = nullptr,
+    int64_t a_corank = 0
 ) {
     return ASR::make_Variable_t(al, a_loc, a_parent_symtab, a_name, a_dependencies,
         n_dependencies, a_intent, a_symbolic_value,  a_value,  a_storage, a_type,
         a_type_declaration,  a_abi, a_access, a_presence, a_value_attr,
         a_target_attr, a_contiguous_attr, a_bindc_name, a_is_volatile, a_is_protected,
-        a_pass_attr, a_self_argument
+        a_pass_attr, a_self_argument, a_corank
     );
 }
 
@@ -3674,6 +3675,16 @@ static inline ASR::ttype_t* duplicate_type(Allocator& al, const ASR::ttype_t* t,
             if (dims == nullptr) {
                 dimsp = duplicate_dimensions(al, tnew->m_dims, tnew->n_dims);
                 dimsn = tnew->n_dims;
+                // UnboundedPointerArray cannot be reconstructed by
+                // make_Array_t_util auto-detection (it needs the
+                // is_dimension_star && is_argument flags only available during
+                // semantic analysis). Preserve it when duplicating with the
+                // same dimensions.
+                if (!override_physical_type &&
+                    tnew->m_physical_type == ASR::array_physical_typeType::UnboundedPointerArray) {
+                    physical_type = ASR::array_physical_typeType::UnboundedPointerArray;
+                    override_physical_type = true;
+                }
             }
             return ASRUtils::make_Array_t_util(al, tnew->base.base.loc,
                 duplicated_element_type, dimsp, dimsn, ASR::abiType::Source,
@@ -6865,6 +6876,22 @@ static inline bool is_allocatable_or_pointer(ASR::ttype_t* type) {
     return is_allocatable(type) || is_pointer(type);
 }
 
+static inline bool is_coarray(ASR::symbol_t* s) {
+    s = symbol_get_past_external(s);
+    if (ASR::is_a<ASR::Variable_t>(*s)) {
+        return ASR::down_cast<ASR::Variable_t>(s)->m_corank > 0;
+    }
+    return false;
+}
+
+static inline int64_t symbol_corank(ASR::symbol_t* s) {
+    s = symbol_get_past_external(s);
+    if (ASR::is_a<ASR::Variable_t>(*s)) {
+        return ASR::down_cast<ASR::Variable_t>(s)->m_corank;
+    }
+    return 0;
+}
+
 static inline void import_struct_t(Allocator& al,
     const Location& loc, ASR::ttype_t*& var_type,
     ASR::intentType intent, SymbolTable* current_scope, ASR::expr_t* var) {
@@ -7078,7 +7105,8 @@ inline void set_ArrayConstant_value(ASR::ArrayConstant_t* x, ASR::expr_t* value,
         }
         case ASR::ttypeType::String: {
             ASR::String_t* char_type = ASR::down_cast<ASR::String_t>(type);
-            int len = ASRUtils::extract_value(char_type->m_len, len)? len : 0;
+            int len = 0;
+            ASRUtils::extract_value(char_type->m_len, len);
             ASR::StringConstant_t* value_str = ASR::down_cast<ASR::StringConstant_t>(value);
             char* data = value_str->m_s;
             int src_len = len;
@@ -7150,7 +7178,8 @@ inline std::string fetch_ArrayConstant_value(void *data, ASR::ttype_t* type, int
         }
         case ASR::ttypeType::String: {
             ASR::String_t* char_type = ASR::down_cast<ASR::String_t>(type);
-            int len = ASRUtils::extract_value(char_type->m_len, len)? len : 0;
+            int len = 0;
+            ASRUtils::extract_value(char_type->m_len, len);
             char* data_char = (char*)data + i*len;
             // take first len characters
             char* new_char = new char[len + 1];

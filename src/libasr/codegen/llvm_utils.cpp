@@ -660,7 +660,7 @@ namespace LCompilers {
         int a_kind = ASRUtils::extract_kind_from_ttype_t(m_type_);
         llvm::Type* el_type = nullptr;
         bool is_pointer = LLVM::is_llvm_pointer(*m_type_);
-        ASR::ttype_t* m_type = ASRUtils::type_get_past_pointer(m_type_);
+        ASR::ttype_t* m_type = ASRUtils::type_get_past_allocatable_pointer(m_type_);
         switch(m_type->type) {
             case ASR::ttypeType::Integer: {
                 el_type = getIntType(a_kind, is_pointer);
@@ -687,13 +687,22 @@ namespace LCompilers {
                 break;
             }
             case ASR::ttypeType::StructType: {
-                if (ASR::down_cast<ASR::StructType_t>(m_type)->m_is_cstruct) {
-                    el_type = getStructType(ASR::down_cast<ASR::Struct_t>(
-                                                ASRUtils::symbol_get_past_external(ASRUtils::get_struct_sym_from_struct_expr(expr))),
-                                            module);
+                if (expr) {
+                    if (ASR::down_cast<ASR::StructType_t>(m_type)->m_is_cstruct) {
+                        el_type = getStructType(ASR::down_cast<ASR::Struct_t>(
+                                                    ASRUtils::symbol_get_past_external(ASRUtils::get_struct_sym_from_struct_expr(expr))),
+                                                module);
+                    } else {
+                        el_type = getClassType(ASR::down_cast<ASR::Struct_t>(
+                                                    ASRUtils::symbol_get_past_external(ASRUtils::get_struct_sym_from_struct_expr(expr))));
+                    }
                 } else {
-                    el_type = getClassType(ASR::down_cast<ASR::Struct_t>(
-                                                ASRUtils::symbol_get_past_external(ASRUtils::get_struct_sym_from_struct_expr(expr))));
+                    ASR::StructType_t* st = ASR::down_cast<ASR::StructType_t>(m_type);
+                    std::vector<llvm::Type*> member_types;
+                    for (size_t i = 0; i < st->n_data_member_types; i++) {
+                        member_types.push_back(get_el_type(nullptr, st->m_data_member_types[i], module));
+                    }
+                    el_type = llvm::StructType::get(context, member_types);
                 }
                 break;
             }
@@ -2297,7 +2306,7 @@ namespace LCompilers {
     }
 
     llvm::Value* LLVMUtils::create_string_descriptor(std::string name){
-        return builder->CreateAlloca(string_descriptor, nullptr, name);
+        return CreateAlloca(string_descriptor, nullptr, name);
     }
 
     llvm::Value* LLVMUtils::get_string_data(ASR::String_t* str_type, llvm::Value* str, bool get_pointer_to_data){
@@ -2440,11 +2449,20 @@ namespace LCompilers {
 
         switch (str_type->m_len_kind){
             case ASR::ExpressionLength:
-            case ASR::AssumedLength:{ // Set memory only. Length already set.
+            case ASR::AssumedLength:{
+                llvm::Value* len_to_use;
+                if (string_length_to_allocate) {
+                    len_to_use = convert_kind(
+                        string_length_to_allocate,
+                        llvm::Type::getInt64Ty(context));
+                    builder->CreateStore(len_to_use, get_string_length(str_type, str, true));
+                } else {
+                    len_to_use = get_string_length(str_type, str);
+                }
                 set_array_of_strings_memory_on_heap(
                     str_type,
                     str,
-                    get_string_length(str_type, str),
+                    len_to_use,
                     array_size_to_allocte,
                     realloc);
                 break;
@@ -3855,12 +3873,15 @@ llvm::Value* LLVMUtils::handle_global_nonallocatable_stringArray(Allocator& al, 
         LLVMUtils* llvm_utils_,
         llvm::IRBuilder<>* builder_, 
         std::map<uint64_t, llvm::Function*>& llvm_symtab_fn_,
-        std::function<void(ASR::Struct_t*, llvm::Value*, ASR::ttype_t*, bool)> allocate_arr_mem_struct):
+        std::function<void(ASR::Struct_t*, llvm::Value*, ASR::ttype_t*, bool)> allocate_arr_mem_struct,
+        LLVMFinalize &finalizer_instnace_):
         context(context_),
         llvm_utils(std::move(llvm_utils_)),
         builder(std::move(builder_)),
         llvm_symtab_fn(llvm_symtab_fn_), 
-        allocate_struct_array_members(allocate_arr_mem_struct){}
+        allocate_struct_array_members(allocate_arr_mem_struct),
+        finalizer_instnace(finalizer_instnace_)
+        {}
 
     LLVMDictInterface::LLVMDictInterface(llvm::LLVMContext& context_,
         LLVMUtils* llvm_utils_,
@@ -9453,11 +9474,13 @@ llvm::Value* LLVMUtils::handle_global_nonallocatable_stringArray(Allocator& al, 
         std::vector<llvm::Constant*> slots;
         llvm::Function* copy_function = define_intrinsic_type_copy_function(ttype, module);
         llvm::Function* allocate_function = define_intrinsic_type_allocate_function(ttype, module);
+        llvm::Function* finalize_function = finalizer_instnace.get_UPoly_finalize_fn(ttype, nullptr);
         slots.push_back(llvm::ConstantPointerNull::get(llvm_utils->i8_ptr));      // Reserved null ptr
         slots.push_back(llvm::ConstantExpr::getBitCast(intrinsic_type_info.at(
             ASRUtils::intrinsic_type_to_str_with_kind(ttype, kind)), llvm_utils->i8_ptr));  // Type Info
         slots.push_back(llvm::ConstantExpr::getBitCast(copy_function, llvm_utils->i8_ptr));
         slots.push_back(llvm::ConstantExpr::getBitCast(allocate_function, llvm_utils->i8_ptr));
+        slots.push_back(llvm::ConstantExpr::getBitCast(finalize_function, llvm_utils->i8_ptr));
 
         llvm::ArrayType *arrTy = llvm::ArrayType::get(llvm_utils->i8_ptr, slots.size());
         llvm::Constant *arrInit = llvm::ConstantArray::get(arrTy, slots);
@@ -9507,10 +9530,12 @@ llvm::Value* LLVMUtils::handle_global_nonallocatable_stringArray(Allocator& al, 
         llvm::Function* copy_function = define_struct_copy_function(struct_sym, module);
         // std::cout<<"Getting pointer to method for struct: "<<ASRUtils::symbol_name(struct_sym)<<std::endl;
         llvm::Function* allocate_array_members_function = define_allocate_struct_function(struct_sym, module);
+        llvm::Function* finalize_function = finalizer_instnace.get_UPoly_finalize_fn(struct_t);
         struct_vtab_function_offset[struct_sym]["_lfortran_struct_copy"] = slots.size() - 2;
         slots.push_back(llvm::ConstantExpr::getBitCast(copy_function, llvm_utils->i8_ptr));
         struct_vtab_function_offset[struct_sym]["_lfortran_allocate_struct_array_members"] = slots.size() - 2;
         slots.push_back(llvm::ConstantExpr::getBitCast(allocate_array_members_function, llvm_utils->i8_ptr));
+        slots.push_back(llvm::ConstantExpr::getBitCast(finalize_function, llvm_utils->i8_ptr));
         collect_vtable_function_impls(struct_sym, slots, module);
 
         llvm::ArrayType *arrTy = llvm::ArrayType::get(i8PtrTy, slots.size());

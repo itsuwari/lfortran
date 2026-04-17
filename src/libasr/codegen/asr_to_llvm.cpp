@@ -226,6 +226,40 @@ private:
         return "";
     }
 
+    llvm::Value* allocate_class_wrapper_storage(ASR::expr_t* target_expr,
+                                                llvm::Type* target_llvm_type,
+                                                llvm::Value* wrapper_size) {
+        if (ASR::is_a<ASR::Var_t>(*target_expr)) {
+            ASR::symbol_t* target_sym = ASRUtils::symbol_get_past_external(
+                ASR::down_cast<ASR::Var_t>(target_expr)->m_v);
+            if (ASR::is_a<ASR::Variable_t>(*target_sym)) {
+                ASR::Variable_t* target_var = ASR::down_cast<ASR::Variable_t>(target_sym);
+                if (target_var->m_storage == ASR::storage_typeType::Save) {
+                    std::string wrapper_name = "__lfortran_save_class_wrapper_"
+                        + std::to_string(get_hash((ASR::asr_t*)target_sym));
+                    llvm::GlobalVariable* wrapper_g = module->getGlobalVariable(
+                        wrapper_name, true);
+                    if (!wrapper_g) {
+                        wrapper_g = new llvm::GlobalVariable(
+                            *module,
+                            target_llvm_type,
+                            false,
+                            llvm::GlobalValue::InternalLinkage,
+                            llvm::Constant::getNullValue(target_llvm_type),
+                            wrapper_name);
+                    }
+                    return wrapper_g;
+                }
+            }
+        }
+
+        llvm::Value* wrapper_ptr = LLVMArrUtils::lfortran_malloc(
+            context, *module, *builder, wrapper_size);
+        builder->CreateMemSet(wrapper_ptr, llvm::ConstantInt::get(context, llvm::APInt(8, 0)),
+            wrapper_size, llvm::MaybeAlign());
+        return builder->CreateBitCast(wrapper_ptr, target_llvm_type->getPointerTo());
+    }
+
 public:
     diag::Diagnostics &diag;
     llvm::LLVMContext &context;
@@ -311,6 +345,7 @@ public:
 
     SymbolTable* current_scope;
     std::unique_ptr<LLVMUtils> llvm_utils;
+    LLVMFinalize llvm_symtab_finalizer;
     std::unique_ptr<LLVMList> list_api;
     std::unique_ptr<LLVMStruct> struct_api;
     std::unique_ptr<LLVMTuple> tuple_api;
@@ -319,7 +354,6 @@ public:
     std::unique_ptr<LLVMSetInterface> set_api_lp;
     std::unique_ptr<LLVMSetInterface> set_api_sc;
     std::unique_ptr<LLVMArrUtils::Descriptor> arr_descr;
-    LLVMFinalize llvm_symtab_finalizer;
     Vec<llvm::Value*> strings_to_be_deallocated;
     Vec<llvm::Value*> heap_fixed_size_arrays;  // Heap-allocated large fixed-size arrays for cleanup
     bool in_block_context = false;  // Flag to track if we're inside a BLOCK construct
@@ -410,11 +444,12 @@ public:
         current_der_type_name, name2dertype, name2dercontext, struct_type_stack,
         dertype2parent, name2memidx, compiler_options, arr_arg_type_cache,
         fname2arg_type, llvm_symtab)),
+    llvm_symtab_finalizer(*this, llvm_utils, builder, al, llvm_symtab_fn),
     list_api(std::make_unique<LLVMList>(context, llvm_utils.get(), builder.get())),
     struct_api(std::make_unique<LLVMStruct>(context, llvm_utils.get(), builder.get(), llvm_symtab_fn,
                 [this](ASR::Struct_t* s, llvm::Value* v, ASR::ttype_t* t, bool flag) {
                         allocate_array_members_of_struct(s, v, t, flag);
-                })),
+                }, llvm_symtab_finalizer)),
     tuple_api(std::make_unique<LLVMTuple>(context, llvm_utils.get(), builder.get())),
     dict_api_lp(std::make_unique<LLVMDictOptimizedLinearProbing>(context, llvm_utils.get(), builder.get())),
     dict_api_sc(std::make_unique<LLVMDictSeparateChaining>(context, llvm_utils.get(), builder.get())),
@@ -422,8 +457,7 @@ public:
     set_api_sc(std::make_unique<LLVMSetSeparateChaining>(context, llvm_utils.get(), builder.get())),
     arr_descr(LLVMArrUtils::Descriptor::get_descriptor(context,
               builder.get(), llvm_utils.get(),
-              LLVMArrUtils::DESCR_TYPE::_SimpleCMODescriptor, compiler_options_)),
-    llvm_symtab_finalizer(*this, llvm_utils, builder, al, llvm_symtab_fn)
+              LLVMArrUtils::DESCR_TYPE::_SimpleCMODescriptor, compiler_options_))
     {
         LLVM::set_memory_debug(compiler_options.detect_leaks);
         llvm_utils->tuple_api = tuple_api.get();
@@ -1934,6 +1968,17 @@ public:
                                 source_wrapper_type->getPointerTo(), source_handle);
                         }
 
+                        llvm::Value* is_source_not_allocated = builder->CreateICmpEQ(
+                            builder->CreatePtrToInt(source_handle, llvm::Type::getInt64Ty(context)),
+                            llvm::ConstantInt::get(llvm::Type::getInt64Ty(context), 0));
+                        llvm_utils->generate_runtime_error(is_source_not_allocated,
+                            "allocate with source= requires an allocated/associated polymorphic source expression",
+                            {LLVMUtils::RuntimeLabel(
+                                "source expression is not allocated/associated",
+                                {m_source->base.loc}, {})},
+                            infile,
+                            location_manager);
+
                         llvm::FunctionType* alloc_fn_type = llvm::FunctionType::get(
                             llvm::Type::getVoidTy(context), { llvm_utils->i8_ptr->getPointerTo() }, false);
                         llvm::PointerType* alloc_fn_ptr_type = llvm::PointerType::get(alloc_fn_type, 0);
@@ -1967,6 +2012,26 @@ public:
                         }
 
                         continue;
+                    }
+
+                    if (m_source && !m_source_is_class && ASRUtils::is_allocatable(m_source)) {
+                        int64_t saved_ptr_loads = ptr_loads;
+                        ptr_loads = 1;
+                        this->visit_expr(*m_source);
+                        llvm::Value* source_ptr = tmp;
+                        ptr_loads = saved_ptr_loads;
+                        tmp = nullptr;
+
+                        llvm::Value* is_source_not_allocated = builder->CreateICmpEQ(
+                            builder->CreatePtrToInt(source_ptr, llvm::Type::getInt64Ty(context)),
+                            llvm::ConstantInt::get(llvm::Type::getInt64Ty(context), 0));
+                        llvm_utils->generate_runtime_error(is_source_not_allocated,
+                            "allocate with source= requires an allocated/associated source expression",
+                            {LLVMUtils::RuntimeLabel(
+                                "source expression is not allocated/associated",
+                                {m_source->base.loc}, {})},
+                            infile,
+                            location_manager);
                     }
 
                     if (ASR::down_cast<ASR::StructType_t>(curr_arg_m_a_type)->m_is_cstruct) {
@@ -2217,10 +2282,10 @@ public:
                 if (is_struct_member || is_dummy_arg || compiler_options.po.strict_bounds_checking) {
                     llvm_utils->create_if_else(
                         builder->CreateICmpEQ(
-                            builder->CreatePtrToInt(llvm_utils->CreateLoad2(type->getPointerTo(), (x_arr && x_arr->getType() != nullptr) ? x_arr : ptr_val), llvm::Type::getInt32Ty(context)),
+                            builder->CreatePtrToInt(llvm_utils->CreateLoad2(type->getPointerTo(), (x_arr && x_arr->getType() != nullptr) ? x_arr : ptr_val), llvm::Type::getInt64Ty(context)),
                             builder->CreatePtrToInt(
                                 llvm::ConstantPointerNull::get((x_arr && x_arr->getType() != nullptr) ? x_arr->getType()->getPointerTo() : ptr_val->getType()->getPointerTo()),
-                                llvm::Type::getInt32Ty(context))),
+                                llvm::Type::getInt64Ty(context))),
                         [&]() {
                             llvm::Value* ptr_;
 
@@ -2714,38 +2779,19 @@ public:
                         }
                         llvm_symtab_finalizer.finalize_before_deallocate(tmp, cur_type, struct_sym, in_struct);
                         // Deallocate data of class first
-                        if (ASRUtils::is_class_type(ASRUtils::extract_type(cur_type))) {
-                            llvm::Value* data = llvm_utils->create_gep2(llvm_data_type, tmp, 1);
-                            llvm::Value* data_ptr;
-                            if (ASRUtils::is_unlimited_polymorphic_type(tmp_expr)) {
-                                data_ptr = llvm_utils->CreateLoad2(llvm_utils->i8_ptr, data);
-                            } else {
-                                ASR::symbol_t* struct_sym = ASRUtils::symbol_get_past_external(ASRUtils::get_struct_sym_from_struct_expr(tmp_expr));
-                                data_ptr = llvm_utils->CreateLoad2(llvm_utils->getStructType(
-                                    ASR::down_cast<ASR::Struct_t>(struct_sym), module.get(), true), data);
-                                data_ptr = builder->CreateBitCast(data_ptr, llvm_utils->i8_ptr);
+                        if( ASRUtils::is_pointer(cur_type) ||
+                            !ASR::is_a<ASR::StructType_t>(*ASRUtils::type_get_past_allocatable_pointer(cur_type)) ) { // TODO : Clean this by coordinating with `finalize_before_deallocate()`
+                            if(ASRUtils::non_unlimited_polymorphic_class(ASRUtils::type_get_past_allocatable_pointer(cur_type)) && ASRUtils::is_pointer(cur_type) ){
+                                auto const inner_struct = llvm_utils->CreateLoad2(llvm_utils->getStructType(struct_sym, module.get(), true), llvm_utils->create_gep2(llvm_data_type, tmp, 1));
+                                llvm_utils->lfortran_free(inner_struct);
                             }
-                            llvm::Value* cond_data = builder->CreateICmpNE(
-                            builder->CreatePtrToInt(data_ptr, llvm::Type::getInt64Ty(context)),
-                            builder->CreatePtrToInt(
-                                llvm::ConstantPointerNull::get(llvm_utils->i8_ptr),
-                                llvm::Type::getInt64Ty(context)) );
-                            llvm_utils->create_if_else(cond_data, [=]() {
-                                llvm::AllocaInst *data_arg_tmp = llvm_utils->CreateAlloca(*builder, character_type);
-                                builder->CreateStore(data_ptr, data_arg_tmp);
-                                std::vector<llvm::Value*> data_args = {allocator, llvm_utils->CreateLoad2(character_type, data_arg_tmp)};
-                                builder->CreateCall(free_fn, data_args);
-                                builder->CreateStore(
-                                    llvm::ConstantPointerNull::get(llvm_utils->i8_ptr),
-                                    builder->CreateBitCast(data, llvm_utils->i8_ptr->getPointerTo()));
-                            }, [](){});
+                            llvm::AllocaInst *arg_tmp = llvm_utils->CreateAlloca(*builder, character_type);
+                            builder->CreateStore(builder->CreateBitCast(tmp, character_type), arg_tmp);
+                            std::vector<llvm::Value*> args = {allocator, llvm_utils->CreateLoad2(character_type, arg_tmp)};
+                            builder->CreateCall(free_fn, args);
                         }
-                        llvm::AllocaInst *arg_tmp = llvm_utils->CreateAlloca(*builder, character_type);
-                        builder->CreateStore(builder->CreateBitCast(tmp, character_type), arg_tmp);
-                        std::vector<llvm::Value*> args = {allocator, llvm_utils->CreateLoad2(character_type, arg_tmp)};
-                        builder->CreateCall(free_fn, args);
                         builder->CreateStore(
-                            llvm::ConstantPointerNull::get(llvm_data_type->getPointerTo()), tmp_);
+                            llvm::ConstantPointerNull::get(llvm_data_type->getPointerTo()), tmp_); // Store NULL as identifier for deallocated variable.
                     }, [](){});
                 } else {
                     if( LLVM::is_llvm_pointer(*cur_type) ) {
@@ -2764,6 +2810,7 @@ public:
                     llvm::Value *cond = arr_descr->get_is_allocated_flag(tmp, tmp_expr);
                     llvm_utils->create_if_else(cond, [=]() {
                         llvm_symtab_finalizer.finalize_before_deallocate(tmp, cur_type, struct_sym, in_struct);
+
                         call_lfortran_free(free_fn, typ,  llvm_data_type);
                     }, [](){});
                 }
@@ -9243,8 +9290,12 @@ public:
                             ASRUtils::EXPR(ASR::make_Var_t(al, v->base.base.loc, &v->base)),
                             element_type, module.get());
                         if(ASRUtils::is_character(*v->m_type)){
-                            llvm::Value* str_desc = create_and_setup_string_for_array(v->m_type, nullptr, false, "arr_desc_str_desc");
+                            llvm::Value* str_desc = llvm_utils->allocate_string_descriptor_on_heap(data_type);
                             builder->CreateStore(str_desc, arr_descr->get_pointer_to_data(type_, arr));
+                            ASR::String_t* str_type = ASRUtils::get_string_type(v->m_type);
+                            if (str_type->m_len) {
+                                setup_string_length(str_desc, str_type, str_type->m_len);
+                            }
                         } else {
                             arr_descr->reset_is_allocated_flag(type_, arr, data_type);
                         }
@@ -10053,6 +10104,11 @@ public:
                     builder->CreateStore(
                         llvm::ConstantPointerNull::get(llvm::cast<llvm::PointerType>(inner_ptr_type)),
                         struct_ptr_field);
+                } else { // Unlimited polymorphic type
+                    // Intialize type with NULL value (Zeroes)
+                    llvm::Type* const class_type = llvm_utils->getClassType(struct_t);
+                    builder->CreateStore(llvm::Constant::getNullValue(class_type), ptr);
+
                 }
             } else {
                 set_pointer_variable_to_null(v, llvm::ConstantPointerNull::get(
@@ -11952,6 +12008,7 @@ public:
 
                 if (array_section->m_args[i].m_right) {
                     if (arr_physical_type == ASR::array_physical_typeType::UnboundedPointerArray &&
+                        i == value_rank - 1 &&
                         ASR::is_a<ASR::ArrayBound_t>(*array_section->m_args[i].m_right) &&
                         ASR::down_cast<ASR::ArrayBound_t>(array_section->m_args[i].m_right)->m_value == nullptr) {
                         llvm::Value *lbound = builder->CreateSExtOrTrunc(
@@ -12118,11 +12175,8 @@ public:
                         [&]() {
                             llvm::Value* wrapper_size = SizeOfTypeUtil(x.m_target, target_base_type,
                                 llvm_utils->getIntType(4), ASRUtils::TYPE(ASR::make_Integer_t(al, x.base.base.loc, 4)));
-                            llvm::Value* wrapper_ptr = LLVMArrUtils::lfortran_malloc(
-                                context, *module, *builder, wrapper_size);
-                            builder->CreateMemSet(wrapper_ptr, llvm::ConstantInt::get(context, llvm::APInt(8, 0)),
-                                wrapper_size, llvm::MaybeAlign());
-                            wrapper_ptr = builder->CreateBitCast(wrapper_ptr, target_llvm_type->getPointerTo());
+                            llvm::Value* wrapper_ptr = allocate_class_wrapper_storage(
+                                x.m_target, target_llvm_type, wrapper_size);
                             builder->CreateStore(wrapper_ptr, llvm_target);
                         }, []() {});
                     target_ptr = llvm_utils->CreateLoad2(target_llvm_type->getPointerTo(), llvm_target);
@@ -12229,25 +12283,38 @@ public:
                 if (is_target_class && is_value_class) {
                     llvm::Type* target_llvm_type = llvm_utils->get_type_from_ttype_t_util(
                         x.m_target, ASRUtils::extract_type(target_type), module.get());
-                    // Allocate wrapper on heap (This is the current convention we use for class types)
-                    llvm::Value* null_cond = builder->CreateICmpEQ(
-                        llvm_utils->CreateLoad2(target_llvm_type->getPointerTo(), llvm_target),
-                        llvm::ConstantPointerNull::get(target_llvm_type->getPointerTo()));
-                    llvm::Value* wrapper_size = SizeOfTypeUtil(x.m_target, ASRUtils::type_get_past_pointer(target_type),
-                        llvm_utils->getIntType(4), ASRUtils::TYPE(ASR::make_Integer_t(al, x.base.base.loc, 4)));
+                    llvm::Value* value_is_null = builder->CreateICmpEQ(
+                        llvm_value,
+                        llvm::ConstantPointerNull::get(
+                            llvm::cast<llvm::PointerType>(llvm_value->getType())));
                     llvm_utils->create_if_else(
-                        null_cond,
+                        value_is_null,
                         [&]() {
-                            llvm::Value* wrapper_ptr = LLVMArrUtils::lfortran_malloc(
-                                context, *module, *builder, wrapper_size);
-                            builder->CreateMemSet(wrapper_ptr, llvm::ConstantInt::get(context, llvm::APInt(8, 0)),
-                                wrapper_size, llvm::MaybeAlign());
-                            wrapper_ptr = builder->CreateBitCast(wrapper_ptr, target_llvm_type->getPointerTo());
-                            builder->CreateStore(wrapper_ptr, llvm_target);
-                        }, []() {});
-                    builder->CreateMemCpy(  llvm_utils->CreateLoad2(target_llvm_type->getPointerTo(), llvm_target), llvm::MaybeAlign(),
-                                            llvm_value, llvm::MaybeAlign(),
-                                            wrapper_size);
+                            // Source class wrapper is null (unallocated);
+                            // store null into target to preserve unallocated status
+                            builder->CreateStore(
+                                llvm::ConstantPointerNull::get(target_llvm_type->getPointerTo()),
+                                llvm_target);
+                        },
+                        [&]() {
+                            // Allocate wrapper on heap if needed and memcpy from source
+                            llvm::Value* null_cond = builder->CreateICmpEQ(
+                                llvm_utils->CreateLoad2(target_llvm_type->getPointerTo(), llvm_target),
+                                llvm::ConstantPointerNull::get(target_llvm_type->getPointerTo()));
+                            llvm::Value* wrapper_size = SizeOfTypeUtil(x.m_target, ASRUtils::type_get_past_pointer(target_type),
+                                llvm_utils->getIntType(4), ASRUtils::TYPE(ASR::make_Integer_t(al, x.base.base.loc, 4)));
+                            llvm_utils->create_if_else(
+                                null_cond,
+                                [&]() {
+                                    llvm::Value* wrapper_ptr = allocate_class_wrapper_storage(
+                                        x.m_target, target_llvm_type, wrapper_size);
+                                    builder->CreateStore(wrapper_ptr, llvm_target);
+                                }, []() {});
+                            builder->CreateMemCpy(
+                                llvm_utils->CreateLoad2(target_llvm_type->getPointerTo(), llvm_target), llvm::MaybeAlign(),
+                                llvm_value, llvm::MaybeAlign(),
+                                wrapper_size);
+                        });
                 } else if (is_target_class) {
                     // check_and_allocate_scalar(x.m_target, x.m_value, value_type, true);
                     llvm::Type* target_llvm_type = llvm_utils->get_type_from_ttype_t_util(
@@ -12261,11 +12328,8 @@ public:
                         [&]() {
                             llvm::Value* wrapper_size = SizeOfTypeUtil(x.m_target, ASRUtils::type_get_past_pointer(target_type),
                                 llvm_utils->getIntType(4), ASRUtils::TYPE(ASR::make_Integer_t(al, x.base.base.loc, 4)));
-                            llvm::Value* wrapper_ptr = LLVMArrUtils::lfortran_malloc(
-                                context, *module, *builder, wrapper_size);
-                            builder->CreateMemSet(wrapper_ptr, llvm::ConstantInt::get(context, llvm::APInt(8, 0)),
-                                wrapper_size, llvm::MaybeAlign());
-                            wrapper_ptr = builder->CreateBitCast(wrapper_ptr, target_llvm_type->getPointerTo());
+                            llvm::Value* wrapper_ptr = allocate_class_wrapper_storage(
+                                x.m_target, target_llvm_type, wrapper_size);
                             builder->CreateStore(wrapper_ptr, llvm_target);
                         }, []() {});
                     llvm_target = llvm_utils->CreateLoad2(target_llvm_type->getPointerTo(), llvm_target);
@@ -12609,6 +12673,10 @@ public:
                                                 llvm::Value* orig_descs = loaded_data_ptr;
                                                 loaded_data_ptr = llvm_utils->consolidate_char_descriptors(
                                                     loaded_data_ptr, n_elems_i64);
+                                                llvm::Value* consolidated_flat_buf = llvm_utils->CreateLoad2(
+                                                    character_type,
+                                                    llvm_utils->create_gep2(string_descriptor, loaded_data_ptr, 0));
+                                                heap_fixed_size_arrays.push_back(al, consolidated_flat_buf);
                                                 pending_char_writebacks.push_back(
                                                     {orig_descs, loaded_data_ptr, n_elems_i64});
                                             } else {
@@ -13505,13 +13573,8 @@ public:
                         uint64_t sz = data_layout.getTypeAllocSize(target_llvm_type);
                         llvm::Value* wrapper_size = llvm::ConstantInt::get(
                             llvm::Type::getInt64Ty(context), sz);
-                        llvm::Value* wrapper_ptr = LLVMArrUtils::lfortran_malloc(
-                            context, *module, *builder, wrapper_size);
-                        builder->CreateMemSet(wrapper_ptr,
-                            llvm::ConstantInt::get(context, llvm::APInt(8, 0)),
-                            wrapper_size, llvm::MaybeAlign());
-                        wrapper_ptr = builder->CreateBitCast(wrapper_ptr,
-                            target_llvm_type->getPointerTo());
+                        llvm::Value* wrapper_ptr = allocate_class_wrapper_storage(
+                            x.m_target, target_llvm_type, wrapper_size);
                         builder->CreateStore(wrapper_ptr, ptr_to_target_struct);
                     }, []() {});
                     target_struct = llvm_utils->CreateLoad2(
@@ -14178,6 +14241,29 @@ public:
                 x.m_target, ASRUtils::extract_type(target_type), module.get());
             llvm::Type* value_el_type = llvm_utils->get_el_type(
                 x.m_value, ASRUtils::extract_type(value_type), module.get());
+            bool is_allocatable_descriptor_target = (ASRUtils::is_allocatable(target_type) && target_ptype == ASR::array_physical_typeType::DescriptorArray);
+            if( is_allocatable_descriptor_target && !x.m_realloc_lhs && !x.m_move_allocation ) {
+                llvm::Value* is_not_allocated = expr_is_unallocated(x.m_target);
+                std::string target_expr_name = get_expr_name_for_runtime_message(x.m_target);
+                if( !target_expr_name.empty() ) {
+                    llvm::Value* target_name_llvm = LCompilers::create_global_string_ptr(
+                        context, *module, *builder, target_expr_name);
+                    llvm_utils->generate_runtime_error(
+                        is_not_allocated,
+                        "Array '%s' is not allocated. Allocate it manually or use the '--realloc-lhs-arrays' option to allocate it automatically.",
+                        {LLVMUtils::RuntimeLabel("'%s' not allocated here", {x.m_target->base.loc}, {target_name_llvm})},
+                        infile,
+                        location_manager,
+                        target_name_llvm);
+                } else {
+                    llvm_utils->generate_runtime_error(
+                        is_not_allocated,
+                        "Array is not allocated. Allocate it manually or use the '--realloc-lhs-arrays' option to allocate it automatically.",
+                        {LLVMUtils::RuntimeLabel("LHS not allocated here", {x.m_target->base.loc}, {})},
+                        infile,
+                        location_manager);
+                }
+            }
             if( is_value_fixed_sized_array && is_target_fixed_sized_array ) {
                 ASR::dimension_t* asr_dims = nullptr;
                 size_t asr_n_dims = ASRUtils::extract_dimensions_from_ttype(target_type, asr_dims);
@@ -14409,6 +14495,9 @@ public:
                 }
                 llvm::Type* target_ptr_type = llvm_utils->get_type_from_ttype_t_util(x.m_target, ASRUtils::expr_type(x.m_target), module.get());
                 target = llvm_utils->CreateLoad2(target_ptr_type, target);
+            } else if (!value->getType()->isPointerTy()) {
+                llvm::Type* target_ptr_type = llvm_utils->get_type_from_ttype_t_util(x.m_target, ASRUtils::expr_type(x.m_target), module.get());
+                target = llvm_utils->CreateLoad2(target_ptr_type, target);
             }
             builder->CreateStore(value, target);
         } else {
@@ -14494,6 +14583,31 @@ public:
             ASR::ttype_t *type32 = ASRUtils::TYPE(ASR::make_Integer_t(al, x.m_components[0]->base.loc, 4));
 
             ASR::ttype_t* target_type = ASRUtils::expr_type(x.m_target);
+            bool is_allocatable_descriptor_target = ASRUtils::is_array(target_type) &&
+                ASRUtils::is_allocatable(target_type) &&
+                ASRUtils::extract_physical_type(target_type) == ASR::array_physical_typeType::DescriptorArray;
+            if (is_allocatable_descriptor_target && !x.m_move_allocation) {
+                llvm::Value* is_not_allocated = expr_is_unallocated(x.m_target);
+                std::string target_expr_name = get_expr_name_for_runtime_message(x.m_target);
+                if (!target_expr_name.empty()) {
+                    llvm::Value* target_expr_name_llvm = LCompilers::create_global_string_ptr(
+                        context, *module, *builder, target_expr_name);
+                    llvm_utils->generate_runtime_error(is_not_allocated,
+                        "Array '%s' is not allocated. Allocate it manually or use the '--realloc-lhs-arrays' option to allocate it automatically.",
+                        {LLVMUtils::RuntimeLabel("'%s' not allocated here",
+                            {x.m_target->base.loc}, {target_expr_name_llvm})},
+                        infile,
+                        location_manager,
+                        target_expr_name_llvm);
+                } else {
+                    llvm_utils->generate_runtime_error(is_not_allocated,
+                        "Array is not allocated. Allocate it manually or use the '--realloc-lhs-arrays' option to allocate it automatically.",
+                        {LLVMUtils::RuntimeLabel("LHS not allocated here",
+                            {x.m_target->base.loc}, {})},
+                        infile,
+                        location_manager);
+                }
+            }
             ASR::dimension_t* m_dims = nullptr;
             size_t rank = ASRUtils::extract_dimensions_from_ttype(target_type, m_dims);
             for (size_t dim = 0; dim < rank; dim++) {
@@ -14518,17 +14632,6 @@ public:
                         ASRUtils::is_allocatable(target_variable->m_type) &&
                         ASRUtils::extract_physical_type(target_variable->m_type) == ASR::array_physical_typeType::DescriptorArray) {
                         llvm::Value* is_not_allocated = expr_is_unallocated(v);
-                        // With move don't throw error when target is unallocated
-                        if (!x.m_move_allocation) {
-                            llvm::Value* target_var_name_llvm = LCompilers::create_global_string_ptr(context, *module, *builder, target_variable->m_name);
-                            llvm_utils->generate_runtime_error(is_not_allocated,
-                                "Array '%s' is not allocated. Allocate it manually or use the '--realloc-lhs-arrays' option to allocate it automatically.",
-                                    {LLVMUtils::RuntimeLabel("'%s' not allocated here", {x.m_target->base.loc}, {target_var_name_llvm})},
-                                    infile,
-                                    location_manager,
-                                    target_var_name_llvm);
-                        }
-
                         llvm::Function *fn = builder->GetInsertBlock()->getParent();
                         llvm::BasicBlock *thenBB = nullptr;
                         llvm::BasicBlock *mergeBB = nullptr;
@@ -14566,28 +14669,6 @@ public:
                                                             dim_llvm);
                     }
                 } else {
-                    if (ASRUtils::is_array(target_type) &&
-                        ASRUtils::is_allocatable(target_type) &&
-                        ASRUtils::extract_physical_type(target_type) == ASR::array_physical_typeType::DescriptorArray &&
-                        !x.m_move_allocation) {
-                        llvm::Value* is_not_allocated = expr_is_unallocated(x.m_target);
-                        std::string target_expr_name = get_expr_name_for_runtime_message(x.m_target);
-                        if (!target_expr_name.empty()) {
-                            llvm::Value* target_expr_name_llvm = LCompilers::create_global_string_ptr(context, *module, *builder, target_expr_name);
-                            llvm_utils->generate_runtime_error(is_not_allocated,
-                                "Array '%s' is not allocated. Allocate it manually or use the '--realloc-lhs-arrays' option to allocate it automatically.",
-                                {LLVMUtils::RuntimeLabel("'%s' not allocated here", {x.m_target->base.loc}, {target_expr_name_llvm})},
-                                infile,
-                                location_manager,
-                                target_expr_name_llvm);
-                        } else {
-                            llvm_utils->generate_runtime_error(is_not_allocated,
-                                "Array is not allocated. Allocate it manually or use the '--realloc-lhs-arrays' option to allocate it automatically.",
-                                {LLVMUtils::RuntimeLabel("LHS not allocated here", {x.m_target->base.loc}, {})},
-                                infile,
-                                location_manager);
-                        }
-                    }
                     llvm_utils->generate_runtime_error(builder->CreateICmpNE(value_size, target_size),
                                                         "Array shape mismatch in assignment. Tried to match size %d of dimension %d of LHS with size %d of dimension %d of RHS.",
                                                    {LLVMUtils::RuntimeLabel("LHS size is %d", {x.m_target->base.loc}, {target_size}),
@@ -15126,6 +15207,10 @@ public:
                     n_elems, llvm::Type::getInt64Ty(context));
                 dst_first_el_ptr = llvm_utils->consolidate_char_descriptors(
                     dst_first_el_ptr, n_elems_i64);
+                llvm::Value* consolidated_flat_buf = llvm_utils->CreateLoad2(
+                    character_type,
+                    llvm_utils->create_gep2(string_descriptor, dst_first_el_ptr, 0));
+                heap_fixed_size_arrays.push_back(al, consolidated_flat_buf);
             }
 
             builder->CreateStore(dst_first_el_ptr,
@@ -15352,9 +15437,14 @@ public:
                 if (!alloca_inst) continue;
                 llvm::Type *ptr_type = alloca_inst->getAllocatedType();
                 if (!ptr_type->isPointerTy()) continue;
+#if LLVM_VERSION_MAJOR >= 15
                 llvm::Type *elem_type =
                     llvm_utils->get_type_from_ttype_t_util(
                         nullptr, pointee_type, module.get());
+#else
+                llvm::Type *elem_type =
+                    ptr_type->getPointerElementType();
+#endif
                 llvm::Value *backing = builder->CreateAlloca(
                     elem_type, nullptr,
                     std::string(v->m_name) + ".tmp");
@@ -15906,10 +15996,16 @@ public:
             this->visit_expr_wrapper(x.m_value, true);
             return;
         }
-        this->visit_expr_wrapper(x.m_left, true);
+        this->visit_expr_load_wrapper(x.m_left,
+            LLVM::is_llvm_pointer(*expr_type(x.m_left)) ? 2 : 1,
+            true);
         llvm::Value *left = tmp;
-        this->visit_expr_wrapper(x.m_right, true);
+        this->visit_expr_load_wrapper(x.m_right,
+            LLVM::is_llvm_pointer(*expr_type(x.m_right)) ? 2 : 1,
+            true);
         llvm::Value *right = tmp;
+        load_non_array_non_character_pointers(x.m_left, ASRUtils::expr_type(x.m_left), left);
+        load_non_array_non_character_pointers(x.m_right, ASRUtils::expr_type(x.m_right), right);
         switch (x.m_op) {
             case (ASR::cmpopType::Eq) : {
                 tmp = builder->CreateICmpEQ(left, right);
@@ -15990,10 +16086,16 @@ public:
             this->visit_expr_wrapper(x.m_value, true);
             return;
         }
-        this->visit_expr_wrapper(x.m_left, true);
+        this->visit_expr_load_wrapper(x.m_left,
+            LLVM::is_llvm_pointer(*expr_type(x.m_left)) ? 2 : 1,
+            true);
         llvm::Value *left = tmp;
-        this->visit_expr_wrapper(x.m_right, true);
+        this->visit_expr_load_wrapper(x.m_right,
+            LLVM::is_llvm_pointer(*expr_type(x.m_right)) ? 2 : 1,
+            true);
         llvm::Value *right = tmp;
+        load_non_array_non_character_pointers(x.m_left, ASRUtils::expr_type(x.m_left), left);
+        load_non_array_non_character_pointers(x.m_right, ASRUtils::expr_type(x.m_right), right);
         switch (x.m_op) {
             case (ASR::cmpopType::Eq) : {
                 tmp = builder->CreateFCmpOEQ(left, right);
@@ -16031,10 +16133,16 @@ public:
             this->visit_expr_wrapper(x.m_value, true);
             return;
         }
-        this->visit_expr_wrapper(x.m_left, true);
+        this->visit_expr_load_wrapper(x.m_left,
+            LLVM::is_llvm_pointer(*expr_type(x.m_left)) ? 2 : 1,
+            true);
         llvm::Value *left = tmp;
-        this->visit_expr_wrapper(x.m_right, true);
+        this->visit_expr_load_wrapper(x.m_right,
+            LLVM::is_llvm_pointer(*expr_type(x.m_right)) ? 2 : 1,
+            true);
         llvm::Value *right = tmp;
+        load_non_array_non_character_pointers(x.m_left, ASRUtils::expr_type(x.m_left), left);
+        load_non_array_non_character_pointers(x.m_right, ASRUtils::expr_type(x.m_right), right);
         llvm::Value* real_left = complex_re(left, left->getType());
         llvm::Value* real_right = complex_re(right, right->getType());
         llvm::Value* img_left = complex_im(left, left->getType());
@@ -16149,10 +16257,16 @@ public:
             this->visit_expr_wrapper(x.m_value, true);
             return;
         }
-        this->visit_expr_wrapper(x.m_left, true);
+        this->visit_expr_load_wrapper(x.m_left,
+            LLVM::is_llvm_pointer(*expr_type(x.m_left)) ? 2 : 1,
+            true);
         llvm::Value *left = tmp;
-        this->visit_expr_wrapper(x.m_right, true);
+        this->visit_expr_load_wrapper(x.m_right,
+            LLVM::is_llvm_pointer(*expr_type(x.m_right)) ? 2 : 1,
+            true);
         llvm::Value *right = tmp;
+        load_non_array_non_character_pointers(x.m_left, ASRUtils::expr_type(x.m_left), left);
+        load_non_array_non_character_pointers(x.m_right, ASRUtils::expr_type(x.m_right), right);
         // Match widths if logical kinds differ
         if (left->getType() != right->getType()) {
             unsigned left_bits = left->getType()->getIntegerBitWidth();
@@ -16348,10 +16462,16 @@ public:
             this->visit_expr_wrapper(x.m_value, true);
             return;
         }
-        this->visit_expr_wrapper(x.m_left, true);
+        this->visit_expr_load_wrapper(x.m_left,
+            LLVM::is_llvm_pointer(*expr_type(x.m_left)) ? 2 : 1,
+            true);
         llvm::Value *left_val = tmp;
-        this->visit_expr_wrapper(x.m_right, true);
+        this->visit_expr_load_wrapper(x.m_right,
+            LLVM::is_llvm_pointer(*expr_type(x.m_right)) ? 2 : 1,
+            true);
         llvm::Value *right_val = tmp;
+        load_non_array_non_character_pointers(x.m_left, ASRUtils::expr_type(x.m_left), left_val);
+        load_non_array_non_character_pointers(x.m_right, ASRUtils::expr_type(x.m_right), right_val);
         llvm::Value *zero, *cond;
         if (ASRUtils::is_integer(*x.m_type)) {
             int a_kind = down_cast<ASR::Integer_t>(x.m_type)->m_kind;
@@ -17202,11 +17322,17 @@ public:
             return;
         }
         lookup_enum_value_for_nonints = true;
-        this->visit_expr_wrapper(x.m_left, true);
+        this->visit_expr_load_wrapper(x.m_left,
+            LLVM::is_llvm_pointer(*expr_type(x.m_left)) ? 2 : 1,
+            true);
         llvm::Value *left_val = tmp;
-        this->visit_expr_wrapper(x.m_right, true);
+        this->visit_expr_load_wrapper(x.m_right,
+            LLVM::is_llvm_pointer(*expr_type(x.m_right)) ? 2 : 1,
+            true);
         llvm::Value *right_val = tmp;
         lookup_enum_value_for_nonints = false;
+        load_non_array_non_character_pointers(x.m_left, ASRUtils::expr_type(x.m_left), left_val);
+        load_non_array_non_character_pointers(x.m_right, ASRUtils::expr_type(x.m_right), right_val);
         LCOMPILERS_ASSERT(ASRUtils::is_real(*x.m_type))
         if (ASRUtils::is_simd_array(x.m_right) && is_a<ASR::Var_t>(*x.m_right)) {
             llvm::Type *right_type = llvm_utils->get_type_from_ttype_t_util(x.m_right, ASRUtils::expr_type(x.m_right), module.get());
@@ -21157,6 +21283,7 @@ public:
         llvm::Value *access_val{}, *access_len{};
         llvm::Value *name_val{}, *name_len{};
         llvm::Value *blank_val{}, *blank_len{};
+        llvm::Value *delim_val{}, *delim_len{};
         llvm::Value *recl{}, *number{};
         llvm::Value *named{}, *sequential{}, *sequential_len{};
         llvm::Value *direct{}, *direct_len{};
@@ -21317,6 +21444,16 @@ public:
         } else {
             blank_val = llvm::Constant::getNullValue(character_type);
             blank_len = llvm::ConstantInt::get(context, llvm::APInt(64, 0));
+        }
+        if (x.m_delim) {
+            this->visit_expr_load_wrapper(x.m_delim, 0);
+            std::tie(delim_val, delim_len) =
+                llvm_utils->get_string_length_data(
+                    ASRUtils::get_string_type(x.m_delim),
+                    tmp);
+        } else {
+            delim_val = llvm::Constant::getNullValue(character_type);
+            delim_len = llvm::ConstantInt::get(context, llvm::APInt(64, 0));
         }
         if (x.m_recl) {
             int ptr_loads_copy = ptr_loads;
@@ -21643,7 +21780,8 @@ public:
                         llvm::Type::getInt1Ty(context)->getPointerTo(),    // pending
                         character_type, llvm::Type::getInt64Ty(context),    // asynchronous_data, asynchronous_len
                         character_type, llvm::Type::getInt64Ty(context),   // action_data, action_len
-                        character_type, llvm::Type::getInt64Ty(context)    // position_data, position_len
+                        character_type, llvm::Type::getInt64Ty(context),    // position_data, position_len
+                        character_type, llvm::Type::getInt64Ty(context)    // delim_data, delim_len
                     }, false);
             fn = llvm::Function::Create(function_type,
                     llvm::Function::ExternalLinkage, runtime_func_name, module.get());
@@ -21675,7 +21813,8 @@ public:
             pending_val,
             asynchronous_val, asynchronous_len,
             action_val, action_len,
-            position_val, position_len});
+            position_val, position_len,
+            delim_val, delim_len});
         if (exist_actual) {
             llvm::Value *loaded = llvm_utils->CreateLoad2(
                 llvm::Type::getInt1Ty(context), exist_val);
@@ -22908,7 +23047,38 @@ public:
         };
         std::vector<BufferArgInfo> buffer_arg_infos;
 
+        // Track decomposed struct member buffers for write-back
+        // after kernel launch.
+        struct StructMemberWriteBack {
+            llvm::Value *flat_buf;     // flat data buffer
+            std::vector<llvm::Value*> data_ptrs; // original member data ptrs
+            std::vector<llvm::Value*> sizes;     // per-element sizes
+            int elem_byte_size;        // size of one element in bytes
+            int64_t total_elements;    // number of struct array elements
+            bool vla_sized;            // true if sized from VLA analysis
+            // Descriptor info for allocating unallocated members
+            llvm::Type *desc_type;
+            llvm::Type *arr_llvm;
+            llvm::Type *struct_llvm;
+            llvm::Value *arg_val;
+            int field_idx;
+        };
+        std::vector<StructMemberWriteBack> struct_writebacks;
+        // Map "arr.member" -> first element's size (LLVM value)
+        // for VLA workspace allocation of function-call result temps.
+        std::map<std::string, llvm::Value*> struct_member_first_sizes;
+
         int buffer_idx = 0;
+
+        // Pre-compute VLA workspace analysis and struct member write sizes
+        // so that unallocated struct members can be sized correctly.
+        std::vector<GpuVlaWorkspace> gpu_vla_workspaces =
+            analyze_gpu_vla_workspaces(*kernel_func);
+        std::map<std::string, int64_t> struct_member_vla_sizes =
+            find_struct_member_vla_write_sizes(
+                *kernel_func, gpu_vla_workspaces);
+        std::map<std::string, std::string> struct_member_runtime_sources =
+            find_struct_member_vla_runtime_sources(*kernel_func);
 
         for (size_t i = 0; i < x.n_args; i++) {
             ASR::expr_t *arg_expr = x.m_args[i].m_value;
@@ -23182,7 +23352,40 @@ public:
                                         ASR::down_cast<ASR::Integer_t>(
                                             mem_arr->m_type)->m_kind;
                                 }
-                                // Collect data ptrs and sizes
+                                // Collect data ptrs and sizes.
+                                // Look up VLA write size for this member
+                                // (non-zero when the kernel writes to an
+                                // unallocated allocatable member).
+                                std::string arr_var_name(
+                                    arr_var->m_name);
+                                std::string sm_key =
+                                    arr_var_name + "."
+                                    + st->m_members[m];
+                                int64_t vla_member_sz = 0;
+                                {
+                                    auto vit =
+                                        struct_member_vla_sizes.find(
+                                            sm_key);
+                                    if (vit !=
+                                            struct_member_vla_sizes.end())
+                                        vla_member_sz = vit->second;
+                                }
+                                // Check for runtime-sourced allocation
+                                // (target member sized from another
+                                // struct's member at runtime).
+                                bool runtime_sourced = false;
+                                std::string runtime_src_key;
+                                if (vla_member_sz == 0) {
+                                    auto rit =
+                                        struct_member_runtime_sources
+                                            .find(sm_key);
+                                    if (rit !=
+                                            struct_member_runtime_sources
+                                                .end()) {
+                                        runtime_src_key = rit->second;
+                                        runtime_sourced = true;
+                                    }
+                                }
                                 std::vector<llvm::Value*> dps, szs;
                                 llvm::Value *tot =
                                     llvm::ConstantInt::get(i64, 0);
@@ -23215,16 +23418,188 @@ public:
                                             dpp);
                                     raw = builder->CreatePointerCast(
                                         raw, i8_ptr);
-                                    dps.push_back(raw);
-                                    llvm::Value *ne =
-                                        arr_descr->get_array_size(
-                                            desc_type, dp, nullptr, 4);
-                                    llvm::Value *ne64 =
-                                        builder->CreateSExtOrTrunc(
-                                            ne, i64);
-                                    szs.push_back(ne64);
+                                    if (vla_member_sz > 0) {
+                                        // Kernel writes to this member.
+                                        // The descriptor pointer in the
+                                        // struct may be garbage (member
+                                        // not yet allocated). Allocate
+                                        // a fresh descriptor and data
+                                        // buffer, and update the struct
+                                        // field so the descriptor is
+                                        // valid.
+                                        llvm::Value *ne64 =
+                                            llvm::ConstantInt::get(
+                                                i64, vla_member_sz);
+                                        szs.push_back(ne64);
+                                        // Allocate descriptor on heap
+                                        uint64_t desc_sz =
+                                            module->getDataLayout()
+                                                .getTypeAllocSize(
+                                                    desc_type);
+                                        llvm::FunctionType *mft2 =
+                                            llvm::FunctionType::get(
+                                                i8_ptr, {i64}, false);
+                                        llvm::Function *mfn2 =
+                                            get_gpu_runtime_func(
+                                                "malloc", mft2);
+                                        llvm::Value *desc_mem =
+                                            builder->CreateCall(mfn2,
+                                                {llvm::ConstantInt::get(
+                                                    i64, desc_sz)});
+                                        llvm::Value *new_desc =
+                                            builder->CreatePointerCast(
+                                                desc_mem,
+                                                desc_type
+                                                    ->getPointerTo());
+                                        // Store descriptor ptr in
+                                        // struct field
+                                        builder->CreateStore(
+                                            new_desc, fp);
+                                        // Initialize descriptor
+                                        arr_descr
+                                            ->fill_dimension_descriptor(
+                                                desc_type, new_desc, 1);
+                                        // Allocate data buffer
+                                        llvm::Value *alloc_bytes =
+                                            llvm::ConstantInt::get(
+                                                i64,
+                                                vla_member_sz * me_size);
+                                        llvm::Value *new_dp =
+                                            builder->CreateCall(
+                                                mfn2, {alloc_bytes});
+                                        // Set data pointer in
+                                        // descriptor
+                                        llvm::Value *new_dpp =
+                                            arr_descr
+                                                ->get_pointer_to_data(
+                                                    desc_type,
+                                                    new_desc);
+                                        builder->CreateStore(
+                                            builder->CreatePointerCast(
+                                                new_dp,
+                                                mem_el_llvm
+                                                    ->getPointerTo()),
+                                            new_dpp);
+                                        // Set dimension extent
+                                        llvm::Value *dim_des_arr =
+                                            arr_descr
+                                                ->get_pointer_to_dimension_descriptor_array(
+                                                    desc_type,
+                                                    new_desc);
+                                        llvm::Value *dim0 =
+                                            arr_descr
+                                                ->get_pointer_to_dimension_descriptor(
+                                                    dim_des_arr,
+                                                    llvm::ConstantInt::get(
+                                                        i32, 0));
+                                        llvm::Value *extent_ptr =
+                                            arr_descr
+                                                ->get_dimension_size(
+                                                    dim0, false);
+                                        builder->CreateStore(
+                                            builder->CreateSExtOrTrunc(
+                                                ne64,
+                                                llvm::Type::getInt64Ty(
+                                                    context)),
+                                            extent_ptr);
+                                        dps.push_back(new_dp);
+                                    } else if (runtime_sourced) {
+                                        // Size determined at runtime from
+                                        // another struct member (e.g.,
+                                        // b(i)%v sized from a(i)%v).
+                                        auto sit =
+                                            struct_member_first_sizes
+                                                .find(runtime_src_key);
+                                        llvm::Value *ne64;
+                                        if (sit !=
+                                                struct_member_first_sizes
+                                                    .end()) {
+                                            ne64 =
+                                                builder->CreateSExtOrTrunc(
+                                                    sit->second, i64);
+                                        } else {
+                                            ne64 =
+                                                llvm::ConstantInt::get(
+                                                    i64, 1);
+                                        }
+                                        szs.push_back(ne64);
+                                        uint64_t desc_sz =
+                                            module->getDataLayout()
+                                                .getTypeAllocSize(
+                                                    desc_type);
+                                        llvm::FunctionType *mft2 =
+                                            llvm::FunctionType::get(
+                                                i8_ptr, {i64}, false);
+                                        llvm::Function *mfn2 =
+                                            get_gpu_runtime_func(
+                                                "malloc", mft2);
+                                        llvm::Value *desc_mem =
+                                            builder->CreateCall(mfn2,
+                                                {llvm::ConstantInt::get(
+                                                    i64, desc_sz)});
+                                        llvm::Value *new_desc =
+                                            builder->CreatePointerCast(
+                                                desc_mem,
+                                                desc_type
+                                                    ->getPointerTo());
+                                        builder->CreateStore(
+                                            new_desc, fp);
+                                        arr_descr
+                                            ->fill_dimension_descriptor(
+                                                desc_type, new_desc, 1);
+                                        llvm::Value *alloc_bytes =
+                                            builder->CreateMul(ne64,
+                                                llvm::ConstantInt::get(
+                                                    i64, me_size));
+                                        llvm::Value *new_dp =
+                                            builder->CreateCall(
+                                                mfn2, {alloc_bytes});
+                                        llvm::Value *new_dpp =
+                                            arr_descr
+                                                ->get_pointer_to_data(
+                                                    desc_type,
+                                                    new_desc);
+                                        builder->CreateStore(
+                                            builder->CreatePointerCast(
+                                                new_dp,
+                                                mem_el_llvm
+                                                    ->getPointerTo()),
+                                            new_dpp);
+                                        llvm::Value *dim_des_arr =
+                                            arr_descr
+                                                ->get_pointer_to_dimension_descriptor_array(
+                                                    desc_type,
+                                                    new_desc);
+                                        llvm::Value *dim0 =
+                                            arr_descr
+                                                ->get_pointer_to_dimension_descriptor(
+                                                    dim_des_arr,
+                                                    llvm::ConstantInt::get(
+                                                        i32, 0));
+                                        llvm::Value *extent_ptr =
+                                            arr_descr
+                                                ->get_dimension_size(
+                                                    dim0, false);
+                                        builder->CreateStore(
+                                            builder->CreateSExtOrTrunc(
+                                                ne64,
+                                                llvm::Type::getInt64Ty(
+                                                    context)),
+                                            extent_ptr);
+                                        dps.push_back(new_dp);
+                                    } else {
+                                        llvm::Value *ne =
+                                            arr_descr->get_array_size(
+                                                desc_type, dp,
+                                                nullptr, 4);
+                                        llvm::Value *ne64 =
+                                            builder->CreateSExtOrTrunc(
+                                                ne, i64);
+                                        szs.push_back(ne64);
+                                        dps.push_back(raw);
+                                    }
                                     tot = builder->CreateAdd(
-                                        tot, ne64);
+                                        tot, szs.back());
                                 }
                                 // Allocate flat data buffer
                                 llvm::Value *tot_bytes =
@@ -23278,16 +23653,40 @@ public:
                                             llvm::Type::getInt8Ty(
                                                 context),
                                             flat, boff);
-                                    llvm::Value *sb =
-                                        builder->CreateMul(szs[k],
-                                            llvm::ConstantInt::get(
-                                                i64, me_size));
-                                    builder->CreateMemCpy(
-                                        dst,
-                                        llvm::MaybeAlign(1),
-                                        dps[k],
-                                        llvm::MaybeAlign(1),
-                                        sb);
+                                    // Only copy existing data when
+                                    // members were not VLA-sized
+                                    // (VLA-sized members were freshly
+                                    // allocated for write-back).
+                                    if (vla_member_sz == 0
+                                            && !runtime_sourced) {
+                                        llvm::Value *sb =
+                                            builder->CreateMul(
+                                                szs[k],
+                                                llvm::ConstantInt::get(
+                                                    i64, me_size));
+                                        builder->CreateMemCpy(
+                                            dst,
+                                            llvm::MaybeAlign(1),
+                                            dps[k],
+                                            llvm::MaybeAlign(1),
+                                            sb);
+                                    } else {
+                                        // Copy pre-existing data if
+                                        // the member was allocated.
+                                        // The new dps[k] always points
+                                        // to a valid buffer.
+                                        llvm::Value *sb =
+                                            builder->CreateMul(
+                                                szs[k],
+                                                llvm::ConstantInt::get(
+                                                    i64, me_size));
+                                        builder->CreateMemCpy(
+                                            dst,
+                                            llvm::MaybeAlign(1),
+                                            dps[k],
+                                            llvm::MaybeAlign(1),
+                                            sb);
+                                    }
                                     run = builder->CreateAdd(
                                         run, szs[k]);
                                 }
@@ -23320,6 +23719,25 @@ public:
                                                 i32, k)));
                                 }
                                 emit_gpu_buffer(sz_buf, off_sz);
+                                // Record write-back info for copying
+                                // data from the flat buffer back to
+                                // struct member descriptors after
+                                // kernel launch.
+                                struct_writebacks.push_back(
+                                    {flat, dps, szs, me_size,
+                                     total_elements,
+                                     vla_member_sz > 0
+                                         || runtime_sourced,
+                                     desc_type, arr_llvm,
+                                     struct_llvm, arg_val,
+                                     field_idx});
+                                // Save first element's size for VLA
+                                // workspace allocation of function-call
+                                // result temps that depend on this member.
+                                if (!szs.empty()) {
+                                    struct_member_first_sizes[sm_key] =
+                                        szs[0];
+                                }
                                 field_idx++;
                             }
                         }
@@ -23948,8 +24366,7 @@ public:
         // buffer parameter.  Here we allocate host-side memory for those
         // buffers, pass them to the kernel, and free them after launch.
         std::vector<llvm::Value*> vla_workspace_ptrs;
-        std::vector<GpuVlaWorkspace> gpu_vla_workspaces =
-            analyze_gpu_vla_workspaces(*kernel_func);
+        // gpu_vla_workspaces was computed earlier for struct member sizing
         if (!gpu_vla_workspaces.empty()) {
             // Evaluate grid/block sizes to know the total thread count
             this->visit_expr(*x.m_grid_size);
@@ -23973,6 +24390,17 @@ public:
                         per_thread_elems = builder->CreateMul(
                             per_thread_elems,
                             llvm::ConstantInt::get(i64, dim.constant_value));
+                    } else if (dim.is_struct_member_size) {
+                        // Read size from the struct member's first
+                        // element size, saved during decomposition.
+                        auto sit = struct_member_first_sizes.find(
+                            dim.struct_member_key);
+                        if (sit != struct_member_first_sizes.end()) {
+                            per_thread_elems = builder->CreateMul(
+                                per_thread_elems,
+                                builder->CreateIntCast(
+                                    sit->second, i64, true));
+                        }
                     } else {
                         llvm::Value *dim_val =
                             call_arg_values[dim.call_arg_index];
@@ -24051,6 +24479,36 @@ public:
             llvm::Function *free_packed_fn =
                 get_gpu_runtime_func("free", free_packed_ft);
             builder->CreateCall(free_packed_fn, {packed_buf_ptr});
+        }
+
+        // 5c. Write back decomposed struct member buffers.
+        // After kernel execution, copy data from the flat buffer
+        // back to the original struct member array descriptors.
+        for (auto &wb : struct_writebacks) {
+            llvm::Value *run_wb =
+                llvm::ConstantInt::get(i64, 0);
+            for (int64_t k = 0;
+                    k < wb.total_elements; k++) {
+                llvm::Value *boff_wb =
+                    builder->CreateMul(run_wb,
+                        llvm::ConstantInt::get(
+                            i64, wb.elem_byte_size));
+                llvm::Value *src_wb =
+                    builder->CreateGEP(
+                        llvm::Type::getInt8Ty(context),
+                        wb.flat_buf, boff_wb);
+                llvm::Value *sb_wb =
+                    builder->CreateMul(wb.sizes[k],
+                        llvm::ConstantInt::get(
+                            i64, wb.elem_byte_size));
+                builder->CreateMemCpy(
+                    wb.data_ptrs[k],
+                    llvm::MaybeAlign(1),
+                    src_wb, llvm::MaybeAlign(1),
+                    sb_wb);
+                run_wb = builder->CreateAdd(
+                    run_wb, wb.sizes[k]);
+            }
         }
 
         // 6. Free VLA workspace buffers allocated in step 4b
@@ -24842,6 +25300,9 @@ public:
                                  ASR::is_a<ASR::ComplexIm_t>(*x.m_args[i].m_value)) &&
                                 value->getType()->isPointerTy() ) {
                         use_value = true;
+                    } else if (ASR::is_a<ASR::GetPointer_t>(*x.m_args[i].m_value) &&
+                               value->getType()->isPointerTy()) {
+                        use_value = true;
                     }
                     if (use_value) {
                         tmp = value;
@@ -25622,6 +26083,10 @@ public:
                         n_elems, llvm::Type::getInt64Ty(context));
                     dest_data_ptr = llvm_utils->consolidate_char_descriptors(
                         src_data_ptr, n_elems_i64);
+                    llvm::Value* consolidated_flat_buf = llvm_utils->CreateLoad2(
+                        character_type,
+                        llvm_utils->create_gep2(string_descriptor, dest_data_ptr, 0));
+                    heap_fixed_size_arrays.push_back(al, consolidated_flat_buf);
                 }
 
                 llvm::Type* expected_data_ptr_type = dest_data_type->getPointerTo();
@@ -25747,11 +26212,17 @@ public:
     }
 
     void generate_fma(ASR::call_arg_t* m_args) {
-        this->visit_expr_wrapper(m_args[0].m_value, true);
+        this->visit_expr_load_wrapper(m_args[0].m_value,
+            LLVM::is_llvm_pointer(*expr_type(m_args[0].m_value)) ? 2 : 1,
+            true);
         llvm::Value* a = tmp;
-        this->visit_expr_wrapper(m_args[1].m_value, true);
+        this->visit_expr_load_wrapper(m_args[1].m_value,
+            LLVM::is_llvm_pointer(*expr_type(m_args[1].m_value)) ? 2 : 1,
+            true);
         llvm::Value* b = tmp;
-        this->visit_expr_wrapper(m_args[2].m_value, true);
+        this->visit_expr_load_wrapper(m_args[2].m_value,
+            LLVM::is_llvm_pointer(*expr_type(m_args[2].m_value)) ? 2 : 1,
+            true);
         llvm::Value* c = tmp;
 #if LLVM_VERSION_MAJOR >= 8
         tmp = builder->CreateIntrinsic(llvm::Intrinsic::fma,
@@ -28373,7 +28844,9 @@ Result<std::unique_ptr<LLVMModule>> asr_to_llvm(ASR::TranslationUnit_t &asr,
     // std::cout << LCompilers::pickle(asr, true, false, false) << std::endl;
 
     // GPU Metal: generate Metal shader source after passes have created GpuKernelFunction nodes
-    if (co.gpu_backend == "metal" && co.gpu_metal_source.empty()) {
+    // Always regenerate for each translation unit so that separate compilation
+    // picks up the correct kernel names for every file.
+    if (co.gpu_backend == "metal") {
         diag::Diagnostics metal_diag;
         Result<std::string> metal_res = asr_to_metal(al, asr, metal_diag, co);
         if (metal_res.ok) {

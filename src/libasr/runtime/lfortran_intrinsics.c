@@ -5345,10 +5345,18 @@ struct UNIT_FILE unit_to_file[MAXUNITS];
 static int32_t seq_char_pending[MAXUNITS];
 static int32_t seq_char_record_len[MAXUNITS];
 
+// Pending list-directed null-repeat state per unit.
+static int32_t lf_list_dir_null_remaining[MAXUNITS];
+
 static inline void seq_char_state_reset(int32_t unit_num) {
     if (unit_num < 0 || unit_num >= MAXUNITS) return;
     seq_char_pending[unit_num] = 0;
     seq_char_record_len[unit_num] = 0;
+}
+
+static inline void list_dir_state_reset(int32_t unit_num) {
+    if (unit_num < 0 || unit_num >= MAXUNITS) return;
+    lf_list_dir_null_remaining[unit_num] = 0;
 }
 
 // Pre-connect standard Fortran units at program startup.
@@ -5427,6 +5435,7 @@ static int32_t count_newlines_up_to(FILE *fp, long end_pos) {
 void store_unit_file(int32_t unit_num, char* filename, FILE* filep, bool unit_file_bin, int access_id, bool read_access, bool write_access, int delim, bool blank_zero, int32_t record_length, int sign_mode, int decimal_mode, int encoding, int round_mode, int pad_mode) {
     _lfortran_init_standard_units();
     seq_char_state_reset(unit_num);
+    list_dir_state_reset(unit_num);
     for( int i = 0; i <= last_index_used; i++ ) {
         if( unit_to_file[i].unit == unit_num ) {
             // Update existing entry - only update filename if explicitly provided (not NULL)
@@ -5521,6 +5530,7 @@ char* get_file_name_from_unit(int32_t unit_num, bool *unit_file_bin) {
 
 void remove_from_unit_to_file(int32_t unit_num) {
     seq_char_state_reset(unit_num);
+    list_dir_state_reset(unit_num);
     int index = -1;
     for( int i = 0; i <= last_index_used; i++ ) {
         if( unit_to_file[i].unit == unit_num ) {
@@ -6287,20 +6297,27 @@ LFORTRAN_API void _lfortran_inquire(const fchar* f_name_data, int64_t f_name_len
         }
         
         fp = get_file_pointer_from_unit(u_num, &unit_file_bin, &access_id, &read_access, &write_access, &delim_mode, &blank_zero, &unit_recl, &sign_mode, &decimal_mode, &encoding_mode, &round_mode_val, &pad_mode);
+        bool is_connected = (u_num != -1 && fp != NULL);
         if (write != NULL) {
-            if (write_access) {
+            if (!is_connected) {
+                _lfortran_copy_str_and_pad(write, write_len, "UNKNOWN", 7);
+            } else if (write_access) {
                 _lfortran_copy_str_and_pad(write, write_len, "YES", 3);
             } else {
                 _lfortran_copy_str_and_pad(write, write_len, "NO", 2);
             }
         } if (read != NULL) {
-            if (read_access) {
+            if (!is_connected) {
+                _lfortran_copy_str_and_pad(read, read_len, "UNKNOWN", 7);
+            } else if (read_access) {
                 _lfortran_copy_str_and_pad(read, read_len, "YES", 3);
             } else {
                 _lfortran_copy_str_and_pad(read, read_len, "NO", 2);
             }
         } if (readwrite != NULL) {
-            if (read_access && write_access) {
+            if (!is_connected) {
+                _lfortran_copy_str_and_pad(readwrite, readwrite_len, "UNKNOWN", 7);
+            } else if (read_access && write_access) {
                 _lfortran_copy_str_and_pad(readwrite, readwrite_len, "YES", 3);
             } else {
                 _lfortran_copy_str_and_pad(readwrite, readwrite_len, "NO", 2);
@@ -6318,8 +6335,7 @@ LFORTRAN_API void _lfortran_inquire(const fchar* f_name_data, int64_t f_name_len
             _lfortran_copy_str_and_pad(access, access_len, access_str, strlen(access_str));
         }
         if (blank != NULL) {
-            // For formatted files only
-            if (unit_file_bin) {
+            if (!is_connected || unit_file_bin) {
                 _lfortran_copy_str_and_pad(blank, blank_len, "UNDEFINED", 9);
             } else {
                 if (blank_zero) {
@@ -6330,7 +6346,7 @@ LFORTRAN_API void _lfortran_inquire(const fchar* f_name_data, int64_t f_name_len
             }
         }
         if (delim != NULL) {
-            if (unit_file_bin) {
+            if (!is_connected || unit_file_bin) {
                 _lfortran_copy_str_and_pad(delim, delim_len, "UNDEFINED", 9);
             } else if (delim_mode == 1) {
                 _lfortran_copy_str_and_pad(delim, delim_len, "APOSTROPHE", 10);
@@ -6341,7 +6357,9 @@ LFORTRAN_API void _lfortran_inquire(const fchar* f_name_data, int64_t f_name_len
             }
         }
         if (pad != NULL) {
-            if (unit_file_bin || u_num == -1) {
+            if (!is_connected) {
+                _lfortran_copy_str_and_pad(pad, pad_len, "UNDEFINED", 9);
+            } else if (unit_file_bin) {
                 _lfortran_copy_str_and_pad(pad, pad_len, "UNDEFINED", 9);
             } else {
                 if (pad_mode == 0) {
@@ -6373,39 +6391,55 @@ LFORTRAN_API void _lfortran_inquire(const fchar* f_name_data, int64_t f_name_len
             *size = ftell(fp);
             fseek(fp, current_pos, SEEK_SET);
         }
-        if (recl != NULL && access_id == 2) {
-            *recl = unit_recl;
+        if (recl != NULL) {
+            if (access_id == 1) {
+                *recl = -2;
+            } else if (access_id == 2) {
+                *recl = unit_recl;
+            } else {
+                *recl = -1;
+            }
         }
         if (sequential != NULL) {
-            if (access_id == 0) {
+            if (!is_connected) {
+                _lfortran_copy_str_and_pad(sequential, sequential_len, "UNKNOWN", 7);
+            } else if (access_id == 0) {
                 _lfortran_copy_str_and_pad(sequential, sequential_len, "YES", 3);
             } else {
                 _lfortran_copy_str_and_pad(sequential, sequential_len, "NO", 2);
             }
         }
         if (direct != NULL) {
-            if (access_id == 2) {
+            if (!is_connected) {
+                _lfortran_copy_str_and_pad(direct, direct_len, "UNKNOWN", 7);
+            } else if (access_id == 2) {
                 _lfortran_copy_str_and_pad(direct, direct_len, "YES", 3);
             } else {
                 _lfortran_copy_str_and_pad(direct, direct_len, "NO", 2);
             }
         }
         if (form != NULL) {
-            if (unit_file_bin) {
+            if (!is_connected) {
+                _lfortran_copy_str_and_pad(form, form_len, "UNDEFINED", 9);
+            } else if (unit_file_bin) {
                 _lfortran_copy_str_and_pad(form, form_len, "UNFORMATTED", 11);
             } else {
                 _lfortran_copy_str_and_pad(form, form_len, "FORMATTED", 9);
             }
         }
         if (formatted != NULL) {
-            if (!unit_file_bin) {
+            if (!is_connected) {
+                _lfortran_copy_str_and_pad(formatted, formatted_len, "UNKNOWN", 7);
+            } else if (!unit_file_bin) {
                 _lfortran_copy_str_and_pad(formatted, formatted_len, "YES", 3);
             } else {
                 _lfortran_copy_str_and_pad(formatted, formatted_len, "NO", 2);
             }
         }
         if (unformatted != NULL) {
-            if (unit_file_bin) {
+            if (!is_connected) {
+                _lfortran_copy_str_and_pad(unformatted, unformatted_len, "UNKNOWN", 7);
+            } else if (unit_file_bin) {
                 _lfortran_copy_str_and_pad(unformatted, unformatted_len, "YES", 3);
             } else {
                 _lfortran_copy_str_and_pad(unformatted, unformatted_len, "NO", 2);
@@ -6429,7 +6463,7 @@ LFORTRAN_API void _lfortran_inquire(const fchar* f_name_data, int64_t f_name_len
             }
         }
         if (sign != NULL) {
-            if (unit_file_bin || u_num == -1) {
+            if (!is_connected) {
                 _lfortran_copy_str_and_pad(sign, sign_len, "UNDEFINED", 9);
             } else {
                 if (sign_mode == 1) {
@@ -6442,12 +6476,12 @@ LFORTRAN_API void _lfortran_inquire(const fchar* f_name_data, int64_t f_name_len
             }
         }
         if (encoding != NULL) {
-            if (unit_file_bin || u_num == -1) {
+            if (!is_connected) {
+                _lfortran_copy_str_and_pad(encoding, encoding_len, "UNKNOWN", 7);
+            } else if (unit_file_bin) {
                 _lfortran_copy_str_and_pad(encoding, encoding_len, "UNDEFINED", 9);
             } else {
-                if (encoding_mode == 0) {
-                    _lfortran_copy_str_and_pad(encoding, encoding_len, "UNKNOWN", 7);
-                } else if (encoding_mode == 1) {
+                if (encoding_mode == 1) {
                     _lfortran_copy_str_and_pad(encoding, encoding_len, "UTF-8", 5);
                 } else {
                     _lfortran_copy_str_and_pad(encoding, encoding_len, "DEFAULT", 7);
@@ -6455,14 +6489,16 @@ LFORTRAN_API void _lfortran_inquire(const fchar* f_name_data, int64_t f_name_len
             }
         }
         if (stream != NULL) {
-            if (access_id == 1) {
+            if (!is_connected) {
+                _lfortran_copy_str_and_pad(stream, stream_len, "UNKNOWN", 7);
+            } else if (access_id == 1) {
                 _lfortran_copy_str_and_pad(stream, stream_len, "YES", 3);
             } else {
                 _lfortran_copy_str_and_pad(stream, stream_len, "NO", 2);
             }
         }
         if (round != NULL) {
-            if (unit_file_bin || u_num == -1) {
+            if (!is_connected) {
                 _lfortran_copy_str_and_pad(round, round_len, "UNDEFINED", 9);
             } else {
                 if (round_mode_val == 1) {
@@ -6484,14 +6520,20 @@ LFORTRAN_API void _lfortran_inquire(const fchar* f_name_data, int64_t f_name_len
             *pending = false;
         }
         if (asynchronous != NULL) {
-            _lfortran_copy_str_and_pad(asynchronous, asynchronous_len, "NO", 2);
+            if (!is_connected) {
+                _lfortran_copy_str_and_pad(asynchronous, asynchronous_len, "UNDEFINED", 9);
+            } else {
+                _lfortran_copy_str_and_pad(asynchronous, asynchronous_len, "NO", 2);
+            }
         }
         if (iostat != NULL) {
             *iostat = 0;
             // iomsg is left unchanged on success per Fortran standard
         }
         if (action != NULL) {
-            if (read_access && write_access) {
+            if (!is_connected) {
+                _lfortran_copy_str_and_pad(action, action_len, "UNDEFINED", 9);
+            } else if (read_access && write_access) {
                 _lfortran_copy_str_and_pad(action, action_len, "READWRITE", 9);
             } else if (read_access) {
                 _lfortran_copy_str_and_pad(action, action_len, "READ", 4);
@@ -6502,7 +6544,7 @@ LFORTRAN_API void _lfortran_inquire(const fchar* f_name_data, int64_t f_name_len
             }
         }
         if (position != NULL) {
-            if (fp == NULL) {
+            if (fp == NULL || access_id == 2) {
                 _lfortran_copy_str_and_pad(position, position_len, "UNDEFINED", 9);
             } else {
                 long current_pos = ftell(fp);
@@ -6548,22 +6590,33 @@ LFORTRAN_API void _lfortran_inquire(const fchar* f_name_data, int64_t f_name_len
             }
         }
         if (number != NULL) {
-            *number = unit_num;
+            if (fp != NULL) {
+                *number = unit_num;
+            } else {
+                *number = -1;
+            }
         }
+        bool is_connected = (fp != NULL);
         if (write != NULL) {
-            if (write_access) {
+            if (!is_connected) {
+                _lfortran_copy_str_and_pad(write, write_len, "UNKNOWN", 7);
+            } else if (write_access) {
                 _lfortran_copy_str_and_pad(write, write_len, "YES", 3);
             } else {
                 _lfortran_copy_str_and_pad(write, write_len, "NO", 2);
             }
         } if (read != NULL) {
-            if (read_access) {
+            if (!is_connected) {
+                _lfortran_copy_str_and_pad(read, read_len, "UNKNOWN", 7);
+            } else if (read_access) {
                 _lfortran_copy_str_and_pad(read, read_len, "YES", 3);
             } else {
                 _lfortran_copy_str_and_pad(read, read_len, "NO", 2);
             }
         } if (readwrite != NULL) {
-            if (read_access && write_access) {
+            if (!is_connected) {
+                _lfortran_copy_str_and_pad(readwrite, readwrite_len, "UNKNOWN", 7);
+            } else if (read_access && write_access) {
                 _lfortran_copy_str_and_pad(readwrite, readwrite_len, "YES", 3);
             } else {
                 _lfortran_copy_str_and_pad(readwrite, readwrite_len, "NO", 2);
@@ -6583,18 +6636,24 @@ LFORTRAN_API void _lfortran_inquire(const fchar* f_name_data, int64_t f_name_len
         if (name != NULL) {
             bool dummy_unit_file_bin;
             char *unit_name = get_file_name_from_unit(unit_num, &dummy_unit_file_bin);
-            if (unit_name != NULL) {
-                _lfortran_copy_str_and_pad(name, name_len, unit_name, strlen(unit_name));
+            if (!is_connected) {
+                if (named != NULL) {
+                    *named = false;
+                }
             } else {
-                _lfortran_copy_str_and_pad(name, name_len, "", 0);
-            }
-            if (named != NULL) {
-                *named = (unit_name != NULL);
+                if (unit_name != NULL) {
+                    _lfortran_copy_str_and_pad(name, name_len, unit_name, strlen(unit_name));
+                } else {
+                    _lfortran_copy_str_and_pad(name, name_len, "", 0);
+                }
+                if (named != NULL) {
+                    *named = (unit_name != NULL);
+                }
             }
         }
         if (blank != NULL) {
             // For formatted files only
-            if (unit_file_bin) {
+            if (unit_file_bin || fp == NULL) {
                 _lfortran_copy_str_and_pad(blank, blank_len, "UNDEFINED", 9);
             } else {
                 if (blank_zero) {
@@ -6658,6 +6717,9 @@ LFORTRAN_API void _lfortran_inquire(const fchar* f_name_data, int64_t f_name_len
             }
         }
         if (sequential != NULL) {
+            if (!is_connected) {
+                _lfortran_copy_str_and_pad(sequential, sequential_len, "UNKNOWN", 7);
+             } else
             if (access_id == 0) {
                 _lfortran_copy_str_and_pad(sequential, sequential_len, "YES", 3);
             } else {
@@ -6665,28 +6727,36 @@ LFORTRAN_API void _lfortran_inquire(const fchar* f_name_data, int64_t f_name_len
             }
         }
         if (direct != NULL) {
-            if (access_id == 2) {
+            if (!is_connected) {
+                _lfortran_copy_str_and_pad(direct, direct_len, "UNKNOWN", 7);
+            } else if (access_id == 2) {
                 _lfortran_copy_str_and_pad(direct, direct_len, "YES", 3);
             } else {
                 _lfortran_copy_str_and_pad(direct, direct_len, "NO", 2);
             }
         }
         if (form != NULL) {
-            if (unit_file_bin) {
+            if (fp == NULL) {
+                _lfortran_copy_str_and_pad(form, form_len, "UNDEFINED", 9);
+            } else if (unit_file_bin) {
                 _lfortran_copy_str_and_pad(form, form_len, "UNFORMATTED", 11);
             } else {
                 _lfortran_copy_str_and_pad(form, form_len, "FORMATTED", 9);
             }
         }
         if (formatted != NULL) {
-            if (!unit_file_bin) {
+            if (fp == NULL) {
+                _lfortran_copy_str_and_pad(formatted, formatted_len, "UNKNOWN", 7);
+            } else if (!unit_file_bin) {
                 _lfortran_copy_str_and_pad(formatted, formatted_len, "YES", 3);
             } else {
                 _lfortran_copy_str_and_pad(formatted, formatted_len, "NO", 2);
             }
         }
         if (unformatted != NULL) {
-            if (unit_file_bin) {
+            if (fp == NULL) {
+                _lfortran_copy_str_and_pad(unformatted, unformatted_len, "UNKNOWN", 7);
+            } else if (unit_file_bin) {
                 _lfortran_copy_str_and_pad(unformatted, unformatted_len, "YES", 3);
             } else {
                 _lfortran_copy_str_and_pad(unformatted, unformatted_len, "NO", 2);
@@ -6709,7 +6779,7 @@ LFORTRAN_API void _lfortran_inquire(const fchar* f_name_data, int64_t f_name_len
             }
         }
         if (sign != NULL) {
-            if (unit_file_bin || fp == NULL) {
+            if (!is_connected) {
                 _lfortran_copy_str_and_pad(sign, sign_len, "UNDEFINED", 9);
             } else {
                 if (sign_mode == 1) {
@@ -6722,12 +6792,12 @@ LFORTRAN_API void _lfortran_inquire(const fchar* f_name_data, int64_t f_name_len
             }
         }
         if (encoding != NULL) {
-            if (unit_file_bin || fp == NULL) {
+            if (!is_connected) {
+                _lfortran_copy_str_and_pad(encoding, encoding_len, "UNKNOWN", 7);
+            } else if (unit_file_bin) {
                 _lfortran_copy_str_and_pad(encoding, encoding_len, "UNDEFINED", 9);
             } else {
-                if (encoding_mode == 0) {
-                    _lfortran_copy_str_and_pad(encoding, encoding_len, "UNKNOWN", 7);
-                } else if (encoding_mode == 1) {
+                if (encoding_mode == 1) {
                     _lfortran_copy_str_and_pad(encoding, encoding_len, "UTF-8", 5);
                 } else {
                     _lfortran_copy_str_and_pad(encoding, encoding_len, "DEFAULT", 7);
@@ -6735,6 +6805,9 @@ LFORTRAN_API void _lfortran_inquire(const fchar* f_name_data, int64_t f_name_len
             }
         }
         if (stream != NULL) {
+            if (fp == NULL) {
+                _lfortran_copy_str_and_pad(stream, stream_len, "UNKNOWN", 7);
+             } else
             if (access_id == 1) {
                 _lfortran_copy_str_and_pad(stream, stream_len, "YES", 3);
             } else {
@@ -6742,7 +6815,7 @@ LFORTRAN_API void _lfortran_inquire(const fchar* f_name_data, int64_t f_name_len
             }
         }
         if (round != NULL) {
-            if (unit_file_bin || fp == NULL) {
+            if (!is_connected) {
                 _lfortran_copy_str_and_pad(round, round_len, "UNDEFINED", 9);
             } else {
                 if (round_mode_val == 1) {
@@ -6764,14 +6837,20 @@ LFORTRAN_API void _lfortran_inquire(const fchar* f_name_data, int64_t f_name_len
             *pending = false;
         }
         if (asynchronous != NULL) {
-            _lfortran_copy_str_and_pad(asynchronous, asynchronous_len, "NO", 2);
+            if (!fp) {
+                _lfortran_copy_str_and_pad(asynchronous, asynchronous_len, "UNDEFINED", 9);
+            } else {
+                _lfortran_copy_str_and_pad(asynchronous, asynchronous_len, "NO", 2);
+            }
         }
         if (iostat != NULL) {
             *iostat = 0;
             // iomsg is left unchanged on success per Fortran standard
         }
         if (action != NULL) {
-            if (read_access && write_access) {
+            if (!is_connected) {
+                _lfortran_copy_str_and_pad(action, action_len, "UNDEFINED", 9);
+            } else if (read_access && write_access) {
                 _lfortran_copy_str_and_pad(action, action_len, "READWRITE", 9);
             } else if (read_access) {
                 _lfortran_copy_str_and_pad(action, action_len, "READ", 4);
@@ -6782,7 +6861,7 @@ LFORTRAN_API void _lfortran_inquire(const fchar* f_name_data, int64_t f_name_len
             }
         }
         if (position != NULL) {
-            if (fp == NULL) {
+            if (fp == NULL || access_id == 2) {
                 _lfortran_copy_str_and_pad(position, position_len, "UNDEFINED", 9);
             } else {
                 long current_pos = ftell(fp);
@@ -6818,6 +6897,7 @@ LFORTRAN_API void _lfortran_rewind(int32_t unit_num)
     }
     rewind(filep);
     seq_char_state_reset(unit_num);
+    list_dir_state_reset(unit_num);
 }
 
 LFORTRAN_API void _lfortran_endfile(int32_t unit_num)
@@ -6964,6 +7044,31 @@ static void skip_list_directed_comma(FILE *filep) {
     if (c != EOF) ungetc(c, filep);
 }
 
+static int list_directed_check_null_repeat(int32_t unit_num) {
+    if (unit_num >= 0 && unit_num < MAXUNITS
+            && lf_list_dir_null_remaining[unit_num] > 0) {
+        lf_list_dir_null_remaining[unit_num]--;
+        return 1;
+    }
+    return 0;
+}
+
+// Detect "n*" null-repeat token (digits + star + nothing after).
+static int list_directed_parse_null_repeat(const char *token) {
+    int i = 0;
+    while (token[i] >= '0' && token[i] <= '9') i++;
+    if (i == 0 || token[i] != '*' || token[i+1] != '\0') return 0;
+    return atoi(token);
+}
+
+// Consume an optional trailing comma (the separator after a value).
+// This positions the stream so the next read call sees the start of its value.
+static void skip_trailing_comma(FILE *filep) {
+    int c;
+    while ((c = fgetc(filep)) != EOF && (c == ' ' || c == '\t')) {}
+    if (c == ',') return; // consumed
+    if (c != EOF) ungetc(c, filep); // not a comma, push back
+}
 static bool read_next_nonblank_stdin_line(char *buffer, size_t bufsize, int32_t *iostat)
 {
     while (true) {
@@ -7336,7 +7441,11 @@ LFORTRAN_API void _lfortran_read_logical(bool *p, int32_t unit_num, int32_t *ios
         } while (c != EOF && !isspace(c) && c != ',' && c != '/');
         
         token[len] = '\0';
-        if (c != EOF) ungetc(c, filep);
+        if (c == ',') {
+            // Consume trailing separator so the next read starts at the next value.
+        } else if (c != EOF) {
+            ungetc(c, filep);
+        }
         
         // Check token
         char *check_ptr = token;
@@ -7983,18 +8092,17 @@ static int parse_fortran_double(const char* buffer, double* result) {
 // Read a complete complex number expression from file, handling whitespace
 // within parentheses. Fortran list-directed format allows arbitrary whitespace
 // inside (real, imag) format, e.g., "( 0.1000E+01, 0.2000E+01)".
-// Returns 1 on success, 0 on failure (EOF or error).
+// Returns: 1 = success, 0 = EOF/error, -1 = null value
 static int read_complex_expr(FILE *filep, char *buffer, size_t bufsize) {
     int ch;
     size_t i = 0;
-
-    // Skip leading whitespace
     while ((ch = fgetc(filep)) != EOF && isspace(ch));
-
     if (ch == EOF) return 0;
-
+    // Leading comma = null value
+    if (ch == ',') {
+        return -1;
+    }
     if (ch == '(') {
-        // Read the entire parenthesized expression
         buffer[i++] = (char)ch;
         while (i < bufsize - 1 && (ch = fgetc(filep)) != EOF) {
             buffer[i++] = (char)ch;
@@ -8003,14 +8111,13 @@ static int read_complex_expr(FILE *filep, char *buffer, size_t bufsize) {
         buffer[i] = '\0';
         return (ch == ')') ? 1 : 0;
     } else {
-        // Not a parenthesized expression, read as whitespace-delimited token
         buffer[i++] = (char)ch;
-        while (i < bufsize - 1 && (ch = fgetc(filep)) != EOF && !isspace(ch)) {
+        while (i < bufsize - 1 && (ch = fgetc(filep)) != EOF && !isspace(ch) && ch != ',') {
             buffer[i++] = (char)ch;
         }
         buffer[i] = '\0';
-        // Push back the whitespace character if we read one
-        if (ch != EOF && isspace(ch)) {
+        // Don't ungetc the comma - it's consumed as trailing separator
+        if (ch != EOF && ch != ',') {
             ungetc(ch, filep);
         }
         return 1;
@@ -8062,43 +8169,49 @@ LFORTRAN_API void _lfortran_read_float(float *p, int32_t unit_num, int32_t *iost
             exit(1);
         }
     } else {
+        if (list_directed_check_null_repeat(unit_num)) {
+            return;
+        }
         int c;
         while ((c = fgetc(filep)) != EOF && isspace(c)) {}
-        
         if (c == EOF) {
              if (iostat) { *iostat = feof(filep) ? -1 : 1; return; }
              fprintf(stderr, "Error: Invalid float input from file (EOF).\n");
              exit(1);
         }
-        
         if (c == ',') {
-             while ((c = fgetc(filep)) != EOF && isspace(c)) {}
-             if (c == EOF) {
-                  if (iostat) { *iostat = feof(filep) ? -1 : 1; return; }
-                  fprintf(stderr, "Error: Invalid float input from file (EOF).\n");
-                  exit(1);
-             }
+            return;
         }
-        
-        if (c == ',' || c == '/') {
-             ungetc(c, filep);
-             return; 
+        if (c == '/') {
+            ungetc(c, filep);
+            return;
         }
-        
         char buffer[100];
         int len = 0;
         do {
             if (len < 99) buffer[len++] = (char)c;
             c = fgetc(filep);
         } while (c != EOF && !isspace(c) && c != ',' && c != '/');
-        
         buffer[len] = '\0';
-        if (c != EOF) ungetc(c, filep);
-
+        if (c == ',') {
+            // trailing comma consumed
+        } else if (c != EOF) {
+            ungetc(c, filep);
+        }
+        int null_count = list_directed_parse_null_repeat(buffer);
+        if (null_count > 0) {
+            if (unit_num >= 0 && unit_num < MAXUNITS) {
+                lf_list_dir_null_remaining[unit_num] = null_count - 1;
+            }
+            return;
+        }
         if (!parse_fortran_float(buffer, p)) {
             if (iostat) { *iostat = 1; return; }
             fprintf(stderr, "Error: Invalid input from file.\n");
             exit(1);
+        }
+        if (c != ',') {
+            skip_trailing_comma(filep);
         }
     }
 }
@@ -8136,11 +8249,25 @@ LFORTRAN_API void _lfortran_read_complex_float(struct _lfortran_complex_32 *p, i
             exit(1);
         }
     } else {
+        if (list_directed_check_null_repeat(unit_num)) {
+            return;
+        }
         char buffer[200];
-        if (!read_complex_expr(filep, buffer, sizeof(buffer))) {
+        int rc = read_complex_expr(filep, buffer, sizeof(buffer));
+        if (rc == -1) {
+            return; // null value
+        }
+        if (rc == 0) {
             if (iostat) { *iostat = feof(filep) ? -1 : 1; return; }
             fprintf(stderr, "Error: Invalid input for complex float from file.\n");
             exit(1);
+        }
+        int null_count = list_directed_parse_null_repeat(buffer);
+        if (null_count > 0) {
+            if (unit_num >= 0 && unit_num < MAXUNITS) {
+                lf_list_dir_null_remaining[unit_num] = null_count - 1;
+            }
+            return;
         }
         convert_fortran_d_exponent(buffer);
         char *start = strchr(buffer, '(');
@@ -8165,7 +8292,6 @@ LFORTRAN_API void _lfortran_read_complex_float(struct _lfortran_complex_32 *p, i
                 exit(1);
             }
         } else {
-            // No parentheses: treat as two whitespace-separated numbers
             p->re = strtof(buffer, NULL);
             if (fscanf(filep, "%f", &p->im) != 1) {
                 if (iostat) { *iostat = feof(filep) ? -1 : 1; return; }
@@ -8173,6 +8299,8 @@ LFORTRAN_API void _lfortran_read_complex_float(struct _lfortran_complex_32 *p, i
                 exit(1);
             }
         }
+        // Consume trailing comma
+        skip_trailing_comma(filep);
     }
 }
 
@@ -8209,11 +8337,25 @@ LFORTRAN_API void _lfortran_read_complex_double(struct _lfortran_complex_64 *p, 
             exit(1);
         }
     } else {
+        if (list_directed_check_null_repeat(unit_num)) {
+            return;
+        }
         char buffer[200];
-        if (!read_complex_expr(filep, buffer, sizeof(buffer))) {
+        int rc = read_complex_expr(filep, buffer, sizeof(buffer));
+        if (rc == -1) {
+            return;
+        }
+        if (rc == 0) {
             if (iostat) { *iostat = feof(filep) ? -1 : 1; return; }
             fprintf(stderr, "Error: Invalid input for complex double from file.\n");
             exit(1);
+        }
+        int null_count = list_directed_parse_null_repeat(buffer);
+        if (null_count > 0) {
+            if (unit_num >= 0 && unit_num < MAXUNITS) {
+                lf_list_dir_null_remaining[unit_num] = null_count - 1;
+            }
+            return;
         }
         convert_fortran_d_exponent(buffer);
         char *start = strchr(buffer, '(');
@@ -8238,7 +8380,6 @@ LFORTRAN_API void _lfortran_read_complex_double(struct _lfortran_complex_64 *p, 
                 exit(1);
             }
         } else {
-            // No parentheses: treat as two whitespace-separated numbers
             p->re = strtod(buffer, NULL);
             if (fscanf(filep, "%lf", &p->im) != 1) {
                 if (iostat) { *iostat = feof(filep) ? -1 : 1; return; }
@@ -8246,6 +8387,7 @@ LFORTRAN_API void _lfortran_read_complex_double(struct _lfortran_complex_64 *p, 
                 exit(1);
             }
         }
+        skip_trailing_comma(filep);
     }
 }
 
@@ -8669,18 +8811,51 @@ LFORTRAN_API void _lfortran_read_double(double *p, int32_t unit_num, int32_t *io
             exit(1);
         }
     } else {
-        // Read as string to handle Fortran D exponent notation
-        char buffer[100];
-        if (fscanf(filep, " %99[^ ,\t\n\r]", buffer) != 1) {
+        if (list_directed_check_null_repeat(unit_num)) {
+            return;
+        }
+        int c;
+        while ((c = fgetc(filep)) != EOF && isspace(c)) {}
+        if (c == EOF) {
             if (iostat) { *iostat = feof(filep) ? -1 : 1; return; }
             fprintf(stderr, "Error: Failed to read double from file.\n");
             exit(1);
         }
-        skip_list_directed_comma(filep);
+        // Leading comma = null value
+        if (c == ',') {
+            return;
+        }
+        if (c == '/') {
+            ungetc(c, filep);
+            return;
+        }
+        char buffer[100];
+        int len = 0;
+        do {
+            if (len < 99) buffer[len++] = (char)c;
+            c = fgetc(filep);
+        } while (c != EOF && !isspace(c) && c != ',' && c != '/');
+        buffer[len] = '\0';
+        if (c == ',') {
+            // Trailing comma consumed (separator for next value)
+        } else if (c != EOF) {
+            ungetc(c, filep);
+        }
+        int null_count = list_directed_parse_null_repeat(buffer);
+        if (null_count > 0) {
+            if (unit_num >= 0 && unit_num < MAXUNITS) {
+                lf_list_dir_null_remaining[unit_num] = null_count - 1;
+            }
+            return;
+        }
         if (!parse_fortran_double(buffer, p)) {
             if (iostat) { *iostat = 1; return; }
             fprintf(stderr, "Error: Invalid input from file.\n");
             exit(1);
+        }
+        // If we didn't consume a trailing comma in the loop, try now
+        if (c != ',') {
+            skip_trailing_comma(filep);
         }
     }
 }
@@ -9920,7 +10095,7 @@ LFORTRAN_API void _lfortran_empty_read(int32_t unit_num, int32_t* iostat) {
 
     bool unit_file_bin;
     int access_id;
-    FILE* fp = get_file_pointer_from_unit(unit_num, &unit_file_bin, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
+    FILE* fp = get_file_pointer_from_unit(unit_num, &unit_file_bin, &access_id, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
     if (!fp) {
         fprintf(stderr, "No file found with given unit\n");
         exit(1);
@@ -9928,7 +10103,7 @@ LFORTRAN_API void _lfortran_empty_read(int32_t unit_num, int32_t* iostat) {
 
     if (!unit_file_bin) {
         // The contents of `c` are ignored
-        char c = fgetc(fp);
+        int c = fgetc(fp);
         while (c != '\n' && c != EOF) {
             c = fgetc(fp);
         }
