@@ -1,3 +1,23 @@
+if (NOT LFORTRAN_PYTHON_EXECUTABLE)
+    find_program(LFORTRAN_PYTHON_EXECUTABLE NAMES python3 python REQUIRED)
+endif()
+
+set(AST_ASDL_FILE ${CMAKE_SOURCE_DIR}/grammar/AST.asdl)
+set(AST_HEADER_FILE ${CMAKE_CURRENT_SOURCE_DIR}/ast.h)
+add_custom_command(
+    OUTPUT ${AST_HEADER_FILE}
+    COMMAND ${LFORTRAN_PYTHON_EXECUTABLE}
+        ${CMAKE_SOURCE_DIR}/src/libasr/asdl_cpp.py
+        ${AST_ASDL_FILE}
+        ${AST_HEADER_FILE}
+    DEPENDS
+        ${AST_ASDL_FILE}
+        ${CMAKE_SOURCE_DIR}/src/libasr/asdl_cpp.py
+    COMMENT "Generating src/lfortran/ast.h from grammar/AST.asdl"
+    VERBATIM
+)
+add_custom_target(generate_ast_header DEPENDS ${AST_HEADER_FILE})
+
 set(PARSER_SRC
     parser/preprocessor.cpp
     parser/tokenizer.cpp
@@ -46,6 +66,7 @@ endif()
 
 # Parser library for reuse internally
 add_library(lfortran_parser_obj OBJECT ${PARSER_SRC})
+add_dependencies(lfortran_parser_obj generate_ast_header generate_asr_header)
 target_link_libraries(lfortran_parser_obj PUBLIC lfortran_utils)
 target_include_directories(lfortran_parser_obj PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)
 target_include_directories(lfortran_parser_obj BEFORE PUBLIC ${lfortran_SOURCE_DIR}/src)
@@ -56,9 +77,11 @@ add_library(lfortran_parser $<TARGET_OBJECTS:lfortran_parser_obj> $<TARGET_OBJEC
 
 # Standalone C library for external use
 add_library(lfortran_c ${CWRAPPER_SRC})
+add_dependencies(lfortran_c generate_ast_header generate_asr_header)
 target_link_libraries(lfortran_c lfortran_parser_obj lfortran_utils)
 
 add_library(lfortran_lib STATIC ${SRC})
+add_dependencies(lfortran_lib generate_ast_header generate_asr_header)
 target_include_directories(lfortran_lib PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)
 
 configure_file(config.h.cmakein config.h @ONLY)

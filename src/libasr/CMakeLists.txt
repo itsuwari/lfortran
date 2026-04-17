@@ -2,6 +2,10 @@ cmake_minimum_required(VERSION 3.10)
 
 project(libasr)
 
+if (NOT LFORTRAN_PYTHON_EXECUTABLE)
+    find_program(LFORTRAN_PYTHON_EXECUTABLE NAMES python3 python REQUIRED)
+endif()
+
 if (NOT CMAKE_CXX_STANDARD)
     set(CMAKE_CXX_STANDARD 17
         CACHE STRING "C++ standard" FORCE)
@@ -13,6 +17,22 @@ if (NOT LFORTRAN_VERSION)
 endif ()
 
 configure_file(config.h.in ${CMAKE_CURRENT_SOURCE_DIR}/config.h)
+
+set(ASR_ASDL_FILE ${CMAKE_CURRENT_SOURCE_DIR}/ASR.asdl)
+set(ASR_HEADER_FILE ${CMAKE_CURRENT_SOURCE_DIR}/asr.h)
+add_custom_command(
+    OUTPUT ${ASR_HEADER_FILE}
+    COMMAND ${LFORTRAN_PYTHON_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/asdl_cpp.py
+        ${ASR_ASDL_FILE}
+        ${ASR_HEADER_FILE}
+    DEPENDS
+        ${ASR_ASDL_FILE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/asdl_cpp.py
+    COMMENT "Generating src/libasr/asr.h from ASR.asdl"
+    VERBATIM
+)
+add_custom_target(generate_asr_header DEPENDS ${ASR_HEADER_FILE})
 
 set(SRC
     codegen/asr_to_cpp.cpp
@@ -129,6 +149,7 @@ target_include_directories(lfortran_utils BEFORE PUBLIC ${libasr_SOURCE_DIR}/..)
 target_include_directories(lfortran_utils BEFORE PUBLIC ${libasr_BINARY_DIR}/..)
 
 add_library(asr STATIC ${SRC})
+add_dependencies(asr generate_asr_header)
 target_include_directories(asr BEFORE PUBLIC ${libasr_SOURCE_DIR}/..)
 target_include_directories(asr BEFORE PUBLIC ${libasr_BINARY_DIR}/..)
 target_link_libraries(asr lfortran_utils)

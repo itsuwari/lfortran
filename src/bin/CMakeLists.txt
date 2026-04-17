@@ -30,6 +30,7 @@ set(LFORTRAN_SRC
 )
 
 add_executable(lfortran ${LFORTRAN_SRC})
+add_dependencies(lfortran generate_ast_header generate_asr_header)
 target_include_directories(lfortran PRIVATE "tpl")
 target_link_libraries(lfortran ${LFORTRAN_LINK_LIBRARIES})
 if (LFORTRAN_STATIC_BIN)
