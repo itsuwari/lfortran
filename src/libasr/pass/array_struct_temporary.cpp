@@ -1433,6 +1433,8 @@ class ArgSimplifier: public ASR::CallReplacerOnExpressionsVisitor<ArgSimplifier>
                         x_m_args_i->m_new, x_m_args_i->m_type, nullptr));
                 }
                 x_m_args_vec.push_back(al, array_var_temporary);
+            } else if (ASR::is_a<ASR::ImpliedDoLoop_t>(*x_m_args[i])) {
+                x_m_args_vec.push_back(al, x_m_args[i]);
             } else if( ASRUtils::is_struct(*ASRUtils::expr_type(x_m_args[i])) &&
                        !ASR::is_a<ASR::Var_t>(
                             *ASRUtils::get_past_array_physical_cast(x_m_args[i])) ) {
@@ -1935,6 +1937,12 @@ class ArgSimplifier: public ASR::CallReplacerOnExpressionsVisitor<ArgSimplifier>
         xx.n_args = x_m_args.size();
     }
 
+    void visit_ImpliedDoLoop(const ASR::ImpliedDoLoop_t& /*x*/) {
+        // Keep implied-do bodies intact. Hoisting aggregate expressions out of
+        // the loop loses their dependence on the implied-do variable and breaks
+        // later codegen for array constructors.
+    }
+
     void visit_SubroutineCall(const ASR::SubroutineCall_t& x) {
         visit_Call(x, "_subroutine_call_");
         ASR::CallReplacerOnExpressionsVisitor<ArgSimplifier>::visit_SubroutineCall(x);
@@ -2262,7 +2270,12 @@ class ReplaceExprWithTemporary: public ASR::BaseExprReplacer<ReplaceExprWithTemp
     }
 
     void replace_ImpliedDoLoop(ASR::ImpliedDoLoop_t* x) {
-        replace_current_expr(x, "_implied_do_loop_");
+        // Implied-do nodes are sequence-valued even when `m_type` is the
+        // element type, so replacing them with a scalar struct temporary
+        // breaks array constructors like `[(dt(ii), ii=1, n)]` for the C
+        // backend. Keep the implied-do in place and let later lowering/codegen
+        // consume it directly.
+        (void)x;
     }
 
     void replace_ListConstant(ASR::ListConstant_t* x) {
@@ -2649,6 +2662,48 @@ class ReplaceExprWithTemporaryVisitor:
             return ;
         }
         ASR::CallReplacerOnExpressionsVisitor<ReplaceExprWithTemporaryVisitor>::visit_ArrayItem(x);
+    }
+
+    void visit_ImpliedDoLoop(const ASR::ImpliedDoLoop_t& x) {
+        // Preserve the implied-do body as-is. Replacing aggregate values inside
+        // `[(... , i = ...)]` hoists them out of the loop and breaks split-C
+        // lowering, which needs the original value expression to remain tied to
+        // the implied-do variable.
+        ASR::expr_t** current_expr_copy = current_expr;
+        current_expr = const_cast<ASR::expr_t**>(&(x.m_var));
+        call_replacer();
+        current_expr = current_expr_copy;
+        if (x.m_var && visit_expr_after_replacement) {
+            visit_expr(*x.m_var);
+        }
+
+        current_expr_copy = current_expr;
+        current_expr = const_cast<ASR::expr_t**>(&(x.m_start));
+        call_replacer();
+        current_expr = current_expr_copy;
+        if (x.m_start && visit_expr_after_replacement) {
+            visit_expr(*x.m_start);
+        }
+
+        current_expr_copy = current_expr;
+        current_expr = const_cast<ASR::expr_t**>(&(x.m_end));
+        call_replacer();
+        current_expr = current_expr_copy;
+        if (x.m_end && visit_expr_after_replacement) {
+            visit_expr(*x.m_end);
+        }
+
+        if (x.m_increment) {
+            current_expr_copy = current_expr;
+            current_expr = const_cast<ASR::expr_t**>(&(x.m_increment));
+            call_replacer();
+            current_expr = current_expr_copy;
+            if (x.m_increment && visit_expr_after_replacement) {
+                visit_expr(*x.m_increment);
+            }
+        }
+
+        visit_ttype(*x.m_type);
     }
 
     void visit_Assignment(const ASR::Assignment_t &x) {

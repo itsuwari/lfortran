@@ -625,6 +625,35 @@ R"(
 
         std::vector<ASR::Function_t*> functions =
             get_complete_function_definitions(x.m_symtab);
+        SymbolTable *current_scope_copy = current_scope;
+        current_scope = x.m_symtab;
+        std::map<std::string, std::vector<std::string>> struct_dep_graph;
+        for (auto &item : x.m_symtab->get_scope()) {
+            if (ASR::is_a<ASR::Struct_t>(*item.second)
+                    || ASR::is_a<ASR::Enum_t>(*item.second)
+                    || ASR::is_a<ASR::Union_t>(*item.second)) {
+                std::vector<std::string> struct_deps_vec;
+                std::pair<char**, size_t> struct_deps_ptr =
+                    ASRUtils::symbol_dependencies(item.second);
+                for (size_t i = 0; i < struct_deps_ptr.second; i++) {
+                    struct_deps_vec.push_back(std::string(struct_deps_ptr.first[i]));
+                }
+                struct_dep_graph[item.first] = struct_deps_vec;
+            }
+        }
+        std::vector<std::string> struct_deps = ASRUtils::order_deps(struct_dep_graph);
+        for (const auto &item : struct_deps) {
+            ASR::symbol_t *struct_sym = x.m_symtab->get_symbol(item);
+            if (struct_sym == nullptr) {
+                continue;
+            }
+            if (!(ASR::is_a<ASR::Struct_t>(*struct_sym)
+                    || ASR::is_a<ASR::Enum_t>(*struct_sym)
+                    || ASR::is_a<ASR::Union_t>(*struct_sym))) {
+                continue;
+            }
+            visit_symbol(*struct_sym);
+        }
         auto emit_function_unit = [&](ASR::Function_t *fn) {
             visit_Function(*fn);
             if (!src.empty()) {
@@ -678,6 +707,7 @@ R"(
                 units.push_back(std::move(unit));
             }
         }
+        current_scope = current_scope_copy;
         return units;
     }
 
@@ -5203,10 +5233,148 @@ R"(    // Initialise Numpy
         headers.insert("stdarg.h");
 
         ASR::ttype_t* array_type_asr = x.m_type;
+        ASR::ttype_t* element_type_asr = ASRUtils::type_get_past_array(array_type_asr);
         std::string array_type_name = CUtils::get_c_array_element_type_from_ttype_t(array_type_asr);
         std::string array_encoded_type_name = CUtils::get_c_array_type_code(array_type_asr, true, true);
         std::string return_type = c_ds_api->get_array_type(
             array_type_name, array_encoded_type_name, array_types_decls, false);
+
+        bool has_implied_do = false;
+        for (size_t i = 0; i < x.n_args; i++) {
+            if (ASR::is_a<ASR::ImpliedDoLoop_t>(*x.m_args[i])) {
+                has_implied_do = true;
+                break;
+            }
+        }
+
+        if (is_c && has_implied_do) {
+            auto indent_at = [&](int level) -> std::string {
+                return std::string(level * indentation_spaces, ' ');
+            };
+            auto visit_expr_at_level = [&](ASR::expr_t *expr, int level,
+                                           std::string &setup, std::string &value) {
+                int old_indentation_level = indentation_level;
+                indentation_level = level;
+                this->visit_expr(*expr);
+                value = src;
+                setup = check_tmp_buffer();
+                indentation_level = old_indentation_level;
+            };
+
+            std::string array_var_name =
+                get_unique_local_name("__libasr_created__array_constructor");
+            std::string array_value_name = array_var_name + "_value";
+            std::string count_name = array_var_name + "__count";
+            std::string index_name = array_var_name + "__index";
+            bool element_needs_null_init =
+                ASRUtils::is_character(*ASRUtils::type_get_past_allocatable_pointer(element_type_asr));
+
+            std::function<void(ASR::expr_t **, size_t, int, std::string&)> emit_count;
+            std::function<void(ASR::expr_t **, size_t, int, std::string&)> emit_fill;
+
+            emit_count = [&](ASR::expr_t **values, size_t n_values, int level, std::string &code) {
+                for (size_t i = 0; i < n_values; i++) {
+                    ASR::expr_t *value_expr = values[i];
+                    if (ASR::is_a<ASR::ImpliedDoLoop_t>(*value_expr)) {
+                        ASR::ImpliedDoLoop_t *idl = ASR::down_cast<ASR::ImpliedDoLoop_t>(value_expr);
+                        std::string loop_setup, loop_var;
+                        visit_expr_at_level(idl->m_var, level, loop_setup, loop_var);
+                        std::string start_setup, loop_start;
+                        visit_expr_at_level(idl->m_start, level, start_setup, loop_start);
+                        std::string end_setup, loop_end;
+                        visit_expr_at_level(idl->m_end, level, end_setup, loop_end);
+                        std::string inc_setup, loop_inc = "1";
+                        if (idl->m_increment != nullptr) {
+                            visit_expr_at_level(idl->m_increment, level, inc_setup, loop_inc);
+                        }
+                        std::string save_name = get_unique_local_name(loop_var + "__saved");
+                        std::string loop_var_type = CUtils::get_c_type_from_ttype_t(
+                            ASRUtils::expr_type(idl->m_var));
+                        code += loop_setup + start_setup + end_setup + inc_setup;
+                        code += indent_at(level) + loop_var_type + " " + save_name
+                            + " = " + loop_var + ";\n";
+                        code += indent_at(level) + "for (" + loop_var + " = " + loop_start + "; "
+                            + "((" + loop_inc + ") >= 0 ? (" + loop_var + " <= " + loop_end + ") : ("
+                            + loop_var + " >= " + loop_end + ")); "
+                            + loop_var + " += " + loop_inc + ") {\n";
+                        emit_count(idl->m_values, idl->n_values, level + 1, code);
+                        code += indent_at(level) + "}\n";
+                        code += indent_at(level) + loop_var + " = " + save_name + ";\n";
+                    } else {
+                        code += indent_at(level) + count_name + " += 1;\n";
+                    }
+                }
+            };
+
+            emit_fill = [&](ASR::expr_t **values, size_t n_values, int level, std::string &code) {
+                for (size_t i = 0; i < n_values; i++) {
+                    ASR::expr_t *value_expr = values[i];
+                    if (ASR::is_a<ASR::ImpliedDoLoop_t>(*value_expr)) {
+                        ASR::ImpliedDoLoop_t *idl = ASR::down_cast<ASR::ImpliedDoLoop_t>(value_expr);
+                        std::string loop_setup, loop_var;
+                        visit_expr_at_level(idl->m_var, level, loop_setup, loop_var);
+                        std::string start_setup, loop_start;
+                        visit_expr_at_level(idl->m_start, level, start_setup, loop_start);
+                        std::string end_setup, loop_end;
+                        visit_expr_at_level(idl->m_end, level, end_setup, loop_end);
+                        std::string inc_setup, loop_inc = "1";
+                        if (idl->m_increment != nullptr) {
+                            visit_expr_at_level(idl->m_increment, level, inc_setup, loop_inc);
+                        }
+                        std::string save_name = get_unique_local_name(loop_var + "__saved");
+                        std::string loop_var_type = CUtils::get_c_type_from_ttype_t(
+                            ASRUtils::expr_type(idl->m_var));
+                        code += loop_setup + start_setup + end_setup + inc_setup;
+                        code += indent_at(level) + loop_var_type + " " + save_name
+                            + " = " + loop_var + ";\n";
+                        code += indent_at(level) + "for (" + loop_var + " = " + loop_start + "; "
+                            + "((" + loop_inc + ") >= 0 ? (" + loop_var + " <= " + loop_end + ") : ("
+                            + loop_var + " >= " + loop_end + ")); "
+                            + loop_var + " += " + loop_inc + ") {\n";
+                        emit_fill(idl->m_values, idl->n_values, level + 1, code);
+                        code += indent_at(level) + "}\n";
+                        code += indent_at(level) + loop_var + " = " + save_name + ";\n";
+                    } else {
+                        std::string value_setup, value_src;
+                        visit_expr_at_level(value_expr, level, value_setup, value_src);
+                        code += value_setup;
+                        if (element_needs_null_init) {
+                            code += indent_at(level) + array_var_name + "->data[" + index_name + "] = NULL;\n";
+                        }
+                        code += indent_at(level)
+                            + c_ds_api->get_deepcopy(
+                                element_type_asr, value_src,
+                                array_var_name + "->data[" + index_name + "]") + "\n";
+                        code += indent_at(level) + index_name + " += 1;\n";
+                    }
+                }
+            };
+
+            std::string array_setup;
+            int base_level = indentation_level;
+            std::string base_indent = indent_at(base_level);
+            array_setup += base_indent + return_type + " " + array_value_name + ";\n";
+            array_setup += base_indent + return_type + "* " + array_var_name
+                + " = &" + array_value_name + ";\n";
+            array_setup += base_indent + "int32_t " + count_name + " = 0;\n";
+            emit_count(x.m_args, x.n_args, base_level, array_setup);
+            array_setup += base_indent + array_var_name + "->data = (" + array_type_name
+                + "*) _lfortran_malloc_alloc(_lfortran_get_default_allocator(), sizeof("
+                + array_type_name + ") * " + count_name + ");\n";
+            array_setup += base_indent + array_var_name + "->n_dims = 1;\n";
+            array_setup += base_indent + array_var_name + "->offset = 0;\n";
+            array_setup += base_indent + array_var_name + "->is_allocated = true;\n";
+            array_setup += base_indent + array_var_name + "->dims[0].lower_bound = "
+                + std::to_string(lower_bound) + ";\n";
+            array_setup += base_indent + array_var_name + "->dims[0].length = " + count_name + ";\n";
+            array_setup += base_indent + array_var_name + "->dims[0].stride = 1;\n";
+            array_setup += base_indent + "int32_t " + index_name + " = 0;\n";
+            emit_fill(x.m_args, x.n_args, base_level, array_setup);
+
+            src = array_var_name;
+            tmp_buffer_src.push_back(array_setup);
+            return;
+        }
 
         std::string array_ctor = "";
         for (size_t i = 0; i < x.n_args; i++) {

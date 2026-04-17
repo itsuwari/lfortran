@@ -6199,6 +6199,13 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             }
         }
         out += "}";
+        if (is_c) {
+            std::string concrete_type = get_c_concrete_type_from_ttype_t(x.m_type, x.m_dt_sym);
+            if (!concrete_type.empty()) {
+                src = "(" + concrete_type + ")" + out;
+                return;
+            }
+        }
         src = out;
     }
 
@@ -6230,6 +6237,13 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             }
         }
         out += "}";
+        if (is_c) {
+            std::string concrete_type = get_c_concrete_type_from_ttype_t(x.m_type, x.m_dt_sym);
+            if (!concrete_type.empty()) {
+                src = "(" + concrete_type + ")" + out;
+                return;
+            }
+        }
         src = out;
     }
 

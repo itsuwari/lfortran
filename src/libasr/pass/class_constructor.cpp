@@ -36,6 +36,12 @@ class ReplaceStructConstructor: public ASR::BaseExprReplacer<ReplaceStructConstr
             x, this, false, remove_original_statement, result_vec, false,
         ASR::cast_kindType::IntegerToInteger, nullptr, realloc_lhs);
     }
+
+    void replace_ImpliedDoLoop(ASR::ImpliedDoLoop_t* x) {
+        // Keep implied-do bodies intact so later passes can lower array
+        // constructors with the correct element target/index context.
+        (void)x;
+    }
 };
 
 class StructConstructorVisitor : public ASR::CallReplacerOnExpressionsVisitor<StructConstructorVisitor>
@@ -115,6 +121,50 @@ class StructConstructorVisitor : public ASR::CallReplacerOnExpressionsVisitor<St
             if( !remove_original_statement ) {
                 this->visit_expr(*x.m_value);
             }
+        }
+
+        void visit_ImpliedDoLoop(const ASR::ImpliedDoLoop_t &x) {
+            // Preserve struct constructors inside implied-do bodies. Those
+            // constructors are lowered correctly later by `array_op`, which
+            // keeps the array element target/index context intact. Expanding
+            // them here uses the outer assignment target and drops the implied-do
+            // indexing for array constructors like `[(dt(ii), ii=1, n)]`.
+            ASR::expr_t** current_expr_copy = current_expr;
+
+            current_expr = const_cast<ASR::expr_t**>(&(x.m_var));
+            this->call_replacer();
+            current_expr = current_expr_copy;
+            if (x.m_var && visit_expr_after_replacement) {
+                this->visit_expr(*x.m_var);
+            }
+
+            current_expr_copy = current_expr;
+            current_expr = const_cast<ASR::expr_t**>(&(x.m_start));
+            this->call_replacer();
+            current_expr = current_expr_copy;
+            if (x.m_start && visit_expr_after_replacement) {
+                this->visit_expr(*x.m_start);
+            }
+
+            current_expr_copy = current_expr;
+            current_expr = const_cast<ASR::expr_t**>(&(x.m_end));
+            this->call_replacer();
+            current_expr = current_expr_copy;
+            if (x.m_end && visit_expr_after_replacement) {
+                this->visit_expr(*x.m_end);
+            }
+
+            if (x.m_increment) {
+                current_expr_copy = current_expr;
+                current_expr = const_cast<ASR::expr_t**>(&(x.m_increment));
+                this->call_replacer();
+                current_expr = current_expr_copy;
+                if (x.m_increment && visit_expr_after_replacement) {
+                    this->visit_expr(*x.m_increment);
+                }
+            }
+
+            this->visit_ttype(*x.m_type);
         }
 
 };

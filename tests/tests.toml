@@ -249,6 +249,10 @@ filename = "do7.f90"
 llvm = true
 
 [[test]]
+filename = "implied_do_array_constructor_derived_type.f90"
+c = true
+
+[[test]]
 filename = "subroutine4.f90"
 ast = true
 ast_f90 = true
