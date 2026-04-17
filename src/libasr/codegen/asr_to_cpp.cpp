@@ -205,6 +205,13 @@ public:
         return typename_T + "* " + v_name;
     }
 
+    void initialize_struct_instance_members(ASR::Struct_t* /*der_type_t*/,
+        std::string& /*sub*/, std::string /*indent*/, std::string /*name*/) {
+        // The C backend materializes default-initialized struct members here.
+        // Keep the C++ backend behavior unchanged and only satisfy the shared
+        // visitor interface required by allocation lowering.
+    }
+
     std::string convert_variable_decl(const ASR::Variable_t &v, DeclarationOptions* decl_options=nullptr)
     {
         bool use_static;

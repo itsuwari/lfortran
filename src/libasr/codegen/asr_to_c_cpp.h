@@ -7344,6 +7344,12 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
 
     void visit_IntrinsicElementalFunction(const ASR::IntrinsicElementalFunction_t &x) {
         CHECK_FAST_C_CPP(compiler_options, x);
+        if (x.m_intrinsic_id == static_cast<int64_t>(
+                ASRUtils::IntrinsicElementalFunctions::CompilerVersion)) {
+            LCOMPILERS_ASSERT(x.m_value);
+            self().visit_expr(*x.m_value);
+            return;
+        }
         std::string out;
         std::string indent(4, ' ');
         switch (x.m_intrinsic_id) {
