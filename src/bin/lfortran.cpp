@@ -1902,8 +1902,23 @@ int compile_to_object_file_c(const std::string &infile,
         }
 
         if (object_files.empty()) {
-            std::cerr << "Split C emission produced no object files for `" << infile << "`." << std::endl;
-            return 11;
+            fs::path empty_src = split_dir / (project_name + "_empty.c");
+            {
+                std::ofstream out(empty_src);
+                out << "/* Header-only split C package: emit an empty object. */\n";
+            }
+            std::string cmd = CC
+                + " -o " + outfile
+                + " -c " + empty_src.string();
+            if (verbose) {
+                std::cout << cmd << std::endl;
+            }
+            int err = system(cmd.c_str());
+            if (err) {
+                std::cout << "The command '" + cmd + "' failed." << std::endl;
+                return 11;
+            }
+            return 0;
         }
 
         if (object_files.size() == 1) {

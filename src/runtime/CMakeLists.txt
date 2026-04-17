@@ -30,7 +30,7 @@ macro(lfortran_compile_runtime name dir)
     OBJECT_DEPENDS "${LFORTRAN_COMPILER_STAMP}"
     )
   add_library(${name} OBJECT ${dir}/${name}.f90)
-  target_compile_options(${name} PUBLIC "--backend=cpp")
+  target_compile_options(${name} PUBLIC "--backend=c")
   set_target_properties(${name} PROPERTIES
     POSITION_INDEPENDENT_CODE False
     Fortran_PREPROCESS False)
