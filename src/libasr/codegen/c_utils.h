@@ -128,6 +128,56 @@ namespace CUtils {
         return result;
     }
 
+    static inline std::string get_split_local_symbol_suffix() {
+        if (::lcompilers_unique_ID_separate_compilation.empty()) {
+            return "";
+        }
+        return "__" + sanitize_c_identifier(::lcompilers_unique_ID_separate_compilation);
+    }
+
+    static inline bool is_intrinsic_module_symbol(const ASR::symbol_t *sym) {
+        sym = ASRUtils::symbol_get_past_external(const_cast<ASR::symbol_t*>(sym));
+        if (sym == nullptr) {
+            return false;
+        }
+        const SymbolTable *scope = ASRUtils::symbol_parent_symtab(sym);
+        while (scope && scope->asr_owner) {
+            const ASR::symbol_t *owner_sym = get_symbol_owner(scope->asr_owner);
+            if (owner_sym == nullptr) {
+                scope = scope->parent;
+                continue;
+            }
+            if (ASR::is_a<ASR::Module_t>(*owner_sym)
+                    && ASR::down_cast<ASR::Module_t>(owner_sym)->m_intrinsic) {
+                return true;
+            }
+            scope = scope->parent;
+        }
+        return false;
+    }
+
+    static inline bool is_translation_unit_local_helper_symbol(const ASR::symbol_t *sym) {
+        sym = ASRUtils::symbol_get_past_external(const_cast<ASR::symbol_t*>(sym));
+        if (sym == nullptr) {
+            return false;
+        }
+        std::string name = ASRUtils::symbol_name(sym);
+        return startswith(name, "_lcompilers_");
+    }
+
+    static inline bool uses_split_local_link_name(const ASR::symbol_t *sym) {
+        return !get_split_local_symbol_suffix().empty()
+            && (is_intrinsic_module_symbol(sym)
+                || is_translation_unit_local_helper_symbol(sym));
+    }
+
+    static inline bool uses_split_local_link_name(
+            const std::string &scoped_name) {
+        return !get_split_local_symbol_suffix().empty()
+            && (startswith(scoped_name, "lfortran_intrinsic_")
+                || startswith(scoped_name, "_lcompilers_"));
+    }
+
     static inline bool is_standard_c_runtime_function(const std::string &name) {
         static const std::set<std::string> c_runtime_functions = {
             "strlen", "strcmp", "strncmp", "strcpy", "strncpy",
@@ -179,13 +229,21 @@ namespace CUtils {
             }
             scope = scope->parent;
         }
+        if (uses_split_local_link_name(sym) || uses_split_local_link_name(name)) {
+            name += get_split_local_symbol_suffix();
+        }
         return name;
     }
 
     static inline std::string get_c_variable_name(const ASR::Variable_t &v) {
         ASR::asr_t *owner = v.m_parent_symtab ? v.m_parent_symtab->asr_owner : nullptr;
         if (owner == nullptr) {
-            return sanitize_c_identifier(v.m_name);
+            std::string name = sanitize_c_identifier(v.m_name);
+            if (!get_split_local_symbol_suffix().empty()
+                    && startswith(std::string(v.m_name), "_lcompilers_")) {
+                name += get_split_local_symbol_suffix();
+            }
+            return name;
         }
         if (ASRUtils::is_arg_dummy(v.m_intent)
                 || is_symbol_owner<ASR::Function_t>(owner)

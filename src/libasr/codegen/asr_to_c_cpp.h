@@ -884,6 +884,11 @@ R"(#include <stdio.h>
             }
             scope = scope->parent;
         }
+        if (CUtils::uses_split_local_link_name(
+                    reinterpret_cast<const ASR::symbol_t*>(&x))
+                || CUtils::uses_split_local_link_name(name)) {
+            name += CUtils::get_split_local_symbol_suffix();
+        }
         std::string sym_name = "__lfortran_" + name;
         if (x.n_args > 0) {
             ASR::Variable_t *arg0 = ASRUtils::EXPR2VAR(x.m_args[0]);

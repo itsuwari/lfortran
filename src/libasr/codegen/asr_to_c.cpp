@@ -2512,6 +2512,21 @@ R"(
         namespace fs = std::filesystem;
         fs::create_directories(output_dir);
 
+        struct UniqueIdGuard {
+            std::string saved;
+            UniqueIdGuard(const std::string &replacement)
+                : saved(::lcompilers_unique_ID_separate_compilation) {
+                ::lcompilers_unique_ID_separate_compilation = replacement;
+            }
+            ~UniqueIdGuard() {
+                ::lcompilers_unique_ID_separate_compilation = saved;
+            }
+        };
+        std::ostringstream split_suffix_builder;
+        split_suffix_builder << std::hex
+            << (get_stable_string_hash(output_dir) & 0xffffffffffffffffULL);
+        UniqueIdGuard unique_id_guard(split_suffix_builder.str());
+
         is_string_concat_present = false;
         global_scope = x.m_symtab;
         LCOMPILERS_ASSERT(x.n_items == 0);
