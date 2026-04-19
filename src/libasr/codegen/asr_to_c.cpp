@@ -5146,10 +5146,55 @@ R"(    // Initialise Numpy
         setup += extract_stmt_setup_from_expr(var_name);
         std::string args = "";
         std::string result_type = CUtils::get_c_type_from_ttype_t(x.m_type);
+        ASR::expr_t *raw_array_expr = unwrap_c_lvalue_expr(x.m_v);
+        bool inline_fixed_member_array = is_c && raw_array_expr != nullptr
+            && ASR::is_a<ASR::StructInstanceMember_t>(*raw_array_expr)
+            && ASRUtils::is_fixed_size_array(ASRUtils::expr_type(raw_array_expr));
+        ASR::ttype_t *array_type = inline_fixed_member_array
+            ? ASRUtils::expr_type(raw_array_expr) : ASRUtils::expr_type(x.m_v);
+        ASR::dimension_t *m_dims = nullptr;
+        int n_dims = ASRUtils::extract_dimensions_from_ttype(array_type, m_dims);
+        auto get_fixed_dim_expr = [&](size_t dim, bool want_length) -> std::string {
+            ASR::expr_t *dim_expr = want_length ? m_dims[dim].m_length : m_dims[dim].m_start;
+            if (dim_expr == nullptr) {
+                return want_length ? "1" : "1";
+            }
+            visit_expr(*dim_expr);
+            std::string dim_src = src;
+            setup += drain_tmp_buffer();
+            setup += extract_stmt_setup_from_expr(dim_src);
+            return dim_src;
+        };
+        auto select_fixed_dim_expr = [&](bool want_length, const std::string &idx_expr) -> std::string {
+            if (n_dims <= 1) {
+                return get_fixed_dim_expr(0, want_length);
+            }
+            std::string expr = "((" + idx_expr + ") == " + std::to_string(n_dims)
+                + " ? " + get_fixed_dim_expr(n_dims - 1, want_length) + " : 1)";
+            for (int dim = n_dims - 2; dim >= 0; dim--) {
+                expr = "((" + idx_expr + ") == " + std::to_string(dim + 1)
+                    + " ? " + get_fixed_dim_expr(dim, want_length) + " : " + expr + ")";
+            }
+            return expr;
+        };
+        if (inline_fixed_member_array || (is_c && is_data_only_array_expr(x.m_v))) {
+            if (x.m_dim == nullptr) {
+                src = "((" + result_type + ") "
+                    + std::to_string(ASRUtils::get_fixed_size_of_array(array_type)) + ")";
+            } else {
+                visit_expr(*x.m_dim);
+                std::string idx = src;
+                setup += drain_tmp_buffer();
+                setup += extract_stmt_setup_from_expr(idx);
+                src = "((" + result_type + ")" + select_fixed_dim_expr(true, idx) + ")";
+            }
+            if (!setup.empty()) {
+                tmp_buffer_src.push_back(setup);
+            }
+            return;
+        }
         if (x.m_dim == nullptr) {
             std::string array_size_func = c_utils_functions->get_array_size();
-            ASR::dimension_t* m_dims = nullptr;
-            int n_dims = ASRUtils::extract_dimensions_from_ttype(ASRUtils::expr_type(x.m_v), m_dims);
             src = "((" + result_type + ") " + array_size_func + "(" + var_name + "->dims, " + std::to_string(n_dims) + "))";
         } else {
             visit_expr(*x.m_dim);
@@ -5193,10 +5238,58 @@ R"(    // Initialise Numpy
         CHECK_FAST_C(compiler_options, x)
         visit_expr(*x.m_v);
         std::string var_name = src;
+        std::string setup = drain_tmp_buffer();
+        setup += extract_stmt_setup_from_expr(var_name);
         std::string args = "";
         std::string result_type = CUtils::get_c_type_from_ttype_t(x.m_type);
+        ASR::expr_t *raw_array_expr = unwrap_c_lvalue_expr(x.m_v);
+        bool inline_fixed_member_array = is_c && raw_array_expr != nullptr
+            && ASR::is_a<ASR::StructInstanceMember_t>(*raw_array_expr)
+            && ASRUtils::is_fixed_size_array(ASRUtils::expr_type(raw_array_expr));
+        ASR::ttype_t *array_type = inline_fixed_member_array
+            ? ASRUtils::expr_type(raw_array_expr) : ASRUtils::expr_type(x.m_v);
+        ASR::dimension_t *m_dims = nullptr;
+        int n_dims = ASRUtils::extract_dimensions_from_ttype(array_type, m_dims);
+        auto get_fixed_dim_expr = [&](size_t dim, bool want_length) -> std::string {
+            ASR::expr_t *dim_expr = want_length ? m_dims[dim].m_length : m_dims[dim].m_start;
+            if (dim_expr == nullptr) {
+                return want_length ? "1" : "1";
+            }
+            visit_expr(*dim_expr);
+            std::string dim_src = src;
+            setup += drain_tmp_buffer();
+            setup += extract_stmt_setup_from_expr(dim_src);
+            return dim_src;
+        };
+        auto select_fixed_dim_expr = [&](bool want_length, const std::string &idx_expr) -> std::string {
+            if (n_dims <= 1) {
+                return get_fixed_dim_expr(0, want_length);
+            }
+            std::string expr = "((" + idx_expr + ") == " + std::to_string(n_dims)
+                + " ? " + get_fixed_dim_expr(n_dims - 1, want_length) + " : 1)";
+            for (int dim = n_dims - 2; dim >= 0; dim--) {
+                expr = "((" + idx_expr + ") == " + std::to_string(dim + 1)
+                    + " ? " + get_fixed_dim_expr(dim, want_length) + " : " + expr + ")";
+            }
+            return expr;
+        };
         visit_expr(*x.m_dim);
         std::string idx = src;
+        setup += drain_tmp_buffer();
+        setup += extract_stmt_setup_from_expr(idx);
+        if (inline_fixed_member_array || (is_c && is_data_only_array_expr(x.m_v))) {
+            std::string lower_bound = select_fixed_dim_expr(false, idx);
+            if( x.m_bound == ASR::arrayboundType::LBound ) {
+                src = "((" + result_type + ")" + lower_bound + ")";
+            } else if( x.m_bound == ASR::arrayboundType::UBound ) {
+                std::string length = select_fixed_dim_expr(true, idx);
+                src = "((" + result_type + ")(" + length + " + " + lower_bound + " - 1))";
+            }
+            if (!setup.empty()) {
+                tmp_buffer_src.push_back(setup);
+            }
+            return;
+        }
         if( x.m_bound == ASR::arrayboundType::LBound ) {
             if (ASRUtils::is_simd_array(x.m_v)) {
                 src = "0";
@@ -5213,6 +5306,9 @@ R"(    // Initialise Numpy
                 std::string upper_bound = length + " + " + lower_bound + " - 1";
                 src = "((" + result_type + ") " + upper_bound + ")";
             }
+        }
+        if (!setup.empty()) {
+            tmp_buffer_src.push_back(setup);
         }
     }
 
@@ -5336,10 +5432,21 @@ R"(    // Initialise Numpy
                     return false;
                 }
                 ASR::ttype_t *mask_type = ASRUtils::expr_type(mask_expr);
-                if (!ASRUtils::is_array(mask_type)
-                        || !ASRUtils::is_logical(
-                            *ASRUtils::type_get_past_array(mask_type))
-                        || ASRUtils::extract_n_dims_from_ttype(mask_type) != 1) {
+                mask_type = ASRUtils::type_get_past_allocatable_pointer(mask_type);
+                if (!ASRUtils::is_array(mask_type)) {
+                    return false;
+                }
+                ASR::ttype_t *mask_element_type = ASRUtils::type_get_past_array(mask_type);
+                if (mask_element_type == nullptr) {
+                    return false;
+                }
+                mask_element_type =
+                    ASRUtils::type_get_past_allocatable_pointer(mask_element_type);
+                if (!ASRUtils::is_logical(*mask_element_type)) {
+                    return false;
+                }
+                int mask_n_dims = ASRUtils::extract_n_dims_from_ttype(mask_type);
+                if (mask_n_dims > 1) {
                     return false;
                 }
 
@@ -5457,7 +5564,7 @@ R"(    // Initialise Numpy
                                 value_expr, level, value_setup, value_src)) {
                             visit_expr_at_level(value_expr, level, value_setup, value_src);
                             if (looks_like_non_expression_stmt(value_src)
-                                    && value_setup.find("__lfortran__lcompilers_count_")
+                                    && value_setup.find("__lfortran__lcompilers_count")
                                         != std::string::npos) {
                                 std::string recovered_value;
                                 if (extract_trailing_stmt_expr_from_setup(
@@ -5597,7 +5704,13 @@ R"(    // Initialise Numpy
                     index += src;
                 } else {
                     std::string current_index = "";
-                    current_index += src;
+                    if (is_data_only_array) {
+                        std::string index_src = src;
+                        std::string dim_start = get_dim_start_src(m_dims[i]);
+                        current_index += "((" + index_src + ") - (" + dim_start + "))";
+                    } else {
+                        current_index += src;
+                    }
                     for( size_t j = 0; j < i; j++ ) {
                         int64_t dim_size = 0;
                         ASRUtils::extract_value(m_dims[j].m_length, dim_size);
@@ -5698,6 +5811,46 @@ R"(    // Initialise Numpy
 
     void visit_ArraySection(const ASR::ArraySection_t &x) {
         CHECK_FAST_C(compiler_options, x)
+        if (is_c && x.n_args == 1 && is_data_only_array_expr(x.m_v)) {
+            this->visit_expr(*x.m_v);
+            std::string base_expr = src;
+            std::string setup = drain_tmp_buffer();
+            setup += extract_stmt_setup_from_expr(base_expr);
+
+            ASR::ttype_t *base_type = ASRUtils::expr_type(x.m_v);
+            ASR::dimension_t *base_dims = nullptr;
+            int n_dims = ASRUtils::extract_dimensions_from_ttype(base_type, base_dims);
+            LCOMPILERS_ASSERT(n_dims == 1);
+
+            auto get_dim_expr = [&](ASR::expr_t *expr, const std::string &fallback) -> std::string {
+                if (expr == nullptr) {
+                    return fallback;
+                }
+                this->visit_expr(*expr);
+                std::string expr_src = src;
+                setup += drain_tmp_buffer();
+                setup += extract_stmt_setup_from_expr(expr_src);
+                return expr_src;
+            };
+
+            std::string base_lb = get_dim_expr(base_dims[0].m_start, "1");
+            std::string base_len = get_dim_expr(base_dims[0].m_length, "1");
+            std::string section_lb = get_dim_expr(x.m_args[0].m_left, base_lb);
+            std::string section_ub = get_dim_expr(
+                x.m_args[0].m_right, "(" + base_lb + " + " + base_len + " - 1)");
+            std::string section_step = get_dim_expr(x.m_args[0].m_step, "1");
+
+            std::string wrapper_type = get_c_declared_array_wrapper_type_name(x.m_type);
+            src = "(&(" + wrapper_type + "){ .data = (" + base_expr + " + ((" + section_lb
+                + ") - (" + base_lb + "))), .dims = {{1, ((((" + section_ub + ") - ("
+                + section_lb + ")) / (" + section_step + ")) + 1), " + section_step
+                + "}}, .n_dims = 1, .offset = 0, .is_allocated = false })";
+            if (!setup.empty()) {
+                tmp_buffer_src.push_back(setup);
+            }
+            last_expr_precedence = 2;
+            return;
+        }
         this->visit_expr(*x.m_v);
         last_expr_precedence = 2;
     }
