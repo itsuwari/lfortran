@@ -556,6 +556,103 @@ R"(#include <stdio.h>
         return ret;
     }
 
+    std::string drain_tmp_buffer() {
+        std::string ret = "";
+        for (auto &s: tmp_buffer_src) ret += s;
+        tmp_buffer_src.clear();
+        return ret;
+    }
+
+    std::string extract_stmt_setup_from_expr(std::string &expr) {
+        std::string setup;
+        size_t expr_end = expr.find_last_not_of(" \t\r\n");
+        if (expr_end == std::string::npos) {
+            return setup;
+        }
+        size_t split_at = expr.rfind('\n', expr_end);
+        if (split_at == std::string::npos) {
+            return setup;
+        }
+        std::string trailing_expr = expr.substr(split_at + 1, expr_end - split_at);
+        size_t trailing_begin = trailing_expr.find_first_not_of(" \t\r\n");
+        if (trailing_begin == std::string::npos) {
+            return setup;
+        }
+        size_t trailing_end = trailing_expr.find_last_not_of(" \t\r\n");
+        trailing_expr = trailing_expr.substr(
+            trailing_begin, trailing_end - trailing_begin + 1);
+        if (trailing_expr.empty()) {
+            return setup;
+        }
+        setup = expr.substr(0, split_at + 1);
+        expr = trailing_expr;
+        return setup;
+    }
+
+    bool looks_like_non_expression_stmt(const std::string &expr) {
+        auto trim_ws = [](const std::string &text) -> std::string {
+            size_t begin = text.find_first_not_of(" \t\r\n");
+            if (begin == std::string::npos) {
+                return "";
+            }
+            size_t end = text.find_last_not_of(" \t\r\n");
+            return text.substr(begin, end - begin + 1);
+        };
+        std::string trimmed = trim_ws(expr);
+        if (trimmed.empty()) {
+            return false;
+        }
+        if (trimmed.find('\n') != std::string::npos) {
+            return true;
+        }
+        if (trimmed == "{" || trimmed == "}") {
+            return true;
+        }
+        if (endswith(trimmed, ";")) {
+            return true;
+        }
+        static const std::vector<std::string> stmt_prefixes = {
+            "struct ", "for ", "if ", "while ", "switch ", "return ",
+            "int ", "int32_t ", "int64_t ", "float ", "double ",
+            "bool ", "char "
+        };
+        for (const auto &prefix : stmt_prefixes) {
+            if (startswith(trimmed, prefix)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    bool extract_trailing_stmt_expr_from_setup(std::string &setup, std::string &expr) {
+        auto trim_ws = [](const std::string &text) -> std::string {
+            size_t begin = text.find_first_not_of(" \t\r\n");
+            if (begin == std::string::npos) {
+                return "";
+            }
+            size_t end = text.find_last_not_of(" \t\r\n");
+            return text.substr(begin, end - begin + 1);
+        };
+        size_t setup_end = setup.find_last_not_of(" \t\r\n");
+        if (setup_end == std::string::npos) {
+            return false;
+        }
+        size_t line_start = setup.rfind('\n', setup_end);
+        line_start = (line_start == std::string::npos) ? 0 : line_start + 1;
+        std::string candidate = trim_ws(setup.substr(line_start, setup_end - line_start + 1));
+        if (candidate.empty() || !endswith(candidate, ";")) {
+            return false;
+        }
+        candidate.pop_back();
+        candidate = trim_ws(candidate);
+        if (candidate.empty() || looks_like_non_expression_stmt(candidate)) {
+            return false;
+        }
+        setup.erase(line_start);
+        expr = candidate;
+        return true;
+    }
+
     void visit_Module(const ASR::Module_t &x) {
         if (x.m_intrinsic) {
             intrinsic_module = true;
@@ -1161,6 +1258,7 @@ R"(#include <stdio.h>
         std::vector<size_t> public_arg_positions;
         std::vector<size_t> public_indices_with_hidden_dims;
         std::string pass_suffix;
+        bool uses_specialized_hidden_dims = false;
         bool body_is_specialized = false;
         std::vector<size_t> indices;
         if (ASRUtils::is_pass_array_by_data_possible(
@@ -1170,7 +1268,7 @@ R"(#include <stdio.h>
             pass_suffix = get_pass_array_by_data_suffix(x, indices);
         } else if (get_specialized_pass_array_by_data_args(x, public_arg_positions,
                 public_indices_with_hidden_dims, pass_suffix)) {
-            body_is_specialized = true;
+            uses_specialized_hidden_dims = true;
         } else {
             return "";
         }
@@ -1224,7 +1322,7 @@ R"(#include <stdio.h>
                 std::string dim_type = compiler_options.po.descriptor_index_64
                     ? "int64_t"
                     : "int32_t";
-                bool arg_has_hidden_dims = body_is_specialized
+                bool arg_has_hidden_dims = uses_specialized_hidden_dims
                     ? std::find(public_indices_with_hidden_dims.begin(),
                         public_indices_with_hidden_dims.end(), public_i)
                         != public_indices_with_hidden_dims.end()
@@ -1233,7 +1331,7 @@ R"(#include <stdio.h>
                 if (arg_has_hidden_dims) {
                     ASR::dimension_t *dims = nullptr;
                     int n_dims = ASRUtils::extract_dimensions_from_ttype(arg->m_type, dims);
-                    if (body_is_specialized) {
+                    if (uses_specialized_hidden_dims || body_is_specialized) {
                         for (int j = 0; j < n_dims; j++) {
                             forwarded_hidden_args.back().push_back(
                                 "((" + dim_type + ")" + arg_name + "->dims[" + std::to_string(j)
@@ -2209,11 +2307,76 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         return src;
     }
 
+    bool is_c_component_array_expr(const ASR::StructInstanceMember_t &x) {
+        if (!is_c || !ASRUtils::is_array(x.m_type)) {
+            return false;
+        }
+        ASR::expr_t *base_expr = x.m_v;
+        if (base_expr != nullptr && ASR::is_a<ASR::ArrayPhysicalCast_t>(*base_expr)) {
+            base_expr = ASR::down_cast<ASR::ArrayPhysicalCast_t>(base_expr)->m_arg;
+        }
+        ASR::ttype_t *base_type = ASRUtils::type_get_past_pointer(
+            ASRUtils::type_get_past_allocatable(ASRUtils::expr_type(base_expr)));
+        if (base_type == nullptr || !ASRUtils::is_array(base_type)) {
+            return false;
+        }
+        ASR::symbol_t *member_sym = ASRUtils::symbol_get_past_external(x.m_m);
+        if (!ASR::is_a<ASR::Variable_t>(*member_sym)) {
+            return false;
+        }
+        ASR::Variable_t *member_var = ASR::down_cast<ASR::Variable_t>(member_sym);
+        return !ASRUtils::is_array(member_var->m_type);
+    }
+
+    std::string get_c_component_array_expr(const ASR::StructInstanceMember_t &x,
+            const std::string &base_expr) {
+        ASR::ttype_t *base_type = ASRUtils::type_get_past_pointer(
+            ASRUtils::type_get_past_allocatable(ASRUtils::expr_type(x.m_v)));
+        LCOMPILERS_ASSERT(base_type != nullptr && ASRUtils::is_array(base_type));
+        ASR::symbol_t *base_struct_sym = ASRUtils::symbol_get_past_external(
+            ASRUtils::get_struct_sym_from_struct_expr(x.m_v));
+        LCOMPILERS_ASSERT(base_struct_sym != nullptr);
+
+        std::string wrapper_type = get_c_declared_array_wrapper_type_name(x.m_type);
+        std::string member = CUtils::get_c_member_name(
+            ASRUtils::symbol_get_past_external(x.m_m));
+        std::string component_type = CUtils::get_c_array_element_type_from_ttype_t(x.m_type);
+        std::string base_struct_type = "struct " + CUtils::get_c_symbol_name(base_struct_sym);
+        std::string stride_multiplier = "((int32_t)(sizeof(" + base_struct_type
+            + ") / sizeof(" + component_type + ")))";
+        std::string member_offset = "((size_t)&(((" + base_struct_type
+            + "*)0)->" + member + "))";
+        std::string data_expr = "((" + component_type + "*)(((char*)(" + base_expr
+            + ")->data) + sizeof(" + base_struct_type + ")*(" + base_expr
+            + ")->offset + " + member_offset + "))";
+        std::string dims_init = "{";
+        size_t n_dims = ASRUtils::extract_n_dims_from_ttype(base_type);
+        for (size_t i = 0; i < n_dims; i++) {
+            std::string dim_idx = std::to_string(i);
+            dims_init += "{(" + base_expr + ")->dims[" + dim_idx + "].lower_bound, ("
+                + base_expr + ")->dims[" + dim_idx + "].length, ("
+                + base_expr + ")->dims[" + dim_idx + "].stride * "
+                + stride_multiplier + "}";
+            if (i + 1 < n_dims) {
+                dims_init += ", ";
+            }
+        }
+        dims_init += "}";
+        return "(&(" + wrapper_type + "){.data = " + data_expr
+            + ", .dims = " + dims_init
+            + ", .n_dims = (" + base_expr + ")->n_dims"
+            + ", .offset = 0"
+            + ", .is_allocated = false})";
+    }
+
     std::string get_struct_instance_member_expr(const ASR::StructInstanceMember_t& x,
             bool load_scalar_allocatable) {
         std::string der_expr, member;
         this->visit_expr(*x.m_v);
         der_expr = std::move(src);
+        if (is_c_component_array_expr(x)) {
+            return get_c_component_array_expr(x, der_expr);
+        }
         ASR::expr_t *base_v = unwrap_c_lvalue_expr(x.m_v);
         bool plain_aggregate_dummy_pointee =
             emits_plain_aggregate_dummy_pointee_value(base_v ? base_v : x.m_v);
@@ -3134,6 +3297,11 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             force_storage_expr_in_call_args = is_c && wants_raw_pointer_actual;
             self().visit_expr(*call_arg);
             std::string arg_src = src;
+            std::string arg_setup = drain_tmp_buffer();
+            arg_setup += extract_stmt_setup_from_expr(arg_src);
+            if (!arg_setup.empty()) {
+                tmp_buffer_src.push_back(arg_setup);
+            }
             force_storage_expr_in_call_args = saved_force_storage_expr_in_call_args;
             if (is_c && is_compiler_created_scalar_storage_temp(arg_src)) {
                 src = canonicalize_raw_pointer_actual_src(arg_src);
@@ -3458,6 +3626,11 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             force_storage_expr_in_call_args = is_c && wants_raw_pointer_actual;
             self().visit_expr(*call_arg);
             std::string arg_src = src;
+            std::string arg_setup = drain_tmp_buffer();
+            arg_setup += extract_stmt_setup_from_expr(arg_src);
+            if (!arg_setup.empty()) {
+                tmp_buffer_src.push_back(arg_setup);
+            }
             force_storage_expr_in_call_args = saved_force_storage_expr_in_call_args;
             if (is_c && is_compiler_created_scalar_storage_temp(arg_src)) {
                 src = canonicalize_raw_pointer_actual_src(arg_src);
@@ -4081,6 +4254,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         bool alloc_return_var = false;
         bool target_is_unlimited_polymorphic_storage = false;
         std::string indent(indentation_level*indentation_spaces, ' ');
+        std::string expr_setup;
         ASR::expr_t *unwrapped_target_expr = unwrap_c_lvalue_expr(x.m_target);
         if (try_emit_vector_subscript_scalar_array_assignment(x, unwrapped_target_expr)) {
             return;
@@ -4397,6 +4571,8 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             throw CodeGenError("Assignment target not implemented in C backend for ASR node type " +
                 std::to_string(static_cast<int>(x.m_target->type)), x.base.base.loc);
         }
+        expr_setup += drain_tmp_buffer();
+        expr_setup += extract_stmt_setup_from_expr(target);
         from_std_vector_helper.clear();
         if( ASR::is_a<ASR::UnionConstructor_t>(*x.m_value) ) {
             src = "";
@@ -4464,6 +4640,11 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         if (!try_emit_scalar_to_char_array_bitcast_expr(x.m_value, value)) {
             self().visit_expr(*x.m_value);
             value = src;
+        }
+        expr_setup += drain_tmp_buffer();
+        expr_setup += extract_stmt_setup_from_expr(value);
+        if (!expr_setup.empty()) {
+            tmp_buffer_src.push_back(expr_setup);
         }
         if (is_c && target_is_unlimited_polymorphic_storage) {
             src = check_tmp_buffer();
@@ -4969,6 +5150,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             std::string indent(indentation_level*indentation_spaces, ' ');
             ASR::ttype_t *target_type = ASRUtils::expr_type(x.m_target);
             ASR::ttype_t *value_type = ASRUtils::expr_type(x.m_value);
+            std::string setup;
             std::string target;
             if (ASR::is_a<ASR::Var_t>(*x.m_target)
                     && ASRUtils::is_pointer(target_type)
@@ -4987,9 +5169,13 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             } else {
                 self().visit_expr(*x.m_target);
                 target = src;
+                setup += drain_tmp_buffer();
+                setup += extract_stmt_setup_from_expr(target);
             }
             self().visit_expr(*x.m_value);
             std::string value = src;
+            setup += drain_tmp_buffer();
+            setup += extract_stmt_setup_from_expr(value);
             if (ASR::is_a<ASR::Var_t>(*x.m_value)) {
                 const ASR::symbol_t *value_sym = ASRUtils::symbol_get_past_external(
                     ASR::down_cast<ASR::Var_t>(x.m_value)->m_v);
@@ -5021,7 +5207,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 }
             }
             value = cast_c_array_wrapper_ptr_to_target_type(target_type, value_type, value);
-            src = indent + target + " = " + value + ";\n";
+            src = setup + indent + target + " = " + value + ";\n";
         }
     }
 
@@ -5902,6 +6088,92 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
     template<typename T>
     void handle_Compare(const T &x) {
         CHECK_FAST_C_CPP(compiler_options, x)
+        if (is_c
+                && T::class_type != ASR::exprType::StringCompare
+                && ASRUtils::is_array(x.m_type)
+                && ASRUtils::extract_n_dims_from_ttype(x.m_type) == 1) {
+            self().visit_expr(*x.m_left);
+            std::string left = std::move(src);
+            std::string left_setup = drain_tmp_buffer();
+            self().visit_expr(*x.m_right);
+            std::string right = std::move(src);
+            std::string right_setup = drain_tmp_buffer();
+
+            ASR::ttype_t *left_type = ASRUtils::expr_type(x.m_left);
+            ASR::ttype_t *right_type = ASRUtils::expr_type(x.m_right);
+            bool left_is_array = ASRUtils::is_array(left_type);
+            bool right_is_array = ASRUtils::is_array(right_type);
+            std::string ref_array = left_is_array ? left : right;
+            std::string result_type = get_c_declared_array_wrapper_type_name(x.m_type);
+            std::string result_value_name =
+                get_unique_local_name("__libasr_created__compare_result_value");
+            std::string result_name = result_value_name + "__ptr";
+            std::string index_name =
+                get_unique_local_name("__libasr_created__compare_result_index");
+            std::string left_index_name =
+                get_unique_local_name("__libasr_created__compare_left_index");
+            std::string right_index_name =
+                get_unique_local_name("__libasr_created__compare_right_index");
+            std::string op_str = ASRUtils::cmpop_to_str(x.m_op);
+            auto current_indent = [&]() {
+                return std::string(indentation_level * indentation_spaces, ' ');
+            };
+            auto get_array_value = [&](const std::string &array_src,
+                                       const std::string &idx_name) -> std::string {
+                return array_src + "->data[((0 + (" + array_src + "->dims[0].stride * ("
+                    + idx_name + " - " + array_src + "->dims[0].lower_bound))) + "
+                    + array_src + "->offset)]";
+            };
+
+            std::string compare_setup = left_setup + right_setup;
+            compare_setup += current_indent() + result_type + " "
+                + result_value_name + ";\n";
+            compare_setup += current_indent() + result_type + "* " + result_name + " = &"
+                + result_value_name + ";\n";
+            compare_setup += current_indent() + result_name + "->n_dims = 1;\n";
+            compare_setup += current_indent() + result_name + "->offset = 0;\n";
+            compare_setup += current_indent() + result_name + "->is_allocated = true;\n";
+            compare_setup += current_indent() + result_name + "->dims[0].lower_bound = "
+                + ref_array + "->dims[0].lower_bound;\n";
+            compare_setup += current_indent() + result_name + "->dims[0].length = "
+                + ref_array + "->dims[0].length;\n";
+            compare_setup += current_indent() + result_name + "->dims[0].stride = 1;\n";
+            compare_setup += current_indent() + result_name
+                + "->data = (bool*) _lfortran_malloc_alloc(_lfortran_get_default_allocator(), "
+                + result_name + "->dims[0].length*sizeof(bool));\n";
+            if (left_is_array) {
+                compare_setup += current_indent() + "int32_t " + left_index_name + " = "
+                    + left + "->dims[0].lower_bound;\n";
+            }
+            if (right_is_array) {
+                compare_setup += current_indent() + "int32_t " + right_index_name + " = "
+                    + right + "->dims[0].lower_bound;\n";
+            }
+            compare_setup += current_indent() + "for (int32_t " + index_name + " = "
+                + result_name + "->dims[0].lower_bound; " + index_name + " <= "
+                + result_name + "->dims[0].length + " + result_name
+                + "->dims[0].lower_bound - 1; " + index_name + "++) {\n";
+            std::string left_value = left_is_array ? get_array_value(left, left_index_name) : left;
+            std::string right_value = right_is_array ? get_array_value(right, right_index_name) : right;
+            compare_setup += current_indent() + std::string(indentation_spaces, ' ')
+                + result_name + "->data[((0 + (" + result_name
+                + "->dims[0].stride * (" + index_name + " - " + result_name
+                + "->dims[0].lower_bound))) + " + result_name + "->offset)] = "
+                + left_value + " " + op_str + " " + right_value + ";\n";
+            if (left_is_array) {
+                compare_setup += current_indent() + std::string(indentation_spaces, ' ')
+                    + left_index_name + " += 1;\n";
+            }
+            if (right_is_array) {
+                compare_setup += current_indent() + std::string(indentation_spaces, ' ')
+                    + right_index_name + " += 1;\n";
+            }
+            compare_setup += current_indent() + "}\n";
+            tmp_buffer_src.push_back(compare_setup);
+            src = result_name;
+            last_expr_precedence = 2;
+            return;
+        }
         self().visit_expr(*x.m_left);
         std::string left = std::move(src);
         int left_precedence = last_expr_precedence;

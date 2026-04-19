@@ -15,6 +15,7 @@
 #include <libasr/pass/replace_class_constructor.h>
 #include <libasr/pass/replace_array_op.h>
 #include <libasr/pass/create_subroutine_from_function.h>
+#include <libasr/pass/intrinsic_array_function_registry.h>
 
 #include <map>
 #include <set>
@@ -5141,6 +5142,8 @@ R"(    // Initialise Numpy
         CHECK_FAST_C(compiler_options, x)
         visit_expr(*x.m_v);
         std::string var_name = src;
+        std::string setup = drain_tmp_buffer();
+        setup += extract_stmt_setup_from_expr(var_name);
         std::string args = "";
         std::string result_type = CUtils::get_c_type_from_ttype_t(x.m_type);
         if (x.m_dim == nullptr) {
@@ -5151,7 +5154,12 @@ R"(    // Initialise Numpy
         } else {
             visit_expr(*x.m_dim);
             std::string idx = src;
+            setup += drain_tmp_buffer();
+            setup += extract_stmt_setup_from_expr(idx);
             src = "((" + result_type + ")" + var_name + "->dims[" + idx + "-1].length)";
+        }
+        if (!setup.empty()) {
+            tmp_buffer_src.push_back(setup);
         }
     }
 
@@ -5258,8 +5266,116 @@ R"(    // Initialise Numpy
                 indentation_level = level;
                 this->visit_expr(*expr);
                 value = src;
-                setup = check_tmp_buffer();
+                setup = drain_tmp_buffer();
+                while (true) {
+                    std::string extracted = extract_stmt_setup_from_expr(value);
+                    if (!extracted.empty()) {
+                        setup += extracted;
+                    }
+                    std::string deferred = drain_tmp_buffer();
+                    if (deferred.empty()) {
+                        break;
+                    }
+                    setup += deferred;
+                }
+                if (looks_like_non_expression_stmt(value)) {
+                    std::string recovered_expr;
+                    bool recovered_from_setup =
+                        extract_trailing_stmt_expr_from_setup(setup, recovered_expr);
+                    if (!value.empty()) {
+                        setup += value;
+                        if (!endswith(value, "\n")) {
+                            setup += "\n";
+                        }
+                    }
+                    value = recovered_expr;
+                    if (!recovered_from_setup) {
+                        value.clear();
+                        extract_trailing_stmt_expr_from_setup(setup, value);
+                    }
+                }
                 indentation_level = old_indentation_level;
+            };
+            auto try_emit_scalar_count_expr_at_level = [&](ASR::expr_t *expr, int level,
+                                                           std::string &setup,
+                                                           std::string &value) -> bool {
+                if (!is_c) {
+                    return false;
+                }
+                ASR::expr_t *mask_expr = nullptr;
+                ASR::ttype_t *result_type_asr = nullptr;
+                if (ASR::is_a<ASR::IntrinsicArrayFunction_t>(*expr)) {
+                    ASR::IntrinsicArrayFunction_t *count_expr =
+                        ASR::down_cast<ASR::IntrinsicArrayFunction_t>(expr);
+                    if (count_expr->m_arr_intrinsic_id
+                            != static_cast<int64_t>(ASRUtils::IntrinsicArrayFunctions::Count)
+                            || count_expr->n_args == 0
+                            || ASRUtils::is_array(count_expr->m_type)) {
+                        return false;
+                    }
+                    mask_expr = count_expr->m_args[0];
+                    result_type_asr = count_expr->m_type;
+                } else if (ASR::is_a<ASR::FunctionCall_t>(*expr)) {
+                    ASR::FunctionCall_t *call_expr = ASR::down_cast<ASR::FunctionCall_t>(expr);
+                    if (call_expr->n_args == 0 || ASRUtils::is_array(call_expr->m_type)) {
+                        return false;
+                    }
+                    std::string callee_name = ASRUtils::symbol_name(
+                        ASRUtils::symbol_get_past_external(call_expr->m_name));
+                    ASR::Function_t *fn = get_procedure_interface_function(call_expr->m_name);
+                    if (fn != nullptr) {
+                        callee_name = fn->m_name;
+                    }
+                    if (callee_name.find("count") == std::string::npos
+                            && callee_name.find("_lcompilers_count") == std::string::npos) {
+                        return false;
+                    }
+                    mask_expr = call_expr->m_args[0].m_value;
+                    result_type_asr = call_expr->m_type;
+                } else {
+                    return false;
+                }
+                ASR::ttype_t *mask_type = ASRUtils::expr_type(mask_expr);
+                if (!ASRUtils::is_array(mask_type)
+                        || !ASRUtils::is_logical(
+                            *ASRUtils::type_get_past_array(mask_type))
+                        || ASRUtils::extract_n_dims_from_ttype(mask_type) != 1) {
+                    return false;
+                }
+
+                std::string mask_setup;
+                std::string mask_value;
+                visit_expr_at_level(mask_expr, level, mask_setup, mask_value);
+                if (mask_value.empty()) {
+                    extract_trailing_stmt_expr_from_setup(mask_setup, mask_value);
+                }
+                if (mask_value.empty()) {
+                    return false;
+                }
+
+                std::string result_type = CUtils::get_c_type_from_ttype_t(result_type_asr);
+                std::string count_name =
+                    get_unique_local_name("__libasr_created__count_value");
+                std::string index_name =
+                    get_unique_local_name("__libasr_created__count_index");
+                std::string level_indent = indent_at(level);
+                std::string inner_indent = indent_at(level + 1);
+                std::string elem_index = "((0 + (" + mask_value + "->dims[0].stride * ("
+                    + index_name + " - " + mask_value + "->dims[0].lower_bound))) + "
+                    + mask_value + "->offset)";
+
+                setup = mask_setup;
+                setup += level_indent + result_type + " " + count_name + " = 0;\n";
+                setup += level_indent + "for (int32_t " + index_name + " = "
+                    + mask_value + "->dims[0].lower_bound; " + index_name + " <= "
+                    + mask_value + "->dims[0].length + " + mask_value
+                    + "->dims[0].lower_bound - 1; " + index_name + "++) {\n";
+                setup += inner_indent + "if (" + mask_value + "->data[" + elem_index + "]) {\n";
+                setup += indent_at(level + 2) + count_name + " += 1;\n";
+                setup += inner_indent + "}\n";
+                setup += level_indent + "}\n";
+                value = count_name;
+                return true;
             };
 
             std::string array_var_name =
@@ -5337,7 +5453,25 @@ R"(    // Initialise Numpy
                         code += indent_at(level) + loop_var + " = " + save_name + ";\n";
                     } else {
                         std::string value_setup, value_src;
-                        visit_expr_at_level(value_expr, level, value_setup, value_src);
+                        if (!try_emit_scalar_count_expr_at_level(
+                                value_expr, level, value_setup, value_src)) {
+                            visit_expr_at_level(value_expr, level, value_setup, value_src);
+                            if (looks_like_non_expression_stmt(value_src)
+                                    && value_setup.find("__lfortran__lcompilers_count_")
+                                        != std::string::npos) {
+                                std::string recovered_value;
+                                if (extract_trailing_stmt_expr_from_setup(
+                                            value_setup, recovered_value)) {
+                                    if (!value_src.empty()) {
+                                        value_setup += value_src;
+                                        if (!endswith(value_src, "\n")) {
+                                            value_setup += "\n";
+                                        }
+                                    }
+                                    value_src = recovered_value;
+                                }
+                            }
+                        }
                         code += value_setup;
                         if (element_needs_null_init) {
                             code += indent_at(level) + array_var_name + "->data[" + index_name + "] = NULL;\n";
