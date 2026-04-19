@@ -1,0 +1,13 @@
+{
+    "basename": "run-implied_do_count_component_separate_compilation_01-2e01b3f",
+    "cmd": "lfortran --no-color {infile}",
+    "infile": "tests/implied_do_count_component_separate_compilation_01.f90",
+    "infile_hash": "ce4759341b568a5400e3ed587232670eb97817fc6a121caa983dae54",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": "run-implied_do_count_component_separate_compilation_01-2e01b3f.stderr",
+    "stderr_hash": "228c1d5c337f19ed0e371df51a23762c632554020b668a17c393f756",
+    "returncode": 0
+}
