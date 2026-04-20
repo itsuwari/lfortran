@@ -1377,6 +1377,8 @@ R"(
         std::string indent(indentation_level*indentation_spaces, ' ');
         std::string type_name_copy = type_name;
         std::string original_type_name = type_name;
+        bool element_needs_null_init = original_type_name == "char *"
+            || original_type_name == "char*";
         type_name = c_ds_api->get_array_type(type_name, encoded_type_name, array_types_decls);
         std::string type_name_without_ptr = c_ds_api->get_array_type(type_name, encoded_type_name, array_types_decls, false);
         if (is_simd_array) {
@@ -1415,6 +1417,8 @@ R"(
                                                 use_ref, dummy);
                     if (!init_brace.empty()) {
                         sub += " = " + init_brace;
+                    } else if (element_needs_null_init) {
+                        sub += " = {0}";
                     }
                     sub += ";\n";
                 }
@@ -1459,6 +1463,7 @@ R"(
                         ASRUtils::type_get_past_allocatable_pointer(var->m_type));
                     if (element_type != nullptr && ASRUtils::is_character(*element_type)) {
                         std::string init_elem = init_data + "[" + init_index + "]";
+                        sub += inner_indent + v_m_name + "_data[" + loop_var + "] = NULL;\n";
                         sub += inner_indent
                             + "_lfortran_strcpy_alloc(_lfortran_get_default_allocator(), &"
                             + v_m_name + "_data[" + loop_var + "], NULL, true, true, "
@@ -1690,8 +1695,10 @@ R"(
     bool needs_null_init_for_local_pointer_like_variable(const ASR::Variable_t &v,
             ASR::ttype_t *storage_type, bool is_array, bool dummy,
             bool is_struct_type_member, bool do_not_initialize) {
+        bool is_local_or_return_var = v.m_intent == ASRUtils::intent_local
+            || v.m_intent == ASRUtils::intent_return_var;
         if (do_not_initialize || dummy || is_array || is_struct_type_member
-                || v.m_intent != ASRUtils::intent_local) {
+                || !is_local_or_return_var) {
             return false;
         }
         ASR::expr_t *init_expr = get_variable_init_value_expr(v);
@@ -2298,7 +2305,8 @@ R"(
                     bool is_fixed_size = true;
                     dims = convert_dims_c(n_dims, m_dims, v_m_type, is_fixed_size);
                     sub = format_type_c(dims, "char *", decl_name, use_ref, dummy);
-                    if(v.m_intent == ASRUtils::intent_local &&
+                    if((v.m_intent == ASRUtils::intent_local
+                            || v.m_intent == ASRUtils::intent_return_var) &&
                         !(ASR::is_a<ASR::symbol_t>(*v.m_parent_symtab->asr_owner) &&
                           ASR::is_a<ASR::Struct_t>(
                             *ASR::down_cast<ASR::symbol_t>(v.m_parent_symtab->asr_owner))) &&
@@ -2312,7 +2320,9 @@ R"(
                 std::string der_type_name = CUtils::get_c_symbol_name(v.m_type_declaration);
                 if (ASR::down_cast<ASR::StructType_t>(v_m_type)->m_is_unlimited_polymorphic) {
                     sub = format_type_c("", "void*", decl_name, false, dummy);
-                    if (v.m_intent == ASRUtils::intent_local && !do_not_initialize) {
+                    if ((v.m_intent == ASRUtils::intent_local
+                            || v.m_intent == ASRUtils::intent_return_var)
+                            && !do_not_initialize) {
                         sub += " = NULL";
                     }
                 } else if( is_array ) {

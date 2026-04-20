@@ -1,0 +1,13 @@
+{
+    "basename": "run-c_backend_string_param_array_init_01-5084a01",
+    "cmd": "lfortran --no-color {infile}",
+    "infile": "tests/c_backend_string_param_array_init_01.f90",
+    "infile_hash": "2977efa8b94e7986fa528c7276a8908fed692f05856773cc06c6b675",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": "run-c_backend_string_param_array_init_01-5084a01.stdout",
+    "stdout_hash": "51d17b7c777114691588f549eb084256fb6fc05c641289d486bf8367",
+    "stderr": "run-c_backend_string_param_array_init_01-5084a01.stderr",
+    "stderr_hash": "228c1d5c337f19ed0e371df51a23762c632554020b668a17c393f756",
+    "returncode": 0
+}
