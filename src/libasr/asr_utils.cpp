@@ -14,6 +14,8 @@
 #include <libasr/pass/intrinsic_array_function_registry.h>
 
 #include <libasr/asr_builder.h>
+#include <chrono>
+#include <thread>
 
 namespace LCompilers {
 
@@ -1360,70 +1362,103 @@ Result<ASR::TranslationUnit_t*, ErrorMessage> find_and_load_module(Allocator &al
                           pass_options.include_dirs.begin(),
                           pass_options.include_dirs.end());
 
-    bool found_empty_mod = false;
-    for (auto path : mod_files_dirs) {
-        std::string modfile;
-        std::filesystem::path full_path = path / filename;
-        std::filesystem::path resolved_path = full_path;
-        bool modfile_loaded = read_file(full_path.string(), modfile);
-        if (!modfile_loaded) {
-            std::filesystem::path stamp_path = find_cmake_mod_stamp(path, filename);
-            if (!stamp_path.empty()) {
-                modfile_loaded = read_file(stamp_path.string(), modfile);
-                if (modfile_loaded) {
-                    resolved_path = stamp_path;
+    auto try_load_once = [&]() -> Result<ASR::TranslationUnit_t*, ErrorMessage> {
+        bool found_empty_mod = false;
+        std::string last_error_message;
+
+        for (const auto &path : mod_files_dirs) {
+            std::string modfile;
+            std::filesystem::path full_path = path / filename;
+            std::filesystem::path resolved_path = full_path;
+            bool modfile_loaded = read_file(full_path.string(), modfile);
+            if (!modfile_loaded) {
+                std::filesystem::path stamp_path = find_cmake_mod_stamp(path, filename);
+                if (!stamp_path.empty()) {
+                    modfile_loaded = read_file(stamp_path.string(), modfile);
+                    if (modfile_loaded) {
+                        resolved_path = stamp_path;
+                    }
                 }
             }
-        }
-        if (modfile_loaded) {
+            if (!modfile_loaded) {
+                continue;
+            }
             if (modfile.empty()) {
                 found_empty_mod = true;
                 continue;
             }
-            Result<ASR::TranslationUnit_t*, ErrorMessage> res = load_modfile(al, modfile, false, symtab, lm);
+            Result<ASR::TranslationUnit_t*, ErrorMessage> res =
+                load_modfile(al, modfile, false, symtab, lm);
             if (res.ok) {
                 ASR::TranslationUnit_t* asr = res.result;
                 if (intrinsic) {
                     set_intrinsic(asr);
                 }
                 return asr;
-            } else {
-                return ErrorMessage("While loading modfile '" + resolved_path.string()
-                    + "': " + res.error.message);
             }
+            last_error_message = "While loading modfile '" + resolved_path.string()
+                + "': " + res.error.message;
         }
-    }
 
-    if (found_empty_mod) {
-        std::string smod_suffix = "@" + msym + ".smod";
-        for (auto &path : mod_files_dirs) {
-            std::filesystem::path search_dir = path.empty() ? std::filesystem::path(".") : path;
-            if (!std::filesystem::is_directory(search_dir)) continue;
-            for (auto &entry : std::filesystem::directory_iterator(search_dir)) {
-                std::string fname = entry.path().filename().string();
-                if (fname.size() > smod_suffix.size() &&
-                    fname.compare(fname.size() - smod_suffix.size(),
-                                  smod_suffix.size(), smod_suffix) == 0) {
-                    std::string smodfile;
-                    if (read_file(entry.path().string(), smodfile) && !smodfile.empty()) {
-                        Result<ASR::TranslationUnit_t*, ErrorMessage> res = load_modfile(al, smodfile, false, symtab, lm);
+        if (found_empty_mod) {
+            std::string smod_suffix = "@" + msym + ".smod";
+            for (const auto &path : mod_files_dirs) {
+                std::filesystem::path search_dir =
+                    path.empty() ? std::filesystem::path(".") : path;
+                if (!std::filesystem::is_directory(search_dir)) continue;
+                for (const auto &entry : std::filesystem::directory_iterator(search_dir)) {
+                    std::string fname = entry.path().filename().string();
+                    if (fname.size() > smod_suffix.size() &&
+                        fname.compare(fname.size() - smod_suffix.size(),
+                                      smod_suffix.size(), smod_suffix) == 0) {
+                        std::string smodfile;
+                        if (!read_file(entry.path().string(), smodfile) || smodfile.empty()) {
+                            found_empty_mod = true;
+                            continue;
+                        }
+                        Result<ASR::TranslationUnit_t*, ErrorMessage> res =
+                            load_modfile(al, smodfile, false, symtab, lm);
                         if (res.ok) {
                             ASR::TranslationUnit_t* asr = res.result;
                             if (intrinsic) {
                                 set_intrinsic(asr);
                             }
                             return asr;
-                        } else {
-                            return ErrorMessage("While loading modfile '" + entry.path().string()
-                                + "': " + res.error.message);
                         }
+                        last_error_message = "While loading modfile '" + entry.path().string()
+                            + "': " + res.error.message;
                     }
                 }
             }
         }
+
+        if (!last_error_message.empty()) {
+            return ErrorMessage(last_error_message);
+        }
+        if (found_empty_mod) {
+            return ErrorMessage("Module '" + msym + "' modfile was empty");
+        }
+        return ErrorMessage("Module '" + msym + "' modfile was not found");
+    };
+
+    // Parallel CMake builds can start a consumer before the producer has
+    // finished materializing its `.mod` file. Poll briefly for the module to
+    // appear or finish writing instead of failing immediately.
+    static constexpr int module_load_retry_count = 50;
+    static constexpr auto module_load_retry_delay = std::chrono::milliseconds(20);
+    std::string last_error_message = "Module '" + msym + "' modfile was not found";
+    for (int attempt = 0; attempt < module_load_retry_count; attempt++) {
+        Result<ASR::TranslationUnit_t*, ErrorMessage> result = try_load_once();
+        if (result.ok) {
+            return result.result;
+        }
+        last_error_message = result.error.message;
+        if (attempt + 1 < module_load_retry_count) {
+            std::this_thread::sleep_for(module_load_retry_delay);
+        }
     }
 
-    return ErrorMessage("Module '" + msym + "' modfile was not found");
+    return ErrorMessage(last_error_message);
 }
 
 Result<std::vector<ASR::TranslationUnit_t*>, ErrorMessage> find_and_load_submodules(Allocator &al, const std::string &parent_module_name,

@@ -118,6 +118,55 @@ std::string get_system_temp_dir()
 
 std::string LFORTRAN_TEMP_DIR = get_system_temp_dir();
 
+bool write_file_atomically(const std::filesystem::path &fullpath,
+        const std::string &contents, bool binary=false)
+{
+    namespace fs = std::filesystem;
+    fs::path tmp_path = fullpath;
+    tmp_path += ".tmp." + LCompilers::get_unique_ID();
+
+    std::ofstream out;
+    std::ios::openmode mode = std::ofstream::out;
+    if (binary) {
+        mode |= std::ofstream::binary;
+    }
+    out.open(tmp_path, mode);
+    if (!out.is_open()) {
+        std::cerr << "Failed to open `" << tmp_path.string()
+                  << "` for writing." << std::endl;
+        return false;
+    }
+    out << contents;
+    out.close();
+    if (!out) {
+        std::cerr << "Failed to write `" << tmp_path.string()
+                  << "`." << std::endl;
+        std::error_code cleanup_ec;
+        fs::remove(tmp_path, cleanup_ec);
+        return false;
+    }
+
+    std::error_code ec;
+    fs::rename(tmp_path, fullpath, ec);
+    if (!ec) {
+        return true;
+    }
+
+    std::error_code remove_ec;
+    fs::remove(fullpath, remove_ec);
+    ec.clear();
+    fs::rename(tmp_path, fullpath, ec);
+    if (!ec) {
+        return true;
+    }
+
+    std::cerr << "Failed to atomically replace `" << fullpath.string()
+              << "`: " << ec.message() << std::endl;
+    std::error_code cleanup_ec;
+    fs::remove(tmp_path, cleanup_ec);
+    return false;
+}
+
 
 
 // The unique compilation ID for this invocation of the compiler.
@@ -1156,20 +1205,18 @@ int save_mod_files(const LCompilers::ASR::TranslationUnit_t &u,
                 modfile_name = std::string(m->m_parent_module) + "@" + std::string(m->m_name) + ".smod";
             }
 
-	    std::filesystem::path filename { modfile_name };
+            std::filesystem::path filename { modfile_name };
             std::filesystem::path fullpath = compiler_options.po.mod_files_dir / filename;
-            {
-                std::ofstream out;
-		out.open(fullpath, std::ofstream::out | std::ofstream::binary);
-                out << modfile_binary;
+            if (!write_file_atomically(fullpath, modfile_binary, true)) {
+                return 1;
             }
 
             // Create an empty modfile for submodules using submodule name to satify CMAKE condition.
             if (m->m_parent_module) {
                 std::filesystem::path emptyfile_filename { std::string(m->m_name) + ".mod" };
                 std::filesystem::path emptyfile_fullpath = compiler_options.po.mod_files_dir / emptyfile_filename;
-                {
-                    std::ofstream emptyfile_out(emptyfile_fullpath);
+                if (!write_file_atomically(emptyfile_fullpath, "")) {
+                    return 1;
                 }
             }
         }
