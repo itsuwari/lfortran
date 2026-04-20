@@ -1410,7 +1410,7 @@ R"(
                     if( dims.size() > 0 ) {
                         sub += " = " + dims + ";\n";
                     } else {
-                        sub += ";\n";
+                        sub += " = NULL;\n";
                     }
                 } else {
                     sub += indent + format_type_c(dims, type_name_copy, std::string(v_m_name) + "_data",
@@ -1824,6 +1824,18 @@ R"(
                         v.m_intent == ASRUtils::intent_inout);
         if (is_c && is_pointer_dummy_slot_type(&v)) {
             use_ref = true;
+        }
+        if (is_c
+                && ASRUtils::is_arg_dummy(v.m_intent)
+                && v.m_intent != ASRUtils::intent_in
+                && ASRUtils::is_allocatable(v.m_type)
+                && !ASRUtils::is_array(v.m_type)) {
+            ASR::ttype_t *alloc_value_type =
+                ASRUtils::type_get_past_allocatable_pointer(v.m_type);
+            if (alloc_value_type
+                    && !ASRUtils::is_character(*alloc_value_type)) {
+                use_ref = true;
+            }
         }
         ASR::asr_t *owner = v.m_parent_symtab ? v.m_parent_symtab->asr_owner : nullptr;
         ASR::symbol_t *owner_sym = CUtils::get_symbol_owner(owner);
@@ -3512,9 +3524,11 @@ R"(    // Initialise Numpy
             std::string value = src;
             ASR::String_t *str_type = ASRUtils::get_string_type(expr);
             std::string value_len = "strlen(" + value + ")";
+            bool has_fixed_char_len = false;
             if (str_type && str_type->m_len) {
                 this->visit_expr(*str_type->m_len);
                 value_len = src;
+                has_fixed_char_len = true;
             }
             std::string tmp_name, setup_readback, post_readback;
             if (prepare_string_readback_target(expr, value_len,
@@ -3524,9 +3538,16 @@ R"(    // Initialise Numpy
                 return {tmp_name, value_len};
             }
             value = get_c_mutable_scalar_expr(expr);
-            setup_code += indent + "if (" + value + " == NULL) " + value
-                + " = (char*) _lfortran_string_malloc_alloc(_lfortran_get_default_allocator(), "
-                + value_len + ");\n";
+            if (has_fixed_char_len) {
+                setup_code += indent + "if (" + value + " == NULL || ((int64_t)strlen(" + value
+                    + ")) < ((int64_t)(" + value_len + "))) " + value
+                    + " = (char*) _lfortran_string_malloc_alloc(_lfortran_get_default_allocator(), "
+                    + value_len + ");\n";
+            } else {
+                setup_code += indent + "if (" + value + " == NULL) " + value
+                    + " = (char*) _lfortran_string_malloc_alloc(_lfortran_get_default_allocator(), "
+                    + value_len + ");\n";
+            }
             return {value, value_len};
         };
 

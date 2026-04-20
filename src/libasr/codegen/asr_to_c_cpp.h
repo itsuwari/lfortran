@@ -2893,6 +2893,34 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         return lvalue_src;
     }
 
+    std::string emit_move_alloc_source_reset(ASR::expr_t *source_expr,
+            const std::string &indent) {
+        if (!is_c || source_expr == nullptr) {
+            return "";
+        }
+        ASR::expr_t *raw_source_expr = unwrap_c_lvalue_expr(source_expr);
+        ASR::expr_t *shape_source_expr = raw_source_expr ? raw_source_expr : source_expr;
+        ASR::ttype_t *source_type = ASRUtils::expr_type(source_expr);
+        ASR::ttype_t *source_type_unwrapped =
+            ASRUtils::type_get_past_allocatable_pointer(source_type);
+        std::string saved_src = src;
+        self().visit_expr(*source_expr);
+        std::string source_src = src;
+        src = saved_src;
+        std::string source_lvalue = get_addressable_call_arg_src(
+            shape_source_expr, source_src);
+        bool reset_as_descriptor = ASRUtils::is_array(source_type)
+            || (source_type_unwrapped
+                && (ASRUtils::is_aggregate_type(source_type_unwrapped)
+                    || ASRUtils::is_class_type(source_type_unwrapped)));
+        if (reset_as_descriptor) {
+            headers.insert("string.h");
+            return indent + "memset(&(" + source_lvalue + "), 0, sizeof("
+                + source_lvalue + "));\n";
+        }
+        return indent + source_lvalue + " = NULL;\n";
+    }
+
     bool is_scalar_pointer_storage_type(ASR::ttype_t *type) {
         if (type == nullptr || !ASRUtils::is_pointer(type) || ASRUtils::is_array(type)) {
             return false;
@@ -2909,8 +2937,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 || ASRUtils::is_array(var->m_type)) {
             return false;
         }
-        if (!(var->m_intent == ASRUtils::intent_out
-                || var->m_intent == ASRUtils::intent_inout)) {
+        if (var->m_intent == ASRUtils::intent_in) {
             return false;
         }
         return is_scalar_allocatable_storage_type(var->m_type);
@@ -2945,8 +2972,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 || ASRUtils::is_array(var->m_type)) {
             return false;
         }
-        if (!(var->m_intent == ASRUtils::intent_out
-                || var->m_intent == ASRUtils::intent_inout)) {
+        if (var->m_intent == ASRUtils::intent_in) {
             return false;
         }
         ASR::ttype_t *value_type =
@@ -7439,7 +7465,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 indentation_level += 1;
                 for (size_t j = 0; j < case_stmt->n_body; j++) {
                     this->visit_stmt(*case_stmt->m_body[j]);
-                    out += src;
+                    out += check_tmp_buffer() + src;
                 }
                 out += indent + "}\n";
                 indentation_level -= 1;
@@ -7477,7 +7503,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 indentation_level += 1;
                 for (size_t j = 0; j < case_stmt_range->n_body; j++) {
                     this->visit_stmt(*case_stmt_range->m_body[j]);
-                    out += src;
+                    out += check_tmp_buffer() + src;
                 }
                 out += indent + "}\n";
                 indentation_level -= 1;
@@ -7488,7 +7514,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             indentation_level += 1;
             for (size_t i = 0; i < x.n_default; i++) {
                 this->visit_stmt(*x.m_default[i]);
-                out += src;
+                out += check_tmp_buffer() + src;
             }
             out += indent + "}\n";
             indentation_level -= 1;
@@ -7793,6 +7819,10 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             sym_name = get_c_function_target_name(*s);
         }
         src = indent + sym_name + "(" + construct_call_args(s, x.n_args, x.m_args) + ");\n";
+        if (is_c && x.n_args > 0
+                && std::string(s->m_name).rfind("_lcompilers_move_alloc_", 0) == 0) {
+            src += emit_move_alloc_source_reset(x.m_args[0].m_value, indent);
+        }
     }
 
     void visit_ForEach(const ASR::ForEach_t &x) {

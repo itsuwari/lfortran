@@ -11177,7 +11177,10 @@ LFORTRAN_API char *_lpython_get_argv(int32_t index) {
 LFORTRAN_API void _lfortran_get_command_argument_value(int n, char* receiver) {
     if (n >= 0 && n < _argc) {
         int32_t arg_len = strlen(_argv[n]);
-        memcpy(receiver, _argv[n], arg_len); 
+        memcpy(receiver, _argv[n], arg_len);
+        receiver[arg_len] = '\0';
+    } else if (receiver != NULL) {
+        receiver[0] = '\0';
     }
 }
 
