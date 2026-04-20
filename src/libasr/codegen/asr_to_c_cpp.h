@@ -2264,6 +2264,52 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             && !ASRUtils::is_aggregate_type(value_type);
     }
 
+    std::string coerce_c_struct_value_for_target(ASR::ttype_t *target_type,
+            ASR::symbol_t *target_type_decl, ASR::expr_t *value_expr,
+            std::string value_src) {
+        if (!is_c || target_type == nullptr || value_expr == nullptr) {
+            return value_src;
+        }
+        ASR::ttype_t *target_value_type =
+            ASRUtils::type_get_past_allocatable_pointer(target_type);
+        if (!(ASR::is_a<ASR::StructType_t>(*target_value_type)
+                || ASRUtils::is_class_type(target_value_type))) {
+            return value_src;
+        }
+        bool target_is_pointer_backed =
+            ASRUtils::is_pointer(target_type)
+            || ASRUtils::is_allocatable(target_type)
+            || ASRUtils::is_class_type(target_value_type);
+        bool value_is_pointer_backed = is_pointer_backed_struct_expr(value_expr);
+        if (!target_is_pointer_backed && value_is_pointer_backed) {
+            return "(*(" + value_src + "))";
+        }
+        if (target_is_pointer_backed && !value_is_pointer_backed) {
+            ASR::expr_t *unwrapped_value_expr = unwrap_c_lvalue_expr(value_expr);
+            ASR::symbol_t *value_struct_sym = ASRUtils::symbol_get_past_external(
+                ASRUtils::get_struct_sym_from_struct_expr(unwrapped_value_expr));
+            std::string target_type_name = get_c_concrete_type_from_ttype_t(
+                target_value_type, target_type_decl);
+            if ((ASR::is_a<ASR::StructConstructor_t>(*unwrapped_value_expr)
+                    || ASR::is_a<ASR::StructConstant_t>(*unwrapped_value_expr))
+                    && value_struct_sym
+                    && ASR::is_a<ASR::Struct_t>(*value_struct_sym)) {
+                if (!target_type_name.empty() && target_type_name != "void*") {
+                    return "((" + target_type_name + "*)(&((struct "
+                        + CUtils::get_c_symbol_name(value_struct_sym) + ")"
+                        + value_src + ")))";
+                }
+                return "&((struct " + CUtils::get_c_symbol_name(value_struct_sym)
+                    + ")" + value_src + ")";
+            }
+            if (!target_type_name.empty() && target_type_name != "void*") {
+                return "((" + target_type_name + "*)(&(" + value_src + ")))";
+            }
+            return "&(" + value_src + ")";
+        }
+        return value_src;
+    }
+
     std::string get_c_var_storage_name(ASR::Variable_t *sv) {
         ASR::asr_t *owner = sv->m_parent_symtab ? sv->m_parent_symtab->asr_owner : nullptr;
         bool use_local_name = owner == nullptr
@@ -6641,7 +6687,8 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
 
     void visit_StructConstructor(const ASR::StructConstructor_t &x) {
         std::string out = "{";
-        ASR::Struct_t *st = ASR::down_cast<ASR::Struct_t>(x.m_dt_sym);
+        ASR::symbol_t *struct_sym = ASRUtils::symbol_get_past_external(x.m_dt_sym);
+        ASR::Struct_t *st = ASR::down_cast<ASR::Struct_t>(struct_sym);
         out += "." + get_runtime_type_tag_member_name() + " = "
             + std::to_string(get_struct_runtime_type_id(x.m_dt_sym));
         if (x.n_args > 0) {
@@ -6659,7 +6706,14 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                     out += array_init;
                 } else {
                     self().visit_expr(*x.m_args[i].m_value);
-                    out += src;
+                    ASR::symbol_t *member_type_decl = nullptr;
+                    if (ASR::is_a<ASR::Variable_t>(*member_sym)) {
+                        member_type_decl =
+                            ASR::down_cast<ASR::Variable_t>(member_sym)->m_type_declaration;
+                    }
+                    out += coerce_c_struct_value_for_target(
+                        ASRUtils::symbol_type(member_sym), member_type_decl,
+                        x.m_args[i].m_value, src);
                 }
                 if (i < x.n_args-1) {
                     out += ", ";
@@ -6679,7 +6733,8 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
 
     void visit_StructConstant(const ASR::StructConstant_t &x) {
         std::string out = "{";
-        ASR::Struct_t *st = ASR::down_cast<ASR::Struct_t>(x.m_dt_sym);
+        ASR::symbol_t *struct_sym = ASRUtils::symbol_get_past_external(x.m_dt_sym);
+        ASR::Struct_t *st = ASR::down_cast<ASR::Struct_t>(struct_sym);
         out += "." + get_runtime_type_tag_member_name() + " = "
             + std::to_string(get_struct_runtime_type_id(x.m_dt_sym));
         if (x.n_args > 0) {
@@ -6697,7 +6752,14 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                     out += array_init;
                 } else {
                     self().visit_expr(*x.m_args[i].m_value);
-                    out += src;
+                    ASR::symbol_t *member_type_decl = nullptr;
+                    if (ASR::is_a<ASR::Variable_t>(*member_sym)) {
+                        member_type_decl =
+                            ASR::down_cast<ASR::Variable_t>(member_sym)->m_type_declaration;
+                    }
+                    out += coerce_c_struct_value_for_target(
+                        ASRUtils::symbol_type(member_sym), member_type_decl,
+                        x.m_args[i].m_value, src);
                 }
                 if (i < x.n_args-1) {
                     out += ", ";

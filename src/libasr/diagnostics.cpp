@@ -203,8 +203,22 @@ std::string render_diagnostic_human(const Diagnostic &d, bool use_colors) {
     out << type_color << message_type << reset << bold << ": " << d.message << reset << std::endl;
 
     if (d.labels.size() > 0) {
-        Label l = d.labels[0];
-        Span s = l.spans[0];
+        const Label *first_label_with_span = nullptr;
+        for (const auto &label: d.labels) {
+            if (!label.spans.empty()) {
+                first_label_with_span = &label;
+                break;
+            }
+        }
+        if (!first_label_with_span) {
+            for (const auto &l : d.labels) {
+                out << "  " << blue_bold << "|" << reset << " "
+                    << (l.primary ? primary_color : blue_bold)
+                    << l.message << reset << std::endl;
+            }
+            return out.str();
+        }
+        Span s = first_label_with_span->spans[0];
         int line_num_width = 1;
         if (s.last_line >= 10000) {
             line_num_width = 5;
@@ -223,7 +237,10 @@ std::string render_diagnostic_human(const Diagnostic &d, bool use_colors) {
         out << std::endl;
         for (auto &l : d.labels) {
             if (l.spans.size() == 0) {
-                throw LCompilersException("ICE: Label does not have a span");
+                out << std::string(line_num_width, ' ') << blue_bold << "|" << reset
+                    << " " << (l.primary ? primary_color : blue_bold)
+                    << l.message << reset << std::endl;
+                continue;
             }
             std::string color;
             char symbol;
