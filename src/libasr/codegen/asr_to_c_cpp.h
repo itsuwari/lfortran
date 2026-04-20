@@ -2881,6 +2881,19 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             && !ASR::is_a<ASR::FunctionType_t>(*value_type);
     }
 
+    bool is_procedure_pointer_dummy_slot_type(const ASR::Variable_t *var) {
+        if (!is_c || var == nullptr || !ASRUtils::is_arg_dummy(var->m_intent)
+                || ASRUtils::is_array(var->m_type)
+                || !(var->m_intent == ASRUtils::intent_out
+                    || var->m_intent == ASRUtils::intent_inout)
+                || !ASRUtils::is_pointer(var->m_type)) {
+            return false;
+        }
+        ASR::ttype_t *value_type = ASRUtils::type_get_past_pointer(var->m_type);
+        return value_type != nullptr
+            && ASR::is_a<ASR::FunctionType_t>(*value_type);
+    }
+
     bool is_aggregate_dummy_slot_type(ASR::Variable_t *var) {
         if (!is_c || var == nullptr || !ASRUtils::is_arg_dummy(var->m_intent)
                 || ASRUtils::is_array(var->m_type)) {
@@ -5325,9 +5338,10 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                     ASR::down_cast<ASR::Var_t>(x.m_target)->m_v);
                 ASR::Variable_t *target_var = ASR::down_cast<ASR::Variable_t>(target_sym);
                 if (is_c
-                        && ASRUtils::is_arg_dummy(target_var->m_intent)
-                        && !ASR::is_a<ASR::FunctionType_t>(
-                            *ASRUtils::type_get_past_pointer(target_var->m_type))) {
+                        && (is_procedure_pointer_dummy_slot_type(target_var)
+                            || (ASRUtils::is_arg_dummy(target_var->m_intent)
+                                && !ASR::is_a<ASR::FunctionType_t>(
+                                    *ASRUtils::type_get_past_pointer(target_var->m_type))))) {
                     target = "(*" + CUtils::get_c_variable_name(*target_var) + ")";
                 } else {
                     target = CUtils::get_c_variable_name(*target_var);
@@ -5812,6 +5826,8 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 src = var_name;
             } else
             if (is_bindc_optional_scalar_dummy(sv)) {
+                src = "(*" + var_name + ")";
+            } else if (is_procedure_pointer_dummy_slot_type(sv)) {
                 src = "(*" + var_name + ")";
             } else if (is_pointer_dummy_slot_type(sv)) {
                 ASR::ttype_t *ptr_target = ASRUtils::type_get_past_pointer(sv->m_type);

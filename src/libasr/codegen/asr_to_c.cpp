@@ -1741,18 +1741,20 @@ R"(
     }
 
     std::string get_function_pointer_declaration_from_type(
-            const ASR::FunctionType_t *ft, const std::string &name) {
+            const ASR::FunctionType_t *ft, const std::string &name,
+            bool extra_indirection=false) {
         std::string decl = get_function_pointer_type_from_type(ft);
         size_t marker = decl.find("(*)");
         if (marker == std::string::npos) {
             throw CodeGenError("Malformed function pointer declaration");
         }
-        decl.replace(marker, 3, "(*" + name + ")");
+        decl.replace(marker, 3, (extra_indirection ? "(**" : "(*") + name + ")");
         return decl;
     }
 
     std::string get_function_pointer_declaration_from_interface(
-            const ASR::Function_t &iface_fn, const std::string &name) {
+            const ASR::Function_t &iface_fn, const std::string &name,
+            bool extra_indirection=false) {
         ASR::FunctionType_t *ft = ASRUtils::get_FunctionType(iface_fn);
         std::string ret_type = "void";
         if (iface_fn.m_return_var) {
@@ -1761,7 +1763,7 @@ R"(
         } else if (ft->m_return_var_type) {
             ret_type = CUtils::get_c_type_from_ttype_t(ft->m_return_var_type) + " ";
         }
-        std::string decl = ret_type + " (*" + name + ")(";
+        std::string decl = ret_type + (extra_indirection ? " (**" : " (*") + name + ")(";
         for (size_t i = 0; i < iface_fn.n_args; i++) {
             ASR::symbol_t *sym = ASRUtils::symbol_get_past_external(
                 ASR::down_cast<ASR::Var_t>(iface_fn.m_args[i])->m_v);
@@ -1828,6 +1830,10 @@ R"(
         bool declaration_only = do_not_initialize;
         bool is_array = ASRUtils::is_array(v.m_type);
         bool dummy = ASRUtils::is_arg_dummy(v.m_intent);
+        bool is_procedure_pointer_dummy_slot = is_c
+            && dummy
+            && (v.m_intent == ASRUtils::intent_out
+                || v.m_intent == ASRUtils::intent_inout);
         std::string c_v_name = get_variable_c_name(v);
         std::string decl_name = (force_declare && !force_declare_name.empty())
             ? force_declare_name : c_v_name;
@@ -1987,11 +1993,11 @@ R"(
                 }
                 if (iface_fn) {
                     return get_function_pointer_declaration_from_interface(*iface_fn,
-                        c_v_name);
+                        c_v_name, is_procedure_pointer_dummy_slot);
                 }
                 return get_function_pointer_declaration_from_type(
                     ASR::down_cast<ASR::FunctionType_t>(t2),
-                    c_v_name);
+                    c_v_name, is_procedure_pointer_dummy_slot);
             }
             if (ASR::is_a<ASR::StructType_t>(*t2) &&
                     ASR::down_cast<ASR::StructType_t>(t2)->m_is_unlimited_polymorphic) {
