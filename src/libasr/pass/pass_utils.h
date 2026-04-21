@@ -301,10 +301,15 @@ namespace LCompilers {
                 PassVisitor(Allocator& al_, SymbolTable* current_scope_): al{al_}
                 {
                     this->current_scope = current_scope_;
+                    asr_changed = false;
+                    retain_original_stmt = false;
+                    remove_original_stmt = false;
                     pass_result.n = 0;
                 }
 
                 void transform_stmts(ASR::stmt_t **&m_body, size_t &n_body) {
+                    bool retain_original_stmt_copy = retain_original_stmt;
+                    bool remove_original_stmt_copy = remove_original_stmt;
                     Vec<ASR::stmt_t*> body;
                     body.reserve(al, n_body);
                     if (pass_result.size() > 0) {
@@ -337,6 +342,8 @@ namespace LCompilers {
                     }
                     m_body = body.p;
                     n_body = body.size();
+                    retain_original_stmt = retain_original_stmt_copy;
+                    remove_original_stmt = remove_original_stmt_copy;
                 }
 
                 void visit_Program(const ASR::Program_t &x) {
