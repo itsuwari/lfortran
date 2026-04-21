@@ -1,0 +1,13 @@
+{
+    "basename": "run-c_backend_fixed_member_array_actual_01-ad7d2e2",
+    "cmd": "lfortran --no-color {infile}",
+    "infile": "tests/c_backend_fixed_member_array_actual_01.f90",
+    "infile_hash": "903f82911a69af44a0356426c18b3de79c0b59e908b975bd6c414b35",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": "run-c_backend_fixed_member_array_actual_01-ad7d2e2.stderr",
+    "stderr_hash": "89e99022f362bc45cc52c2d1364e9616abcf6d3296c01c7f34bacbe9",
+    "returncode": 127
+}
