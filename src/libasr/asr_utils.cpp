@@ -1336,16 +1336,28 @@ Result<ASR::TranslationUnit_t*, ErrorMessage> find_and_load_module(Allocator &al
         }
 
         for (const auto &cmake_files_dir : cmake_files_dirs) {
-            if (!std::filesystem::is_directory(cmake_files_dir)) {
+            std::error_code dir_ec;
+            if (!std::filesystem::is_directory(cmake_files_dir, dir_ec) || dir_ec) {
                 continue;
             }
-            for (auto const &entry : std::filesystem::recursive_directory_iterator(
-                    cmake_files_dir, std::filesystem::directory_options::skip_permission_denied)) {
-                if (!entry.is_regular_file()) {
+            std::filesystem::recursive_directory_iterator it(
+                cmake_files_dir,
+                std::filesystem::directory_options::skip_permission_denied,
+                dir_ec);
+            std::filesystem::recursive_directory_iterator end;
+            if (dir_ec) {
+                continue;
+            }
+            for (; it != end; it.increment(dir_ec)) {
+                if (dir_ec) {
+                    break;
+                }
+                std::error_code entry_ec;
+                if (!it->is_regular_file(entry_ec) || entry_ec) {
                     continue;
                 }
-                if (entry.path().filename() == stamp_filename) {
-                    return entry.path();
+                if (it->path().filename() == stamp_filename) {
+                    return it->path();
                 }
             }
         }
@@ -1405,8 +1417,18 @@ Result<ASR::TranslationUnit_t*, ErrorMessage> find_and_load_module(Allocator &al
             for (const auto &path : mod_files_dirs) {
                 std::filesystem::path search_dir =
                     path.empty() ? std::filesystem::path(".") : path;
-                if (!std::filesystem::is_directory(search_dir)) continue;
-                for (const auto &entry : std::filesystem::directory_iterator(search_dir)) {
+                std::error_code dir_ec;
+                if (!std::filesystem::is_directory(search_dir, dir_ec) || dir_ec) continue;
+                std::filesystem::directory_iterator it(search_dir, dir_ec);
+                std::filesystem::directory_iterator end;
+                if (dir_ec) {
+                    continue;
+                }
+                for (; it != end; it.increment(dir_ec)) {
+                    if (dir_ec) {
+                        break;
+                    }
+                    const auto &entry = *it;
                     std::string fname = entry.path().filename().string();
                     if (fname.size() > smod_suffix.size() &&
                         fname.compare(fname.size() - smod_suffix.size(),
@@ -1478,8 +1500,18 @@ Result<std::vector<ASR::TranslationUnit_t*>, ErrorMessage> find_and_load_submodu
     std::string smod_prefix = parent_module_name + "@";
     for (auto &path : mod_files_dirs) {
         if (path.empty()) path = ".";
-        if (!std::filesystem::is_directory(path)) continue;
-        for (auto &file : std::filesystem::directory_iterator(path)) {
+        std::error_code dir_ec;
+        if (!std::filesystem::is_directory(path, dir_ec) || dir_ec) continue;
+        std::filesystem::directory_iterator it(path, dir_ec);
+        std::filesystem::directory_iterator end;
+        if (dir_ec) {
+            continue;
+        }
+        for (; it != end; it.increment(dir_ec)) {
+            if (dir_ec) {
+                break;
+            }
+            const auto &file = *it;
             std::string submod_filename = file.path().filename().string();
             if (startswith(submod_filename, smod_prefix) && endswith(submod_filename, ".smod")) {
                 std::string submodfile;
