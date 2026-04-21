@@ -1,0 +1,67 @@
+#include <inttypes.h>
+
+#include <stdlib.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <string.h>
+#include <lfortran_intrinsics.h>
+
+
+struct dimension_descriptor
+{
+    int32_t lower_bound, length, stride;
+};
+
+struct r64___
+{
+    double *data;
+    struct dimension_descriptor dims[32];
+    int32_t n_dims;
+    int32_t offset;
+    bool is_allocated;
+};
+
+void __lfortran_c_backend_local_fixed_array_wrapper_01__takes_array_real____0(struct r64___* x, int32_t __1x);
+void __lfortran_c_backend_local_fixed_array_wrapper_01__takes_array(struct r64___* x);
+void __lfortran_c_backend_local_fixed_array_wrapper_01__run_case();
+
+
+
+
+// Implementations
+void __lfortran_c_backend_local_fixed_array_wrapper_01__takes_array_real____0(struct r64___* x, int32_t __1x)
+{
+    x->data[(0 + (1 * (1 - 1)))] = x->data[(0 + (1 * (1 - 1)))] +   1.00000000000000000e+00;
+}
+
+void __lfortran_c_backend_local_fixed_array_wrapper_01__takes_array(struct r64___* x)
+{
+    __lfortran_c_backend_local_fixed_array_wrapper_01__takes_array_real____0(x, ((int32_t)x->dims[0].length + x->dims[0].lower_bound - 1));
+}
+
+void __lfortran_c_backend_local_fixed_array_wrapper_01__run_case()
+{
+    struct r64___ a_value;
+    struct r64___* a = &a_value;
+    double a_data[3];
+    a->data = a_data;
+    a->n_dims = 1;
+    a->offset = 0;
+    a->dims[0].lower_bound = 1;
+    a->dims[0].length = 3;
+    a->dims[0].stride = 1;
+    a->data[(0 + (1 * (1 - 1)))] =   1.00000000000000000e+00;
+    a->data[(0 + (1 * (2 - 1)))] =   2.00000000000000000e+00;
+    a->data[(0 + (1 * (3 - 1)))] =   3.00000000000000000e+00;
+    __lfortran_c_backend_local_fixed_array_wrapper_01__takes_array_real____0(a, 3);
+    (a);
+    printf("\n");
+    printf("\n");
+}
+
+int main(int argc, char* argv[])
+{
+    _lpython_set_argv(argc, argv);
+    __lfortran_c_backend_local_fixed_array_wrapper_01__run_case();
+    return 0;
+}

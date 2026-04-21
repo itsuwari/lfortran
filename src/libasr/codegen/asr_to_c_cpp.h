@@ -3147,7 +3147,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
 
     bool is_fixed_size_array_storage_expr(ASR::expr_t *expr) {
         expr = unwrap_c_lvalue_expr(expr);
-        if (expr == nullptr) {
+        if (expr == nullptr || !ASR::is_a<ASR::StructInstanceMember_t>(*expr)) {
             return false;
         }
         ASR::ttype_t *expr_type = ASRUtils::type_get_past_allocatable_pointer(

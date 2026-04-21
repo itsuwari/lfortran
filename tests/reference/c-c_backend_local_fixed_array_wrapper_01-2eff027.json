@@ -1,0 +1,13 @@
+{
+    "basename": "c-c_backend_local_fixed_array_wrapper_01-2eff027",
+    "cmd": "lfortran --no-color --show-c {infile}",
+    "infile": "tests/c_backend_local_fixed_array_wrapper_01.f90",
+    "infile_hash": "3b753383ff625ac2943d697ee170ee1203d3150aa8050a0a043bf93c",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": "c-c_backend_local_fixed_array_wrapper_01-2eff027.stdout",
+    "stdout_hash": "6c9993c199dc4b3a15a5437bb1d8870e05066b66f8df66536d9aa44a",
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}
