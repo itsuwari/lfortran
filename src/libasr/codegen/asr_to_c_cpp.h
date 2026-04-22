@@ -1974,7 +1974,7 @@ R"(#include <stdio.h>
             src = "";
             return;
         }
-        if (is_c && std::string(x.m_name).rfind("_lcompilers_stringconcat", 0) == 0) {
+        if (is_c && std::string(x.m_name).find("_lcompilers_stringconcat") != std::string::npos) {
             sub += "\n{\n";
             indentation_level += 1;
             std::string indent(indentation_level*indentation_spaces, ' ');
