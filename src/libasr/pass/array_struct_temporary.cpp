@@ -890,6 +890,10 @@ bool set_allocation_size(
                     ASRUtils::expr_type(int32_one), nullptr));
                 allocate_dims.push_back(al, allocate_dim);
             }
+            if( ASRUtils::is_character(*ASRUtils::expr_type(value)) ) {
+                ASRUtils::ASRBuilder b(al, loc);
+                len_allocte_expr = b.StringLen(value);
+            }
             break;
         }
         case ASR::exprType::ArrayReshape: {

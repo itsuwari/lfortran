@@ -1979,12 +1979,12 @@ int compile_to_object_file_c(const std::string &infile,
             return 0;
         }
 
-        std::string combine_cmd = CC + " -r -o " + outfile;
+        std::string combine_cmd = "ld -r -o " + outfile;
         for (const auto &obj_file : object_files) {
             combine_cmd += " " + obj_file;
         }
         if (verbose) {
-            std::cout << combine_cmd << std::endl;
+            std::cout << "combine objects: " << combine_cmd << std::endl;
         }
         int err = system(combine_cmd.c_str());
         if (err) {
@@ -2378,7 +2378,19 @@ int link_executable(const std::vector<std::string> &infiles,
         std::string CXX = "gcc";
         std::string cmd = CXX + " -o " + outfile + " ";
         std::string base_path = "\"" + runtime_library_dir + "\"";
+        std::string raw_base_path = runtime_library_dir;
         std::string runtime_lib = "lfortran_runtime";
+        std::string c_backend_linker_flags = extra_linker_flags;
+        if (verbose) {
+            size_t pos = 0;
+            while ((pos = c_backend_linker_flags.find(" -Wl,-v", pos)) != std::string::npos) {
+                c_backend_linker_flags.erase(pos, std::string(" -Wl,-v").size());
+            }
+            pos = 0;
+            while ((pos = c_backend_linker_flags.find(" -Wl -v", pos)) != std::string::npos) {
+                c_backend_linker_flags.erase(pos, std::string(" -Wl -v").size());
+            }
+        }
         for (auto &s : infiles) {
             cmd += s + " ";
         }
@@ -2387,12 +2399,26 @@ int link_executable(const std::vector<std::string> &infiles,
         }
         cmd += " -L" + base_path
             + " -Wl,-rpath," + base_path;
-        if (!extra_linker_flags.empty()) {
-            cmd += extra_linker_flags;
+        if (!c_backend_linker_flags.empty()) {
+            cmd += c_backend_linker_flags;
         }
         cmd += " -l" + runtime_lib + " -lm";
         if (verbose) {
-            std::cout << cmd << std::endl;
+            std::cerr << cmd << std::endl;
+            std::string ld_trace = "ld -o " + outfile + " ";
+            for (auto &s : infiles) {
+                ld_trace += s + " ";
+            }
+            if (!extra_library_flags.empty()) {
+                ld_trace += extra_library_flags + " ";
+            }
+            ld_trace += " -L" + raw_base_path
+                + " -Wl,-rpath," + raw_base_path;
+            if (!c_backend_linker_flags.empty()) {
+                ld_trace += c_backend_linker_flags;
+            }
+            ld_trace += " -l" + runtime_lib + " -lm";
+            std::cerr << ld_trace << std::endl;
         }
         int err = system(cmd.c_str());
         if (err) {
