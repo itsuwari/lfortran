@@ -1,21 +1,58 @@
-module bindc_46_mod
-    use, intrinsic :: iso_c_binding, only: c_int
-    implicit none
+program bindc_46
+  implicit none
 
-    character(len=*), parameter :: namespace = "bindc_46_"
+  type, bind(c) :: t
+    integer :: x
+  end type
+
+  type :: container
+    type(t) :: field
+  end type
+
+  abstract interface
+    subroutine iface(a) bind(C)
+      import :: t
+      type(t), value, intent(in) :: a
+    end subroutine
+  end interface
+
+  procedure(iface), pointer :: f
+  type(t) :: v
+  type(container) :: obj
+
+  ! Test 1: direct call with local variable
+  v%x = 42
+  call sub(v)
+
+  ! Test 2: call through procedure pointer
+  f => sub
+  v%x = 99
+  call f(v)
+
+  ! Test 3: pass struct member
+  obj%field%x = 7
+  call sub(obj%field)
+
+  ! Test 4: struct member through procedure pointer
+  obj%field%x = 123
+  call f(obj%field)
+
+  print *, "ok"
 
 contains
-
-    integer(c_int) function get_value() result(value) bind(c, name=namespace // "get_value")
-        value = 46_c_int
-    end function get_value
-
-end module bindc_46_mod
-
-program bindc_46
-    use bindc_46_mod, only: get_value
-    implicit none
-
-    if (get_value() /= 46) error stop
-    print *, "bindc_46 ok"
-end program bindc_46
+  subroutine sub(a) bind(C)
+    type(t), value, intent(in) :: a
+    select case (a%x)
+    case (42)
+      if (a%x /= 42) error stop
+    case (99)
+      if (a%x /= 99) error stop
+    case (7)
+      if (a%x /= 7) error stop
+    case (123)
+      if (a%x /= 123) error stop
+    case default
+      error stop
+    end select
+  end subroutine
+end program
