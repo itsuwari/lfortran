@@ -4812,7 +4812,7 @@ R"(    // Initialise Numpy
             this->visit_expr(*x.m_unit);
             unit = src;
         }
-        src = indent + "_lfortran_rewind(" + unit + ");\n";
+        src = indent + "_lfortran_rewind(" + unit + ", NULL, NULL, 0);\n";
     }
 
     void visit_FileEndfile(const ASR::FileEndfile_t &x) {
@@ -5171,7 +5171,7 @@ R"(    // Initialise Numpy
             src += ");\n";
             if (is_string_unit) {
                 src += unit_setup;
-                src += indent + "_lfortran_string_write(&(" + unit + "), "
+                src += indent + "_lfortran_string_write(_lfortran_get_default_allocator(), &(" + unit + "), "
                     + (is_unit_allocatable ? "true" : "false") + ", "
                     + (is_unit_deferred ? "true" : "false") + ", false, 1, &"
                     + unit_len_name + ", " + iostat_ptr + ", \"%s\", 2, "
@@ -5193,7 +5193,7 @@ R"(    // Initialise Numpy
         auto value_arg = visit_string_arg(x.m_values[0]);
         if (is_string_unit) {
             src = unit_setup;
-            src += indent + "_lfortran_string_write(&(" + unit + "), "
+            src += indent + "_lfortran_string_write(_lfortran_get_default_allocator(), &(" + unit + "), "
                 + (is_unit_allocatable ? "true" : "false") + ", "
                 + (is_unit_deferred ? "true" : "false") + ", false, 1, &"
                 + unit_len_name + ", " + iostat_ptr + ", \"%s\", 2, "
