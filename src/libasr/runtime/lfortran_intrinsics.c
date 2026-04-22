@@ -49,6 +49,103 @@ typedef enum {
 #include <libasr/runtime/lfortran_intrinsics.h>
 #include <libasr/config.h>
 
+typedef struct LFortranCTypeParentEntry {
+    int64_t type_id;
+    int64_t parent_type_id;
+    struct LFortranCTypeParentEntry *next;
+} LFortranCTypeParentEntry;
+
+typedef struct LFortranCTbpEntry {
+    const char *method_name;
+    int64_t type_id;
+    lfortran_c_tbp_func_ptr func;
+    struct LFortranCTbpEntry *next;
+} LFortranCTbpEntry;
+
+static LFortranCTypeParentEntry *lfortran_c_type_parent_registry = NULL;
+static LFortranCTbpEntry *lfortran_c_tbp_registry = NULL;
+
+static LFortranCTypeParentEntry *lfortran_find_c_type_parent_entry(int64_t type_id) {
+    LFortranCTypeParentEntry *entry = lfortran_c_type_parent_registry;
+    while (entry != NULL) {
+        if (entry->type_id == type_id) {
+            return entry;
+        }
+        entry = entry->next;
+    }
+    return NULL;
+}
+
+static LFortranCTbpEntry *lfortran_find_c_tbp_entry(const char *method_name, int64_t type_id) {
+    LFortranCTbpEntry *entry = lfortran_c_tbp_registry;
+    while (entry != NULL) {
+        if (entry->type_id == type_id
+                && strcmp(entry->method_name, method_name) == 0) {
+            return entry;
+        }
+        entry = entry->next;
+    }
+    return NULL;
+}
+
+LFORTRAN_API void _lfortran_register_c_type_parent(int64_t type_id, int64_t parent_type_id) {
+    if (type_id == 0 || parent_type_id == 0 || type_id == parent_type_id) {
+        return;
+    }
+    LFortranCTypeParentEntry *entry = lfortran_find_c_type_parent_entry(type_id);
+    if (entry != NULL) {
+        entry->parent_type_id = parent_type_id;
+        return;
+    }
+    entry = (LFortranCTypeParentEntry*) malloc(sizeof(LFortranCTypeParentEntry));
+    if (entry == NULL) {
+        fprintf(stderr, "ERROR: unable to register C type parent\n");
+        exit(1);
+    }
+    entry->type_id = type_id;
+    entry->parent_type_id = parent_type_id;
+    entry->next = lfortran_c_type_parent_registry;
+    lfortran_c_type_parent_registry = entry;
+}
+
+LFORTRAN_API void _lfortran_register_c_tbp_impl(const char* method_name, int64_t type_id,
+        lfortran_c_tbp_func_ptr func) {
+    if (method_name == NULL || type_id == 0 || func == NULL) {
+        return;
+    }
+    LFortranCTbpEntry *entry = lfortran_find_c_tbp_entry(method_name, type_id);
+    if (entry != NULL) {
+        entry->func = func;
+        return;
+    }
+    entry = (LFortranCTbpEntry*) malloc(sizeof(LFortranCTbpEntry));
+    if (entry == NULL) {
+        fprintf(stderr, "ERROR: unable to register C type-bound procedure\n");
+        exit(1);
+    }
+    entry->method_name = method_name;
+    entry->type_id = type_id;
+    entry->func = func;
+    entry->next = lfortran_c_tbp_registry;
+    lfortran_c_tbp_registry = entry;
+}
+
+LFORTRAN_API lfortran_c_tbp_func_ptr _lfortran_get_c_tbp_impl(const char* method_name,
+        int64_t type_id) {
+    while (type_id != 0) {
+        LFortranCTbpEntry *entry = lfortran_find_c_tbp_entry(method_name, type_id);
+        if (entry != NULL) {
+            return entry->func;
+        }
+        LFortranCTypeParentEntry *parent_entry = lfortran_find_c_type_parent_entry(type_id);
+        if (parent_entry == NULL) {
+            break;
+        }
+        type_id = parent_entry->parent_type_id;
+    }
+    return NULL;
+}
+
 /* ----------------------------------------------------- */
 /* --- Memory debug implementation (Compiler's side) --- */
 /* ----------------------------------------------------- */

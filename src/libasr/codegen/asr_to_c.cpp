@@ -3353,6 +3353,9 @@ R"(    // Initialise Numpy
         indentation_level -= 1;
         std::string end_struct = "};\n\n";
         src_dest += open_struct + body + end_struct;
+        if constexpr (std::is_same_v<std::decay_t<T>, ASR::Struct_t>) {
+            src_dest += emit_c_tbp_parent_registration(x);
+        }
     }
 
     std::string get_StructTypeCTypeName(const ASR::Struct_t& x) {

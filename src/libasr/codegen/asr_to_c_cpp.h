@@ -223,6 +223,15 @@ public:
         if( bind_py_utils_functions->get_generated_code().size() > 0 ) {
             util_funcs_defined =  "\n" + bind_py_utils_functions->get_generated_code() + "\n";
         }
+        if (is_c) {
+            head += "\n#ifndef LFORTRAN_C_BACKEND_CONSTRUCTOR\n"
+                "#if defined(__GNUC__) || defined(__clang__)\n"
+                "#define LFORTRAN_C_BACKEND_CONSTRUCTOR __attribute__((constructor))\n"
+                "#else\n"
+                "#define LFORTRAN_C_BACKEND_CONSTRUCTOR\n"
+                "#endif\n"
+                "#endif\n\n";
+        }
         if( is_string_concat_present ) {
             std::string strcat_def = "";
             strcat_def += "    static inline char* strcat_(const char* x, const char* y) {\n";
@@ -256,6 +265,23 @@ public:
             + "\n{\n    int64_t " + get_runtime_type_tag_member_name() + ";\n};\n";
         if (array_types_decls.find(header_decl) == std::string::npos) {
             array_types_decls = header_decl + array_types_decls;
+        }
+    }
+
+    void ensure_c_backend_constructor_macro_decl() {
+        if (!is_c) {
+            return;
+        }
+        std::string macro_decl = "#ifndef LFORTRAN_C_BACKEND_CONSTRUCTOR\n"
+            "#if defined(__GNUC__) || defined(__clang__)\n"
+            "#define LFORTRAN_C_BACKEND_CONSTRUCTOR __attribute__((constructor))\n"
+            "#else\n"
+            "#define LFORTRAN_C_BACKEND_CONSTRUCTOR\n"
+            "#endif\n"
+            "#endif\n\n";
+        if (array_types_decls.find("#ifndef LFORTRAN_C_BACKEND_CONSTRUCTOR\n")
+                == std::string::npos) {
+            array_types_decls = macro_decl + array_types_decls;
         }
     }
 
@@ -316,6 +342,78 @@ public:
         uint64_t hash = get_stable_string_hash(CUtils::get_c_symbol_name(struct_sym));
         int64_t type_id = static_cast<int64_t>(hash & 0x7fffffffffffffffULL);
         return type_id == 0 ? 1 : type_id;
+    }
+
+    std::string escape_c_string_literal(const std::string &value) const {
+        std::string escaped;
+        escaped.reserve(value.size());
+        for (char ch : value) {
+            switch (ch) {
+                case '\\': escaped += "\\\\"; break;
+                case '\"': escaped += "\\\""; break;
+                case '\n': escaped += "\\n"; break;
+                case '\r': escaped += "\\r"; break;
+                case '\t': escaped += "\\t"; break;
+                default: escaped += ch; break;
+            }
+        }
+        return escaped;
+    }
+
+    std::string get_current_indent() const {
+        return std::string(indentation_level * indentation_spaces, ' ');
+    }
+
+    std::string get_function_pointer_type(const ASR::Function_t &x, bool &has_typevar,
+            bool use_void_self_for_tbp_dispatch=false) {
+        template_for_Kokkos.clear();
+        template_number = 0;
+        std::string type_sig;
+        has_typevar = false;
+        if (x.m_return_var) {
+            ASR::Variable_t *return_var = ASRUtils::EXPR2VAR(x.m_return_var);
+            has_typevar = ASR::is_a<ASR::TypeParameter_t>(*return_var->m_type);
+            type_sig = get_return_var_type(return_var);
+        } else {
+            type_sig = "void ";
+        }
+        type_sig += "(*)(";
+        bracket_open++;
+        for (size_t i = 0; i < x.n_args; i++) {
+            if (i == 0 && use_void_self_for_tbp_dispatch) {
+                type_sig += "void*";
+            } else {
+                ASR::symbol_t *sym = ASRUtils::symbol_get_past_external(
+                    ASR::down_cast<ASR::Var_t>(x.m_args[i])->m_v);
+                if (!ASR::is_a<ASR::Variable_t>(*sym)) {
+                    has_typevar = true;
+                    bracket_open--;
+                    return "";
+                }
+                ASR::Variable_t *arg = ASR::down_cast<ASR::Variable_t>(sym);
+                if (is_c) {
+                    CDeclarationOptions c_decl_options;
+                    c_decl_options.pre_initialise_derived_type = false;
+                    type_sig += self().convert_variable_decl(*arg, &c_decl_options);
+                } else {
+                    CPPDeclarationOptions cpp_decl_options;
+                    cpp_decl_options.use_static = false;
+                    cpp_decl_options.use_templates_for_arrays = true;
+                    type_sig += self().convert_variable_decl(*arg, &cpp_decl_options);
+                }
+                if (ASR::is_a<ASR::TypeParameter_t>(*arg->m_type)) {
+                    has_typevar = true;
+                    bracket_open--;
+                    return "";
+                }
+            }
+            if (i < x.n_args - 1) {
+                type_sig += ", ";
+            }
+        }
+        bracket_open--;
+        type_sig += ")";
+        return type_sig;
     }
 
     ASR::symbol_t *get_expr_type_declaration_symbol(ASR::expr_t *expr) {
@@ -486,6 +584,82 @@ public:
             struct_t = ASR::down_cast<ASR::Struct_t>(parent_sym);
         }
         return nullptr;
+    }
+
+    bool find_struct_method_for_proc(SymbolTable *scope, ASR::symbol_t *proc_sym,
+            ASR::Struct_t *&owner_struct, ASR::StructMethodDeclaration_t *&method,
+            std::set<uint64_t> &seen) {
+        if (scope == nullptr || proc_sym == nullptr) {
+            return false;
+        }
+        proc_sym = ASRUtils::symbol_get_past_external(proc_sym);
+        for (auto &item: scope->get_scope()) {
+            ASR::symbol_t *sym = ASRUtils::symbol_get_past_external(item.second);
+            uint64_t key = get_hash(reinterpret_cast<ASR::asr_t*>(sym));
+            if (!seen.insert(key).second) {
+                continue;
+            }
+            if (ASR::is_a<ASR::Struct_t>(*sym)) {
+                ASR::Struct_t *struct_t = ASR::down_cast<ASR::Struct_t>(sym);
+                for (auto &member_item : struct_t->m_symtab->get_scope()) {
+                    ASR::symbol_t *member_sym =
+                        ASRUtils::symbol_get_past_external(member_item.second);
+                    if (!ASR::is_a<ASR::StructMethodDeclaration_t>(*member_sym)) {
+                        continue;
+                    }
+                    ASR::StructMethodDeclaration_t *candidate =
+                        ASR::down_cast<ASR::StructMethodDeclaration_t>(member_sym);
+                    ASR::symbol_t *candidate_proc =
+                        ASRUtils::symbol_get_past_external(candidate->m_proc);
+                    if (candidate_proc == proc_sym) {
+                        owner_struct = struct_t;
+                        method = candidate;
+                        return true;
+                    }
+                }
+                if (find_struct_method_for_proc(struct_t->m_symtab, proc_sym,
+                        owner_struct, method, seen)) {
+                    return true;
+                }
+            } else if (ASR::is_a<ASR::Module_t>(*sym)) {
+                if (find_struct_method_for_proc(
+                        ASR::down_cast<ASR::Module_t>(sym)->m_symtab,
+                        proc_sym, owner_struct, method, seen)) {
+                    return true;
+                }
+            } else if (ASR::is_a<ASR::Function_t>(*sym)) {
+                if (find_struct_method_for_proc(
+                        ASR::down_cast<ASR::Function_t>(sym)->m_symtab,
+                        proc_sym, owner_struct, method, seen)) {
+                    return true;
+                }
+            } else if (ASR::is_a<ASR::Program_t>(*sym)) {
+                if (find_struct_method_for_proc(
+                        ASR::down_cast<ASR::Program_t>(sym)->m_symtab,
+                        proc_sym, owner_struct, method, seen)) {
+                    return true;
+                }
+            } else if (ASR::is_a<ASR::AssociateBlock_t>(*sym)) {
+                if (find_struct_method_for_proc(
+                        ASR::down_cast<ASR::AssociateBlock_t>(sym)->m_symtab,
+                        proc_sym, owner_struct, method, seen)) {
+                    return true;
+                }
+            } else if (ASR::is_a<ASR::Block_t>(*sym)) {
+                if (find_struct_method_for_proc(
+                        ASR::down_cast<ASR::Block_t>(sym)->m_symtab,
+                        proc_sym, owner_struct, method, seen)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    bool get_concrete_struct_method_binding(ASR::symbol_t *proc_sym,
+            ASR::Struct_t *&owner_struct, ASR::StructMethodDeclaration_t *&method) {
+        std::set<uint64_t> seen;
+        return find_struct_method_for_proc(global_scope, proc_sym, owner_struct, method, seen);
     }
     void visit_TranslationUnit(const ASR::TranslationUnit_t &x) {
         global_scope = x.m_symtab;
@@ -1947,6 +2121,10 @@ R"(#include <stdio.h>
         // additions now so split-C callers do not see declarations without
         // matching definitions.
         while (emit_nested_functions()) {
+        }
+        std::string tbp_registration_wrapper = emit_c_tbp_registration_wrapper(x);
+        if (!tbp_registration_wrapper.empty()) {
+            sub += tbp_registration_wrapper + "\n";
         }
         src = sub;
         if (f_type->m_deftype == ASR::deftypeType::Implementation) {
@@ -4147,6 +4325,116 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         return args;
     }
 
+    std::string get_runtime_dispatch_self_arg(ASR::Variable_t *param,
+            ASR::expr_t *dispatch_call_arg, ASR::expr_t *raw_dispatch_call_arg,
+            const std::string &self_pointer_expr) {
+        ASR::expr_t *call_arg = dispatch_call_arg;
+        ASR::expr_t *shape_call_arg = raw_dispatch_call_arg ? raw_dispatch_call_arg : call_arg;
+        if (is_pointer_dummy_slot_type(param)) {
+            if (raw_dispatch_call_arg && ASR::is_a<ASR::Var_t>(*raw_dispatch_call_arg)) {
+                ASR::symbol_t *arg_sym = ASRUtils::symbol_get_past_external(
+                    ASR::down_cast<ASR::Var_t>(raw_dispatch_call_arg)->m_v);
+                if (ASR::is_a<ASR::Variable_t>(*arg_sym)) {
+                    ASR::Variable_t *arg_var = ASR::down_cast<ASR::Variable_t>(arg_sym);
+                    if (is_pointer_dummy_slot_type(arg_var)) {
+                        return "(void*)" + CUtils::get_c_variable_name(*arg_var);
+                    }
+                }
+            }
+            return "(void*)&" + get_addressable_call_arg_src(shape_call_arg, self_pointer_expr);
+        }
+        return "(void*)" + self_pointer_expr;
+    }
+
+    std::string emit_c_tbp_parent_registration(const ASR::Struct_t &x) {
+        if (!is_c || x.m_parent == nullptr) {
+            return "";
+        }
+        ensure_c_backend_constructor_macro_decl();
+        ASR::symbol_t *parent_sym = ASRUtils::symbol_get_past_external(x.m_parent);
+        if (parent_sym == nullptr || !ASR::is_a<ASR::Struct_t>(*parent_sym)) {
+            return "";
+        }
+        std::string registrar_name = get_unique_local_name(
+            "__lfortran_register_type_parent_" + CUtils::sanitize_c_identifier(x.m_name), false);
+        return "LFORTRAN_C_BACKEND_CONSTRUCTOR static void " + registrar_name + "(void)\n{\n"
+            "    _lfortran_register_c_type_parent("
+            + std::to_string(get_struct_runtime_type_id(
+                reinterpret_cast<ASR::symbol_t*>(const_cast<ASR::Struct_t*>(&x))))
+            + ", "
+            + std::to_string(get_struct_runtime_type_id(parent_sym))
+            + ");\n}\n\n";
+    }
+
+    std::string emit_c_tbp_registration_wrapper(const ASR::Function_t &x) {
+        if (!is_c || x.n_args == 0) {
+            return "";
+        }
+        ensure_c_backend_constructor_macro_decl();
+        ASR::Struct_t *owner_struct = nullptr;
+        ASR::StructMethodDeclaration_t *method = nullptr;
+        if (!get_concrete_struct_method_binding(
+                reinterpret_cast<ASR::symbol_t*>(const_cast<ASR::Function_t*>(&x)),
+                owner_struct, method)) {
+            return "";
+        }
+        if (method == nullptr || owner_struct == nullptr || method->m_is_deferred) {
+            return "";
+        }
+        bool has_typevar = false;
+        if (get_function_pointer_type(x, has_typevar, true).empty() || has_typevar) {
+            return "";
+        }
+        std::string wrapper_name = get_unique_local_name(
+            "__lfortran_tbp_wrapper_" + CUtils::sanitize_c_identifier(x.m_name), false);
+        std::string ret_type = x.m_return_var
+            ? get_return_var_type(ASRUtils::EXPR2VAR(x.m_return_var))
+            : "void ";
+        std::string wrapper_decl = ret_type + wrapper_name + "(void* __lfortran_self";
+        for (size_t i = 1; i < x.n_args; i++) {
+            ASR::symbol_t *sym = ASRUtils::symbol_get_past_external(
+                ASR::down_cast<ASR::Var_t>(x.m_args[i])->m_v);
+            if (!ASR::is_a<ASR::Variable_t>(*sym)) {
+                return "";
+            }
+            ASR::Variable_t *arg = ASR::down_cast<ASR::Variable_t>(sym);
+            CDeclarationOptions c_decl_options;
+            c_decl_options.pre_initialise_derived_type = false;
+            wrapper_decl += ", " + self().convert_variable_decl(*arg, &c_decl_options);
+        }
+        wrapper_decl += ")";
+        std::string derived_type = "struct "
+            + CUtils::get_c_symbol_name(reinterpret_cast<ASR::symbol_t*>(owner_struct));
+        ASR::Variable_t *self_param = ASRUtils::EXPR2VAR(x.m_args[0]);
+        std::string self_forward_arg = is_pointer_dummy_slot_type(self_param)
+            ? "((" + derived_type + "**)(__lfortran_self))"
+            : "((" + derived_type + "*)(__lfortran_self))";
+        std::string call_args = self_forward_arg;
+        for (size_t i = 1; i < x.n_args; i++) {
+            ASR::symbol_t *sym = ASRUtils::symbol_get_past_external(
+                ASR::down_cast<ASR::Var_t>(x.m_args[i])->m_v);
+            ASR::Variable_t *arg = ASR::down_cast<ASR::Variable_t>(sym);
+            call_args += ", " + CUtils::get_c_variable_name(*arg);
+        }
+        std::string wrapper_src = "static " + wrapper_decl + "\n{\n";
+        if (x.m_return_var) {
+            wrapper_src += "    return " + get_emitted_function_name(x) + "(" + call_args + ");\n";
+        } else {
+            wrapper_src += "    " + get_emitted_function_name(x) + "(" + call_args + ");\n";
+        }
+        wrapper_src += "}\n\n";
+        std::string registrar_name = get_unique_local_name(
+            "__lfortran_register_tbp_" + CUtils::sanitize_c_identifier(x.m_name), false);
+        wrapper_src += "LFORTRAN_C_BACKEND_CONSTRUCTOR static void " + registrar_name
+            + "(void)\n{\n"
+            + "    _lfortran_register_c_tbp_impl(\""
+            + escape_c_string_literal(std::string(method->m_name)) + "\", "
+            + std::to_string(get_struct_runtime_type_id(
+                reinterpret_cast<ASR::symbol_t*>(owner_struct)))
+            + ", (lfortran_c_tbp_func_ptr)" + wrapper_name + ");\n}\n";
+        return wrapper_src;
+    }
+
     bool build_deferred_struct_method_dispatch(ASR::symbol_t *callee_sym, size_t n_args,
             ASR::call_arg_t *m_args, std::string &out, bool is_subroutine) {
         ASR::symbol_t *base_sym = ASRUtils::symbol_get_past_external(callee_sym);
@@ -4199,85 +4487,44 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         }
         std::string self_pointer_expr = canonicalize_raw_pointer_actual_src(self_expr);
 
-        std::vector<ASR::Struct_t*> derived_structs;
-        std::set<uint64_t> seen;
-        collect_descendant_structs(global_scope, owner_sym, derived_structs, seen);
-        std::vector<std::pair<ASR::Struct_t*, ASR::Function_t*>> impls;
-        std::set<uint64_t> seen_impls;
-        for (ASR::Struct_t *derived_struct: derived_structs) {
-            ASR::StructMethodDeclaration_t *impl_method =
-                find_concrete_struct_method(derived_struct, std::string(base_method->m_name));
-            if (impl_method == nullptr) {
-                continue;
-            }
-            ASR::symbol_t *proc_sym = ASRUtils::symbol_get_past_external(impl_method->m_proc);
-            if (!ASR::is_a<ASR::Function_t>(*proc_sym)) {
-                continue;
-            }
-            uint64_t impl_key = get_hash(reinterpret_cast<ASR::asr_t*>(proc_sym));
-            if (!seen_impls.insert(impl_key).second) {
-                continue;
-            }
-            record_forward_decl_for_function(*ASR::down_cast<ASR::Function_t>(proc_sym));
-            impls.push_back({derived_struct, ASR::down_cast<ASR::Function_t>(proc_sym)});
+        ASR::Function_t *iface_fn = get_procedure_interface_function(callee_sym);
+        if (iface_fn == nullptr || iface_fn->n_args == 0) {
+            return false;
         }
-        auto get_dispatch_self_arg = [&](ASR::Struct_t *derived_struct,
-                                         ASR::Function_t *impl_fn) -> std::string {
-            ASR::expr_t *call_arg = dispatch_call_arg;
-            ASR::expr_t *raw_call_arg = raw_dispatch_call_arg;
-            ASR::expr_t *shape_call_arg = raw_call_arg ? raw_call_arg : call_arg;
-            ASR::Variable_t *param = ASRUtils::EXPR2VAR(impl_fn->m_args[0]);
-            std::string derived_type = "struct "
-                + CUtils::get_c_symbol_name(reinterpret_cast<ASR::symbol_t*>(derived_struct));
-            std::string cast_self = "((" + derived_type + "*)" + self_pointer_expr + ")";
-            if (is_pointer_dummy_slot_type(param)) {
-                if (raw_call_arg && ASR::is_a<ASR::Var_t>(*raw_call_arg)) {
-                    ASR::symbol_t *arg_sym = ASRUtils::symbol_get_past_external(
-                        ASR::down_cast<ASR::Var_t>(raw_call_arg)->m_v);
-                    if (ASR::is_a<ASR::Variable_t>(*arg_sym)) {
-                        ASR::Variable_t *arg_var = ASR::down_cast<ASR::Variable_t>(arg_sym);
-                        if (is_pointer_dummy_slot_type(arg_var)) {
-                            return "((" + derived_type + "**)"
-                                + CUtils::get_c_variable_name(*arg_var) + ")";
-                        }
-                    }
-                }
-                return "((" + derived_type + "**)&"
-                    + get_addressable_call_arg_src(shape_call_arg, cast_self) + ")";
-            }
-            return cast_self;
-        };
+        ASR::Variable_t *self_param = ASRUtils::EXPR2VAR(iface_fn->m_args[0]);
+        std::string dispatch_self = get_runtime_dispatch_self_arg(
+            self_param, dispatch_call_arg, raw_dispatch_call_arg, self_pointer_expr);
+        std::string runtime_tag_expr = get_runtime_type_tag_expr(self_pointer_expr, true);
+        std::string lookup_var = get_unique_local_name("__lfortran_tbp_impl");
+        bool has_typevar = false;
+        std::string wrapper_type = get_function_pointer_type(*iface_fn, has_typevar, true);
+        if (has_typevar || wrapper_type.empty()) {
+            return false;
+        }
+        std::string tail_args = construct_call_args_from_index(iface_fn, 1, n_args, m_args);
+        std::string call_expr = "((" + wrapper_type + ")" + lookup_var + ")(" + dispatch_self;
+        if (!tail_args.empty()) {
+            call_expr += ", " + tail_args;
+        }
+        call_expr += ")";
+        std::string method_name = escape_c_string_literal(std::string(base_method->m_name));
+        std::string error_stmt = "fprintf(stderr, \"Deferred type-bound dispatch failed for "
+            + CUtils::sanitize_c_identifier(base_method->m_name)
+            + "\\n\");\n" + get_current_indent() + "exit(1);\n";
+
         if (is_subroutine) {
-            if (impls.empty()) {
-                out = "fprintf(stderr, \"Deferred type-bound dispatch failed for "
-                    + CUtils::sanitize_c_identifier(base_method->m_name)
-                    + "\\n\");\nexit(1);\n";
-                return true;
-            }
-            out = "if (0) {\n";
-            for (size_t i = 0; i < impls.size(); i++) {
-                ASR::Struct_t *derived_struct = impls[i].first;
-                ASR::Function_t *impl_fn = impls[i].second;
-                int64_t type_id = get_struct_runtime_type_id(
-                    reinterpret_cast<ASR::symbol_t*>(derived_struct));
-                std::string dispatch_self = get_dispatch_self_arg(derived_struct, impl_fn);
-                std::string tail_args = construct_call_args_from_index(impl_fn, 1, n_args, m_args);
-                out += "} else if (" + get_runtime_type_tag_expr(self_pointer_expr, true)
-                    + " == " + std::to_string(type_id) + ") {\n    "
-                    + get_emitted_function_name(*impl_fn) + "(" + dispatch_self;
-                if (!tail_args.empty()) {
-                    out += ", " + tail_args;
-                }
-                out += ");\n";
-            }
-            out += "} else {\n    fprintf(stderr, \"Deferred type-bound dispatch failed for "
-                + CUtils::sanitize_c_identifier(base_method->m_name)
-                + "\\n\");\n    exit(1);\n}\n";
+            std::string indent = get_current_indent();
+            out = indent + "lfortran_c_tbp_func_ptr " + lookup_var
+                + " = _lfortran_get_c_tbp_impl(\"" + method_name + "\", "
+                + runtime_tag_expr + ");\n"
+                + indent + "if (!" + lookup_var + ") {\n"
+                + indent + "    " + error_stmt
+                + indent + "}\n"
+                + indent + call_expr + ";\n";
             return true;
         }
 
-        ASR::Function_t *iface_fn = get_procedure_interface_function(callee_sym);
-        if (iface_fn == nullptr || iface_fn->m_return_var == nullptr) {
+        if (iface_fn->m_return_var == nullptr) {
             return false;
         }
         ASR::ttype_t *ret_type = ASRUtils::type_get_past_allocatable_pointer(
@@ -4285,31 +4532,17 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         if (ASRUtils::is_aggregate_type(ret_type)) {
             return false;
         }
-        if (impls.empty()) {
-            out = "((fprintf(stderr, \"Deferred type-bound dispatch failed for "
-                + CUtils::sanitize_c_identifier(base_method->m_name)
-                + "\\n\"), exit(1), 0))";
-            return true;
+        ASR::Variable_t *ret_var = ASRUtils::EXPR2VAR(iface_fn->m_return_var);
+        std::string lookup_call = "_lfortran_get_c_tbp_impl(\"" + method_name + "\", "
+            + runtime_tag_expr + ")";
+        out = "(" + lookup_call + " ? ((" + wrapper_type + ")" + lookup_call + ")("
+            + dispatch_self;
+        if (!tail_args.empty()) {
+            out += ", " + tail_args;
         }
-        out = "";
-        for (size_t i = 0; i < impls.size(); i++) {
-            ASR::Struct_t *derived_struct = impls[i].first;
-            ASR::Function_t *impl_fn = impls[i].second;
-            int64_t type_id = get_struct_runtime_type_id(
-                reinterpret_cast<ASR::symbol_t*>(derived_struct));
-            std::string dispatch_self = get_dispatch_self_arg(derived_struct, impl_fn);
-            std::string tail_args = construct_call_args_from_index(impl_fn, 1, n_args, m_args);
-            out += "(" + get_runtime_type_tag_expr(self_pointer_expr, true)
-                + " == " + std::to_string(type_id) + ") ? "
-                + get_emitted_function_name(*impl_fn) + "(" + dispatch_self;
-            if (!tail_args.empty()) {
-                out += ", " + tail_args;
-            }
-            out += ") : ";
-        }
-        out += "((fprintf(stderr, \"Deferred type-bound dispatch failed for "
+        out += ") : ((fprintf(stderr, \"Deferred type-bound dispatch failed for "
             + CUtils::sanitize_c_identifier(base_method->m_name)
-            + "\\n\"), exit(1), 0))";
+            + "\\n\"), exit(1), (" + get_return_var_type(ret_var) + ")0)))";
         return true;
     }
 
