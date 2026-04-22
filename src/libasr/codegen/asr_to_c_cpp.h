@@ -104,6 +104,10 @@ class BaseCCPPVisitor : public ASR::BaseVisitor<StructType>
 {
 private:
     StructType& self() { return static_cast<StructType&>(*this); }
+
+    void emit_function_arg_initialization(const ASR::Function_t &,
+            std::string &, const std::string &) {
+    }
 public:
     diag::Diagnostics &diag;
     Platform platform;
@@ -1796,6 +1800,19 @@ R"(#include <stdio.h>
             src = "";
             return;
         }
+        if (is_c && std::string(x.m_name).rfind("_lcompilers_stringconcat", 0) == 0) {
+            sub += "\n{\n";
+            indentation_level += 1;
+            std::string indent(indentation_level*indentation_spaces, ' ');
+            sub += indent
+                + "(*concat_result) = _lfortran_strcat_alloc(_lfortran_get_default_allocator(), "
+                + "s1, s1_len, s2, s2_len);\n";
+            indentation_level -= 1;
+            sub += "}\n";
+            src = sub;
+            current_scope = current_scope_copy;
+            return;
+        }
         bool generate_body = true;
         if (f_type->m_deftype == ASR::deftypeType::Interface) {
             if (is_c && f_type->m_abi == ASR::abiType::Source) {
@@ -1878,6 +1895,7 @@ R"(#include <stdio.h>
             }
 
             current_function = &x;
+            self().emit_function_arg_initialization(x, current_body, indent);
 
             for (size_t i=0; i<x.n_body; i++) {
                 self().visit_stmt(*x.m_body[i]);
@@ -4556,10 +4574,20 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             src += indent + c_ds_api->get_deepcopy(m_target_type, value_expr, target_expr) + "\n";
             return;
         }
+        auto get_string_storage_length = [&](ASR::expr_t *expr,
+                                            const std::string &expr_src) -> std::string {
+            ASR::String_t *str_type = ASRUtils::get_string_type(expr);
+            if (str_type && str_type->m_len) {
+                self().visit_expr(*str_type->m_len);
+                return src;
+            }
+            return "strlen(" + expr_src + ")";
+        };
         if (is_c && ASR::is_a<ASR::StringItem_t>(*x.m_target)) {
             ASR::StringItem_t *si = ASR::down_cast<ASR::StringItem_t>(x.m_target);
             self().visit_expr(*si->m_arg);
             std::string string_arg = src;
+            std::string string_len = get_string_storage_length(si->m_arg, string_arg);
             self().visit_expr(*x.m_value);
             std::string string_value = src;
             self().visit_expr(*si->m_idx);
@@ -4568,7 +4596,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             src = check_tmp_buffer();
             std::string updated_value =
                 "_lfortran_str_slice_assign_alloc(_lfortran_get_default_allocator(), " +
-                string_arg + ", strlen(" + string_arg + "), " +
+                string_arg + ", " + string_len + ", " +
                 string_value + ", strlen(" + string_value + "), " +
                 idx + ", " + idx + ", 1, true, true)";
             src += indent + c_ds_api->get_deepcopy(ASRUtils::expr_type(si->m_arg),
@@ -4579,6 +4607,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             ASR::StringSection_t *ss = ASR::down_cast<ASR::StringSection_t>(x.m_target);
             self().visit_expr(*ss->m_arg);
             std::string string_arg = src;
+            std::string string_len = get_string_storage_length(ss->m_arg, string_arg);
             self().visit_expr(*x.m_value);
             std::string string_value = src;
             std::string left, right, step, left_present, right_present;
@@ -4608,7 +4637,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             src = check_tmp_buffer();
             std::string updated_value =
                 "_lfortran_str_slice_assign_alloc(_lfortran_get_default_allocator(), " +
-                string_arg + ", strlen(" + string_arg + "), " +
+                string_arg + ", " + string_len + ", " +
                 string_value + ", strlen(" + string_value + "), " +
                 left + ", " + right + ", " + step + ", " +
                 left_present + ", " + right_present + ")";

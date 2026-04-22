@@ -5957,7 +5957,7 @@ namespace StringConcat {
             b.StringSection(ret_var, b.i32(1), args[2]),
             args[0]));
         body.push_back(al, b.Assignment(
-            b.StringSection(ret_var, b.Add(args[2], b.i32(1)), b.StringLen(ret_var)),
+            b.StringSection(ret_var, b.Add(args[2], b.i32(1)), b.Add(args[2], args[3])),
             args[1]));
 
         ASR::symbol_t *f_sym = make_ASR_Function_t(

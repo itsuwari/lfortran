@@ -1606,6 +1606,62 @@ class ArrayOpVisitor: public ASR::CallReplacerOnExpressionsVisitor<ArrayOpVisito
                     al, idl->base.base.loc, args.p, args.size(),
                     idl->m_type, nullptr, ASR::arraystorageType::ColMajor, nullptr));
             }
+            bool per_assign_realloc = xx.m_realloc_lhs ||
+                ASRUtils::is_allocatable(ASRUtils::expr_type(xx.m_target)) ||
+                should_auto_realloc_component_assignment(xx.m_target);
+            if (per_assign_realloc && ASR::is_a<ASR::ArrayConstructor_t>(*xx.m_value)) {
+                ASR::ArrayConstructor_t *ac =
+                    ASR::down_cast<ASR::ArrayConstructor_t>(xx.m_value);
+                ASR::Variable_t *target_base_var = get_base_variable(xx.m_target);
+                static int array_ctor_temp_copy_counter = 0;
+                if (target_base_var != nullptr) {
+                    for (size_t i = 0; i < ac->n_args; i++) {
+                        ASR::expr_t *arg = ac->m_args[i];
+                        if (!ASRUtils::is_array(ASRUtils::expr_type(arg))) {
+                            continue;
+                        }
+                        ASR::Variable_t *arg_base_var = get_base_variable(arg);
+                        if (arg_base_var != nullptr && arg_base_var == target_base_var) {
+                            ASR::ttype_t *arg_type = PassUtils::get_matching_type(arg, al);
+                            ASR::expr_t *arg_tmp = PassUtils::create_var(
+                                array_ctor_temp_copy_counter++, "_array_ctor_src_",
+                                x.base.base.loc, arg_type, al, current_scope, arg);
+                            pass_result.push_back(al, ASRUtils::STMT(
+                                ASRUtils::make_Assignment_t_util(
+                                    al, x.base.base.loc, arg_tmp, arg, nullptr, true, false)));
+                            ac->m_args[i] = arg_tmp;
+                        }
+                    }
+                }
+                size_t target_rank = ASRUtils::extract_n_dims_from_ttype(
+                    ASRUtils::expr_type(xx.m_target));
+                if (target_rank == 1) {
+                    const Location &loc = x.base.base.loc;
+                    Vec<ASR::dimension_t> realloc_dims;
+                    realloc_dims.reserve(al, 1);
+                    ASR::dimension_t realloc_dim;
+                    realloc_dim.loc = loc;
+                    realloc_dim.m_start = make_ConstantWithKind(
+                        make_IntegerConstant_t, make_Integer_t, 1, get_index_kind(), loc);
+                    realloc_dim.m_length = ASRUtils::get_ArrayConstructor_size(al, ac);
+                    realloc_dims.push_back(al, realloc_dim);
+
+                    Vec<ASR::alloc_arg_t> alloc_args;
+                    alloc_args.reserve(al, 1);
+                    ASR::alloc_arg_t alloc_arg;
+                    alloc_arg.loc = loc;
+                    alloc_arg.m_a = xx.m_target;
+                    alloc_arg.m_dims = realloc_dims.p;
+                    alloc_arg.n_dims = realloc_dims.size();
+                    alloc_arg.m_len_expr = nullptr;
+                    alloc_arg.m_type = nullptr;
+                    alloc_arg.m_sym_subclass = nullptr;
+                    alloc_args.push_back(al, alloc_arg);
+
+                    pass_result.push_back(al, ASRUtils::STMT(ASR::make_ReAlloc_t(
+                        al, loc, alloc_args.p, alloc_args.size())));
+                }
+            }
             replacer.result_expr = xx.m_target;
             ASR::expr_t** current_expr_copy = current_expr;
             current_expr = const_cast<ASR::expr_t**>(&xx.m_value);

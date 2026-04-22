@@ -1,0 +1,13 @@
+{
+    "basename": "run-c_backend_string_concat_alloc_01-7412e0d",
+    "cmd": "lfortran --no-color {infile}",
+    "infile": "tests/c_backend_string_concat_alloc_01.f90",
+    "infile_hash": "31ba110118d0a97e88cd6fd2bb34000ddedbe77e588ab26d8c01f155",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": "run-c_backend_string_concat_alloc_01-7412e0d.stdout",
+    "stdout_hash": "d3021d5d49389d44b852d3a39b7328defa293f367760a7a133726aed",
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

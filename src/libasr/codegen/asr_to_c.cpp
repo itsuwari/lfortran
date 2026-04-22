@@ -1529,9 +1529,7 @@ R"(
             }
             const std::string emitted_member_name = CUtils::get_c_member_name(sym);
             ASR::ttype_t* mem_type = ASRUtils::symbol_type(sym);
-            if( ASRUtils::is_character(*mem_type) ) {
-                sub += indent + name + "->" + emitted_member_name + " = NULL;\n";
-            } else if( ASRUtils::is_array(mem_type) &&
+            if( ASRUtils::is_array(mem_type) &&
                         ASR::is_a<ASR::Variable_t>(*member_sym) ) {
                 ASR::Variable_t* mem_var = ASR::down_cast<ASR::Variable_t>(member_sym);
                 std::string safe_member_name = CUtils::get_c_member_name(sym);
@@ -1553,6 +1551,8 @@ R"(
                     sub += indent + "memset(" + mem_var_name + ", 0, sizeof(*" + mem_var_name + "));\n";
                     sub += indent + name + "->" + emitted_member_name + " = " + mem_var_name + ";\n";
                 }
+            } else if( ASRUtils::is_character(*mem_type) ) {
+                sub += indent + name + "->" + emitted_member_name + " = NULL;\n";
             } else if( ASR::is_a<ASR::StructType_t>(*mem_type) ) {
                 // TODO: StructType
                 // ASR::StructType_t* struct_t = ASR::down_cast<ASR::StructType_t>(mem_type);
@@ -1606,6 +1606,49 @@ R"(
                 + " = " + src + ";\n";
         }
         allocate_array_members_of_struct(der_type_t, sub, indent, name);
+    }
+
+    void emit_function_arg_initialization(const ASR::Function_t &x,
+            std::string &sub, const std::string &indent) {
+        for (size_t i = 0; i < x.n_args; i++) {
+            ASR::expr_t *arg = x.m_args[i];
+            if (arg == nullptr || !ASR::is_a<ASR::Var_t>(*arg)) {
+                continue;
+            }
+            ASR::symbol_t *arg_sym = ASRUtils::symbol_get_past_external(
+                ASR::down_cast<ASR::Var_t>(arg)->m_v);
+            if (arg_sym == nullptr || !ASR::is_a<ASR::Variable_t>(*arg_sym)) {
+                continue;
+            }
+            ASR::Variable_t *arg_var = ASR::down_cast<ASR::Variable_t>(arg_sym);
+            if (arg_var->m_intent != ASRUtils::intent_out) {
+                continue;
+            }
+            if (ASRUtils::is_allocatable(arg_var->m_type)
+                    || ASRUtils::is_pointer(arg_var->m_type)) {
+                continue;
+            }
+            ASR::ttype_t *arg_type =
+                ASRUtils::type_get_past_allocatable_pointer(arg_var->m_type);
+            if (!ASR::is_a<ASR::StructType_t>(*arg_type)) {
+                continue;
+            }
+            ASR::StructType_t *struct_type = ASR::down_cast<ASR::StructType_t>(arg_type);
+            if (struct_type->m_is_unlimited_polymorphic) {
+                continue;
+            }
+            if (arg_var->m_type_declaration == nullptr) {
+                continue;
+            }
+            ASR::symbol_t *derived_type = ASRUtils::symbol_get_past_external(
+                arg_var->m_type_declaration);
+            if (derived_type == nullptr || !ASR::is_a<ASR::Struct_t>(*derived_type)) {
+                continue;
+            }
+            initialize_struct_instance_members(
+                ASR::down_cast<ASR::Struct_t>(derived_type), sub, indent,
+                CUtils::get_c_variable_name(*arg_var));
+        }
     }
 
     void convert_variable_decl_util(const ASR::Variable_t &v,
@@ -2757,7 +2800,13 @@ R"(
             const ASR::TranslationUnit_t &x, const std::string &output_dir,
             const std::string &project_name) {
         namespace fs = std::filesystem;
-        fs::create_directories(output_dir);
+        std::error_code ec;
+        fs::create_directories(output_dir, ec);
+        if (ec) {
+            throw std::runtime_error(
+                "Unable to create split C output directory `" + output_dir
+                + "`: " + ec.message());
+        }
 
         struct UniqueIdGuard {
             std::string saved;

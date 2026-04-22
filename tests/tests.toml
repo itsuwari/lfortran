@@ -5040,6 +5040,11 @@ run = true
 options = "--backend=c --separate-compilation"
 
 [[test]]
+filename = "allocatable_aggregate_dummy_slot_01.f90"
+run = true
+options = "--backend=c --separate-compilation"
+
+[[test]]
 filename = "c_backend_do_while_nested_print_01.f90"
 run = true
 options = "--backend=c --separate-compilation"
@@ -5173,3 +5178,8 @@ asr = true
 [[test]]
 filename = "../integration_tests/arrays_107.f90"
 asr = true
+
+[[test]]
+filename = "c_backend_string_concat_alloc_01.f90"
+run = true
+backend = "c"
