@@ -1645,9 +1645,18 @@ R"(
             if (derived_type == nullptr || !ASR::is_a<ASR::Struct_t>(*derived_type)) {
                 continue;
             }
+            headers.insert("string.h");
+            std::string arg_name = CUtils::get_c_variable_name(*arg_var);
+            // A Fortran `intent(out)` derived dummy becomes undefined on entry
+            // except for default-initialized components. Zero the pointee first
+            // so generated allocatable/pointer component checks start from the
+            // unallocated state before we restore any explicit defaults below.
+            sub += indent + "memset(" + arg_name + ", 0, sizeof(*" + arg_name + "));\n";
+            sub += indent + arg_name + "->" + get_runtime_type_tag_member_name()
+                + " = " + std::to_string(get_struct_runtime_type_id(derived_type)) + ";\n";
             initialize_struct_instance_members(
                 ASR::down_cast<ASR::Struct_t>(derived_type), sub, indent,
-                CUtils::get_c_variable_name(*arg_var));
+                arg_name);
         }
     }
 
