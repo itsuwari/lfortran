@@ -2328,8 +2328,10 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         } else if (is_c && ASRUtils::is_array(x.m_type)
                 && ASRUtils::is_array(ASRUtils::expr_type(x.m_arg))) {
             ASR::ttype_t *source_type = ASRUtils::expr_type(x.m_arg);
+            ASR::symbol_t *source_type_decl = get_expr_type_declaration_symbol(x.m_arg);
             if (are_compatible_c_array_wrapper_types(x.m_type, source_type)) {
-                src = cast_c_array_wrapper_ptr_to_target_type(x.m_type, source_type, src);
+                src = cast_c_array_wrapper_ptr_to_target_type(
+                    x.m_type, source_type, src, nullptr, source_type_decl);
             } else {
                 src = build_c_array_wrapper_from_cast_target(x.m_type, x.m_arg, src);
             }
@@ -2803,10 +2805,57 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         return CUtils::is_len_one_character_array_type(type);
     }
 
-    std::string get_c_array_wrapper_type_name(ASR::ttype_t *type) {
+    ASR::symbol_t *get_c_array_element_type_declaration_symbol(ASR::ttype_t *type,
+            ASR::symbol_t *type_decl=nullptr) {
+        ASR::ttype_t *array_base = get_c_array_wrapper_base_type(type);
+        if (array_base == nullptr) {
+            return nullptr;
+        }
+        ASR::ttype_t *element_type = ASRUtils::type_get_past_array(array_base);
+        if (element_type == nullptr) {
+            return nullptr;
+        }
+        type_decl = ASRUtils::symbol_get_past_external(type_decl);
+        if (type_decl != nullptr && ASR::is_a<ASR::Variable_t>(*type_decl)) {
+            type_decl = ASR::down_cast<ASR::Variable_t>(type_decl)->m_type_declaration;
+            type_decl = ASRUtils::symbol_get_past_external(type_decl);
+        }
+        if (type_decl == nullptr) {
+            return nullptr;
+        }
+        if (ASR::is_a<ASR::StructType_t>(*element_type)
+                && ASR::is_a<ASR::Struct_t>(*type_decl)) {
+            return type_decl;
+        }
+        if (ASR::is_a<ASR::UnionType_t>(*element_type)
+                && ASR::is_a<ASR::Union_t>(*type_decl)) {
+            return type_decl;
+        }
+        if (ASR::is_a<ASR::EnumType_t>(*element_type)
+                && ASR::is_a<ASR::Enum_t>(*type_decl)) {
+            return type_decl;
+        }
+        return nullptr;
+    }
+
+    std::string get_c_array_wrapper_type_name(ASR::ttype_t *type,
+            ASR::symbol_t *type_decl=nullptr) {
         LCOMPILERS_ASSERT(type != nullptr);
-        std::string array_type_name = CUtils::get_c_array_element_type_from_ttype_t(type);
-        std::string array_type_code = CUtils::get_c_array_type_code(type);
+        std::string array_type_name;
+        std::string array_type_code;
+        ASR::symbol_t *element_type_decl =
+            get_c_array_element_type_declaration_symbol(type, type_decl);
+        if (element_type_decl != nullptr) {
+            element_type_decl = ASRUtils::symbol_get_past_external(element_type_decl);
+            array_type_name = get_c_concrete_type_from_ttype_t(
+                ASRUtils::type_get_past_array(get_c_array_wrapper_base_type(type)),
+                element_type_decl);
+            array_type_code = CUtils::sanitize_c_identifier(
+                "x" + CUtils::get_c_symbol_name(element_type_decl));
+        } else {
+            array_type_name = CUtils::get_c_array_element_type_from_ttype_t(type);
+            array_type_code = CUtils::get_c_array_type_code(type);
+        }
         return c_ds_api->get_array_type(array_type_name, array_type_code, array_types_decls, false);
     }
 
@@ -2850,13 +2899,17 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             == CUtils::get_c_type_from_ttype_t(ASRUtils::type_get_past_array(value_base));
     }
 
-    std::string get_c_declared_array_wrapper_type_name(ASR::ttype_t *type) {
+    std::string get_c_declared_array_wrapper_type_name(ASR::ttype_t *type,
+            ASR::symbol_t *type_decl=nullptr) {
         ASR::ttype_t *array_base = get_c_array_wrapper_base_type(type);
         if (array_base == nullptr) {
             return "";
         }
+        if (get_c_array_element_type_declaration_symbol(type, type_decl) != nullptr) {
+            return get_c_array_wrapper_type_name(array_base, type_decl);
+        }
         if (!ASRUtils::is_allocatable(type)) {
-            return get_c_array_wrapper_type_name(array_base);
+            return get_c_array_wrapper_type_name(array_base, type_decl);
         }
         std::string array_type_name =
             CUtils::get_c_array_element_type_from_ttype_t(array_base);
@@ -2866,13 +2919,20 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
     }
 
     std::string cast_c_array_wrapper_ptr_to_target_type(ASR::ttype_t *target_type,
-            ASR::ttype_t *value_type, const std::string &value_expr) {
+            ASR::ttype_t *value_type, const std::string &value_expr,
+            ASR::symbol_t *target_type_decl=nullptr,
+            ASR::symbol_t *value_type_decl=nullptr) {
         if (!are_compatible_c_array_wrapper_types(target_type, value_type)) {
             return value_expr;
         }
-        std::string target_wrapper = get_c_declared_array_wrapper_type_name(target_type);
-        std::string value_wrapper = get_c_declared_array_wrapper_type_name(value_type);
+        std::string target_wrapper =
+            get_c_declared_array_wrapper_type_name(target_type, target_type_decl);
+        std::string value_wrapper =
+            get_c_declared_array_wrapper_type_name(value_type, value_type_decl);
         if (target_wrapper.empty() || value_wrapper.empty()) {
+            return value_expr;
+        }
+        if (target_type_decl == nullptr && value_type_decl != nullptr) {
             return value_expr;
         }
         if (target_wrapper == value_wrapper) {
@@ -2909,7 +2969,8 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         if (!is_data_only_array_expr(source_expr)
                 && !is_fixed_size_array_storage_expr(source_expr)) {
             return cast_c_array_wrapper_ptr_to_target_type(
-                target_type, source_type, source_src);
+                target_type, source_type, source_src, nullptr,
+                get_expr_type_declaration_symbol(source_expr));
         }
         std::string target_wrapper = get_c_declared_array_wrapper_type_name(target_type);
         if (target_wrapper.empty()) {
@@ -3788,7 +3849,8 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                         override_arg_index = i + 1;
                         override_arg_value = actual_len;
                     }
-                    std::string wrapper_type = get_c_array_wrapper_type_name(param_type);
+                    std::string wrapper_type = get_c_array_wrapper_type_name(
+                        param_type, param ? param->m_type_declaration : nullptr);
                     args += "(&(" + wrapper_type + "){ .data = " + arg_src
                         + ", .dims = {{1, " + actual_len + ", 1}}, .n_dims = 1, .offset = 0, .is_allocated = false })";
                 } else if (param_is_raw_c_char_array
@@ -3799,7 +3861,10 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 } else {
                     args += param_is_raw_c_char_array
                         ? arg_src + "->data"
-                        : cast_c_array_wrapper_ptr_to_target_type(param_type, type, arg_src);
+                        : cast_c_array_wrapper_ptr_to_target_type(
+                            param_type, type, arg_src,
+                            param ? param->m_type_declaration : nullptr,
+                            actual_var ? actual_var->m_type_declaration : nullptr);
                 }
                 if (i < n_args - 1) args += ", ";
                 continue;
@@ -4153,7 +4218,8 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                         override_arg_index = i + 1;
                         override_arg_value = actual_len;
                     }
-                    std::string wrapper_type = get_c_array_wrapper_type_name(param_type);
+                    std::string wrapper_type = get_c_array_wrapper_type_name(
+                        param_type, param ? param->m_type_declaration : nullptr);
                     args += "(&(" + wrapper_type + "){ .data = " + arg_src
                         + ", .dims = {{1, " + actual_len + ", 1}}, .n_dims = 1, .offset = 0, .is_allocated = false })";
                 } else if (param_is_raw_c_char_array
@@ -4164,7 +4230,10 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 } else {
                     args += param_is_raw_c_char_array
                         ? arg_src + "->data"
-                        : cast_c_array_wrapper_ptr_to_target_type(param_type, type, arg_src);
+                        : cast_c_array_wrapper_ptr_to_target_type(
+                            param_type, type, arg_src,
+                            param ? param->m_type_declaration : nullptr,
+                            actual_var ? actual_var->m_type_declaration : nullptr);
                 }
                 if (i < n_args - 1) args += ", ";
                 continue;
@@ -5776,7 +5845,10 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                     value = "&(" + value + ")";
                 }
             }
-            value = cast_c_array_wrapper_ptr_to_target_type(target_type, value_type, value);
+            value = cast_c_array_wrapper_ptr_to_target_type(
+                target_type, value_type, value,
+                get_expr_type_declaration_symbol(x.m_target),
+                get_expr_type_declaration_symbol(x.m_value));
             src = setup + indent + target + " = " + value + ";\n";
         }
     }
