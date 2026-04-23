@@ -4017,10 +4017,6 @@ ASR::asr_t* make_ArraySize_t_util(
     if( ASR::is_a<ASR::ArrayItem_t>(*a_v) ) {
         ASR::ArrayItem_t* array_item_t = ASR::down_cast<ASR::ArrayItem_t>(a_v);
         LCOMPILERS_ASSERT(ASRUtils::is_array(array_item_t->m_type));
-        if( for_type ) {
-            LCOMPILERS_ASSERT(!ASRUtils::is_allocatable(array_item_t->m_type) &&
-                              !ASRUtils::is_pointer(array_item_t->m_type));
-        }
         ASR::dimension_t* item_dims = nullptr;
         size_t item_n_dims = ASRUtils::extract_dimensions_from_ttype(
             array_item_t->m_type, item_dims);
