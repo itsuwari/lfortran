@@ -233,6 +233,10 @@ R"(
     }
 
     std::string get_split_visible_definition(const ASR::Variable_t &v) {
+        std::string module_array_def = get_static_module_array_definition(v);
+        if (!module_array_def.empty()) {
+            return module_array_def;
+        }
         std::string emitted_name = CUtils::get_c_variable_name(v);
         std::string full_def = convert_variable_decl(v);
         std::string normalized_def;
@@ -250,6 +254,158 @@ R"(
             normalized_def += updated;
         }
         return normalized_def;
+    }
+
+    std::string get_static_dim_expr(ASR::expr_t *expr,
+            const std::string &fallback) {
+        if (expr == nullptr) {
+            return fallback;
+        }
+        ASR::expr_t *value = ASRUtils::expr_value(expr);
+        int64_t int_value = 0;
+        if (value != nullptr && ASRUtils::extract_value(value, int_value)) {
+            return std::to_string(int_value);
+        }
+        visit_expr(*expr);
+        return src;
+    }
+
+    bool get_static_module_array_element_type(const ASR::Variable_t &v,
+            ASR::ttype_t *element_type, std::string &type_name,
+            std::string &encoded_type_name) {
+        if (ASRUtils::is_integer(*element_type)) {
+            ASR::Integer_t *t = ASR::down_cast<ASR::Integer_t>(element_type);
+            headers.insert("inttypes.h");
+            type_name = "int" + std::to_string(t->m_kind * 8) + "_t";
+            encoded_type_name = CUtils::get_c_array_type_code(v.m_type);
+            return true;
+        }
+        if (ASRUtils::is_unsigned_integer(*element_type)) {
+            ASR::UnsignedInteger_t *t = ASR::down_cast<ASR::UnsignedInteger_t>(element_type);
+            headers.insert("inttypes.h");
+            type_name = "uint" + std::to_string(t->m_kind * 8) + "_t";
+            encoded_type_name = CUtils::get_c_array_type_code(v.m_type);
+            return true;
+        }
+        if (ASRUtils::is_real(*element_type)) {
+            ASR::Real_t *t = ASR::down_cast<ASR::Real_t>(element_type);
+            if (t->m_kind == 4) {
+                type_name = "float";
+            } else if (t->m_kind == 8) {
+                type_name = "double";
+            } else {
+                return false;
+            }
+            encoded_type_name = CUtils::get_c_array_type_code(v.m_type);
+            return true;
+        }
+        if (ASRUtils::is_complex(*element_type)) {
+            ASR::Complex_t *t = ASR::down_cast<ASR::Complex_t>(element_type);
+            headers.insert("complex.h");
+            if (t->m_kind == 4) {
+                type_name = "float complex";
+            } else if (t->m_kind == 8) {
+                type_name = "double complex";
+            } else {
+                return false;
+            }
+            encoded_type_name = CUtils::get_c_array_type_code(v.m_type);
+            return true;
+        }
+        if (ASRUtils::is_logical(*element_type)) {
+            headers.insert("stdbool.h");
+            type_name = "bool";
+            encoded_type_name = CUtils::get_c_array_type_code(v.m_type);
+            return true;
+        }
+        if (ASRUtils::is_character(*element_type)) {
+            type_name = "char *";
+            encoded_type_name = CUtils::get_c_type_code(v.m_type);
+            return true;
+        }
+        if (ASR::is_a<ASR::StructType_t>(*element_type) && v.m_type_declaration) {
+            type_name = "struct " + CUtils::get_c_symbol_name(
+                ASRUtils::symbol_get_past_external(v.m_type_declaration));
+            encoded_type_name = CUtils::sanitize_c_identifier(
+                "x" + CUtils::get_c_symbol_name(v.m_type_declaration));
+            return true;
+        }
+        return false;
+    }
+
+    std::string get_static_module_array_definition(const ASR::Variable_t &v) {
+        if (!ASRUtils::is_array(v.m_type)
+                || ASRUtils::is_pointer(v.m_type)
+                || ASRUtils::is_allocatable(v.m_type)
+                || v.m_parent_symtab == nullptr
+                || v.m_parent_symtab->asr_owner == nullptr
+                || !ASR::is_a<ASR::Module_t>(
+                    *ASR::down_cast<ASR::symbol_t>(v.m_parent_symtab->asr_owner))) {
+            return "";
+        }
+        ASR::dimension_t *m_dims = nullptr;
+        size_t n_dims = ASRUtils::extract_dimensions_from_ttype(v.m_type, m_dims);
+        int64_t total_size = ASRUtils::get_fixed_size_of_array(m_dims, n_dims);
+        if (n_dims == 0 || total_size < 0) {
+            return "";
+        }
+        ASR::ttype_t *element_type = ASRUtils::type_get_past_array(
+            ASRUtils::type_get_past_allocatable_pointer(v.m_type));
+        if (element_type == nullptr) {
+            return "";
+        }
+        std::string type_name, encoded_type_name;
+        if (!get_static_module_array_element_type(v, element_type, type_name,
+                encoded_type_name)) {
+            return "";
+        }
+
+        std::string emitted_name = CUtils::get_c_variable_name(v);
+        std::string wrapper_type = c_ds_api->get_array_type(
+            type_name, encoded_type_name, array_types_decls, false);
+        std::string pointer_type = c_ds_api->get_array_type(
+            type_name, encoded_type_name, array_types_decls, true);
+        std::string data_name = emitted_name + "_data";
+        std::string value_name = emitted_name + "_value";
+
+        std::string sub;
+        sub += "static " + format_type_c("[" + std::to_string(total_size) + "]",
+            type_name, data_name, false, false);
+        ASR::expr_t *init_expr = get_variable_init_value_expr(v);
+        std::string init_brace = init_expr != nullptr
+            ? emit_c_array_constant_brace_init(init_expr, v.m_type) : "";
+        if (!init_brace.empty()) {
+            sub += " = " + init_brace;
+        } else if (type_name == "char *" || type_name == "char*") {
+            sub += " = {0}";
+        }
+        sub += ";\n";
+
+        std::vector<std::string> lower_bounds(n_dims);
+        std::vector<std::string> lengths(n_dims);
+        std::vector<std::string> strides(n_dims);
+        std::string stride = "1";
+        for (int i = static_cast<int>(n_dims) - 1; i >= 0; i--) {
+            lower_bounds[i] = get_static_dim_expr(m_dims[i].m_start, "1");
+            lengths[i] = get_static_dim_expr(m_dims[i].m_length, "0");
+            strides[i] = stride;
+            stride = "(" + stride + "*" + lengths[i] + ")";
+        }
+
+        sub += "static " + wrapper_type + " " + value_name + " = { ";
+        sub += ".data = " + data_name + ", .dims = {";
+        for (size_t i = 0; i < n_dims; i++) {
+            sub += "{" + lower_bounds[i] + ", " + lengths[i] + ", "
+                + strides[i] + "}";
+            if (i + 1 < n_dims) {
+                sub += ", ";
+            }
+        }
+        sub += "}, .n_dims = " + std::to_string(n_dims)
+            + ", .offset = 0, .is_allocated = true };\n";
+        sub += format_type_c("", pointer_type, emitted_name, false, false)
+            + " = &" + value_name;
+        return sub;
     }
 
     std::string get_global_definition(const ASR::Variable_t &v) {
