@@ -443,12 +443,19 @@ ASR::symbol_t* get_struct_sym_from_struct_expr(ASR::expr_t* expression)
                 return nullptr; // If no struct symbol found in either side
             }
         }
+        case ASR::exprType::PointerNullConstant: {
+            ASR::PointerNullConstant_t* ptr_null =
+                ASR::down_cast<ASR::PointerNullConstant_t>(expression);
+            if (ptr_null->m_var_expr != nullptr) {
+                return ASRUtils::get_struct_sym_from_struct_expr(ptr_null->m_var_expr);
+            }
+            return nullptr;
+        }
         case ASR::exprType::RealConstant:
         case ASR::exprType::StringConstant:
         case ASR::exprType::IntegerConstant:
         case ASR::exprType::LogicalConstant:
         case ASR::exprType::ArrayConstant: 
-        case ASR::exprType::PointerNullConstant:
         case ASR::exprType::UnsignedIntegerConstant:
         case ASR::exprType::ComplexConstant:
         {

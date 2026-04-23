@@ -1278,6 +1278,9 @@ bool is_directly_addressable_array_expr(ASR::expr_t* value) {
 
 bool is_temporary_needed(ASR::expr_t* value) {
     if(!value) { return false; }
+    if (ASR::is_a<ASR::PointerNullConstant_t>(*value)) {
+        return false;
+    }
     bool is_expr_with_no_type = (std::find(exprs_with_no_type.begin(), exprs_with_no_type.end(),
         value->type) == exprs_with_no_type.end()) && ASRUtils::is_array(ASRUtils::expr_type(value));
     bool is_non_empty_fixed_size_array = (!ASRUtils::is_fixed_size_array(ASRUtils::expr_type(value)) ||

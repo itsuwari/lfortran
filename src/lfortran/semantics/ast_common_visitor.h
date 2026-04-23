@@ -19076,8 +19076,6 @@ public:
         LCOMPILERS_ASSERT(args.size() == constructor_args.size());
 
         for (size_t i = 0; i < n; i++) {
-            this->visit_expr(*kwargs[i].m_value);
-            ASR::expr_t *expr = ASRUtils::EXPR(tmp);
             std::string name = to_lower(kwargs[i].m_arg);
             auto search = std::find(constructor_args.begin(),
                                     constructor_args.end(), name);
@@ -19097,6 +19095,20 @@ public:
                     "'" + name + "'" + + " keyword argument is already specified");
                 throw SemanticAbort();
             }
+            ASR::ttype_t* temp_current_variable_type_ = current_variable_type_;
+            ASR::expr_t* temp_current_struct_type_var_expr = current_struct_type_var_expr;
+            current_variable_type_ = ASRUtils::symbol_type(constructor_arg_syms[idx]);
+            current_struct_type_var_expr = nullptr;
+            try {
+                this->visit_expr(*kwargs[i].m_value);
+            } catch (...) {
+                current_variable_type_ = temp_current_variable_type_;
+                current_struct_type_var_expr = temp_current_struct_type_var_expr;
+                throw;
+            }
+            current_variable_type_ = temp_current_variable_type_;
+            current_struct_type_var_expr = temp_current_struct_type_var_expr;
+            ASR::expr_t *expr = ASRUtils::EXPR(tmp);
             args.p[idx].loc = expr->base.loc;
             args.p[idx].m_value = expr;
         }

@@ -2493,12 +2493,9 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                     && value_struct_sym
                     && ASR::is_a<ASR::Struct_t>(*value_struct_sym)) {
                 if (!target_type_name.empty() && target_type_name != "void*") {
-                    return "((" + target_type_name + "*)(&((struct "
-                        + CUtils::get_c_symbol_name(value_struct_sym) + ")"
-                        + value_src + ")))";
+                    return "((" + target_type_name + "*)(&(" + value_src + ")))";
                 }
-                return "&((struct " + CUtils::get_c_symbol_name(value_struct_sym)
-                    + ")" + value_src + ")";
+                return "&(" + value_src + ")";
             }
             if (!target_type_name.empty() && target_type_name != "void*") {
                 return "((" + target_type_name + "*)(&(" + value_src + ")))";
@@ -5269,11 +5266,9 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                         && value_struct_sym
                         && ASR::is_a<ASR::Struct_t>(*value_struct_sym)) {
                     if (!target_type_name.empty()) {
-                        value = "((struct " + target_type_name + "*)(&((struct "
-                            + CUtils::get_c_symbol_name(value_struct_sym) + ")" + value + ")))";
+                        value = "((struct " + target_type_name + "*)(&(" + value + ")))";
                     } else {
-                        value = "&((struct " + CUtils::get_c_symbol_name(value_struct_sym)
-                            + ")" + value + ")";
+                        value = "&(" + value + ")";
                     }
                 } else {
                     if (!target_type_name.empty()) {

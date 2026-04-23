@@ -2384,11 +2384,6 @@ R"(
                 std::string der_type_name = CUtils::get_c_symbol_name(v.m_type_declaration);
                 if (ASR::down_cast<ASR::StructType_t>(v_m_type)->m_is_unlimited_polymorphic) {
                     sub = format_type_c("", "void*", decl_name, false, dummy);
-                    if ((v.m_intent == ASRUtils::intent_local
-                            || v.m_intent == ASRUtils::intent_return_var)
-                            && !do_not_initialize) {
-                        sub += " = NULL";
-                    }
                 } else if( is_array ) {
                     bool is_fixed_size = true;
                     dims = convert_dims_c(n_dims, m_dims, v_m_type, is_fixed_size, true);
@@ -2605,13 +2600,17 @@ R"(
             if (dims.size() == 0 && v.m_storage == ASR::storage_typeType::Save && use_static) {
                 sub = "static " + sub;
             }
+            bool emitted_null_init = false;
             if (dims.size() == 0
                     && needs_null_init_for_local_pointer_like_variable(
                         v, v_storage_type, is_array, dummy,
                         is_struct_type_member, do_not_initialize)) {
                 sub += " = NULL";
+                emitted_null_init = true;
             }
-            if (dims.size() == 0 && var_init_raw && !do_not_initialize) {
+            if (dims.size() == 0 && var_init_raw && !do_not_initialize
+                    && !(emitted_null_init && var_init_value
+                        && ASR::is_a<ASR::PointerNullConstant_t>(*var_init_value))) {
                 ASR::expr_t* init_expr = var_init_value;
                 if( v.m_storage != ASR::storage_typeType::Parameter ) {
                     SymbolTable *dep_scope = v.m_parent_symtab ? v.m_parent_symtab : current_scope;
