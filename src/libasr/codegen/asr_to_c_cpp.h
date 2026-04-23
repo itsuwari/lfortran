@@ -331,6 +331,16 @@ public:
                 return "false";
             }
         }
+        if (is_c && element_type_unwrapped != nullptr
+                && ASRUtils::is_character(*element_type_unwrapped)) {
+            ASR::String_t *string_type = ASRUtils::get_string_type(element_type_unwrapped);
+            int64_t len = 0;
+            if (ASRUtils::extract_value(string_type->m_len, len)) {
+                char *data_char = static_cast<char*>(arr->m_data) + index * len;
+                std::string raw_value(data_char, len);
+                return "\"" + CUtils::escape_c_string_literal(raw_value) + "\"";
+            }
+        }
         return value;
     }
 
@@ -5638,7 +5648,11 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             phys_type == ASR::array_physical_typeType::UnboundedPointerArray ||
             phys_type == ASR::array_physical_typeType::ISODescriptorArray ||
             phys_type == ASR::array_physical_typeType::NumPyArray ) {
-            std::string value_data = (value_is_data_only_array || value_is_inline_component_array)
+            ASR::expr_t *raw_section_base = unwrap_c_lvalue_expr(array_section->m_v);
+            bool value_is_array_constant = raw_section_base != nullptr
+                && ASR::is_a<ASR::ArrayConstant_t>(*raw_section_base);
+            std::string value_data = ((value_is_data_only_array || value_is_inline_component_array)
+                    && !value_is_array_constant)
                 ? value_desc : value_desc + "->data";
             std::vector<std::string> diminfo;
             diminfo.reserve(value_rank * 2);

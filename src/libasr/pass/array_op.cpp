@@ -381,6 +381,9 @@ class ReplaceArrayOp: public ASR::BaseExprReplacer<ReplaceArrayOp> {
         if (result_expr != nullptr && is_unlimited_polymorphic_array_expr(result_expr)) {
             return;
         }
+        if (result_expr == nullptr) {
+            return;
+        }
         // TODO: Remove this because the ArrayConstructor node should
         // be replaced with its value already (if present) in array_struct_temporary pass.
         if( x->m_value == nullptr ) {
@@ -407,10 +410,6 @@ class ReplaceArrayOp: public ASR::BaseExprReplacer<ReplaceArrayOp> {
         }
 
         remove_original_stmt_if_size_0(arr_type)
-
-        if (result_expr == nullptr) {
-            return;
-        }
         pass_result.reserve(al, x->n_args);
         const Location& loc = x->base.base.loc;
 

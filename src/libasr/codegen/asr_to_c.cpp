@@ -5080,9 +5080,10 @@ R"(    // Initialise Numpy
                     ASR::is_a<ASR::Real_t>(*past_type) ||
                     ASR::is_a<ASR::Complex_t>(*past_type) ||
                     ASR::is_a<ASR::Logical_t>(*past_type)) {
-                    std::string size_expr = "sizeof(" + CUtils::get_c_type_from_ttype_t(past_type) + ")";
+                    std::string c_type = CUtils::get_c_type_from_ttype_t(past_type);
+                    std::string size_expr = "sizeof(" + c_type + ")";
                     code += indent + "_lfortran_file_write(" + unit + ", " + iostat_ptr + ", \"\", 0, "
-                        + "((int32_t)" + size_expr + "), (void*)&(" + value + "), -1);\n";
+                        + "((int32_t)" + size_expr + "), (void*)&((" + c_type + "){" + value + "}), -1);\n";
                     return;
                 }
 
@@ -5908,7 +5909,11 @@ R"(    // Initialise Numpy
 
     void visit_ArraySection(const ASR::ArraySection_t &x) {
         CHECK_FAST_C(compiler_options, x)
-        if (is_c && x.n_args == 1 && is_data_only_array_expr(x.m_v)) {
+        ASR::expr_t *raw_base_expr = unwrap_c_lvalue_expr(x.m_v);
+        bool base_is_array_constant = raw_base_expr != nullptr
+            && ASR::is_a<ASR::ArrayConstant_t>(*raw_base_expr);
+        if (is_c && x.n_args == 1 && is_data_only_array_expr(x.m_v)
+                && !base_is_array_constant) {
             this->visit_expr(*x.m_v);
             std::string base_expr = src;
             std::string setup = drain_tmp_buffer();

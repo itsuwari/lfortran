@@ -188,7 +188,6 @@ namespace LCompilers {
 
     static inline std::string escape_c_string_literal(const std::string &s) {
         std::ostringstream o;
-        o << std::hex << std::setfill('0');
         for (unsigned char c : s) {
             switch (c) {
                 case '"':  o << "\\\""; break;
@@ -201,7 +200,8 @@ namespace LCompilers {
                 case '\v': o << "\\v"; break;
                 default:
                     if (c <= 0x1f || c == 0x7f) {
-                        o << "\\x" << std::setw(2) << static_cast<unsigned int>(c);
+                        o << "\\" << std::oct << std::setw(3) << std::setfill('0')
+                            << static_cast<unsigned int>(c) << std::dec;
                     } else {
                         o << static_cast<char>(c);
                     }
