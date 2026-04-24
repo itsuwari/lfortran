@@ -2621,15 +2621,27 @@ R"(
                     }
                     sub = format_type_c(dims, "struct " + der_type_name,
                                         value_var_name, use_ref, dummy);
+                    bool has_decl_init = var_init_raw && !do_not_initialize;
                     if (var_init_raw && !do_not_initialize) {
                         this->visit_expr(*var_init_raw);
                         std::string init = src;
                         sub += "=" + init;
                     }
                     sub += ";\n";
+                    ASR::Struct_t* der_type_t = ASR::down_cast<ASR::Struct_t>(
+                        ASRUtils::symbol_get_past_external(v.m_type_declaration));
+                    if (!has_decl_init) {
+                        headers.insert("string.h");
+                        sub += indent + "memset(&" + value_var_name + ", 0, sizeof("
+                            + value_var_name + "));\n";
+                    }
                     sub += indent + value_var_name + "." + get_runtime_type_tag_member_name()
                         + " = " + std::to_string(get_struct_runtime_type_id(v.m_type_declaration))
                         + ";\n";
+                    if (!has_decl_init) {
+                        initialize_struct_instance_members(
+                            der_type_t, sub, indent, "(&(" + value_var_name + "))");
+                    }
                     std::string ptr_char = "*";
                     if( !use_ptr_for_derived_type ) {
                         ptr_char.clear();
@@ -2640,9 +2652,9 @@ R"(
                     } else {
                         emitted_pointer_backed_struct_names.insert(decl_name);
                         sub += " = &" + value_var_name + ";\n";
-                        ASR::Struct_t* der_type_t = ASR::down_cast<ASR::Struct_t>(
-                        ASRUtils::symbol_get_past_external(v.m_type_declaration));
-                        allocate_array_members_of_struct(der_type_t, sub, indent, decl_name);
+                        if (has_decl_init) {
+                            allocate_array_members_of_struct(der_type_t, sub, indent, decl_name);
+                        }
                         sub.pop_back();
                         sub.pop_back();
                     }
