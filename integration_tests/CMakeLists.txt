@@ -2994,6 +2994,8 @@ RUN(NAME class_147 LABELS gfortran llvm)
 RUN(NAME class_148 LABELS gfortran c EXTRA_ARGS --separate-compilation)
 RUN(NAME class_149 LABELS gfortran c EXTRA_ARGS --separate-compilation)
 RUN(NAME class_150 LABELS gfortran c EXTRA_ARGS --separate-compilation)
+RUN(NAME class_151 LABELS gfortran c EXTRA_ARGS --separate-compilation)
+RUN(NAME class_152 LABELS gfortran c EXTRA_ARGS --separate-compilation)
 
 RUN(NAME class_procedure_args_01 LABELS gfortran llvm)
 

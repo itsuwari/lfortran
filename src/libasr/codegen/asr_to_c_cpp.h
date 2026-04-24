@@ -671,6 +671,52 @@ public:
         std::set<uint64_t> seen;
         return find_struct_method_for_proc(global_scope, proc_sym, owner_struct, method, seen);
     }
+
+    std::string get_c_tbp_force_link_anchor_name(ASR::Struct_t *owner_struct,
+            ASR::StructMethodDeclaration_t *method) {
+        return "__lfortran_force_link_tbp_"
+            + CUtils::get_c_symbol_name(reinterpret_cast<ASR::symbol_t*>(owner_struct))
+            + "__" + CUtils::sanitize_c_identifier(method->m_name);
+    }
+
+    bool can_emit_c_tbp_registration_wrapper(ASR::Function_t *proc) {
+        if (proc == nullptr || proc->n_args == 0) {
+            return false;
+        }
+        bool has_typevar = false;
+        return !get_function_pointer_type(*proc, has_typevar, true).empty() && !has_typevar;
+    }
+
+    void collect_direct_concrete_struct_methods(ASR::Struct_t *struct_t,
+            std::vector<ASR::StructMethodDeclaration_t*> &methods) {
+        if (struct_t == nullptr || struct_t->m_symtab == nullptr) {
+            return;
+        }
+        std::set<std::string> seen_names;
+        for (auto &item: struct_t->m_symtab->get_scope()) {
+            ASR::symbol_t *sym = ASRUtils::symbol_get_past_external(item.second);
+            if (!ASR::is_a<ASR::StructMethodDeclaration_t>(*sym)) {
+                continue;
+            }
+            ASR::StructMethodDeclaration_t *method =
+                ASR::down_cast<ASR::StructMethodDeclaration_t>(sym);
+            if (method->m_is_deferred || method->m_proc == nullptr) {
+                continue;
+            }
+            ASR::symbol_t *proc = ASRUtils::symbol_get_past_external(method->m_proc);
+            if (!ASR::is_a<ASR::Function_t>(*proc)) {
+                continue;
+            }
+            if (!can_emit_c_tbp_registration_wrapper(ASR::down_cast<ASR::Function_t>(proc))) {
+                continue;
+            }
+            if (!seen_names.insert(std::string(method->m_name)).second) {
+                continue;
+            }
+            methods.push_back(method);
+        }
+    }
+
     void visit_TranslationUnit(const ASR::TranslationUnit_t &x) {
         global_scope = x.m_symtab;
         // All loose statements must be converted to a function, so the items
@@ -3301,6 +3347,47 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         return arg_src;
     }
 
+    bool is_pointer_slot_dispatch_receiver(ASR::expr_t *expr) {
+        expr = unwrap_c_lvalue_expr(expr);
+        if (expr == nullptr) {
+            return false;
+        }
+        ASR::Variable_t *var = nullptr;
+        if (ASR::is_a<ASR::Var_t>(*expr)) {
+            ASR::symbol_t *sym = ASRUtils::symbol_get_past_external(
+                ASR::down_cast<ASR::Var_t>(expr)->m_v);
+            if (ASR::is_a<ASR::Variable_t>(*sym)) {
+                var = ASR::down_cast<ASR::Variable_t>(sym);
+            }
+        } else if (ASR::is_a<ASR::StructInstanceMember_t>(*expr)) {
+            ASR::StructInstanceMember_t *member =
+                ASR::down_cast<ASR::StructInstanceMember_t>(expr);
+            ASR::symbol_t *sym = ASRUtils::symbol_get_past_external(member->m_m);
+            if (ASR::is_a<ASR::Variable_t>(*sym)) {
+                var = ASR::down_cast<ASR::Variable_t>(sym);
+            }
+        }
+        if (var == nullptr) {
+            return false;
+        }
+        ASR::ttype_t *value_type =
+            ASRUtils::type_get_past_allocatable_pointer(var->m_type);
+        return ASRUtils::is_allocatable(var->m_type)
+            || ASRUtils::is_pointer(var->m_type)
+            || (value_type != nullptr && ASRUtils::is_class_type(value_type));
+    }
+
+    std::string get_deferred_dispatch_receiver_pointer_src(ASR::expr_t *raw_receiver,
+            const std::string &receiver_src) {
+        if (receiver_src.size() > 3
+                && receiver_src.rfind("(*", 0) == 0
+                && receiver_src.back() == ')'
+                && is_pointer_slot_dispatch_receiver(raw_receiver)) {
+            return receiver_src;
+        }
+        return canonicalize_raw_pointer_actual_src(receiver_src);
+    }
+
     bool is_compiler_created_scalar_storage_temp(const std::string &arg_src) {
         return arg_src.rfind("(*__libasr_created_variable_", 0) == 0
             && arg_src.rfind("(*__libasr_created_variable_pointer_", 0) != 0
@@ -4715,15 +4802,28 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         if (parent_sym == nullptr || !ASR::is_a<ASR::Struct_t>(*parent_sym)) {
             return "";
         }
+        ASR::Struct_t *parent_struct = ASR::down_cast<ASR::Struct_t>(parent_sym);
+        std::vector<ASR::StructMethodDeclaration_t*> parent_methods;
+        collect_direct_concrete_struct_methods(parent_struct, parent_methods);
+        std::string force_link_decls;
+        std::string force_link_calls;
+        for (ASR::StructMethodDeclaration_t *method: parent_methods) {
+            std::string anchor_name = get_c_tbp_force_link_anchor_name(parent_struct, method);
+            force_link_decls += "extern void " + anchor_name + "(void);\n";
+            force_link_calls += "    " + anchor_name + "();\n";
+        }
         std::string registrar_name = get_unique_local_name(
             "__lfortran_register_type_parent_" + CUtils::sanitize_c_identifier(x.m_name), false);
-        return "LFORTRAN_C_BACKEND_CONSTRUCTOR static void " + registrar_name + "(void)\n{\n"
+        return force_link_decls
+            + "LFORTRAN_C_BACKEND_CONSTRUCTOR static void " + registrar_name + "(void)\n{\n"
             "    _lfortran_register_c_type_parent("
             + std::to_string(get_struct_runtime_type_id(
                 reinterpret_cast<ASR::symbol_t*>(const_cast<ASR::Struct_t*>(&x))))
             + ", "
             + std::to_string(get_struct_runtime_type_id(parent_sym))
-            + ");\n}\n\n";
+            + ");\n"
+            + force_link_calls
+            + "}\n\n";
     }
 
     std::string emit_c_tbp_registration_wrapper(const ASR::Function_t &x) {
@@ -4741,8 +4841,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         if (method == nullptr || owner_struct == nullptr || method->m_is_deferred) {
             return "";
         }
-        bool has_typevar = false;
-        if (get_function_pointer_type(x, has_typevar, true).empty() || has_typevar) {
+        if (!can_emit_c_tbp_registration_wrapper(const_cast<ASR::Function_t*>(&x))) {
             return "";
         }
         std::string wrapper_name = get_unique_local_name(
@@ -4783,6 +4882,8 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             wrapper_src += "    " + get_emitted_function_name(x) + "(" + call_args + ");\n";
         }
         wrapper_src += "}\n\n";
+        wrapper_src += "void " + get_c_tbp_force_link_anchor_name(owner_struct, method)
+            + "(void)\n{\n}\n\n";
         std::string registrar_name = get_unique_local_name(
             "__lfortran_register_tbp_" + CUtils::sanitize_c_identifier(x.m_name), false);
         wrapper_src += "LFORTRAN_C_BACKEND_CONSTRUCTOR static void " + registrar_name
@@ -4845,7 +4946,8 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         if (self_expr.empty()) {
             return false;
         }
-        std::string self_pointer_expr = canonicalize_raw_pointer_actual_src(self_expr);
+        std::string self_pointer_expr = get_deferred_dispatch_receiver_pointer_src(
+            raw_dispatch_call_arg, self_expr);
 
         ASR::Function_t *iface_fn = get_procedure_interface_function(callee_sym);
         if (iface_fn == nullptr || iface_fn->n_args == 0) {
