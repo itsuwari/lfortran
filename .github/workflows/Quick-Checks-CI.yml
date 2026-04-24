@@ -48,7 +48,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: mamba-org/setup-micromamba@v2.0.2
+      - uses: mamba-org/setup-micromamba@v3.0.0
         with:
           micromamba-version: '2.0.4-0'
           environment-file: ci/environment.yml
@@ -338,7 +338,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: mamba-org/setup-micromamba@v2.0.2
+      - uses: mamba-org/setup-micromamba@v3.0.0
         with:
           micromamba-version: '2.0.4-0'
           environment-file: ci/environment_linux.yml
