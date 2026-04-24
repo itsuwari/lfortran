@@ -5293,23 +5293,41 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                     && !ASRUtils::is_array(m_target_type)
                     && ASR::is_a<ASR::StructType_t>(*target_value_type)) {
                 ASR::expr_t *target_expr = unwrap_c_lvalue_expr(x.m_target);
+                ASR::expr_t *value_expr = unwrap_c_lvalue_expr(x.m_value);
                 ASR::symbol_t *target_type_decl = get_expr_type_declaration_symbol(target_expr);
-                std::string concrete_type = get_c_concrete_type_from_ttype_t(
+                std::string target_concrete_type = get_c_concrete_type_from_ttype_t(
                     target_value_type, target_type_decl);
-                if (!concrete_type.empty() && concrete_type != "void*") {
+                std::string allocation_type = target_concrete_type;
+                ASR::expr_t *deepcopy_expr = target_expr;
+                bool copy_runtime_type_tag = false;
+                ASR::symbol_t *value_struct_sym = ASRUtils::symbol_get_past_external(
+                    ASRUtils::get_struct_sym_from_struct_expr(value_expr));
+                if (ASRUtils::is_class_type(target_value_type)
+                        && !value_is_pointer_backed
+                        && value_struct_sym
+                        && ASR::is_a<ASR::Struct_t>(*value_struct_sym)) {
+                    allocation_type = "struct " + CUtils::get_c_symbol_name(value_struct_sym);
+                    deepcopy_expr = value_expr;
+                    copy_runtime_type_tag = true;
+                }
+                if (!target_concrete_type.empty() && target_concrete_type != "void*") {
                     headers.insert("string.h");
                     src = check_tmp_buffer();
                     src += indent + "if (" + target + " == NULL) {\n";
                     indentation_level++;
                     std::string inner_indent(indentation_level * indentation_spaces, ' ');
-                    src += inner_indent + target + " = (" + concrete_type
+                    src += inner_indent + target + " = (" + target_concrete_type
                         + "*) _lfortran_malloc_alloc(_lfortran_get_default_allocator(), sizeof("
-                        + concrete_type + "));\n";
-                    src += inner_indent + "memset(" + target + ", 0, sizeof(" + concrete_type + "));\n";
+                        + allocation_type + "));\n";
+                    src += inner_indent + "memset(" + target + ", 0, sizeof(" + allocation_type + "));\n";
                     indentation_level--;
                     src += indent + "}\n";
                     src += indent + c_ds_api->get_struct_deepcopy(
-                        target_expr, value, target) + "\n";
+                        deepcopy_expr, value, target) + "\n";
+                    if (copy_runtime_type_tag) {
+                        src += indent + get_runtime_type_tag_expr(target, true)
+                            + " = " + get_runtime_type_tag_expr(value, true) + ";\n";
+                    }
                     from_std_vector_helper.clear();
                     return;
                 }
