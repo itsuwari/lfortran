@@ -5599,6 +5599,49 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             src = update_target_desc;
     }
 
+    void fill_descriptor_for_array_section_descriptor(std::string value_desc, std::string target_desc,
+        std::vector<std::string>& lbs, std::vector<std::string>& ubs, std::vector<std::string>& ds,
+        std::vector<std::string>& non_sliced_indices, int value_rank, int target_rank) {
+        std::string indent(indentation_level * indentation_spaces, ' ');
+
+        std::string target_offset = value_desc + "->offset";
+        for (int i = 0; i < value_rank; i++) {
+            std::string first_index;
+            if (ds[i] != "") {
+                LCOMPILERS_ASSERT(lbs[i] != "");
+                first_index = lbs[i];
+            } else {
+                LCOMPILERS_ASSERT(non_sliced_indices[i] != "");
+                first_index = non_sliced_indices[i];
+            }
+            std::string source_dim = value_desc + "->dims[" + std::to_string(i) + "]";
+            target_offset = "(" + target_offset + " + (" + source_dim + ".stride * (("
+                + first_index + ") - " + source_dim + ".lower_bound)))";
+        }
+
+        std::string update_target_desc;
+        update_target_desc += indent + target_desc + "->data = " + value_desc + "->data;\n";
+        update_target_desc += indent + target_desc + "->offset = " + target_offset + ";\n";
+        update_target_desc += indent + target_desc + "->is_allocated = true;\n";
+
+        std::string target_dim_des_array = target_desc + "->dims";
+        int j = 0;
+        for (int i = 0; i < value_rank; i++) {
+            if (ds[i] != "") {
+                std::string dim_length = "((( (" + ubs[i] + ") - (" + lbs[i] + ") )" + "/" + ds[i] + ") + 1)";
+                std::string source_dim = value_desc + "->dims[" + std::to_string(i) + "]";
+                std::string target_dim_des = target_dim_des_array + "[" + std::to_string(j) + "]";
+                update_target_desc += indent + target_dim_des + ".stride = (" + source_dim + ".stride * (" + ds[i] + "));\n";
+                update_target_desc += indent + target_dim_des + ".lower_bound = 1;\n";
+                update_target_desc += indent + target_dim_des + ".length = " + dim_length + ";\n";
+                j++;
+            }
+        }
+        LCOMPILERS_ASSERT(j == target_rank);
+        update_target_desc += indent + target_desc + "->n_dims = " + std::to_string(target_rank) + ";\n";
+        src = update_target_desc;
+    }
+
     void handle_array_section_association_to_pointer(const ASR::Associate_t& x) {
         ASR::ArraySection_t* array_section = ASR::down_cast<ASR::ArraySection_t>(x.m_value);
         self().visit_expr(*array_section->m_v);
@@ -5684,14 +5727,14 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 ? value_desc : value_desc + "->data";
             std::vector<std::string> diminfo;
             diminfo.reserve(value_rank * 2);
-            if (!value_is_data_only_array && (phys_type == ASR::array_physical_typeType::DescriptorArray ||
+            if (!value_is_data_only_array && (phys_type == ASR::array_physical_typeType::PointerArray ||
+                phys_type == ASR::array_physical_typeType::DescriptorArray ||
                 phys_type == ASR::array_physical_typeType::UnboundedPointerArray ||
                 phys_type == ASR::array_physical_typeType::ISODescriptorArray ||
                 phys_type == ASR::array_physical_typeType::NumPyArray)) {
-                for( int i = 0; i < value_rank; i++ ) {
-                    diminfo.push_back(value_desc + "->dims[" + std::to_string(i) + "].lower_bound");
-                    diminfo.push_back(value_desc + "->dims[" + std::to_string(i) + "].length");
-                }
+                fill_descriptor_for_array_section_descriptor(value_desc, target_desc,
+                    lbs, ubs, ds, non_sliced_indices, value_rank, target_rank);
+                return;
             } else {
                 ASR::dimension_t* m_dims = nullptr;
                 [[maybe_unused]] int array_value_rank = ASRUtils::extract_dimensions_from_ttype(array_type, m_dims);
