@@ -5576,6 +5576,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             update_target_desc += indent + target_desc + "->data = " + value_desc + ";\n";
 
             update_target_desc += indent + target_desc + "->offset = 0;\n"; // offset not available yet
+            update_target_desc += indent + target_desc + "->is_allocated = true;\n";
 
             std::string target_dim_des_array = target_desc + "->dims";
             int j = target_rank - 1;
@@ -5812,7 +5813,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 src += indent + target_desc + "->dims[0].length = (((((" + section_ub
                     + ") - (" + section_lb + ")) / (" + section_step + ")) + 1));\n";
                 src += indent + target_desc + "->n_dims = 1;\n";
-                src += indent + target_desc + "->is_allocated = false;\n";
+                src += indent + target_desc + "->is_allocated = true;\n";
                 return;
             }
             handle_array_section_association_to_pointer(x);

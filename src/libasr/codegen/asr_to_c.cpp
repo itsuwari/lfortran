@@ -6047,8 +6047,14 @@ R"(    // Initialise Numpy
         LCOMPILERS_ASSERT(ASR::is_a<ASR::Array_t>(*x_mv_type_));
         ASR::Array_t* array_t = ASR::down_cast<ASR::Array_t>(x_mv_type_);
         std::vector<std::string> diminfo;
-        if( array_t->m_physical_type == ASR::array_physical_typeType::PointerArray ||
-                array_t->m_physical_type == ASR::array_physical_typeType::FixedSizeArray ) {
+        bool use_pointer_data_only_indexing =
+            array_t->m_physical_type == ASR::array_physical_typeType::PointerArray
+            && is_data_only_array_expr(array_expr);
+        bool use_fixed_size_data_only_indexing =
+            array_t->m_physical_type == ASR::array_physical_typeType::FixedSizeArray
+            && is_fixed_size_array_storage_expr(array_expr);
+        if( use_pointer_data_only_indexing ||
+                use_fixed_size_data_only_indexing ) {
             for( size_t idim = 0; idim < x.n_args; idim++ ) {
                 diminfo.push_back(get_dim_start_src(m_dims[idim]));
                 diminfo.push_back(get_dim_length_src(m_dims[idim]));
@@ -6068,8 +6074,8 @@ R"(    // Initialise Numpy
                                                 true);
         } else {
             src = arr_get_single_element(array, indices, x.n_args,
-                                                array_t->m_physical_type == ASR::array_physical_typeType::PointerArray,
-                                                array_t->m_physical_type == ASR::array_physical_typeType::FixedSizeArray,
+                                                use_pointer_data_only_indexing,
+                                                use_fixed_size_data_only_indexing,
                                                 diminfo, false);
         }
         last_expr_precedence = 2;
@@ -6114,7 +6120,7 @@ R"(    // Initialise Numpy
             src = "(&(" + wrapper_type + "){ .data = (" + base_expr + " + ((" + section_lb
                 + ") - (" + base_lb + "))), .dims = {{1, ((((" + section_ub + ") - ("
                 + section_lb + ")) / (" + section_step + ")) + 1), " + section_step
-                + "}}, .n_dims = 1, .offset = 0, .is_allocated = false })";
+                + "}}, .n_dims = 1, .offset = 0, .is_allocated = true })";
             if (!setup.empty()) {
                 tmp_buffer_src.push_back(setup);
             }
