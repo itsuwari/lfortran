@@ -1581,6 +1581,8 @@ R"(
                 sub += indent + std::string(v_m_name) + "->data = " + std::string(v_m_name) + "_data;\n";
                 sub += indent + std::string(v_m_name) + "->n_dims = " + std::to_string(n_dims) + ";\n";
                 sub += indent + std::string(v_m_name) + "->offset = " + std::to_string(0) + ";\n";
+                sub += indent + std::string(v_m_name) + "->is_allocated = "
+                    + std::string((is_fixed_size || !dims.empty()) ? "true" : "false") + ";\n";
                 std::string stride = "1";
                 for (int i = n_dims - 1; i >= 0; i--) {
                     std::string start = "1", length = "0";

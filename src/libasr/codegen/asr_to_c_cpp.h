@@ -3188,7 +3188,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                     || ASRUtils::is_class_type(source_type_unwrapped)));
         if (reset_as_descriptor) {
             headers.insert("string.h");
-            return indent + "memset(&(" + source_lvalue + "), 0, sizeof("
+            return indent + "memset(" + source_lvalue + ", 0, sizeof(*"
                 + source_lvalue + "));\n";
         }
         return indent + source_lvalue + " = NULL;\n";
@@ -5369,7 +5369,11 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         if (is_c && current_function &&
                 std::string(current_function->m_name).rfind("_lcompilers_move_alloc_", 0) == 0) {
             headers.insert("string.h");
-            src += indent + "memcpy(&(" + target + "), &(" + value + "), sizeof(" + target + "));\n";
+            if (ASRUtils::is_array(m_target_type)) {
+                src += indent + "memcpy(" + target + ", " + value + ", sizeof(*" + target + "));\n";
+            } else {
+                src += indent + "memcpy(&(" + target + "), &(" + value + "), sizeof(" + target + "));\n";
+            }
             return;
         }
         if( is_target_list && is_value_list ) {
@@ -7472,6 +7476,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                     }
                 }
                 size_str += "*sizeof(" + ty + ")";
+                out += indent + sym + "->offset = 0;\n";
                 out += indent + sym + "->data = (" + ty + "*) _lfortran_malloc_alloc(_lfortran_get_default_allocator(), " + size_str + ")";
                 out += ";\n";
                 out += indent + sym + "->is_allocated = true;\n";
