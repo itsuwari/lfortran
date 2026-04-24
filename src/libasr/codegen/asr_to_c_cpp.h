@@ -5288,6 +5288,15 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                     }
                 }
             }
+            if (is_c && current_function &&
+                    std::string(current_function->m_name).rfind("_lcompilers_move_alloc_", 0) == 0
+                    && !ASRUtils::is_array(m_target_type)) {
+                headers.insert("string.h");
+                src = check_tmp_buffer();
+                src += indent + "memcpy(&(" + target + "), &(" + value + "), sizeof("
+                    + target + "));\n";
+                return;
+            }
             if (is_c
                     && ASR::is_a<ASR::Allocatable_t>(*m_target_type)
                     && !ASRUtils::is_array(m_target_type)

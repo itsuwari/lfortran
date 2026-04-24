@@ -1321,9 +1321,15 @@ class CCPPDSUtils {
                         tmp_generated += indent + tab + get_deepcopy(member_type_asr,
                                             "src->" + emitted_mem_name, "dest->" + emitted_mem_name) + ";\n";
                     }
-                } else if( ASR::is_a<ASR::StructType_t>(*member_value_type) ) {
+                } else if( ASR::is_a<ASR::StructType_t>(*member_value_type)
+                        || ASRUtils::is_class_type(member_value_type) ) {
                     if( ASR::is_a<ASR::Allocatable_t>(*member_type_asr) ||
                         ASR::is_a<ASR::Pointer_t>(*member_type_asr) ) {
+                        if (ASRUtils::is_class_type(member_value_type)) {
+                            tmp_generated += indent + tab + "dest->" + emitted_mem_name
+                                + " = src->" + emitted_mem_name + ";\n";
+                            continue;
+                        }
                         std::string member_struct_type = "struct " + CUtils::get_struct_type_code(member_expr);
                         tmp_generated += indent + tab + "if (src->" + emitted_mem_name + " != NULL) {\n";
                         tmp_generated += indent + tab + tab + "if (dest->" + emitted_mem_name + " == NULL) {\n";
