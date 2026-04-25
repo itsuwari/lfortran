@@ -5586,8 +5586,9 @@ R"(    // Initialise Numpy
         std::string array_const = "";
         for( size_t i = 0; i < (size_t) ASRUtils::get_fixed_size_of_array(x.m_type); i++ ) {
             ASR::Array_t *array_type = ASR::down_cast<ASR::Array_t>(x.m_type);
-            array_const += get_c_array_constant_init_element(
-                const_cast<ASR::ArrayConstant_t*>(&x), array_type->m_type, i) + ", ";
+            array_const += get_c_array_constant_init_element_for_c_index(
+                const_cast<ASR::ArrayConstant_t*>(&x), x.m_type,
+                array_type->m_type, i) + ", ";
         }
         array_const.pop_back();
         array_const.pop_back();

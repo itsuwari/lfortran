@@ -344,6 +344,53 @@ public:
         return value;
     }
 
+    size_t get_c_array_constant_storage_index(ASR::ArrayConstant_t *arr,
+            ASR::ttype_t *array_type, size_t c_index) {
+        ASR::dimension_t *m_dims = nullptr;
+        size_t n_dims = ASRUtils::extract_dimensions_from_ttype(array_type, m_dims);
+        if (n_dims <= 1 || arr->m_storage_format == ASR::arraystorageType::RowMajor) {
+            return c_index;
+        }
+
+        std::vector<int64_t> lengths(n_dims);
+        for (size_t i = 0; i < n_dims; i++) {
+            int64_t length = 0;
+            if (m_dims[i].m_length == nullptr
+                    || !ASRUtils::extract_value(
+                        ASRUtils::expr_value(m_dims[i].m_length), length)
+                    || length <= 0) {
+                return c_index;
+            }
+            lengths[i] = length;
+        }
+
+        std::vector<int64_t> subscripts(n_dims);
+        size_t remaining = c_index;
+        for (size_t i = 0; i < n_dims; i++) {
+            size_t stride = 1;
+            for (size_t j = i + 1; j < n_dims; j++) {
+                stride *= static_cast<size_t>(lengths[j]);
+            }
+            subscripts[i] = static_cast<int64_t>(remaining / stride);
+            remaining %= stride;
+        }
+
+        size_t storage_index = 0;
+        size_t storage_stride = 1;
+        for (size_t i = 0; i < n_dims; i++) {
+            storage_index += static_cast<size_t>(subscripts[i]) * storage_stride;
+            storage_stride *= static_cast<size_t>(lengths[i]);
+        }
+        return storage_index;
+    }
+
+    std::string get_c_array_constant_init_element_for_c_index(
+            ASR::ArrayConstant_t *arr, ASR::ttype_t *array_type,
+            ASR::ttype_t *element_type, size_t c_index) {
+        return get_c_array_constant_init_element(arr, element_type,
+            get_c_array_constant_storage_index(arr, array_type, c_index));
+    }
+
     int64_t get_struct_runtime_type_id(ASR::symbol_t *struct_sym) {
         struct_sym = ASRUtils::symbol_get_past_external(struct_sym);
         if (struct_sym == nullptr) {
@@ -2906,7 +2953,8 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         size_t n = ASRUtils::get_fixed_size_of_array(member_type);
         std::string init = "{";
         for (size_t i = 0; i < n; i++) {
-            init += get_c_array_constant_init_element(arr, array_type->m_type, i);
+            init += get_c_array_constant_init_element_for_c_index(
+                arr, member_type, array_type->m_type, i);
             if (i + 1 < n) {
                 init += ", ";
             }

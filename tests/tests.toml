@@ -5060,6 +5060,11 @@ run = true
 options = "--backend=c --separate-compilation"
 
 [[test]]
+filename = "c_backend_reshape_order_section_01.f90"
+run = true
+options = "--backend=c --separate-compilation"
+
+[[test]]
 filename = "c_backend_local_fixed_array_wrapper_01.f90"
 c = true
 
