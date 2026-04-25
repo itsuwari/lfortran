@@ -1,0 +1,13 @@
+{
+    "basename": "run-c_backend_rank_remap_lb0_extent_01-25a0489",
+    "cmd": "lfortran --no-color {infile}",
+    "infile": "tests/c_backend_rank_remap_lb0_extent_01.f90",
+    "infile_hash": "3c396464a559b2d40fc06ee6041ea8700da12de4bb8dda5d7505a38f",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

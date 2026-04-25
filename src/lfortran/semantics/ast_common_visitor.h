@@ -8254,6 +8254,46 @@ public:
                                     init_expr_ptype, true);
                             }
                         }
+                        auto retarget_parameter_array_constant_type =
+                                [&](ASR::expr_t *expr) -> ASR::expr_t* {
+                            if (expr == nullptr || !ASR::is_a<ASR::ArrayConstant_t>(*expr)
+                                    || !ASRUtils::is_array(type)) {
+                                return expr;
+                            }
+                            ASR::ttype_t *declared_type =
+                                ASRUtils::type_get_past_allocatable_pointer(type);
+                            ASR::ttype_t *value_type =
+                                ASRUtils::type_get_past_allocatable_pointer(
+                                    ASRUtils::expr_type(expr));
+                            if (declared_type == nullptr || value_type == nullptr
+                                    || !ASRUtils::is_array(declared_type)
+                                    || !ASRUtils::is_array(value_type)) {
+                                return expr;
+                            }
+                            ASR::dimension_t *declared_dims = nullptr;
+                            ASR::dimension_t *value_dims = nullptr;
+                            size_t declared_rank = ASRUtils::extract_dimensions_from_ttype(
+                                declared_type, declared_dims);
+                            size_t value_rank = ASRUtils::extract_dimensions_from_ttype(
+                                value_type, value_dims);
+                            if (declared_rank != value_rank) {
+                                return expr;
+                            }
+                            int64_t declared_size = ASRUtils::get_fixed_size_of_array(
+                                declared_dims, declared_rank);
+                            int64_t value_size = ASRUtils::get_fixed_size_of_array(
+                                value_dims, value_rank);
+                            if (declared_size < 0 || value_size < 0
+                                    || declared_size != value_size) {
+                                return expr;
+                            }
+                            ASR::ArrayConstant_t *array_constant =
+                                ASR::down_cast<ASR::ArrayConstant_t>(expr);
+                            return ASRUtils::EXPR(ASR::make_ArrayConstant_t(al,
+                                expr->base.loc, array_constant->m_n_data,
+                                array_constant->m_data, declared_type,
+                                array_constant->m_storage_format));
+                        };
                         if( value ) {
                             // TODO: move this into `expr_value` itself:
                             if (ASR::is_a<ASR::ArrayConstant_t>(*value)) {
@@ -8296,6 +8336,12 @@ public:
                             if (ASR::is_a<ASR::StringLen_t>(*value)) {
                                 ASR::StringLen_t *a = ASR::down_cast<ASR::StringLen_t>(value);
                                 value = a->m_value;
+                            }
+                            ASR::expr_t *old_value = value;
+                            value = retarget_parameter_array_constant_type(value);
+                            if (init_expr == old_value || (init_expr != nullptr
+                                    && ASR::is_a<ASR::ArrayConstant_t>(*init_expr))) {
+                                init_expr = retarget_parameter_array_constant_type(init_expr);
                             }
                         }
                     } else {
