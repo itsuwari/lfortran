@@ -111,6 +111,61 @@ public:
     }
     std ::string kernel_func_code;
 
+    std::string serialize_fortran_format_type(ASR::expr_t *expr, ASR::ttype_t *type) {
+        type = ASRUtils::type_get_past_allocatable(ASRUtils::type_get_past_pointer(type));
+        if (ASR::is_a<ASR::Integer_t>(*type)) {
+            return "I" + std::to_string(ASRUtils::extract_kind_from_ttype_t(type));
+        }
+        if (ASR::is_a<ASR::UnsignedInteger_t>(*type)) {
+            return "U" + std::to_string(ASRUtils::extract_kind_from_ttype_t(type));
+        }
+        if (ASR::is_a<ASR::Real_t>(*type)) {
+            return "R" + std::to_string(ASRUtils::extract_kind_from_ttype_t(type));
+        }
+        if (ASR::is_a<ASR::Logical_t>(*type)) {
+            int kind = ASRUtils::extract_kind_from_ttype_t(type);
+            return "L" + std::to_string(kind * 8);
+        }
+        if (ASR::is_a<ASR::String_t>(*type)) {
+            std::string res = "S-";
+            ASR::String_t *str_type = ASR::down_cast<ASR::String_t>(type);
+            if (str_type->m_physical_type == ASR::DescriptorString) {
+                res += "DESC";
+            } else if (str_type->m_physical_type == ASR::CChar) {
+                res += "CCHAR";
+            } else {
+                throw CodeGenError("C backend FileWrite does not support this string representation in Fortran formatting",
+                    expr->base.loc);
+            }
+            int64_t len = 0;
+            if (str_type->m_len && ASRUtils::extract_value(str_type->m_len, len)) {
+                res += "-" + std::to_string(len);
+            }
+            return res;
+        }
+        if (ASR::is_a<ASR::Complex_t>(*type)) {
+            std::string kind = std::to_string(ASRUtils::extract_kind_from_ttype_t(type));
+            return "{R" + kind + ",R" + kind + "}";
+        }
+        if (ASR::is_a<ASR::CPtr_t>(*type)) {
+            return "CPtr";
+        }
+        throw CodeGenError("C backend FileWrite does not support Fortran formatting for `" +
+            ASRUtils::type_to_str_fortran_expr(type, expr) + "` values",
+            expr->base.loc);
+    }
+
+    std::string serialize_fortran_format_args(ASR::expr_t **args, size_t n_args) {
+        std::string serialization;
+        for (size_t i = 0; i < n_args; i++) {
+            if (i != 0) {
+                serialization += ",";
+            }
+            serialization += serialize_fortran_format_type(args[i], ASRUtils::expr_type(args[i]));
+        }
+        return serialization;
+    }
+
     ASRToCVisitor(diag::Diagnostics &diag, CompilerOptions &co,
                   int64_t default_lower_bound)
          : BaseCCPPVisitor(diag, co.platform, co, false, false, true, default_lower_bound),
@@ -5413,6 +5468,96 @@ R"(    // Initialise Numpy
 
         if (ASR::is_a<ASR::StringFormat_t>(*x.m_values[0])) {
             ASR::StringFormat_t *str_fmt = ASR::down_cast<ASR::StringFormat_t>(x.m_values[0]);
+            bool has_non_character_arg = false;
+            bool has_array_arg = false;
+            for (size_t i=0; i<str_fmt->n_args; i++) {
+                ASR::ttype_t *arg_type = ASRUtils::type_get_past_allocatable_pointer(
+                    ASRUtils::expr_type(str_fmt->m_args[i]));
+                if (ASRUtils::is_array(arg_type)) {
+                    has_array_arg = true;
+                    break;
+                }
+                if (!ASRUtils::is_character(*ASRUtils::extract_type(arg_type))) {
+                    has_non_character_arg = true;
+                }
+            }
+            if (str_fmt->m_kind == ASR::string_format_kindType::FormatFortran
+                    && has_non_character_arg && !has_array_arg) {
+                std::string format_value = "NULL";
+                std::string format_len = "0";
+                if (str_fmt->m_fmt) {
+                    auto fmt_arg = visit_string_arg(str_fmt->m_fmt);
+                    format_value = fmt_arg.first;
+                    format_len = fmt_arg.second;
+                }
+
+                std::string serialization = serialize_fortran_format_args(str_fmt->m_args, str_fmt->n_args);
+                std::vector<std::string> arg_ptrs;
+                std::vector<std::string> string_lengths;
+                for (size_t i=0; i<str_fmt->n_args; i++) {
+                    ASR::expr_t *arg_expr = str_fmt->m_args[i];
+                    ASR::ttype_t *arg_type = ASRUtils::expr_type(arg_expr);
+                    ASR::ttype_t *past_type = ASRUtils::type_get_past_allocatable_pointer(arg_type);
+                    if (ASRUtils::is_array(past_type)) {
+                        throw CodeGenError("C backend FileWrite does not support Fortran formatted array writes yet",
+                            arg_expr->base.loc);
+                    }
+
+                    this->visit_expr(*arg_expr);
+                    std::string arg_value = src;
+                    if (ASRUtils::is_character(*past_type)) {
+                        ASR::String_t *str_type = ASRUtils::get_string_type(arg_expr);
+                        if (!str_type || !str_type->m_len) {
+                            string_lengths.push_back("(int64_t)strlen(" + arg_value + ")");
+                        } else {
+                            int64_t fixed_len = 0;
+                            if (!ASRUtils::extract_value(str_type->m_len, fixed_len)) {
+                                this->visit_expr(*str_type->m_len);
+                                string_lengths.push_back("(int64_t)(" + src + ")");
+                            }
+                        }
+                        arg_ptrs.push_back("&((char*){" + arg_value + "})");
+                    } else {
+                        std::string c_type = CUtils::get_c_type_from_ttype_t(past_type);
+                        arg_ptrs.push_back("&((" + c_type + "){" + arg_value + "})");
+                    }
+                }
+
+                std::string unique_suffix = std::to_string(counter);
+                counter += 1;
+                std::string size_name = "__lfortran_write_size_" + unique_suffix;
+                std::string buffer_name = "__lfortran_write_buffer_" + unique_suffix;
+
+                src = indent + "int64_t " + size_name + " = 0;\n";
+                src += indent + "char *" + buffer_name
+                    + " = _lcompilers_string_format_fortran(_lfortran_get_default_allocator(), "
+                    + format_value + ", (int64_t)(" + format_len + "), \""
+                    + CUtils::escape_c_string_literal(serialization) + "\", &"
+                    + size_name + ", 0, " + std::to_string(string_lengths.size())
+                    + ", 0, 0, 0";
+                for (auto &length: string_lengths) {
+                    src += ", " + length;
+                }
+                for (auto &arg: arg_ptrs) {
+                    src += ", " + arg;
+                }
+                src += ");\n";
+                if (is_string_unit) {
+                    src += unit_setup;
+                    src += indent + "_lfortran_string_write(_lfortran_get_default_allocator(), &(" + unit + "), "
+                        + (is_unit_allocatable ? "true" : "false") + ", "
+                        + (is_unit_deferred ? "true" : "false") + ", false, 1, &"
+                        + unit_len_name + ", " + iostat_ptr + ", \"%s\", 2, "
+                        + buffer_name + ", " + size_name + ");\n";
+                } else {
+                    src += indent + "_lfortran_file_write(" + unit + ", " + iostat_ptr + ", \"%s%s\", 4, "
+                        + buffer_name + ", " + size_name + ", "
+                        + end_arg.first + ", " + end_arg.second + ");\n";
+                }
+                src += indent + "_lfortran_free_alloc(_lfortran_get_default_allocator(), " + buffer_name + ");\n";
+                return;
+            }
+
             std::string snprintf_fmt = "\"";
             std::vector<std::string> fmt_args;
             bool has_hash_prefix = false;
