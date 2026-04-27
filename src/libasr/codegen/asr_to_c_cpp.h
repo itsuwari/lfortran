@@ -348,7 +348,7 @@ public:
             ASR::ttype_t *array_type, size_t c_index) {
         ASR::dimension_t *m_dims = nullptr;
         size_t n_dims = ASRUtils::extract_dimensions_from_ttype(array_type, m_dims);
-        if (n_dims <= 1 || arr->m_storage_format == ASR::arraystorageType::RowMajor) {
+        if (n_dims <= 1 || arr->m_storage_format != ASR::arraystorageType::RowMajor) {
             return c_index;
         }
 
@@ -367,19 +367,18 @@ public:
         std::vector<int64_t> subscripts(n_dims);
         size_t remaining = c_index;
         for (size_t i = 0; i < n_dims; i++) {
-            size_t stride = 1;
-            for (size_t j = i + 1; j < n_dims; j++) {
-                stride *= static_cast<size_t>(lengths[j]);
-            }
-            subscripts[i] = static_cast<int64_t>(remaining / stride);
-            remaining %= stride;
+            subscripts[i] = static_cast<int64_t>(
+                remaining % static_cast<size_t>(lengths[i]));
+            remaining /= static_cast<size_t>(lengths[i]);
         }
 
         size_t storage_index = 0;
-        size_t storage_stride = 1;
         for (size_t i = 0; i < n_dims; i++) {
+            size_t storage_stride = 1;
+            for (size_t j = i + 1; j < n_dims; j++) {
+                storage_stride *= static_cast<size_t>(lengths[j]);
+            }
             storage_index += static_cast<size_t>(subscripts[i]) * storage_stride;
-            storage_stride *= static_cast<size_t>(lengths[i]);
         }
         return storage_index;
     }
@@ -762,6 +761,54 @@ public:
             }
             methods.push_back(method);
         }
+    }
+
+    std::string emit_c_tbp_force_link_calls(ASR::Struct_t *owner_struct,
+            ASR::StructMethodDeclaration_t *base_method) {
+        if (owner_struct == nullptr || base_method == nullptr) {
+            return "";
+        }
+        std::vector<ASR::Struct_t*> candidate_structs;
+        candidate_structs.push_back(owner_struct);
+        std::set<uint64_t> seen_descendants;
+        collect_descendant_structs(global_scope,
+            reinterpret_cast<ASR::symbol_t*>(owner_struct),
+            candidate_structs, seen_descendants);
+        std::set<std::string> seen_anchors;
+        std::string force_link_src;
+        for (ASR::Struct_t *candidate_struct: candidate_structs) {
+            ASR::StructMethodDeclaration_t *concrete_method =
+                find_concrete_struct_method(candidate_struct, base_method->m_name);
+            if (concrete_method == nullptr || concrete_method->m_is_deferred
+                    || concrete_method->m_proc == nullptr) {
+                continue;
+            }
+            ASR::symbol_t *proc_sym = ASRUtils::symbol_get_past_external(
+                concrete_method->m_proc);
+            if (!ASR::is_a<ASR::Function_t>(*proc_sym)) {
+                continue;
+            }
+            if (!can_emit_c_tbp_registration_wrapper(
+                    ASR::down_cast<ASR::Function_t>(proc_sym))) {
+                continue;
+            }
+            ASR::Struct_t *method_owner = candidate_struct;
+            ASR::StructMethodDeclaration_t *method_for_anchor = concrete_method;
+            if (!get_concrete_struct_method_binding(proc_sym, method_owner,
+                    method_for_anchor)) {
+                method_owner = candidate_struct;
+                method_for_anchor = concrete_method;
+            }
+            std::string anchor_name = get_c_tbp_force_link_anchor_name(
+                method_owner, method_for_anchor);
+            if (!seen_anchors.insert(anchor_name).second) {
+                continue;
+            }
+            force_link_src += get_current_indent() + "extern void "
+                + anchor_name + "(void);\n"
+                + get_current_indent() + anchor_name + "();\n";
+        }
+        return force_link_src;
     }
 
     void visit_TranslationUnit(const ASR::TranslationUnit_t &x) {
@@ -3202,7 +3249,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             if (is_data_only_array_expr(source_expr)
                     || is_fixed_size_array_storage_expr(source_expr)) {
                 std::string source_stride = "1";
-                for (int i = source_rank - 1; i >= 0; i--) {
+                for (int i = 0; i < source_rank; i++) {
                     source_strides[i] = source_stride;
                     std::string source_length = "1";
                     if (source_dims[i].m_length != nullptr) {
@@ -3267,7 +3314,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         std::string saved_src = src;
         std::vector<std::string> dim_inits(source_rank);
         std::string stride = "1";
-        for (int i = source_rank - 1; i >= 0; i--) {
+        for (int i = 0; i < source_rank; i++) {
             std::string lower_bound = "1";
             std::string length = "1";
             if (source_dims[i].m_start != nullptr) {
@@ -3799,6 +3846,16 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         return expr_src + "->data";
     }
 
+    std::string get_c_array_data_pointer_expr(ASR::expr_t *expr,
+            const std::string &expr_src) {
+        std::string data = get_c_array_data_expr(expr, expr_src);
+        std::string offset = get_c_array_offset_expr(expr, expr_src);
+        if (offset == "0") {
+            return data;
+        }
+        return "(" + data + " + " + offset + ")";
+    }
+
     std::string get_c_array_offset_expr(ASR::expr_t *expr, const std::string &expr_src) {
         expr = unwrap_c_lvalue_expr(expr);
         if (expr == nullptr) {
@@ -4013,7 +4070,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             ASR::Variable_t *param = i < f->n_args ? ASRUtils::EXPR2VAR(f->m_args[i]) : nullptr;
             ASR::ttype_t *param_type = param ? param->m_type : ASRUtils::expr_type(call_arg);
             if (param_type != nullptr && ASRUtils::is_array(param_type)) {
-                args += get_c_array_data_expr(call_arg, arg_src);
+                args += get_c_array_data_pointer_expr(call_arg, arg_src);
             } else {
                 args += get_fortran_external_scalar_actual(
                     param, call_arg, shape_call_arg, arg_src);
@@ -4950,6 +5007,14 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         if (n_args == 0) {
             return false;
         }
+        ASR::expr_t *dispatch_call_arg = m_args[0].m_value;
+        ASR::expr_t *raw_dispatch_call_arg = unwrap_c_lvalue_expr(dispatch_call_arg);
+        if (raw_dispatch_call_arg == nullptr) {
+            return false;
+        }
+        ASR::ttype_t *recv_type = ASRUtils::type_get_past_allocatable_pointer(
+            ASRUtils::expr_type(raw_dispatch_call_arg));
+        bool receiver_is_class = ASRUtils::is_class_type(recv_type);
         ASR::StructMethodDeclaration_t *base_method = nullptr;
         ASR::symbol_t *owner_sym = nullptr;
         if (ASR::is_a<ASR::StructMethodDeclaration_t>(*base_sym)) {
@@ -4957,18 +5022,12 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             owner_sym = ASRUtils::symbol_get_past_external(
                 ASRUtils::get_asr_owner(reinterpret_cast<ASR::symbol_t*>(base_method)));
         } else if (ASR::is_a<ASR::Function_t>(*base_sym)) {
-            ASR::expr_t *recv_expr = unwrap_c_lvalue_expr(m_args[0].m_value);
-            if (recv_expr == nullptr) {
-                return false;
-            }
-            ASR::ttype_t *recv_type = ASRUtils::type_get_past_allocatable_pointer(
-                ASRUtils::expr_type(recv_expr));
             if (!(ASR::is_a<ASR::StructType_t>(*ASRUtils::extract_type(recv_type))
                     || ASRUtils::is_class_type(recv_type))) {
                 return false;
             }
             owner_sym = ASRUtils::symbol_get_past_external(
-                ASRUtils::get_struct_sym_from_struct_expr(recv_expr));
+                ASRUtils::get_struct_sym_from_struct_expr(raw_dispatch_call_arg));
             if (owner_sym == nullptr || !ASR::is_a<ASR::Struct_t>(*owner_sym)) {
                 return false;
             }
@@ -4981,14 +5040,40 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         if (base_method == nullptr) {
             return false;
         }
-        if (!base_method->m_is_deferred) {
+        if (base_method->m_is_deferred && !receiver_is_class) {
+            ASR::symbol_t *recv_struct_sym = ASRUtils::symbol_get_past_external(
+                ASRUtils::get_struct_sym_from_struct_expr(raw_dispatch_call_arg));
+            if (recv_struct_sym != nullptr && ASR::is_a<ASR::Struct_t>(*recv_struct_sym)) {
+                ASR::StructMethodDeclaration_t *concrete_method = find_concrete_struct_method(
+                    ASR::down_cast<ASR::Struct_t>(recv_struct_sym), base_method->m_name);
+                if (concrete_method != nullptr && concrete_method->m_proc != nullptr) {
+                    ASR::symbol_t *proc_sym = ASRUtils::symbol_get_past_external(
+                        concrete_method->m_proc);
+                    if (ASR::is_a<ASR::Function_t>(*proc_sym)) {
+                        ASR::Function_t *concrete_fn = ASR::down_cast<ASR::Function_t>(proc_sym);
+                        record_forward_decl_for_function(*concrete_fn);
+                        std::string call_expr = get_c_function_target_name(*concrete_fn)
+                            + "(" + construct_call_args(concrete_fn, n_args, m_args, false) + ")";
+                        if (is_subroutine) {
+                            out = get_current_indent() + call_expr + ";\n";
+                            return true;
+                        }
+                        if (concrete_fn->m_return_var == nullptr) {
+                            return false;
+                        }
+                        out = call_expr;
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+        if (!base_method->m_is_deferred && !receiver_is_class) {
             return false;
         }
         if (!ASR::is_a<ASR::Struct_t>(*owner_sym)) {
             return false;
         }
-        ASR::expr_t *dispatch_call_arg = m_args[0].m_value;
-        ASR::expr_t *raw_dispatch_call_arg = unwrap_c_lvalue_expr(dispatch_call_arg);
         self().visit_expr(*dispatch_call_arg);
         std::string self_expr = src;
         if (self_expr.empty()) {
@@ -5021,10 +5106,13 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         std::string error_stmt = "fprintf(stderr, \"Deferred type-bound dispatch failed for "
             + CUtils::sanitize_c_identifier(base_method->m_name)
             + "\\n\");\n" + get_current_indent() + "exit(1);\n";
+        std::string force_link_src = emit_c_tbp_force_link_calls(
+            ASR::down_cast<ASR::Struct_t>(owner_sym), base_method);
 
         if (is_subroutine) {
             std::string indent = get_current_indent();
-            out = indent + "lfortran_c_tbp_func_ptr " + lookup_var
+            out = force_link_src
+                + indent + "lfortran_c_tbp_func_ptr " + lookup_var
                 + " = _lfortran_get_c_tbp_impl(\"" + method_name + "\", "
                 + runtime_tag_expr + ");\n"
                 + indent + "if (!" + lookup_var + ") {\n"
@@ -5945,27 +6033,33 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         std::string prod = "1";
         std::string idx = "0";
         if (is_unbounded_pointer_to_data) {
-            for (int r = 0; r < n_args; r++) {
+            for (int r = 0, r1 = 0; r < n_args; r++, r1 += 2) {
                 std::string curr_llvm_idx = m_args[r];
-                std::string lval = diminfo[r];
+                std::string lval = diminfo[r1];
                 curr_llvm_idx = "(" + curr_llvm_idx + " - " + lval + ")";
                 if( check_for_bounds ) {
                     // check_single_element(curr_llvm_idx, arr); TODO: To be implemented
                 }
-                idx = "(" + idx + " + " + "(" + curr_llvm_idx + ")" + ")";
+                idx = "(" + idx + " + " + "(" + prod + " * " + curr_llvm_idx + ")" + ")";
+                if (r + 1 < n_args) {
+                    std::string dim_size = diminfo[r1 + 1];
+                    prod = "(" + prod + " * " + dim_size + ")";
+                }
             }
             return idx;
         }
-        for( int r = n_args - 1, r1 = 2 * n_args - 1; r >= 0; r--, r1 -= 2) {
+        for( int r = 0, r1 = 0; r < n_args; r++, r1 += 2) {
             std::string curr_llvm_idx = m_args[r];
-            std::string lval = diminfo[r1 - 1];
+            std::string lval = diminfo[r1];
             curr_llvm_idx = "(" + curr_llvm_idx + " - " + lval + ")";
             if( check_for_bounds ) {
                 // check_single_element(curr_llvm_idx, arr); TODO: To be implemented
             }
             idx = "(" + idx + " + " + "(" + prod + " * " + curr_llvm_idx + ")" + ")";
-            std::string dim_size = diminfo[r1];
-            prod = "(" + prod + " * " + dim_size + ")";
+            if (r + 1 < n_args) {
+                std::string dim_size = diminfo[r1 + 1];
+                prod = "(" + prod + " * " + dim_size + ")";
+            }
         }
         return idx;
     }
@@ -5981,7 +6075,9 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         if( data_only || is_fixed_size ) {
             LCOMPILERS_ASSERT(diminfo.size() > 0);
             idx = cmo_convertor_single_element_data_only(diminfo, m_args, n_args, check_for_bounds, is_unbounded_pointer_to_data);
-            if( is_fixed_size ) {
+            if (is_unbounded_pointer_to_data) {
+                tmp = array + "->data[(" + array + "->offset + " + idx + ")]";
+            } else if( is_fixed_size ) {
                 tmp = array + "->data[" + idx + "]" ;
             } else {
                 tmp = array + "->data[" + idx + "]";
@@ -6019,22 +6115,20 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             update_target_desc += indent + target_desc + "->is_allocated = true;\n";
 
             std::string target_dim_des_array = target_desc + "->dims";
-            int j = target_rank - 1;
-            int r = (int)diminfo.size() - 1;
+            int j = 0;
             std::string stride = "1";
-            for( int i = value_rank - 1; i >= 0; i-- ) {
+            for( int i = 0; i < value_rank; i++ ) {
                 if( ds[i] != "" ) {
                     std::string dim_length = "((( (" + ubs[i] + ") - (" + lbs[i] + ") )" + "/" + ds[i] + ") + 1)";
                     std::string target_dim_des = target_dim_des_array + "[" + std::to_string(j) + "]";
-                    update_target_desc += indent + target_dim_des + ".stride = " + stride + ";\n";
+                    update_target_desc += indent + target_dim_des + ".stride = (" + stride + "*" + ds[i] + ");\n";
                     update_target_desc += indent + target_dim_des + ".lower_bound = 1;\n";
                     update_target_desc += indent + target_dim_des + ".length = " + dim_length + ";\n";
-                    j--;
+                    j++;
                 }
-                stride = "(" + stride + "*" + diminfo[r] + ")";
-                r -= 2;
+                stride = "(" + stride + "*" + diminfo[2*i + 1] + ")";
             }
-            LCOMPILERS_ASSERT(j == -1);
+            LCOMPILERS_ASSERT(j == target_rank);
             update_target_desc += indent + target_desc + "->n_dims = " + std::to_string(target_rank) + ";\n";
             src = update_target_desc;
     }
@@ -7881,7 +7975,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 std::string size_str = "1";
                 out += indent + sym + "->n_dims = " + std::to_string(x.m_args[i].n_dims) + ";\n";
                 std::string stride = "1";
-                for (int j = (int)x.m_args[i].n_dims - 1; j >= 0; j--) {
+                for (size_t j = 0; j < x.m_args[i].n_dims; j++) {
                     std::string st, l;
                     if (x.m_args[i].m_dims[j].m_start) {
                         self().visit_expr(*x.m_args[i].m_dims[j].m_start);

@@ -1,0 +1,13 @@
+{
+    "basename": "run-c_backend_class_nondeferred_dispatch_01-ec6a913",
+    "cmd": "lfortran --no-color {infile}",
+    "infile": "tests/c_backend_class_nondeferred_dispatch_01.f90",
+    "infile_hash": "77302c22b5e0bf5eedddf8a97d5fbb83eb04a6cc07e5f85fc3e2a3e0",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": "run-c_backend_class_nondeferred_dispatch_01-ec6a913.stdout",
+    "stdout_hash": "1378f5de1ff468cccd33bbaf5b6686e8ca5fdd96ff0bc6dc6c60e0d1",
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

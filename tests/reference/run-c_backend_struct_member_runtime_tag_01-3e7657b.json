@@ -1,0 +1,13 @@
+{
+    "basename": "run-c_backend_struct_member_runtime_tag_01-3e7657b",
+    "cmd": "lfortran --no-color {infile}",
+    "infile": "tests/c_backend_struct_member_runtime_tag_01.f90",
+    "infile_hash": "7aa64eb6ab8bdbf77bb00ec427fd0e5d82ba24ab19f0336e57429e2d",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": "run-c_backend_struct_member_runtime_tag_01-3e7657b.stdout",
+    "stdout_hash": "1e5fdcc51a3afd018d2014ea68c8167b79dc4ac523f38248258ca939",
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

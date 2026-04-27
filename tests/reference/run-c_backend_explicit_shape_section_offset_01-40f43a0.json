@@ -1,0 +1,13 @@
+{
+    "basename": "run-c_backend_explicit_shape_section_offset_01-40f43a0",
+    "cmd": "lfortran --no-color {infile}",
+    "infile": "tests/c_backend_explicit_shape_section_offset_01.f90",
+    "infile_hash": "2b7519ad15b1303fbaf6c81e1e397f4b8d08fa854ad084562d188c8b",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": "run-c_backend_explicit_shape_section_offset_01-40f43a0.stdout",
+    "stdout_hash": "360129ad0382c6e014baa4fc9502dfe0e718ef3eca722f45a63d4b00",
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

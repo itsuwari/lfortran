@@ -5085,6 +5085,26 @@ run = true
 options = "--backend=c --separate-compilation"
 
 [[test]]
+filename = "c_backend_explicit_shape_leading_dim_01.f90"
+run = true
+options = "--backend=c --separate-compilation"
+
+[[test]]
+filename = "c_backend_explicit_shape_section_offset_01.f90"
+run = true
+options = "--backend=c --separate-compilation"
+
+[[test]]
+filename = "c_backend_class_nondeferred_dispatch_01.f90"
+run = true
+options = "--backend=c --separate-compilation"
+
+[[test]]
+filename = "c_backend_struct_member_runtime_tag_01.f90"
+run = true
+options = "--backend=c --separate-compilation"
+
+[[test]]
 filename = "c_backend_local_fixed_array_wrapper_01.f90"
 c = true
 

@@ -385,7 +385,7 @@ R"(
         std::vector<std::string> lengths(n_dims);
         std::vector<std::string> strides(n_dims);
         std::string stride = "1";
-        for (int i = static_cast<int>(n_dims) - 1; i >= 0; i--) {
+        for (size_t i = 0; i < n_dims; i++) {
             lower_bounds[i] = get_static_dim_expr(m_dims[i].m_start, "1");
             lengths[i] = get_static_dim_expr(m_dims[i].m_length, "0");
             strides[i] = stride;
@@ -1584,7 +1584,7 @@ R"(
                 sub += indent + std::string(v_m_name) + "->is_allocated = "
                     + std::string((is_fixed_size || !dims.empty()) ? "true" : "false") + ";\n";
                 std::string stride = "1";
-                for (int i = n_dims - 1; i >= 0; i--) {
+                for (int i = 0; i < n_dims; i++) {
                     std::string start = "1", length = "0";
                     if( m_dims[i].m_start ) {
                         this->visit_expr(*m_dims[i].m_start);
@@ -1855,11 +1855,31 @@ R"(
                 continue;
             }
             ASR::Variable_t *member_var = ASR::down_cast<ASR::Variable_t>(member_sym);
+            ASR::ttype_t *member_type = ASRUtils::type_get_past_allocatable_pointer(member_var->m_type);
+            bool is_plain_struct_member = !ASRUtils::is_array(member_var->m_type)
+                && !ASRUtils::is_allocatable(member_var->m_type)
+                && !ASRUtils::is_pointer(member_var->m_type)
+                && ASR::is_a<ASR::StructType_t>(*member_type)
+                && !ASRUtils::is_class_type(member_type);
+            if (is_plain_struct_member && member_var->m_type_declaration != nullptr) {
+                ASR::symbol_t *struct_sym =
+                    ASRUtils::symbol_get_past_external(member_var->m_type_declaration);
+                if (struct_sym != nullptr && ASR::is_a<ASR::Struct_t>(*struct_sym)) {
+                    std::string member_access = name + "->"
+                        + CUtils::get_c_member_name(member_sym);
+                    sub += indent + member_access + "."
+                        + get_runtime_type_tag_member_name() + " = "
+                        + std::to_string(get_struct_runtime_type_id(struct_sym)) + ";\n";
+                    initialize_struct_instance_members(
+                        ASR::down_cast<ASR::Struct_t>(struct_sym), sub, indent,
+                        "(&(" + member_access + "))");
+                }
+                continue;
+            }
             ASR::expr_t *init_expr = get_variable_init_value_expr(*member_var);
             if (init_expr == nullptr) {
                 continue;
             }
-            ASR::ttype_t *member_type = ASRUtils::type_get_past_allocatable_pointer(member_var->m_type);
             if (ASRUtils::is_array(member_var->m_type)
                     || ASRUtils::is_allocatable(member_var->m_type)
                     || ASRUtils::is_pointer(member_var->m_type)
@@ -5066,7 +5086,7 @@ R"(    // Initialise Numpy
             dim_set_code = indent + dest_src + "->n_dims = " + std::to_string(n_dims) + ";\n";
             dim_set_code = indent + dest_src + "->offset = 0;\n";
             std::string stride = "1";
-            for (int i = n_dims - 1; i >= 0; i--) {
+            for (int i = 0; i < n_dims; i++) {
                 std::string start = "0", length = "0";
                 if( lower_bounds ) {
                     start = ASRUtils::fetch_ArrayConstant_value(lower_bounds, i);
@@ -6183,6 +6203,7 @@ R"(    // Initialise Numpy
         } else if( array_t->m_physical_type == ASR::array_physical_typeType::UnboundedPointerArray ) {
             for( size_t idim = 0; idim < x.n_args; idim++ ) {
                 diminfo.push_back(get_dim_start_src(m_dims[idim]));
+                diminfo.push_back(get_dim_length_src(m_dims[idim]));
             }
         }
 

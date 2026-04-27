@@ -1,0 +1,13 @@
+{
+    "basename": "run-c_backend_explicit_shape_leading_dim_01-f57e764",
+    "cmd": "lfortran --no-color {infile}",
+    "infile": "tests/c_backend_explicit_shape_leading_dim_01.f90",
+    "infile_hash": "1ce873611d8cbb995fda31e09516820dfdb6f288c75237f144b23b43",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}
