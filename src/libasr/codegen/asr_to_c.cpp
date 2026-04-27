@@ -1665,6 +1665,110 @@ R"(
         return init_expr;
     }
 
+    std::string get_array_wrapper_type_for_variable(const ASR::Variable_t &v,
+            bool as_pointer) {
+        ASR::ttype_t *elem_type = ASRUtils::type_get_past_array(
+            ASRUtils::type_get_past_allocatable(v.m_type));
+        std::string type_name;
+        std::string encoded_type_name;
+        if (ASR::is_a<ASR::StructType_t>(*elem_type) && v.m_type_declaration) {
+            ASR::symbol_t *struct_sym =
+                ASRUtils::symbol_get_past_external(v.m_type_declaration);
+            type_name = "struct "
+                + CUtils::get_c_symbol_name(struct_sym);
+            encoded_type_name = CUtils::sanitize_c_identifier(
+                "x" + CUtils::get_c_symbol_name(struct_sym));
+        } else if (ASR::is_a<ASR::UnionType_t>(*elem_type) && v.m_type_declaration) {
+            ASR::symbol_t *union_sym =
+                ASRUtils::symbol_get_past_external(v.m_type_declaration);
+            type_name = "union "
+                + CUtils::get_c_symbol_name(union_sym);
+            encoded_type_name = CUtils::sanitize_c_identifier(
+                "x" + CUtils::get_c_symbol_name(union_sym));
+        } else if (ASR::is_a<ASR::EnumType_t>(*elem_type)) {
+            ASR::EnumType_t *enum_type = ASR::down_cast<ASR::EnumType_t>(elem_type);
+            type_name = "enum "
+                + CUtils::get_c_symbol_name(
+                    ASRUtils::symbol_get_past_external(enum_type->m_enum_type));
+        } else {
+            type_name = CUtils::get_c_type_from_ttype_t(elem_type);
+        }
+        if (encoded_type_name.empty()) {
+            encoded_type_name = CUtils::get_c_array_type_code(v.m_type);
+        }
+        return c_ds_api->get_array_type(type_name, encoded_type_name,
+            array_types_decls, as_pointer);
+    }
+
+    void emit_static_array_member_descriptor_initializers(ASR::Struct_t* der_type_t,
+        std::string& decls, std::vector<std::string>& initializers,
+        std::string value_name, const std::string& member_prefix = "") {
+        if (der_type_t == nullptr) {
+            return;
+        }
+        if (der_type_t->m_parent != nullptr) {
+            ASR::symbol_t *parent_sym = ASRUtils::symbol_get_past_external(der_type_t->m_parent);
+            if (parent_sym != nullptr && ASR::is_a<ASR::Struct_t>(*parent_sym)) {
+                emit_static_array_member_descriptor_initializers(
+                    ASR::down_cast<ASR::Struct_t>(parent_sym), decls,
+                    initializers, value_name, member_prefix);
+            }
+        }
+        for (size_t i = 0; i < der_type_t->n_members; i++) {
+            if (der_type_t->m_members[i] == nullptr) {
+                continue;
+            }
+            ASR::symbol_t *member_sym = der_type_t->m_symtab->get_symbol(der_type_t->m_members[i]);
+            if (member_sym == nullptr) {
+                continue;
+            }
+            member_sym = ASRUtils::symbol_get_past_external(member_sym);
+            if (!ASR::is_a<ASR::Variable_t>(*member_sym)) {
+                continue;
+            }
+            ASR::Variable_t *member_var = ASR::down_cast<ASR::Variable_t>(member_sym);
+            std::string emitted_member_name = CUtils::get_c_member_name(member_sym);
+            ASR::ttype_t *member_type =
+                ASRUtils::type_get_past_allocatable_pointer(member_var->m_type);
+            if (ASRUtils::is_array(member_var->m_type)) {
+                ASR::dimension_t *m_dims = nullptr;
+                size_t n_dims = ASRUtils::extract_dimensions_from_ttype(
+                    member_var->m_type, m_dims);
+                if (ASRUtils::is_fixed_size_array(m_dims, n_dims)) {
+                    continue;
+                }
+                std::string wrapper_type =
+                    get_array_wrapper_type_for_variable(*member_var, false);
+                std::string desc_name = CUtils::sanitize_c_identifier(
+                    value_name + "_" + member_prefix + emitted_member_name
+                    + "_desc");
+                std::string dims_init;
+                for (size_t dim = 0; dim < n_dims; dim++) {
+                    if (!dims_init.empty()) {
+                        dims_init += ", ";
+                    }
+                    dims_init += "{1, 0, 1}";
+                }
+                decls += "static " + wrapper_type + " " + desc_name + " = { ";
+                decls += ".data = NULL, .dims = {" + dims_init + "}, .n_dims = "
+                    + std::to_string(n_dims)
+                    + ", .offset = 0, .is_allocated = false };\n";
+                initializers.push_back("." + member_prefix + emitted_member_name
+                    + " = &" + desc_name);
+            } else if (ASR::is_a<ASR::StructType_t>(*member_type)
+                    && member_var->m_type_declaration != nullptr) {
+                ASR::symbol_t *struct_sym =
+                    ASRUtils::symbol_get_past_external(member_var->m_type_declaration);
+                if (struct_sym != nullptr && ASR::is_a<ASR::Struct_t>(*struct_sym)) {
+                    emit_static_array_member_descriptor_initializers(
+                        ASR::down_cast<ASR::Struct_t>(struct_sym), decls,
+                        initializers, value_name,
+                        member_prefix + emitted_member_name + ".");
+                }
+            }
+        }
+    }
+
     void allocate_array_members_of_struct(ASR::Struct_t* der_type_t, std::string& sub,
         std::string indent, std::string name) {
         // File scope in C only permits declarations. Skip member-level runtime
@@ -1712,11 +1816,16 @@ R"(
             } else if( ASRUtils::is_character(*mem_type) ) {
                 sub += indent + name + "->" + emitted_member_name + " = NULL;\n";
             } else if( ASR::is_a<ASR::StructType_t>(*mem_type) ) {
-                // TODO: StructType
-                // ASR::StructType_t* struct_t = ASR::down_cast<ASR::StructType_t>(mem_type);
-                // ASR::Struct_t* struct_type_t = ASR::down_cast<ASR::Struct_t>(
-                //     ASRUtils::symbol_get_past_external(struct_t->m_derived_type));
-                // allocate_array_members_of_struct(struct_type_t, sub, indent, "(&(" + name + "->" + itr.first + "))");
+                ASR::Variable_t* mem_var = ASR::down_cast<ASR::Variable_t>(sym);
+                if (mem_var->m_type_declaration != nullptr) {
+                    ASR::symbol_t *struct_sym =
+                        ASRUtils::symbol_get_past_external(mem_var->m_type_declaration);
+                    if (struct_sym != nullptr && ASR::is_a<ASR::Struct_t>(*struct_sym)) {
+                        allocate_array_members_of_struct(
+                            ASR::down_cast<ASR::Struct_t>(struct_sym), sub, indent,
+                            "(&(" + name + "->" + emitted_member_name + "))");
+                    }
+                }
             }
         }
     }
@@ -2606,11 +2715,22 @@ R"(
                     }
                     std::string value_var_name = v.m_parent_symtab->get_unique_name(decl_name + "_value");
                     if (is_file_scope_static) {
-                        sub = format_type_c(dims, "struct " + der_type_name,
-                                            value_var_name, use_ref, dummy);
+                        std::string static_member_descs;
+                        std::vector<std::string> static_member_inits;
+                        ASR::Struct_t* der_type_t = ASR::down_cast<ASR::Struct_t>(
+                            ASRUtils::symbol_get_past_external(v.m_type_declaration));
+                        emit_static_array_member_descriptor_initializers(
+                            der_type_t, static_member_descs, static_member_inits,
+                            value_var_name);
+                        sub = static_member_descs;
+                        sub += format_type_c(dims, "struct " + der_type_name,
+                                             value_var_name, use_ref, dummy);
                         sub += " = { ." + get_runtime_type_tag_member_name()
-                            + " = " + std::to_string(get_struct_runtime_type_id(v.m_type_declaration))
-                            + " };\n";
+                            + " = " + std::to_string(get_struct_runtime_type_id(v.m_type_declaration));
+                        for (const std::string &member_init : static_member_inits) {
+                            sub += ", " + member_init;
+                        }
+                        sub += " };\n";
                         std::string ptr_char = "*";
                         if( !use_ptr_for_derived_type ) {
                             ptr_char.clear();
@@ -2654,9 +2774,7 @@ R"(
                     } else {
                         emitted_pointer_backed_struct_names.insert(decl_name);
                         sub += " = &" + value_var_name + ";\n";
-                        if (has_decl_init) {
-                            allocate_array_members_of_struct(der_type_t, sub, indent, decl_name);
-                        }
+                        allocate_array_members_of_struct(der_type_t, sub, indent, decl_name);
                         sub.pop_back();
                         sub.pop_back();
                     }

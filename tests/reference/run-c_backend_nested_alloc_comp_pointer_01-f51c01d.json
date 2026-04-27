@@ -1,0 +1,13 @@
+{
+    "basename": "run-c_backend_nested_alloc_comp_pointer_01-f51c01d",
+    "cmd": "lfortran --no-color {infile}",
+    "infile": "tests/c_backend_nested_alloc_comp_pointer_01.f90",
+    "infile_hash": "853e58a59e1414f6c166357cfe7d4dea98240c1574d5d2c671878dbc",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

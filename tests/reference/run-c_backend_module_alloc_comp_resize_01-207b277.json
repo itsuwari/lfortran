@@ -1,0 +1,13 @@
+{
+    "basename": "run-c_backend_module_alloc_comp_resize_01-207b277",
+    "cmd": "lfortran --no-color {infile}",
+    "infile": "tests/c_backend_module_alloc_comp_resize_01.f90",
+    "infile_hash": "160226bbe3dffc6e900fd6489319dbb011e5fa095b7f1f49b27c47af",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

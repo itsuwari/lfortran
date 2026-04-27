@@ -1,0 +1,13 @@
+{
+    "basename": "run-c_backend_derived_array_alloc_comp_01-7470bff",
+    "cmd": "lfortran --no-color {infile}",
+    "infile": "tests/c_backend_derived_array_alloc_comp_01.f90",
+    "infile_hash": "0c4c566de0ef5811f1ab903d4a7c15b5a78664dbe2c92da82d06ef68",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

@@ -5065,6 +5065,26 @@ run = true
 options = "--backend=c --separate-compilation"
 
 [[test]]
+filename = "c_backend_module_alloc_comp_resize_01.f90"
+run = true
+options = "--backend=c --separate-compilation"
+
+[[test]]
+filename = "c_backend_nested_alloc_comp_local_01.f90"
+run = true
+options = "--backend=c --separate-compilation"
+
+[[test]]
+filename = "c_backend_nested_alloc_comp_pointer_01.f90"
+run = true
+options = "--backend=c --separate-compilation"
+
+[[test]]
+filename = "c_backend_derived_array_alloc_comp_01.f90"
+run = true
+options = "--backend=c --separate-compilation"
+
+[[test]]
 filename = "c_backend_local_fixed_array_wrapper_01.f90"
 c = true
 
