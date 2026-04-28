@@ -527,6 +527,9 @@ R"(
         std::string decls;
         std::set<std::string> seen;
         auto add_function_decl = [&](ASR::Function_t *fn) {
+            if (is_split_global_helper_function(fn)) {
+                return;
+            }
             ASR::FunctionType_t *f_type = ASRUtils::get_FunctionType(*fn);
             if (f_type->m_abi == ASR::abiType::Intrinsic) {
                 return;
@@ -705,6 +708,10 @@ R"(
         return complete_functions;
     }
 
+    bool is_split_global_helper_function(const ASR::Function_t *fn) const {
+        return fn != nullptr && startswith(fn->m_name, "_lcompilers_");
+    }
+
     static bool scope_contains(SymbolTable *scope, SymbolTable *candidate) {
         while (candidate != nullptr) {
             if (candidate == scope) {
@@ -732,7 +739,7 @@ R"(
             SymbolTable *parent_scope = fn->m_symtab ? fn->m_symtab->parent : nullptr;
             bool ready_for_emission = false;
             if (helpers_only) {
-                ready_for_emission = startswith(fn->m_name, "_lcompilers_merge_");
+                ready_for_emission = is_split_global_helper_function(fn);
             } else {
                 ready_for_emission = parent_scope != nullptr
                     && scope_contains(scope, parent_scope);
@@ -3328,6 +3335,9 @@ R"(
         std::string global_functions_body;
         std::set<uint64_t> emitted_global_functions;
         for (ASR::Function_t *function : global_functions) {
+            if (is_split_global_helper_function(function)) {
+                continue;
+            }
             emitted_global_functions.insert(
                 get_hash(reinterpret_cast<ASR::asr_t*>(function)));
             visit_Function(*function);
