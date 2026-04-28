@@ -1237,6 +1237,105 @@ R"(
         return chunks;
     }
 
+    bool is_safe_for_split_pack(const std::pair<std::string, std::string> &unit,
+            size_t max_single_unit_lines) const {
+        size_t unit_lines = count_lines(unit.second);
+        if (unit_lines == 0 || unit_lines > max_single_unit_lines) {
+            return false;
+        }
+        for (const auto &line : split_lines_keep_newlines(unit.second)) {
+            std::string trimmed = trim_copy(line);
+            if (trimmed.empty()) {
+                continue;
+            }
+            if (startswith(trimmed, "#") || startswith(trimmed, "static ")) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    std::string get_split_pack_group(const std::string &filename) const {
+        std::string stem = filename;
+        if (endswith(stem, ".c")) {
+            stem = stem.substr(0, stem.size() - 2);
+        }
+        size_t sep = stem.find("__");
+        if (sep != std::string::npos) {
+            stem = stem.substr(0, sep);
+        }
+        if (stem.empty()) {
+            stem = "unit";
+        }
+        return CUtils::sanitize_c_identifier(stem);
+    }
+
+    std::vector<std::pair<std::string, std::string>> pack_split_units_by_budget(
+            const std::vector<std::pair<std::string, std::string>> &units,
+            const std::string &project_name) const {
+        static const size_t pack_line_budget = 12000;
+        static const size_t max_packable_unit_lines = 4000;
+
+        struct PackState {
+            size_t index = 0;
+            size_t lines = 0;
+            std::string body;
+        };
+
+        std::vector<std::pair<std::string, std::string>> packed_units;
+        std::map<std::string, PackState> active_packs;
+        std::map<std::string, size_t> next_pack_index;
+
+        auto flush_pack = [&](const std::string &group) {
+            auto it = active_packs.find(group);
+            if (it == active_packs.end() || it->second.body.empty()) {
+                return;
+            }
+            std::string filename = project_name + "_pack_" + group + "_"
+                + std::to_string(it->second.index) + ".c";
+            packed_units.push_back({filename, std::move(it->second.body)});
+            active_packs.erase(it);
+        };
+
+        for (const auto &unit : units) {
+            size_t unit_lines = count_lines(unit.second);
+            if (!is_safe_for_split_pack(unit, max_packable_unit_lines)) {
+                packed_units.push_back(unit);
+                continue;
+            }
+
+            std::string group = get_split_pack_group(unit.first);
+            PackState &pack = active_packs[group];
+            if (pack.body.empty()) {
+                pack.index = next_pack_index[group]++;
+                pack.lines = 0;
+            } else if (pack.lines + unit_lines > pack_line_budget) {
+                flush_pack(group);
+                PackState &new_pack = active_packs[group];
+                new_pack.index = next_pack_index[group]++;
+                new_pack.lines = 0;
+            }
+
+            PackState &current_pack = active_packs[group];
+            current_pack.body += "\n/* split-C packed from " + unit.first + " */\n";
+            current_pack.body += unit.second;
+            if (!endswith(current_pack.body, "\n")) {
+                current_pack.body += "\n";
+            }
+            current_pack.lines += unit_lines + 1;
+        }
+
+        std::vector<std::string> groups;
+        groups.reserve(active_packs.size());
+        for (const auto &item : active_packs) {
+            groups.push_back(item.first);
+        }
+        for (const auto &group : groups) {
+            flush_pack(group);
+        }
+        return packed_units;
+    }
+
     std::string dedupe_decl_lines(const std::string &text) const {
         auto extract_decl_function_name = [](const std::string &line) -> std::string {
             if (line.find('=') != std::string::npos) {
@@ -3276,6 +3375,8 @@ R"(
         c_ds_api->set_c_utils_functions(c_utils_functions.get());
         bind_py_utils_functions->set_indentation(indentation_level, indentation_spaces);
         bind_py_utils_functions->set_global_scope(global_scope);
+        std::string safe_project_name =
+            CUtils::sanitize_c_identifier(project_name.empty() ? "lfortran_c_project" : project_name);
 
         std::string global_var_defs;
         std::string global_var_decls;
@@ -3431,6 +3532,7 @@ R"(
             }
         }
         unit_bodies = std::move(unique_unit_bodies);
+        unit_bodies = pack_split_units_by_budget(unit_bodies, safe_project_name);
 
         forward_decl_functions += "\n\n";
         // Unit visitors mutate indentation and scope state. Reset before
@@ -3442,8 +3544,6 @@ R"(
         finalize_common_sections(helper_defs);
         std::string module_var_decls = collect_module_extern_decls(x);
         std::string split_func_decls = collect_split_function_decls(x);
-        std::string safe_project_name =
-            CUtils::sanitize_c_identifier(project_name.empty() ? "lfortran_c_project" : project_name);
         std::string header_name = safe_project_name + "_generated.h";
         std::string header_guard = safe_project_name;
         std::transform(header_guard.begin(), header_guard.end(), header_guard.begin(), ::toupper);
