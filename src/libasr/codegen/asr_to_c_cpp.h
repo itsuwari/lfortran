@@ -919,6 +919,113 @@ R"(#include <stdio.h>
         return setup;
     }
 
+    bool is_allocating_string_expr(ASR::expr_t *expr) {
+        expr = unwrap_c_lvalue_expr(expr);
+        if (expr == nullptr) {
+            return false;
+        }
+        switch (expr->type) {
+            case ASR::exprType::StringSection:
+            case ASR::exprType::StringItem:
+            case ASR::exprType::StringRepeat:
+            case ASR::exprType::StringConcat:
+            case ASR::exprType::StringFormat:
+                return true;
+            case ASR::exprType::StringPhysicalCast:
+                return is_allocating_string_expr(
+                    ASR::down_cast<ASR::StringPhysicalCast_t>(expr)->m_arg);
+            default:
+                return false;
+        }
+    }
+
+    std::string get_string_length_expr(ASR::expr_t *expr, const std::string &expr_src,
+            std::string &setup) {
+        ASR::String_t *str_type = ASRUtils::get_string_type(expr);
+        if (str_type && str_type->m_len) {
+            self().visit_expr(*str_type->m_len);
+            setup += drain_tmp_buffer();
+            setup += extract_stmt_setup_from_expr(src);
+            return src;
+        }
+        return "strlen(" + expr_src + ")";
+    }
+
+    void materialize_allocating_string_expr(ASR::expr_t *expr, std::string &expr_src,
+            std::string &expr_len, std::string &setup, std::string &cleanup) {
+        if (!is_c || !is_allocating_string_expr(expr)) {
+            expr_len = get_string_length_expr(expr, expr_src, setup);
+            return;
+        }
+        std::string tmp_name = get_unique_local_name("__lfortran_string_tmp");
+        setup += std::string(indentation_level * indentation_spaces, ' ')
+            + "char* " + tmp_name + " = " + expr_src + ";\n";
+        expr_src = tmp_name;
+        expr_len = "strlen(" + expr_src + ")";
+        cleanup += std::string(indentation_level * indentation_spaces, ' ')
+            + "_lfortran_free_alloc(_lfortran_get_default_allocator(), "
+            + tmp_name + ");\n";
+    }
+
+    bool try_get_unit_step_string_section_view(ASR::expr_t *expr,
+            std::string &view_src, std::string &view_len, std::string &setup) {
+        expr = unwrap_c_lvalue_expr(expr);
+        if (!is_c || expr == nullptr) {
+            return false;
+        }
+        if (ASR::is_a<ASR::StringItem_t>(*expr)) {
+            ASR::StringItem_t *si = ASR::down_cast<ASR::StringItem_t>(expr);
+            self().visit_expr(*si->m_arg);
+            setup += drain_tmp_buffer();
+            setup += extract_stmt_setup_from_expr(src);
+            std::string base = src;
+            self().visit_expr(*si->m_idx);
+            setup += drain_tmp_buffer();
+            setup += extract_stmt_setup_from_expr(src);
+            view_src = "(" + base + " + ((" + src + ") - 1))";
+            view_len = "1";
+            return true;
+        }
+        if (!ASR::is_a<ASR::StringSection_t>(*expr)) {
+            return false;
+        }
+        ASR::StringSection_t *ss = ASR::down_cast<ASR::StringSection_t>(expr);
+        std::string step = "1";
+        if (ss->m_step) {
+            self().visit_expr(*ss->m_step);
+            setup += drain_tmp_buffer();
+            setup += extract_stmt_setup_from_expr(src);
+            step = src;
+        }
+        if (step != "1") {
+            return false;
+        }
+
+        self().visit_expr(*ss->m_arg);
+        setup += drain_tmp_buffer();
+        setup += extract_stmt_setup_from_expr(src);
+        std::string base = src;
+        std::string start0 = "0";
+        if (ss->m_start) {
+            self().visit_expr(*ss->m_start);
+            setup += drain_tmp_buffer();
+            setup += extract_stmt_setup_from_expr(src);
+            start0 = "((" + src + ") - 1)";
+        }
+        view_src = "(" + base + " + (" + start0 + "))";
+
+        if (ss->m_end) {
+            self().visit_expr(*ss->m_end);
+            setup += drain_tmp_buffer();
+            setup += extract_stmt_setup_from_expr(src);
+            view_len = "((" + src + ") - (" + start0 + "))";
+        } else {
+            std::string base_len = get_string_length_expr(ss->m_arg, base, setup);
+            view_len = "((" + base_len + ") - (" + start0 + "))";
+        }
+        return true;
+    }
+
     bool looks_like_non_expression_stmt(const std::string &expr) {
         auto trim_ws = [](const std::string &text) -> std::string {
             size_t begin = text.find_first_not_of(" \t\r\n");
@@ -5243,9 +5350,11 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         self().visit_expr(*x.m_arg);
         std::string arg, left, right, step, left_present, rig_present;
         arg = src;
+        std::string raw_left, raw_right;
         if (x.m_start) {
             self().visit_expr(*x.m_start);
             left = src;
+            raw_left = left;
             left_present = "true";
         } else {
             left = "0";
@@ -5254,6 +5363,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         if (x.m_end) {
             self().visit_expr(*x.m_end);
             right = src;
+            raw_right = right;
             rig_present = "true";
         } else {
             right = "0";
@@ -5270,6 +5380,12 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         }
         if (rig_present == "true" && x.m_step) {
             right = "((" + step + ") > 0 ? (" + right + ") : ((" + right + ") - 2))";
+        }
+        if (is_c && left_present == "true" && rig_present == "true"
+                && step == "1" && raw_left == raw_right) {
+            src = "_lfortran_str_item(" + arg + ", strlen(" + arg + "), "
+                + raw_left + ", (char[2]){0})";
+            return;
         }
         src = "_lfortran_str_slice_alloc(_lfortran_get_default_allocator(), "
             + arg + ", strlen(" + arg + "), " + left + ", " + right + ", "
@@ -5421,19 +5537,37 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             self().visit_expr(*si->m_arg);
             std::string string_arg = src;
             std::string string_len = get_string_storage_length(si->m_arg, string_arg);
-            self().visit_expr(*x.m_value);
-            std::string string_value = src;
+            std::string value_len, value_setup, value_cleanup;
+            std::string string_value;
+            if (!try_get_unit_step_string_section_view(
+                    x.m_value, string_value, value_len, value_setup)) {
+                self().visit_expr(*x.m_value);
+                string_value = src;
+                value_setup += drain_tmp_buffer();
+                value_setup += extract_stmt_setup_from_expr(string_value);
+                materialize_allocating_string_expr(
+                    x.m_value, string_value, value_len, value_setup, value_cleanup);
+            }
             self().visit_expr(*si->m_idx);
             std::string idx = src;
             headers.insert("string.h");
             src = check_tmp_buffer();
+            src += value_setup;
+            std::string updated_value_name = get_unique_local_name("__lfortran_string_update");
             std::string updated_value =
                 "_lfortran_str_slice_assign_alloc(_lfortran_get_default_allocator(), " +
                 string_arg + ", " + string_len + ", " +
-                string_value + ", strlen(" + string_value + "), " +
+                string_value + ", " + value_len + ", " +
                 idx + ", " + idx + ", 1, true, true)";
+            src += indent + "char* " + updated_value_name + " = " + updated_value + ";\n";
             src += indent + c_ds_api->get_deepcopy(ASRUtils::expr_type(si->m_arg),
-                updated_value, string_arg) + "\n";
+                updated_value_name, string_arg) + "\n";
+            src += indent + "if (" + updated_value_name + " != " + string_arg + ") {\n";
+            src += indent + std::string(indentation_spaces, ' ')
+                + "_lfortran_free_alloc(_lfortran_get_default_allocator(), "
+                + updated_value_name + ");\n";
+            src += indent + "}\n";
+            src += value_cleanup;
             return;
         }
         if (is_c && ASR::is_a<ASR::StringSection_t>(*x.m_target)) {
@@ -5441,8 +5575,17 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             self().visit_expr(*ss->m_arg);
             std::string string_arg = src;
             std::string string_len = get_string_storage_length(ss->m_arg, string_arg);
-            self().visit_expr(*x.m_value);
-            std::string string_value = src;
+            std::string value_len, value_setup, value_cleanup;
+            std::string string_value;
+            if (!try_get_unit_step_string_section_view(
+                    x.m_value, string_value, value_len, value_setup)) {
+                self().visit_expr(*x.m_value);
+                string_value = src;
+                value_setup += drain_tmp_buffer();
+                value_setup += extract_stmt_setup_from_expr(string_value);
+                materialize_allocating_string_expr(
+                    x.m_value, string_value, value_len, value_setup, value_cleanup);
+            }
             std::string left, right, step, left_present, right_present;
             if (ss->m_start) {
                 self().visit_expr(*ss->m_start);
@@ -5468,14 +5611,23 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             }
             headers.insert("string.h");
             src = check_tmp_buffer();
+            src += value_setup;
+            std::string updated_value_name = get_unique_local_name("__lfortran_string_update");
             std::string updated_value =
                 "_lfortran_str_slice_assign_alloc(_lfortran_get_default_allocator(), " +
                 string_arg + ", " + string_len + ", " +
-                string_value + ", strlen(" + string_value + "), " +
+                string_value + ", " + value_len + ", " +
                 left + ", " + right + ", " + step + ", " +
                 left_present + ", " + right_present + ")";
+            src += indent + "char* " + updated_value_name + " = " + updated_value + ";\n";
             src += indent + c_ds_api->get_deepcopy(ASRUtils::expr_type(ss->m_arg),
-                updated_value, string_arg) + "\n";
+                updated_value_name, string_arg) + "\n";
+            src += indent + "if (" + updated_value_name + " != " + string_arg + ") {\n";
+            src += indent + std::string(indentation_spaces, ' ')
+                + "_lfortran_free_alloc(_lfortran_get_default_allocator(), "
+                + updated_value_name + ");\n";
+            src += indent + "}\n";
+            src += value_cleanup;
             return;
         }
         if (ASRUtils::is_simd_array(x.m_target)) {
@@ -5725,7 +5877,18 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             }
         }
         std::string value;
-        if (!try_emit_scalar_to_char_array_bitcast_expr(x.m_value, value)) {
+        std::string value_view_len, value_view_setup;
+        ASR::ttype_t *m_target_scalar_type =
+            ASRUtils::type_get_past_allocatable_pointer(m_target_type);
+        bool target_is_scalar_character = is_c
+            && !ASRUtils::is_array(m_target_scalar_type)
+            && ASRUtils::is_character(*m_target_scalar_type);
+        bool value_is_string_view = target_is_scalar_character
+            && try_get_unit_step_string_section_view(
+                x.m_value, value, value_view_len, value_view_setup);
+        if (value_is_string_view) {
+            expr_setup += value_view_setup;
+        } else if (!try_emit_scalar_to_char_array_bitcast_expr(x.m_value, value)) {
             self().visit_expr(*x.m_value);
             value = src;
         }
@@ -5961,6 +6124,26 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                     ASRUtils::type_get_past_allocatable_pointer(m_target_type);
                 ASR::ttype_t *m_value_type_unwrapped =
                     ASRUtils::type_get_past_allocatable_pointer(m_value_type);
+                if (value_is_string_view) {
+                    src += alloc + indent
+                        + "_lfortran_strcpy_alloc(_lfortran_get_default_allocator(), &"
+                        + target + ", NULL, true, true, " + value + ", "
+                        + value_view_len + ");\n";
+                    from_std_vector_helper.clear();
+                    return;
+                }
+                if (!ASRUtils::is_array(m_target_type_unwrapped)
+                        && ASRUtils::is_character(*m_target_type_unwrapped)
+                        && is_allocating_string_expr(x.m_value)) {
+                    std::string value_len, value_setup, value_cleanup;
+                    materialize_allocating_string_expr(
+                        x.m_value, value, value_len, value_setup, value_cleanup);
+                    src += alloc + value_setup;
+                    src += indent + c_ds_api->get_deepcopy(m_target_type, value, target) + "\n";
+                    src += value_cleanup;
+                    from_std_vector_helper.clear();
+                    return;
+                }
                 if( ASRUtils::is_array(m_target_type_unwrapped)
                         && ASRUtils::is_array(m_value_type_unwrapped) ) {
                     ASR::dimension_t* m_target_dims = nullptr;
@@ -7444,6 +7627,41 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 array_compare_temp_cache[compare_cache_key] = result_name;
             }
             last_expr_precedence = 2;
+            return;
+        }
+        if (is_c && T::class_type == ASR::exprType::StringCompare) {
+            std::string left, right, left_len, right_len, compare_setup;
+            if (!try_get_unit_step_string_section_view(
+                    x.m_left, left, left_len, compare_setup)) {
+                self().visit_expr(*x.m_left);
+                left = std::move(src);
+                compare_setup += drain_tmp_buffer();
+                compare_setup += extract_stmt_setup_from_expr(left);
+                left_len = get_string_length_expr(x.m_left, left, compare_setup);
+            }
+            if (!try_get_unit_step_string_section_view(
+                    x.m_right, right, right_len, compare_setup)) {
+                self().visit_expr(*x.m_right);
+                right = std::move(src);
+                compare_setup += drain_tmp_buffer();
+                compare_setup += extract_stmt_setup_from_expr(right);
+                right_len = get_string_length_expr(x.m_right, right, compare_setup);
+            }
+            if (!compare_setup.empty()) {
+                tmp_buffer_src.push_back(compare_setup);
+            }
+            std::string op_str = ASRUtils::cmpop_to_str(x.m_op);
+            src = "str_compare(" + left + ", " + left_len + ", "
+                + right + ", " + right_len + ") " + op_str + " 0";
+            switch (x.m_op) {
+                case (ASR::cmpopType::Eq) : { last_expr_precedence = 10; break; }
+                case (ASR::cmpopType::Gt) : { last_expr_precedence = 9;  break; }
+                case (ASR::cmpopType::GtE) : { last_expr_precedence = 9; break; }
+                case (ASR::cmpopType::Lt) : { last_expr_precedence = 9;  break; }
+                case (ASR::cmpopType::LtE) : { last_expr_precedence = 9; break; }
+                case (ASR::cmpopType::NotEq): { last_expr_precedence = 10; break; }
+                default : LCOMPILERS_ASSERT(false);
+            }
             return;
         }
         self().visit_expr(*x.m_left);

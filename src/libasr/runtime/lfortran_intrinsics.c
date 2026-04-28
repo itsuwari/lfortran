@@ -4791,6 +4791,18 @@ LFORTRAN_API char* _lfortran_str_item_alloc(lfortran_allocator_t* al, char* s, i
     return res;
 }
 
+LFORTRAN_API char* _lfortran_str_item(char* s, int64_t s_len, int64_t idx, char* res) {
+    int64_t original_idx = idx - 1;
+    if (idx < 1) idx += s_len;
+    if (idx < 1 || idx >= s_len + 1) {
+        printf("String index: %" PRId64 "is out of Bounds\n", original_idx);
+        exit(1);
+    }
+    res[0] = s[idx-1];
+    res[1] = '\0';
+    return res;
+}
+
 // Specific For Fortran Strings
 LFORTRAN_API char* _lfortran_str_slice_fortran_alloc(lfortran_allocator_t* al, char* s, int64_t start, int64_t end){
     if( (start<=0) || (end <=0) || (end < start) ){

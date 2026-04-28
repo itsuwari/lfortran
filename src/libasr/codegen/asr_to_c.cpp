@@ -6424,8 +6424,8 @@ R"(    // Initialise Numpy
         std::string idx = std::move(src);
         this->visit_expr(*x.m_arg);
         std::string str = std::move(src);
-        src = "_lfortran_str_item_alloc(_lfortran_get_default_allocator(), "
-            + str + ", strlen(" + str + "), " + idx + ")";
+        src = "_lfortran_str_item(" + str + ", strlen(" + str + "), "
+            + idx + ", (char[2]){0})";
     }
 
     void visit_StringPhysicalCast(const ASR::StringPhysicalCast_t &x) {
