@@ -819,7 +819,9 @@ public:
                         ASR::dimension_t allocate_dim;
                         allocate_dim.loc = loc;
                         allocate_dim.m_start = index_one;
-                        allocate_dim.m_length = b.ArrayUBound(value, i+1);
+                        allocate_dim.m_length = ASRUtils::EXPR(ASR::make_ArraySize_t(
+                            al, loc, value, get_index_constant(loc, i + 1),
+                            index_type, nullptr));
                         allocate_dims.push_back(al, allocate_dim);
                     }
                 } else {
@@ -836,6 +838,25 @@ public:
     }
 
 
+    std::vector<ASR::expr_t*> remap_indices_to_array_bounds(
+            Allocator &al, const Location &loc,
+            const std::vector<ASR::expr_t*> &do_loop_variables,
+            ASR::expr_t* loop_arr, ASR::expr_t* indexed_arr,
+            int integer_kind) {
+        ASRUtils::ASRBuilder b(al, loc);
+        std::vector<ASR::expr_t*> mapped_vars;
+        mapped_vars.reserve(do_loop_variables.size());
+        for (size_t i = 0; i < do_loop_variables.size(); i++) {
+            ASR::expr_t *loop_lbound = PassUtils::get_bound(
+                loop_arr, i + 1, "lbound", al, integer_kind);
+            ASR::expr_t *indexed_lbound = PassUtils::get_bound(
+                indexed_arr, i + 1, "lbound", al, integer_kind);
+            mapped_vars.push_back(b.Add(indexed_lbound,
+                b.Sub(do_loop_variables[i], loop_lbound)));
+        }
+        return mapped_vars;
+    }
+
     ASR::stmt_t* create_do_loop(Allocator &al, const Location &loc, std::vector<ASR::expr_t*> do_loop_variables, ASR::expr_t* left_arr, ASR::expr_t* right_arr, int curr_idx, int integer_kind) {
         ASRUtils::ASRBuilder b(al, loc);
 
@@ -844,10 +865,12 @@ public:
             for (size_t i = 0; i < do_loop_variables.size(); i++) {
                 vars.push_back(do_loop_variables[i]);
             }
+            std::vector<ASR::expr_t*> right_vars = remap_indices_to_array_bounds(
+                al, loc, vars, left_arr, right_arr, integer_kind);
             return b.DoLoop(do_loop_variables[curr_idx - 1],
                 PassUtils::get_bound(left_arr, curr_idx, "lbound", al, integer_kind),
                 PassUtils::get_bound(left_arr, curr_idx, "ubound", al, integer_kind), {
-                b.Assignment(b.ArrayItem_01(left_arr, vars), b.ArrayItem_01(right_arr, vars))
+                b.Assignment(b.ArrayItem_01(left_arr, vars), b.ArrayItem_01(right_arr, right_vars))
             }, nullptr);
         }
         return b.DoLoop(do_loop_variables[curr_idx - 1],
@@ -910,10 +933,19 @@ public:
                     dealloc_args.push_back(al, array_var_temporary);
                     ASR::expr_t* is_contiguous = ASRUtils::EXPR(ASR::make_ArrayIsContiguous_t(al, loc,
                         arg_expr_past_cast, ASRUtils::TYPE(ASR::make_Logical_t(al, loc, 4)), nullptr));
-                    ASR::expr_t* not_is_contiguous = ASRUtils::EXPR(ASR::make_LogicalNot_t(al, loc, is_contiguous,
-                        ASRUtils::expr_type(is_contiguous), nullptr));
                     ASR::dimension_t* array_dims = nullptr;
                     int array_rank = ASRUtils::extract_dimensions_from_ttype(ASRUtils::expr_type(array_var_temporary), array_dims);
+                    int integer_kind = pass_options.descriptor_index_64 ? 8 : 4;
+                    ASR::expr_t* can_alias_actual = is_contiguous;
+                    for (int dim = 0; dim < array_rank; dim++) {
+                        ASR::expr_t* lbound_is_one = b.Eq(
+                            PassUtils::get_bound(arg_expr_past_cast, dim + 1,
+                                "lbound", al, integer_kind),
+                            get_index_one(loc));
+                        can_alias_actual = b.And(can_alias_actual, lbound_is_one);
+                    }
+                    ASR::expr_t* must_copy_actual = ASRUtils::EXPR(ASR::make_LogicalNot_t(al, loc, can_alias_actual,
+                        ASRUtils::expr_type(can_alias_actual), nullptr));
                     std::vector<ASR::expr_t*> do_loop_variables;
                     #define declare(var_name, type, intent)                                     \
                     b.Variable(fn_symtab, var_name, type, ASR::intentType::intent)
@@ -924,9 +956,8 @@ public:
                             : ASRUtils::expr_type(b.i32(0));
                         do_loop_variables.push_back(b.Variable(current_scope, var_name, loop_var_type, ASR::intentType::Local));
                     }
-                    int integer_kind = pass_options.descriptor_index_64 ? 8 : 4;
                     current_body->push_back(al,
-                        b.If(not_is_contiguous, {
+                        b.If(must_copy_actual, {
                             ASRUtils::STMT(ASR::make_ExplicitDeallocate_t(al,
                                 array_var_temporary->base.loc, dealloc_args.p, dealloc_args.size())),
                             ASRUtils::STMT(ASR::make_Allocate_t(al,
@@ -939,7 +970,7 @@ public:
                         })
                     );
                     if ( is_arg_intent_out.size() > 0 && is_arg_intent_out[i] ) {
-                        body_after_curr_stmt->push_back(al, b.If(not_is_contiguous, {
+                        body_after_curr_stmt->push_back(al, b.If(must_copy_actual, {
                             create_do_loop(al, loc, do_loop_variables, arg_expr_past_cast, array_var_temporary, array_rank, integer_kind)
                         }, {}));
                     }
@@ -949,7 +980,7 @@ public:
                     // that belongs to the source array (was aliased via Associate).
                     // In the non-contiguous case, deallocate the heap-allocated temporary
                     // that was used for copy-in (and copy-out).
-                    body_after_curr_stmt->push_back(al, b.If(is_contiguous, {
+                    body_after_curr_stmt->push_back(al, b.If(can_alias_actual, {
                         ASRUtils::STMT(ASR::make_Nullify_t(al, loc, dealloc_args.p, dealloc_args.size()))
                     }, {
                         ASRUtils::STMT(ASR::make_ExplicitDeallocate_t(al, loc, dealloc_args.p, dealloc_args.size()))
