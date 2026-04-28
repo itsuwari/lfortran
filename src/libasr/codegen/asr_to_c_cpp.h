@@ -3860,9 +3860,15 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         std::string saved_src = src;
         std::string dims_init;
         for (int i = 0; i < target_rank; i++) {
-            std::string lower_bound = source_is_fixed_size_local_array
-                ? "1"
-                : source_src_copy + "->dims[" + std::to_string(i) + "].lower_bound";
+            std::string lower_bound = source_src_copy + "->dims["
+                + std::to_string(i) + "].lower_bound";
+            if (source_is_fixed_size_local_array) {
+                lower_bound = "1";
+                if (target_dims[i].m_start != nullptr) {
+                    self().visit_expr(*target_dims[i].m_start);
+                    lower_bound = src;
+                }
+            }
             if (i > 0) {
                 dims_init += ", ";
             }
