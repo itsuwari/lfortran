@@ -540,8 +540,11 @@ Result<std::string> FortranEvaluator::get_c3(ASR::TranslationUnit_t &asr,
     Allocator al(64*1024*1024);
     compiler_options.po.always_run = false;
     compiler_options.po.run_fun = "f";
+    bool old_c_backend = compiler_options.po.c_backend;
+    compiler_options.po.c_backend = true;
     pass_manager.skip_c_passes();
     pass_manager.apply_passes(al, &asr, compiler_options.po, diagnostics);
+    compiler_options.po.c_backend = old_c_backend;
     // ASR pass -> C
     return asr_to_c(al, asr, diagnostics, compiler_options, default_lower_bound);
 }

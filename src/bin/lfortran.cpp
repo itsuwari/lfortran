@@ -1001,8 +1001,11 @@ int emit_c_split(const std::string &infile,
         Allocator c_al(64*1024*1024);
         compiler_options.po.always_run = false;
         compiler_options.po.run_fun = "f";
+        bool old_c_backend = compiler_options.po.c_backend;
+        compiler_options.po.c_backend = true;
         pass_manager.skip_c_passes();
         pass_manager.apply_passes(c_al, asr, compiler_options.po, diagnostics);
+        compiler_options.po.c_backend = old_c_backend;
         if (diagnostics.has_error()) {
             std::cerr << diagnostics.render(lm, compiler_options);
             return 1;
@@ -1909,8 +1912,11 @@ int compile_to_object_file_c(const std::string &infile,
         Allocator c_al(64*1024*1024);
         compiler_options.po.always_run = false;
         compiler_options.po.run_fun = "f";
+        bool old_c_backend = compiler_options.po.c_backend;
+        compiler_options.po.c_backend = true;
         pass_manager.skip_c_passes();
         pass_manager.apply_passes(c_al, asr, compiler_options.po, diagnostics);
+        compiler_options.po.c_backend = old_c_backend;
         std::cerr << diagnostics.render(lm, compiler_options);
         if (diagnostics.has_error()) {
             return 1;

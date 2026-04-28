@@ -611,6 +611,103 @@ class ArrayOpVisitor: public ASR::CallReplacerOnExpressionsVisitor<ArrayOpVisito
         return ASRUtils::TYPE(ASR::make_Integer_t(al, loc, get_index_kind()));
     }
 
+    ASR::expr_t* unwrap_array_op_lvalue(ASR::expr_t *expr) const {
+        while (expr != nullptr) {
+            if (ASR::is_a<ASR::ArrayPhysicalCast_t>(*expr)) {
+                expr = ASR::down_cast<ASR::ArrayPhysicalCast_t>(expr)->m_arg;
+            } else if (ASR::is_a<ASR::Cast_t>(*expr)) {
+                expr = ASR::down_cast<ASR::Cast_t>(expr)->m_arg;
+            } else if (ASR::is_a<ASR::GetPointer_t>(*expr)) {
+                expr = ASR::down_cast<ASR::GetPointer_t>(expr)->m_arg;
+            } else {
+                break;
+            }
+        }
+        return expr;
+    }
+
+    ASR::ArrayConstant_t* get_array_constant_value(ASR::expr_t *expr) const {
+        while (expr != nullptr) {
+            ASR::expr_t *value = ASRUtils::expr_value(expr);
+            if (value != nullptr && value != expr) {
+                expr = value;
+                continue;
+            }
+            expr = unwrap_array_op_lvalue(expr);
+            break;
+        }
+        if (expr != nullptr && ASR::is_a<ASR::ArrayConstant_t>(*expr)) {
+            return ASR::down_cast<ASR::ArrayConstant_t>(expr);
+        }
+        return nullptr;
+    }
+
+    bool is_unit_step_expr(ASR::expr_t *expr) const {
+        if (expr == nullptr) {
+            return true;
+        }
+        ASR::expr_t *value = ASRUtils::expr_value(expr);
+        if (value == nullptr) {
+            value = expr;
+        }
+        return ASR::is_a<ASR::IntegerConstant_t>(*value)
+            && ASR::down_cast<ASR::IntegerConstant_t>(value)->m_n == 1;
+    }
+
+    bool should_leave_large_array_constant_section_assignment_for_c(
+            ASR::expr_t *target, ASR::expr_t *value) const {
+        if (!pass_options.c_backend) {
+            return false;
+        }
+        target = unwrap_array_op_lvalue(target);
+        if (target == nullptr) {
+            return false;
+        }
+        ASR::expr_t *base_expr = target;
+        if (ASR::is_a<ASR::ArraySection_t>(*target)) {
+            ASR::ArraySection_t *section = ASR::down_cast<ASR::ArraySection_t>(target);
+            if (section->n_args != 1 || !is_unit_step_expr(section->m_args[0].m_step)) {
+                return false;
+            }
+            base_expr = section->m_v;
+        }
+        ASR::ttype_t *target_type = ASRUtils::type_get_past_allocatable_pointer(
+            ASRUtils::expr_type(target));
+        if (target_type == nullptr || !ASRUtils::is_array(target_type)
+                || ASRUtils::extract_n_dims_from_ttype(target_type) != 1) {
+            return false;
+        }
+        ASR::ArrayConstant_t *arr = get_array_constant_value(value);
+        if (arr == nullptr) {
+            return false;
+        }
+        ASR::ttype_t *arr_type = ASRUtils::type_get_past_allocatable_pointer(arr->m_type);
+        if (arr_type == nullptr || !ASRUtils::is_array(arr_type)) {
+            return false;
+        }
+        ASR::ttype_t *element_type = ASRUtils::extract_type(arr_type);
+        if (element_type == nullptr || ASRUtils::is_character(*element_type)) {
+            return false;
+        }
+        static const int64_t compact_constant_threshold = 64;
+        if (arr->m_n_data < compact_constant_threshold) {
+            return false;
+        }
+
+        ASR::ttype_t *base_type = ASRUtils::type_get_past_allocatable_pointer(
+            ASRUtils::expr_type(base_expr));
+        if (base_type == nullptr || !ASR::is_a<ASR::Array_t>(*base_type)) {
+            return false;
+        }
+        ASR::array_physical_typeType phys =
+            ASR::down_cast<ASR::Array_t>(base_type)->m_physical_type;
+        return phys == ASR::array_physical_typeType::DescriptorArray
+            || phys == ASR::array_physical_typeType::PointerArray
+            || phys == ASR::array_physical_typeType::UnboundedPointerArray
+            || phys == ASR::array_physical_typeType::ISODescriptorArray
+            || phys == ASR::array_physical_typeType::NumPyArray;
+    }
+
     void call_replacer() {
         replacer.current_expr = current_expr;
         replacer.current_scope = current_scope;
@@ -1572,6 +1669,14 @@ class ArrayOpVisitor: public ASR::CallReplacerOnExpressionsVisitor<ArrayOpVisito
             || ASRUtils::is_assumed_rank_array(ASRUtils::expr_type(xx.m_value));
         xx.m_value = ASRUtils::get_past_array_broadcast(xx.m_value);
         const Location loc = x.base.base.loc;
+        if (should_leave_large_array_constant_section_assignment_for_c(
+                xx.m_target, xx.m_value)) {
+            pass_result.push_back(al, ASRUtils::STMT(
+                ASRUtils::make_Assignment_t_util(al, loc, xx.m_target,
+                    xx.m_value, xx.m_overloaded, xx.m_realloc_lhs,
+                    xx.m_move_allocation)));
+            return;
+        }
 
         #define is_array_indexed_with_array_indices_check(expr) \
             ASR::is_a<ASR::ArraySection_t>(*expr) || ( \

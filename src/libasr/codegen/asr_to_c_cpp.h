@@ -3117,6 +3117,172 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         return init;
     }
 
+    ASR::ArrayConstant_t *get_c_array_constant_expr(ASR::expr_t *expr) {
+        while (expr != nullptr) {
+            ASR::expr_t *value = ASRUtils::expr_value(expr);
+            if (value != nullptr && value != expr) {
+                expr = value;
+                continue;
+            }
+            if (ASR::is_a<ASR::ArrayPhysicalCast_t>(*expr)) {
+                expr = ASR::down_cast<ASR::ArrayPhysicalCast_t>(expr)->m_arg;
+                continue;
+            }
+            if (ASR::is_a<ASR::Cast_t>(*expr)) {
+                expr = ASR::down_cast<ASR::Cast_t>(expr)->m_arg;
+                continue;
+            }
+            if (ASR::is_a<ASR::GetPointer_t>(*expr)) {
+                expr = ASR::down_cast<ASR::GetPointer_t>(expr)->m_arg;
+                continue;
+            }
+            break;
+        }
+        if (expr != nullptr && ASR::is_a<ASR::ArrayConstant_t>(*expr)) {
+            return ASR::down_cast<ASR::ArrayConstant_t>(expr);
+        }
+        return nullptr;
+    }
+
+    bool is_c_unit_step_expr(ASR::expr_t *step) {
+        if (step == nullptr) {
+            return true;
+        }
+        ASR::expr_t *value = ASRUtils::expr_value(step);
+        if (value == nullptr) {
+            value = step;
+        }
+        return ASR::is_a<ASR::IntegerConstant_t>(*value)
+            && ASR::down_cast<ASR::IntegerConstant_t>(value)->m_n == 1;
+    }
+
+    bool try_emit_compact_array_constant_section_assignment(
+            const ASR::Assignment_t &x, ASR::expr_t *unwrapped_target_expr) {
+        if (!is_c || unwrapped_target_expr == nullptr) {
+            return false;
+        }
+        unwrapped_target_expr = unwrap_c_lvalue_expr(unwrapped_target_expr);
+        if (unwrapped_target_expr == nullptr) {
+            return false;
+        }
+        ASR::ArraySection_t *section = nullptr;
+        ASR::expr_t *base_expr = unwrapped_target_expr;
+        if (ASR::is_a<ASR::ArraySection_t>(*unwrapped_target_expr)) {
+            section = ASR::down_cast<ASR::ArraySection_t>(unwrapped_target_expr);
+            if (section->n_args != 1 || !is_c_unit_step_expr(section->m_args[0].m_step)) {
+                return false;
+            }
+            base_expr = section->m_v;
+        }
+        ASR::ttype_t *target_rank_type = ASRUtils::type_get_past_allocatable_pointer(
+            ASRUtils::expr_type(unwrapped_target_expr));
+        if (target_rank_type == nullptr || !ASRUtils::is_array(target_rank_type)
+                || ASRUtils::extract_n_dims_from_ttype(target_rank_type) != 1) {
+            return false;
+        }
+        ASR::ArrayConstant_t *arr = get_c_array_constant_expr(x.m_value);
+        if (arr == nullptr) {
+            return false;
+        }
+        ASR::ttype_t *value_type = ASRUtils::type_get_past_allocatable_pointer(arr->m_type);
+        if (value_type == nullptr || !ASR::is_a<ASR::Array_t>(*value_type)) {
+            return false;
+        }
+        ASR::Array_t *value_array_type = ASR::down_cast<ASR::Array_t>(value_type);
+        ASR::ttype_t *element_type = value_array_type->m_type;
+        if (ASRUtils::is_character(*element_type)) {
+            return false;
+        }
+        size_t n = ASRUtils::get_fixed_size_of_array(value_type);
+        static const size_t compact_constant_threshold = 64;
+        if (n < compact_constant_threshold) {
+            return false;
+        }
+
+        ASR::ttype_t *base_type = ASRUtils::expr_type(base_expr);
+        ASR::ttype_t *base_type_unwrapped =
+            ASRUtils::type_get_past_allocatable_pointer(base_type);
+        if (base_type_unwrapped == nullptr || !ASR::is_a<ASR::Array_t>(*base_type_unwrapped)) {
+            return false;
+        }
+        ASR::Array_t *base_array_type = ASR::down_cast<ASR::Array_t>(base_type_unwrapped);
+        ASR::array_physical_typeType base_phys = base_array_type->m_physical_type;
+        bool descriptor_backed =
+            base_phys == ASR::array_physical_typeType::DescriptorArray
+            || base_phys == ASR::array_physical_typeType::PointerArray
+            || base_phys == ASR::array_physical_typeType::UnboundedPointerArray
+            || base_phys == ASR::array_physical_typeType::ISODescriptorArray
+            || base_phys == ASR::array_physical_typeType::NumPyArray;
+        if (!descriptor_backed) {
+            return false;
+        }
+
+        std::string indent(indentation_level * indentation_spaces, ' ');
+        self().visit_expr(*base_expr);
+        std::string base = src;
+        std::string setup = drain_tmp_buffer();
+        setup += extract_stmt_setup_from_expr(base);
+
+        std::string left;
+        if (section != nullptr && section->m_args[0].m_left != nullptr) {
+            self().visit_expr(*section->m_args[0].m_left);
+            left = src;
+            setup += drain_tmp_buffer();
+            setup += extract_stmt_setup_from_expr(left);
+        } else {
+            left = base + "->dims[0].lower_bound";
+        }
+
+        std::string c_element_type = CUtils::get_c_type_from_ttype_t(element_type);
+        std::string const_name = get_unique_local_name("__lfortran_const_data");
+        std::string idx_name = get_unique_local_name("__lfortran_const_i");
+        std::string start_name = get_unique_local_name("__lfortran_const_start");
+        std::string stride_name = get_unique_local_name("__lfortran_const_stride");
+
+        headers.insert("string.h");
+        src = check_tmp_buffer();
+        src += setup;
+        src += indent + "{\n";
+        std::string inner_indent = indent + std::string(indentation_spaces, ' ');
+        src += inner_indent + "static const " + c_element_type + " " + const_name
+            + "[" + std::to_string(n) + "] = {\n";
+        std::string data_indent = inner_indent + std::string(indentation_spaces, ' ');
+        for (size_t i = 0; i < n; i++) {
+            if (i % 8 == 0) {
+                src += data_indent;
+            }
+            src += get_c_array_constant_init_element_for_c_index(
+                arr, value_type, element_type, i);
+            if (i + 1 < n) {
+                src += ", ";
+            }
+            if (i % 8 == 7 || i + 1 == n) {
+                src += "\n";
+            }
+        }
+        src += inner_indent + "};\n";
+        src += inner_indent + "int64_t " + stride_name + " = "
+            + base + "->dims[0].stride;\n";
+        src += inner_indent + "int64_t " + start_name + " = " + base
+            + "->offset + " + stride_name + " * ((" + left + ") - "
+            + base + "->dims[0].lower_bound);\n";
+        src += inner_indent + "if (" + stride_name + " == 1) {\n";
+        src += inner_indent + std::string(indentation_spaces, ' ')
+            + "memcpy(" + base + "->data + " + start_name + ", "
+            + const_name + ", sizeof(" + const_name + "));\n";
+        src += inner_indent + "} else {\n";
+        src += inner_indent + std::string(indentation_spaces, ' ')
+            + "for (int64_t " + idx_name + " = 0; " + idx_name + " < "
+            + std::to_string(n) + "; " + idx_name + "++) {\n";
+        src += inner_indent + std::string(indentation_spaces * 2, ' ')
+            + base + "->data[" + start_name + " + " + idx_name + " * "
+            + stride_name + "] = " + const_name + "[" + idx_name + "];\n";
+        src += inner_indent + std::string(indentation_spaces, ' ') + "}\n";
+        src += inner_indent + "}\n";
+        src += indent + "}\n";
+        return true;
+    }
+
     bool is_len_one_character_array_type(ASR::ttype_t *type) {
         return CUtils::is_len_one_character_array_type(type);
     }
@@ -5450,6 +5616,10 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         std::string expr_setup;
         ASR::expr_t *unwrapped_target_expr = unwrap_c_lvalue_expr(x.m_target);
         if (try_emit_vector_subscript_scalar_array_assignment(x, unwrapped_target_expr)) {
+            return;
+        }
+        if (try_emit_compact_array_constant_section_assignment(
+                x, unwrapped_target_expr ? unwrapped_target_expr : x.m_target)) {
             return;
         }
         ASR::ttype_t *bitcast_target_type = nullptr;
