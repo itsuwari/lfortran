@@ -11,6 +11,7 @@
  * for both C and C++ code generation.
  */
 
+#include <array>
 #include <memory>
 #include <cctype>
 #include <cmath>
@@ -3573,6 +3574,36 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             if (override_it != dim_expr_overrides->end()) {
                 return override_it->second;
             }
+            for (const auto &override_entry: *dim_expr_overrides) {
+                const std::string &name = override_entry.first;
+                if (result.rfind(name + "->", 0) == 0 ||
+                        result.rfind(name + ".", 0) == 0) {
+                    return "(" + override_entry.second + ")" + result.substr(name.size());
+                }
+                bool replaced = false;
+                auto is_identifier_char = [](char c) {
+                    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+                           (c >= '0' && c <= '9') || c == '_';
+                };
+                std::array<std::string, 2> member_markers = {name + "->", name + "."};
+                for (const std::string &marker: member_markers) {
+                    size_t pos = result.find(marker);
+                    while (pos != std::string::npos) {
+                        if (pos == 0 || !is_identifier_char(result[pos - 1])) {
+                            result.replace(pos, name.size(),
+                                "(" + override_entry.second + ")");
+                            replaced = true;
+                            pos += override_entry.second.size() + 2;
+                        } else {
+                            pos += marker.size();
+                        }
+                        pos = result.find(marker, pos);
+                    }
+                }
+                if (replaced) {
+                    return result;
+                }
+            }
             ASR::expr_t *raw_dim_expr = unwrap_c_lvalue_expr(dim_expr);
             if (raw_dim_expr && ASR::is_a<ASR::Var_t>(*raw_dim_expr)) {
                 ASR::symbol_t *dim_sym = ASRUtils::symbol_get_past_external(
@@ -4922,9 +4953,6 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 continue;
             }
             auto pass_wrapper_arg = [&](const std::string &value_expr) -> std::string {
-                if (is_c && ASR::is_a<ASR::ArrayPhysicalCast_t>(*call_arg)) {
-                    return value_expr;
-                }
                 std::map<std::string, std::string> dim_expr_overrides;
                 std::string saved_src = src;
                 for (size_t j = 0; j < n_args && j < f->n_args; j++) {
@@ -4935,16 +4963,30 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                     if (!dim_param || ASRUtils::is_array(dim_param->m_type)) {
                         continue;
                     }
-                    ASR::ttype_t *dim_type = ASRUtils::type_get_past_allocatable_pointer(
-                        dim_param->m_type);
-                    if (!dim_type || !(ASRUtils::is_integer(*dim_type)
-                                || ASRUtils::is_unsigned_integer(*dim_type))) {
-                        continue;
-                    }
                     self().visit_expr(*m_args[j].m_value);
                     dim_expr_overrides[CUtils::get_c_variable_name(*dim_param)] = src;
                 }
                 src = saved_src;
+                if (is_c && ASR::is_a<ASR::ArrayPhysicalCast_t>(*call_arg)) {
+                    ASR::ArrayPhysicalCast_t *cast =
+                        ASR::down_cast<ASR::ArrayPhysicalCast_t>(call_arg);
+                    ASR::ttype_t *target_array_type =
+                        ASRUtils::type_get_past_allocatable_pointer(param_type);
+                    ASR::ttype_t *source_array_type =
+                        ASRUtils::type_get_past_allocatable_pointer(
+                            ASRUtils::expr_type(cast->m_arg));
+                    int target_rank = target_array_type
+                        ? ASRUtils::extract_n_dims_from_ttype(target_array_type) : 0;
+                    int source_rank = source_array_type
+                        ? ASRUtils::extract_n_dims_from_ttype(source_array_type) : 0;
+                    if (target_rank > 0 && source_rank > 0
+                            && target_rank > source_rank) {
+                        return build_c_array_wrapper_from_cast_target(
+                            param_type, cast->m_arg, value_expr,
+                            &dim_expr_overrides);
+                    }
+                    return value_expr;
+                }
                 return build_c_array_wrapper_from_cast_target(
                     param_type, call_arg, value_expr, &dim_expr_overrides);
             };
@@ -5357,9 +5399,6 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 continue;
             }
             auto pass_wrapper_arg = [&](const std::string &value_expr) -> std::string {
-                if (is_c && ASR::is_a<ASR::ArrayPhysicalCast_t>(*call_arg)) {
-                    return value_expr;
-                }
                 std::map<std::string, std::string> dim_expr_overrides;
                 std::string saved_src = src;
                 for (size_t j = start_idx; j < n_args && j < f->n_args; j++) {
@@ -5370,16 +5409,30 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                     if (!dim_param || ASRUtils::is_array(dim_param->m_type)) {
                         continue;
                     }
-                    ASR::ttype_t *dim_type = ASRUtils::type_get_past_allocatable_pointer(
-                        dim_param->m_type);
-                    if (!dim_type || !(ASRUtils::is_integer(*dim_type)
-                                || ASRUtils::is_unsigned_integer(*dim_type))) {
-                        continue;
-                    }
                     self().visit_expr(*m_args[j].m_value);
                     dim_expr_overrides[CUtils::get_c_variable_name(*dim_param)] = src;
                 }
                 src = saved_src;
+                if (is_c && ASR::is_a<ASR::ArrayPhysicalCast_t>(*call_arg)) {
+                    ASR::ArrayPhysicalCast_t *cast =
+                        ASR::down_cast<ASR::ArrayPhysicalCast_t>(call_arg);
+                    ASR::ttype_t *target_array_type =
+                        ASRUtils::type_get_past_allocatable_pointer(param_type);
+                    ASR::ttype_t *source_array_type =
+                        ASRUtils::type_get_past_allocatable_pointer(
+                            ASRUtils::expr_type(cast->m_arg));
+                    int target_rank = target_array_type
+                        ? ASRUtils::extract_n_dims_from_ttype(target_array_type) : 0;
+                    int source_rank = source_array_type
+                        ? ASRUtils::extract_n_dims_from_ttype(source_array_type) : 0;
+                    if (target_rank > 0 && source_rank > 0
+                            && target_rank > source_rank) {
+                        return build_c_array_wrapper_from_cast_target(
+                            param_type, cast->m_arg, value_expr,
+                            &dim_expr_overrides);
+                    }
+                    return value_expr;
+                }
                 return build_c_array_wrapper_from_cast_target(
                     param_type, call_arg, value_expr, &dim_expr_overrides);
             };
