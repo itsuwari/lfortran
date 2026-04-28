@@ -1065,8 +1065,22 @@ R"(
     }
 
     std::string make_pointer_field_decl(const ASR::Variable_t &v) {
-        std::string decl = strip_initializer_from_decl(convert_variable_decl(v));
+        std::string full_def = convert_variable_decl(v);
         std::string emitted_name = CUtils::get_c_variable_name(v);
+        std::string decl;
+        for (const auto &line : split_lines_keep_newlines(full_def)) {
+            std::string trimmed = trim_copy(line);
+            if (trimmed.empty()) {
+                continue;
+            }
+            if (line_contains_word(trimmed, emitted_name)) {
+                decl = strip_initializer_from_decl(trimmed);
+            }
+        }
+        if (decl.empty()) {
+            throw CodeGenError("Failed to build split helper context for local variable `"
+                + std::string(v.m_name) + "`");
+        }
         size_t pos = decl.rfind(emitted_name);
         if (pos == std::string::npos) {
             throw CodeGenError("Failed to build split helper context for local variable `"
@@ -1102,6 +1116,36 @@ R"(
         }
         out += indent + "};\n";
         return out;
+    }
+
+    std::string indent_c_block(const std::string &text, const std::string &indent) const {
+        std::string out;
+        for (const auto &line : split_lines_keep_newlines(text)) {
+            if (trim_copy(line).empty()) {
+                out += line;
+            } else {
+                out += indent + line;
+            }
+        }
+        return out;
+    }
+
+    std::set<std::string> build_local_decl_statement_set(
+            const std::vector<ASR::Variable_t*> &locals,
+            std::string &local_decl_block,
+            const std::string &indent) {
+        std::set<std::string> local_decl_stmts;
+        for (ASR::Variable_t *v : locals) {
+            std::string decl_text = convert_variable_decl(*v) + ";\n";
+            local_decl_block += indent_c_block(decl_text, indent);
+            for (const auto &stmt : split_top_level_statements(decl_text)) {
+                std::string trimmed = trim_copy(stmt);
+                if (!trimmed.empty()) {
+                    local_decl_stmts.insert(trimmed);
+                }
+            }
+        }
+        return local_decl_stmts;
     }
 
     std::vector<std::string> collect_function_param_decls(const ASR::Function_t &x) {
@@ -1327,12 +1371,19 @@ R"(
         for (ASR::Variable_t *v : locals) {
             local_names.push_back(CUtils::get_c_variable_name(*v));
         }
+        std::string indent = "    ";
+        std::string local_decl_block;
+        std::set<std::string> local_decl_stmts =
+            build_local_decl_statement_set(locals, local_decl_block, indent);
 
         std::string decl_block;
         std::vector<std::string> stmts = split_top_level_statements(body_text);
         size_t stmt_start = 0;
         for (; stmt_start < stmts.size(); stmt_start++) {
             std::string trimmed_stmt = trim_copy(stmts[stmt_start]);
+            if (local_decl_stmts.find(trimmed_stmt) != local_decl_stmts.end()) {
+                continue;
+            }
             if (trimmed_stmt.empty()) {
                 decl_block += stmts[stmt_start];
                 continue;
@@ -1343,6 +1394,14 @@ R"(
             decl_block += stmts[stmt_start];
         }
         stmts.erase(stmts.begin(), stmts.begin() + stmt_start);
+        std::vector<std::string> filtered_stmts;
+        filtered_stmts.reserve(stmts.size());
+        for (const auto &stmt : stmts) {
+            if (local_decl_stmts.find(trim_copy(stmt)) == local_decl_stmts.end()) {
+                filtered_stmts.push_back(stmt);
+            }
+        }
+        stmts = std::move(filtered_stmts);
         if (stmts.size() < 2) {
             units.push_back({unit_filename, function_src});
             return units;
@@ -1398,7 +1457,7 @@ R"(
         }
         main_src += decl_header + "\n{\n";
         main_src += decl_block;
-        std::string indent = "    ";
+        main_src += local_decl_block;
         main_src += build_large_function_ctx_init(ctx_name, locals, indent);
         for (size_t i = 0; i < chunks.size(); i++) {
             std::string helper_name = CUtils::sanitize_c_identifier(
@@ -1599,7 +1658,11 @@ R"(
         }
         if( declare_value ) {
             std::string variable_name = std::string(v_m_name) + "_value";
-            sub = format_type_c("", type_name_without_ptr, variable_name, use_ref, dummy) + ";\n";
+            sub = format_type_c("", type_name_without_ptr, variable_name, use_ref, dummy);
+            if (is_pointer) {
+                sub += " = {0}";
+            }
+            sub += ";\n";
             sub += indent + format_type_c("", type_name, v_m_name, use_ref, dummy);
             sub += " = &" + variable_name;
             if( !is_pointer ) {

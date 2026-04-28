@@ -8372,11 +8372,27 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         return src;
     }
 
+    bool c_array_expr_uses_descriptor(ASR::expr_t *expr) {
+        ASR::ttype_t *type = ASRUtils::type_get_past_array(
+            ASRUtils::type_get_past_allocatable_pointer(ASRUtils::expr_type(expr)));
+        return !ASRUtils::is_unlimited_polymorphic_type(type);
+    }
+
     std::string emit_c_deallocate(ASR::expr_t *expr, const std::string &indent,
-            const std::string &kind) {
-        if (ASRUtils::is_array(ASRUtils::expr_type(expr))) {
-            self().visit_expr(*expr);
-            return indent + "// FIXME: " + kind + " deallocate(" + src + ", );\n";
+            const std::string &) {
+        if (ASRUtils::is_array(ASRUtils::expr_type(expr))
+                && c_array_expr_uses_descriptor(expr)) {
+            std::string target = get_c_deallocation_target_expr(expr);
+            return indent + "if ((" + target + ") != NULL && (" + target
+                + ")->is_allocated && (" + target + ")->data != NULL) {\n"
+                + indent + "    _lfortran_free_alloc(_lfortran_get_default_allocator(), "
+                + "(char*) (" + target + ")->data);\n"
+                + indent + "    (" + target + ")->data = NULL;\n"
+                + indent + "}\n"
+                + indent + "if ((" + target + ") != NULL) {\n"
+                + indent + "    (" + target + ")->offset = 0;\n"
+                + indent + "    (" + target + ")->is_allocated = false;\n"
+                + indent + "}\n";
         }
         std::string target = get_c_deallocation_target_expr(expr);
         return indent + "if ((" + target + ") != NULL) {\n"
@@ -8424,6 +8440,42 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         std::string indent(indentation_level*indentation_spaces, ' ');
         std::string out;
         for (size_t i = 0; i < x.n_vars; i++) {
+            if (is_c && ASRUtils::is_array(ASRUtils::expr_type(x.m_vars[i]))
+                    && c_array_expr_uses_descriptor(x.m_vars[i])) {
+                ASR::expr_t *unwrapped_expr = unwrap_c_lvalue_expr(x.m_vars[i]);
+                if (unwrapped_expr && ASR::is_a<ASR::Var_t>(*unwrapped_expr)) {
+                    ASR::symbol_t *sym = ASRUtils::symbol_get_past_external(
+                        ASR::down_cast<ASR::Var_t>(unwrapped_expr)->m_v);
+                    if (ASR::is_a<ASR::Variable_t>(*sym)) {
+                        ASR::Variable_t *var = ASR::down_cast<ASR::Variable_t>(sym);
+                        ASR::asr_t *owner = var->m_parent_symtab
+                            ? var->m_parent_symtab->asr_owner : nullptr;
+                        bool has_local_backing_descriptor =
+                            !ASRUtils::is_arg_dummy(var->m_intent)
+                            && owner
+                            && (CUtils::is_symbol_owner<ASR::Function_t>(owner)
+                                || CUtils::is_symbol_owner<ASR::Program_t>(owner)
+                                || CUtils::is_symbol_owner<ASR::Block_t>(owner));
+                        if (has_local_backing_descriptor) {
+                            std::string var_name = get_c_var_storage_name(var);
+                            out += indent + var_name + " = &" + var_name + "_value;\n";
+                            out += indent + "if ((" + var_name + ") != NULL) {\n"
+                                + indent + "    (" + var_name + ")->data = NULL;\n"
+                                + indent + "    (" + var_name + ")->offset = 0;\n"
+                                + indent + "    (" + var_name + ")->is_allocated = false;\n"
+                                + indent + "}\n";
+                            continue;
+                        }
+                    }
+                }
+                std::string target = get_c_deallocation_target_expr(x.m_vars[i]);
+                out += indent + "if ((" + target + ") != NULL) {\n"
+                    + indent + "    (" + target + ")->data = NULL;\n"
+                    + indent + "    (" + target + ")->offset = 0;\n"
+                    + indent + "    (" + target + ")->is_allocated = false;\n"
+                    + indent + "}\n";
+                continue;
+            }
             if (is_c && ASR::is_a<ASR::Var_t>(*x.m_vars[i])) {
                 ASR::symbol_t *sym = ASRUtils::symbol_get_past_external(
                     ASR::down_cast<ASR::Var_t>(x.m_vars[i])->m_v);
