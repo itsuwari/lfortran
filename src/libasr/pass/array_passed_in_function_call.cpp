@@ -150,17 +150,12 @@ public:
                     cast->m_old == ASR::array_physical_typeType::DescriptorArray) ) {
                 return false;
             }
-            // Skip copy-in/copy-out when the inner expression is an ArraySection
-            // whose source array is UnboundedPointerArray (assumed-size) and has
-            // an undefined upper bound on the assumed-size dimension.
+            // Skip copy-in/copy-out when the inner expression must use Fortran
+            // sequence association into the original storage.
             ASR::expr_t* inner = cast->m_arg;
             if ( ASR::is_a<ASR::ArraySection_t>(*inner) ) {
                 ASR::ArraySection_t* section = ASR::down_cast<ASR::ArraySection_t>(inner);
-                ASR::ttype_t* source_type = ASRUtils::expr_type(section->m_v);
-                if ( ASRUtils::is_array(source_type) &&
-                     ASRUtils::extract_physical_type(source_type) ==
-                         ASR::array_physical_typeType::UnboundedPointerArray &&
-                     has_undefined_assumed_size_bound(section) ) {
+                if ( is_sequence_association_array_section(section) ) {
                     return false;
                 }
             }
@@ -175,6 +170,43 @@ public:
             return true;
         }
         return false;
+    }
+
+    bool is_explicit_shape_array_type(ASR::ttype_t *type) {
+        type = ASRUtils::type_get_past_allocatable_pointer(type);
+        if (!type || !ASRUtils::is_array(type)) {
+            return false;
+        }
+        ASR::dimension_t *dims = nullptr;
+        int rank = ASRUtils::extract_dimensions_from_ttype(type, dims);
+        if (rank <= 0) {
+            return false;
+        }
+        for (int i = 0; i < rank; i++) {
+            if (dims[i].m_start == nullptr || dims[i].m_length == nullptr) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    bool is_sequence_association_array_section(ASR::ArraySection_t *section) {
+        ASR::ttype_t* source_type = ASRUtils::expr_type(section->m_v);
+        if (!ASRUtils::is_array(source_type)) {
+            return false;
+        }
+        ASR::array_physical_typeType phys =
+            ASRUtils::extract_physical_type(source_type);
+        if (phys == ASR::array_physical_typeType::UnboundedPointerArray
+                && has_undefined_assumed_size_bound(section)) {
+            return true;
+        }
+        if (phys == ASR::array_physical_typeType::FixedSizeArray) {
+            return true;
+        }
+        return (phys == ASR::array_physical_typeType::PointerArray
+                || phys == ASR::array_physical_typeType::DescriptorArray)
+            && is_explicit_shape_array_type(source_type);
     }
 
     void transform_stmts(ASR::stmt_t**& m_body, size_t& n_body) {
@@ -1046,27 +1078,19 @@ public:
     }
 
     // Track Associate statements created by pass_array_by_data where the
-    // source is an ArraySection of an assumed-size (UnboundedPointerArray)
-    // array or a FixedSizeArray (sequence association via --legacy-array-sections).
+    // source is an ArraySection that must use sequence association rather than
+    // copy-in/copy-out lowering.
     // For UnboundedPointerArray: allocation size cannot be determined (undefined UBound).
-    // For FixedSizeArray: sequence association requires the callee to index the
-    // original contiguous memory with its own leading dimension; copy-in would
-    // create a packed temporary with wrong memory layout.
+    // For explicit-shape/fixed-size sources: the callee must index original
+    // contiguous storage with its own leading dimension; copy-in would create
+    // a packed temporary with wrong memory layout and very large generated C.
     void visit_Associate(const ASR::Associate_t& x) {
         if ( ASR::is_a<ASR::ArraySection_t>(*x.m_value) &&
              ASR::is_a<ASR::Var_t>(*x.m_target) ) {
             ASR::ArraySection_t* section = ASR::down_cast<ASR::ArraySection_t>(x.m_value);
             ASR::ttype_t* source_type = ASRUtils::expr_type(section->m_v);
             if ( ASRUtils::is_array(source_type) ) {
-                ASR::array_physical_typeType phys = ASRUtils::extract_physical_type(source_type);
-                bool track = false;
-                if ( phys == ASR::array_physical_typeType::UnboundedPointerArray &&
-                     has_undefined_assumed_size_bound(section) ) {
-                    track = true;
-                } else if ( phys == ASR::array_physical_typeType::FixedSizeArray ) {
-                    track = true;
-                }
-                if ( track ) {
+                if ( is_sequence_association_array_section(section) ) {
                     ASR::symbol_t* sym = ASR::down_cast<ASR::Var_t>(x.m_target)->m_v;
                     vars_from_assumed_size_sections.insert(sym);
                 }
