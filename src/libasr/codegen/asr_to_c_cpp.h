@@ -136,6 +136,10 @@ public:
     std::string forward_decl_functions;
     std::vector<ASR::Function_t*> pending_function_definitions;
     std::set<uint64_t> pending_function_definition_hashes;
+    bool emit_compact_constant_data_units = false;
+    size_t compact_constant_data_count = 0;
+    std::string compact_constant_data_body;
+    std::string compact_constant_data_decls;
 
     // Output configuration:
     // Use std::string or char*
@@ -3117,6 +3121,105 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         return init;
     }
 
+    size_t get_c_array_constant_element_size(ASR::ttype_t *element_type) {
+        int64_t element_size = ASRUtils::get_type_byte_size(element_type);
+        if (element_size <= 0) {
+            return 0;
+        }
+        return static_cast<size_t>(element_size);
+    }
+
+    std::string emit_c_array_constant_byte_initializer(
+            ASR::ArrayConstant_t *arr, ASR::ttype_t *array_type,
+            ASR::ttype_t *element_type) {
+        size_t element_size = get_c_array_constant_element_size(element_type);
+        if (element_size == 0 || arr->m_data == nullptr) {
+            return "";
+        }
+        size_t n = ASRUtils::get_fixed_size_of_array(array_type);
+        const unsigned char *raw_data =
+            reinterpret_cast<const unsigned char*>(arr->m_data);
+        std::string init;
+        size_t emitted = 0;
+        for (size_t i = 0; i < n; i++) {
+            size_t storage_index =
+                get_c_array_constant_storage_index(arr, array_type, i);
+            const unsigned char *element =
+                raw_data + storage_index * element_size;
+            for (size_t j = 0; j < element_size; j++) {
+                if (emitted % 16 == 0) {
+                    init += "        ";
+                }
+                init += std::to_string(static_cast<unsigned int>(element[j]));
+                if (i + 1 < n || j + 1 < element_size) {
+                    init += ", ";
+                }
+                emitted++;
+                if (emitted % 16 == 0 || (i + 1 == n && j + 1 == element_size)) {
+                    init += "\n";
+                }
+            }
+        }
+        return init;
+    }
+
+    void ensure_compact_constant_data_prelude() {
+        if (!compact_constant_data_body.empty()) {
+            return;
+        }
+        compact_constant_data_body +=
+            "#if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L\n"
+            "#include <stdalign.h>\n"
+            "#define LFORTRAN_CDATA_ALIGNAS(T) alignas(T)\n"
+            "#elif defined(__GNUC__) || defined(__clang__)\n"
+            "#define LFORTRAN_CDATA_ALIGNAS(T) __attribute__((aligned(__alignof__(T))))\n"
+            "#else\n"
+            "#define LFORTRAN_CDATA_ALIGNAS(T)\n"
+            "#endif\n\n";
+    }
+
+    std::string register_compact_array_constant_data_helper(
+            ASR::ArrayConstant_t *arr, ASR::ttype_t *array_type,
+            ASR::ttype_t *element_type, const std::string &c_element_type) {
+        std::string byte_init =
+            emit_c_array_constant_byte_initializer(arr, array_type, element_type);
+        if (byte_init.empty()) {
+            return "";
+        }
+        size_t n = ASRUtils::get_fixed_size_of_array(array_type);
+        size_t element_size = get_c_array_constant_element_size(element_type);
+        std::string suffix = std::to_string(compact_constant_data_count++);
+        if (!lcompilers_unique_ID_separate_compilation.empty()) {
+            suffix += "_" + lcompilers_unique_ID_separate_compilation;
+        }
+        std::string helper_name = "__lfortran_const_copy_" + suffix;
+        std::string blob_name = "__lfortran_const_blob_" + suffix;
+
+        compact_constant_data_decls +=
+            "void " + helper_name + "(void *dst, int64_t stride);\n";
+        ensure_compact_constant_data_prelude();
+        compact_constant_data_body +=
+            "LFORTRAN_CDATA_ALIGNAS(" + c_element_type + ")\n"
+            "static const unsigned char " + blob_name + "["
+            + std::to_string(n * element_size) + "] = {\n"
+            + byte_init + "};\n\n";
+        compact_constant_data_body +=
+            "void " + helper_name + "(void *dst, int64_t stride)\n"
+            "{\n"
+            "    unsigned char *dst_bytes = (unsigned char*) dst;\n"
+            "    if (stride == 1) {\n"
+            "        memcpy(dst_bytes, " + blob_name + ", sizeof(" + blob_name + "));\n"
+            "        return;\n"
+            "    }\n"
+            "    for (int64_t i = 0; i < " + std::to_string(n) + "; i++) {\n"
+            "        memcpy(dst_bytes + i * stride * sizeof(" + c_element_type + "), "
+                + blob_name + " + i * sizeof(" + c_element_type + "), "
+                "sizeof(" + c_element_type + "));\n"
+            "    }\n"
+            "}\n\n";
+        return helper_name;
+    }
+
     ASR::ArrayConstant_t *get_c_array_constant_expr(ASR::expr_t *expr) {
         while (expr != nullptr) {
             ASR::expr_t *value = ASRUtils::expr_value(expr);
@@ -3234,6 +3337,28 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         }
 
         std::string c_element_type = CUtils::get_c_type_from_ttype_t(element_type);
+        if (emit_compact_constant_data_units) {
+            std::string helper_name = register_compact_array_constant_data_helper(
+                arr, value_type, element_type, c_element_type);
+            if (!helper_name.empty()) {
+                std::string start_name = get_unique_local_name("__lfortran_const_start");
+                std::string stride_name = get_unique_local_name("__lfortran_const_stride");
+                src = check_tmp_buffer();
+                src += setup;
+                src += indent + "{\n";
+                std::string inner_indent = indent + std::string(indentation_spaces, ' ');
+                src += inner_indent + "int64_t " + stride_name + " = "
+                    + base + "->dims[0].stride;\n";
+                src += inner_indent + "int64_t " + start_name + " = " + base
+                    + "->offset + " + stride_name + " * ((" + left + ") - "
+                    + base + "->dims[0].lower_bound);\n";
+                src += inner_indent + helper_name + "(" + base + "->data + "
+                    + start_name + ", " + stride_name + ");\n";
+                src += indent + "}\n";
+                return true;
+            }
+        }
+
         std::string const_name = get_unique_local_name("__lfortran_const_data");
         std::string idx_name = get_unique_local_name("__lfortran_const_i");
         std::string start_name = get_unique_local_name("__lfortran_const_start");

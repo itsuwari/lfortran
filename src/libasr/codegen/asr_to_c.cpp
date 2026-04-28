@@ -3364,6 +3364,10 @@ R"(
         UniqueIdGuard unique_id_guard(split_suffix_builder.str());
 
         is_string_concat_present = false;
+        emit_compact_constant_data_units = true;
+        compact_constant_data_count = 0;
+        compact_constant_data_body.clear();
+        compact_constant_data_decls.clear();
         global_scope = x.m_symtab;
         LCOMPILERS_ASSERT(x.n_items == 0);
         indentation_level = 0;
@@ -3560,7 +3564,8 @@ R"(
         }
         std::string split_owned_defs;
         hoist_split_header_enum_name_defs(header_array_type_decls, split_owned_defs);
-        std::string function_decls = dedupe_decl_lines(forward_decl_functions + split_func_decls);
+        std::string function_decls = dedupe_decl_lines(
+            forward_decl_functions + split_func_decls + compact_constant_data_decls);
         if (is_string_concat_present) {
             function_decls += "static inline char* strcat_(const char* x, const char* y) {\n";
             function_decls += "    char* str_tmp = (char*) malloc((strlen(x) + strlen(y) + 2) * sizeof(char));\n";
@@ -3593,6 +3598,13 @@ R"(
             write_text_file(fs::path(output_dir) / shared_name,
                 get_unit_file_prelude(header_name) + shared_body);
             source_files.push_back(shared_name);
+        }
+
+        if (!compact_constant_data_body.empty()) {
+            std::string data_name = safe_project_name + "_constants_data.c";
+            write_text_file(fs::path(output_dir) / data_name,
+                get_unit_file_prelude(header_name) + compact_constant_data_body);
+            source_files.push_back(data_name);
         }
 
         for (const auto &unit : unit_bodies) {
