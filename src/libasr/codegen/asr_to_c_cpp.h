@@ -100,6 +100,26 @@ struct CPPDeclarationOptions: public DeclarationOptions {
     }
 };
 
+enum class CArrayExprLoweringKind {
+    FallbackRuntime,
+    NoCopyDescriptorView,
+    ScalarizedLoop,
+    FusedLoop,
+    MaterializedTemporary,
+    CompactConstantCopy
+};
+
+struct CArrayExprLoweringPlan {
+    CArrayExprLoweringKind kind = CArrayExprLoweringKind::FallbackRuntime;
+    ASR::expr_t *target_expr = nullptr;
+    ASR::expr_t *target_base_expr = nullptr;
+    ASR::ArraySection_t *target_section = nullptr;
+    ASR::ArrayConstant_t *constant_value = nullptr;
+    ASR::ttype_t *constant_array_type = nullptr;
+    ASR::ttype_t *constant_element_type = nullptr;
+    size_t constant_size = 0;
+};
+
 template <class StructType>
 class BaseCCPPVisitor : public ASR::BaseVisitor<StructType>
 {
@@ -3260,42 +3280,48 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             && ASR::down_cast<ASR::IntegerConstant_t>(value)->m_n == 1;
     }
 
-    bool try_emit_compact_array_constant_section_assignment(
+    CArrayExprLoweringPlan plan_c_array_expr_assignment(
             const ASR::Assignment_t &x, ASR::expr_t *unwrapped_target_expr) {
+        CArrayExprLoweringPlan plan;
         if (!is_c || unwrapped_target_expr == nullptr) {
-            return false;
+            return plan;
         }
         unwrapped_target_expr = unwrap_c_lvalue_expr(unwrapped_target_expr);
         if (unwrapped_target_expr == nullptr) {
-            return false;
+            return plan;
         }
-        ASR::ArraySection_t *section = nullptr;
+        plan.target_expr = unwrapped_target_expr;
         ASR::expr_t *base_expr = unwrapped_target_expr;
         if (ASR::is_a<ASR::ArraySection_t>(*unwrapped_target_expr)) {
-            section = ASR::down_cast<ASR::ArraySection_t>(unwrapped_target_expr);
-            if (section->n_args != 1 || !is_c_unit_step_expr(section->m_args[0].m_step)) {
-                return false;
+            plan.target_section = ASR::down_cast<ASR::ArraySection_t>(unwrapped_target_expr);
+            if (plan.target_section->n_args != 1
+                    || !is_c_unit_step_expr(plan.target_section->m_args[0].m_step)) {
+                return plan;
             }
-            base_expr = section->m_v;
+            base_expr = plan.target_section->m_v;
         }
+        plan.target_base_expr = base_expr;
         ASR::ttype_t *target_rank_type = ASRUtils::type_get_past_allocatable_pointer(
             ASRUtils::expr_type(unwrapped_target_expr));
         if (target_rank_type == nullptr || !ASRUtils::is_array(target_rank_type)
                 || ASRUtils::extract_n_dims_from_ttype(target_rank_type) != 1) {
-            return false;
+            return plan;
         }
         ASR::ArrayConstant_t *arr = get_c_array_constant_expr(x.m_value);
         if (arr == nullptr) {
-            return false;
+            if (ASRUtils::is_array(ASRUtils::expr_type(x.m_value))) {
+                plan.kind = CArrayExprLoweringKind::MaterializedTemporary;
+            }
+            return plan;
         }
         ASR::ttype_t *value_type = ASRUtils::type_get_past_allocatable_pointer(arr->m_type);
         if (value_type == nullptr || !ASR::is_a<ASR::Array_t>(*value_type)) {
-            return false;
+            return plan;
         }
         ASR::Array_t *value_array_type = ASR::down_cast<ASR::Array_t>(value_type);
         ASR::ttype_t *element_type = value_array_type->m_type;
         if (ASRUtils::is_character(*element_type)) {
-            return false;
+            return plan;
         }
         size_t n = ASRUtils::get_fixed_size_of_array(value_type);
 
@@ -3303,7 +3329,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         ASR::ttype_t *base_type_unwrapped =
             ASRUtils::type_get_past_allocatable_pointer(base_type);
         if (base_type_unwrapped == nullptr || !ASR::is_a<ASR::Array_t>(*base_type_unwrapped)) {
-            return false;
+            return plan;
         }
         ASR::Array_t *base_array_type = ASR::down_cast<ASR::Array_t>(base_type_unwrapped);
         ASR::array_physical_typeType base_phys = base_array_type->m_physical_type;
@@ -3314,8 +3340,33 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             || base_phys == ASR::array_physical_typeType::ISODescriptorArray
             || base_phys == ASR::array_physical_typeType::NumPyArray;
         if (!descriptor_backed) {
+            return plan;
+        }
+
+        plan.kind = CArrayExprLoweringKind::CompactConstantCopy;
+        plan.constant_value = arr;
+        plan.constant_array_type = value_type;
+        plan.constant_element_type = element_type;
+        plan.constant_size = n;
+        return plan;
+    }
+
+    bool try_emit_c_array_expr_assignment_plan(
+            const CArrayExprLoweringPlan &plan) {
+        if (plan.kind != CArrayExprLoweringKind::CompactConstantCopy
+                || plan.target_expr == nullptr
+                || plan.target_base_expr == nullptr
+                || plan.constant_value == nullptr
+                || plan.constant_array_type == nullptr
+                || plan.constant_element_type == nullptr) {
             return false;
         }
+        ASR::ArraySection_t *section = plan.target_section;
+        ASR::expr_t *base_expr = plan.target_base_expr;
+        ASR::ArrayConstant_t *arr = plan.constant_value;
+        ASR::ttype_t *value_type = plan.constant_array_type;
+        ASR::ttype_t *element_type = plan.constant_element_type;
+        size_t n = plan.constant_size;
 
         std::string indent(indentation_level * indentation_spaces, ' ');
         self().visit_expr(*base_expr);
@@ -3894,12 +3945,11 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         return "&" + view_name;
     }
 
-    bool try_build_c_array_no_copy_descriptor_view_arg(
-            ASR::expr_t *call_arg, ASR::ttype_t *param_type,
-            ASR::symbol_t *param_type_decl, std::string &arg_src,
-            bool use_named_stack_view=true) {
+    CArrayExprLoweringPlan plan_c_array_argument_expr(
+            ASR::expr_t *call_arg, ASR::ttype_t *param_type) {
+        CArrayExprLoweringPlan plan;
         if (!is_c || call_arg == nullptr || param_type == nullptr) {
-            return false;
+            return plan;
         }
         ASR::expr_t *source_arg = call_arg;
         if (ASR::is_a<ASR::ArrayPhysicalCast_t>(*call_arg)) {
@@ -3909,15 +3959,30 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                         && cast->m_new != ASR::array_physical_typeType::PointerArray)
                     || (cast->m_old != ASR::array_physical_typeType::DescriptorArray
                         && cast->m_old != ASR::array_physical_typeType::FixedSizeArray)) {
-                return false;
+                return plan;
             }
             source_arg = cast->m_arg;
         }
         if (get_c_array_wrapper_base_type(param_type) == nullptr) {
+            return plan;
+        }
+        plan.kind = CArrayExprLoweringKind::NoCopyDescriptorView;
+        plan.target_expr = source_arg;
+        return plan;
+    }
+
+    bool try_build_c_array_no_copy_descriptor_view_arg(
+            ASR::expr_t *call_arg, ASR::ttype_t *param_type,
+            ASR::symbol_t *param_type_decl, std::string &arg_src,
+            bool use_named_stack_view=true) {
+        CArrayExprLoweringPlan plan =
+            plan_c_array_argument_expr(call_arg, param_type);
+        if (plan.kind != CArrayExprLoweringKind::NoCopyDescriptorView
+                || plan.target_expr == nullptr) {
             return false;
         }
         std::string view_src = build_c_array_no_copy_descriptor_view(
-            param_type, source_arg, arg_src, param_type_decl,
+            param_type, plan.target_expr, arg_src, param_type_decl,
             use_named_stack_view);
         if (view_src == arg_src) {
             return false;
@@ -6071,8 +6136,9 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         if (try_emit_vector_subscript_scalar_array_assignment(x, unwrapped_target_expr)) {
             return;
         }
-        if (try_emit_compact_array_constant_section_assignment(
-                x, unwrapped_target_expr ? unwrapped_target_expr : x.m_target)) {
+        CArrayExprLoweringPlan array_expr_plan = plan_c_array_expr_assignment(
+            x, unwrapped_target_expr ? unwrapped_target_expr : x.m_target);
+        if (try_emit_c_array_expr_assignment_plan(array_expr_plan)) {
             return;
         }
         ASR::ttype_t *bitcast_target_type = nullptr;
