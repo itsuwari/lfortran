@@ -2406,7 +2406,8 @@ R"(
                 && std::string(ASR::down_cast<ASR::Function_t>(owner_sym)->m_name)
                     .rfind("_lcompilers_move_alloc_", 0) == 0
                 && get_variable_c_name(v) == "to"
-                && !ASRUtils::is_array(v.m_type)) {
+                && (!ASRUtils::is_array(v.m_type)
+                    || is_unlimited_polymorphic_storage_type(v.m_type))) {
             use_ref = true;
         }
         bool declaration_only = do_not_initialize;
@@ -2419,6 +2420,13 @@ R"(
         std::string c_v_name = get_variable_c_name(v);
         std::string decl_name = (force_declare && !force_declare_name.empty())
             ? force_declare_name : c_v_name;
+        if (is_c && owner_sym && ASR::is_a<ASR::Function_t>(*owner_sym)
+                && std::string(ASR::down_cast<ASR::Function_t>(owner_sym)->m_name)
+                    .rfind("_lcompilers_move_alloc_", 0) == 0
+                && decl_name == "to"
+                && is_unlimited_polymorphic_storage_type(v.m_type)) {
+            return "void** " + decl_name;
+        }
         bool is_struct_type_member = ASR::is_a<ASR::Struct_t>(
             *ASR::down_cast<ASR::symbol_t>(v.m_parent_symtab->asr_owner));
         bool is_bindc_dummy = false;
@@ -2894,7 +2902,7 @@ R"(
                 std::string indent(indentation_level*indentation_spaces, ' ');
                 std::string der_type_name = CUtils::get_c_symbol_name(v.m_type_declaration);
                 if (ASR::down_cast<ASR::StructType_t>(v_m_type)->m_is_unlimited_polymorphic) {
-                    sub = format_type_c("", "void*", decl_name, false, dummy);
+                    sub = format_type_c("", "void*", decl_name, use_ref, dummy);
                 } else if( is_array ) {
                     bool is_fixed_size = true;
                     dims = convert_dims_c(n_dims, m_dims, v_m_type, is_fixed_size, true);
@@ -4123,7 +4131,7 @@ R"(    // Initialise Numpy
                 this->visit_expr(*str_type->m_len);
                 return {value, src};
             }
-            return {value, "strlen(" + value + ")"};
+            return {value, "((" + value + ") != NULL ? strlen(" + value + ") : 0)"};
         };
 
         auto visit_string_output_arg = [&](ASR::expr_t *expr) -> std::pair<std::string, std::string> {
@@ -4329,7 +4337,7 @@ R"(    // Initialise Numpy
                 this->visit_expr(*str_type->m_len);
                 return {value, src};
             }
-            return {value, "strlen(" + value + ")"};
+            return {value, "((" + value + ") != NULL ? strlen(" + value + ") : 0)"};
         };
 
         std::string unit = "-1";
@@ -4430,12 +4438,9 @@ R"(    // Initialise Numpy
                         this->visit_expr(*base_expr);
                         std::string base = src;
                         ASR::array_physical_typeType base_phys = ASRUtils::extract_physical_type(base_type);
-                        std::string data_ptr = base;
-                        if (base_phys == ASR::array_physical_typeType::DescriptorArray ||
-                            base_phys == ASR::array_physical_typeType::PointerArray ||
-                            base_phys == ASR::array_physical_typeType::UnboundedPointerArray) {
-                            data_ptr += "->data";
-                        }
+                        std::string data_ptr = get_c_array_data_expr(base_expr, base);
+                        std::string base_offset_expr = get_c_array_offset_expr(base_expr, base);
+                        std::string base_stride_expr = get_c_array_stride_expr(base_expr, base);
 
                         std::string lower_bound_expr;
                         if (base_phys == ASR::array_physical_typeType::DescriptorArray ||
@@ -4495,14 +4500,16 @@ R"(    // Initialise Numpy
 
                         std::string array_size = "(((" + end_expr + ") - (" + start_expr + ")) / (" + step_expr + ") + 1)";
                         std::string start_offset = "((" + start_expr + ") - (" + lower_bound_expr + "))";
-                        std::string array_data_ptr = "(" + data_ptr + " + " + start_offset + ")";
+                        std::string array_data_ptr = "(" + data_ptr + " + (" + base_offset_expr
+                            + " + (" + base_stride_expr + ") * (" + start_offset + ")))";
+                        std::string array_step = "((" + base_stride_expr + ") * (" + step_expr + "))";
 
                         if (ASR::is_a<ASR::Integer_t>(*element_type)) {
                             int kind = ASR::down_cast<ASR::Integer_t>(element_type)->m_kind;
                             if (kind == 4) {
-                                args += ", 1, 2, " + array_data_ptr + ", " + array_size + ", " + step_expr;
+                                args += ", 1, 2, " + array_data_ptr + ", " + array_size + ", " + array_step;
                             } else if (kind == 8) {
-                                args += ", 1, 3, " + array_data_ptr + ", " + array_size + ", " + step_expr;
+                                args += ", 1, 3, " + array_data_ptr + ", " + array_size + ", " + array_step;
                             } else {
                                 throw CodeGenError("C backend FileRead supports formatted internal integer-array reads only for kind=4 or kind=8",
                                     value_expr->base.loc);
@@ -4514,9 +4521,9 @@ R"(    // Initialise Numpy
                         if (ASR::is_a<ASR::Real_t>(*element_type)) {
                             int kind = ASR::down_cast<ASR::Real_t>(element_type)->m_kind;
                             if (kind == 4) {
-                                args += ", 1, 4, " + array_data_ptr + ", " + array_size + ", " + step_expr;
+                                args += ", 1, 4, " + array_data_ptr + ", " + array_size + ", " + array_step;
                             } else if (kind == 8) {
-                                args += ", 1, 5, " + array_data_ptr + ", " + array_size + ", " + step_expr;
+                                args += ", 1, 5, " + array_data_ptr + ", " + array_size + ", " + array_step;
                             } else {
                                 throw CodeGenError("C backend FileRead supports formatted internal real-array reads only for kind=4 or kind=8",
                                     value_expr->base.loc);
@@ -4528,9 +4535,9 @@ R"(    // Initialise Numpy
                         if (ASR::is_a<ASR::Complex_t>(*element_type)) {
                             int kind = ASR::down_cast<ASR::Complex_t>(element_type)->m_kind;
                             if (kind == 4) {
-                                args += ", 1, 6, " + array_data_ptr + ", " + array_size + ", " + step_expr;
+                                args += ", 1, 6, " + array_data_ptr + ", " + array_size + ", " + array_step;
                             } else if (kind == 8) {
-                                args += ", 1, 7, " + array_data_ptr + ", " + array_size + ", " + step_expr;
+                                args += ", 1, 7, " + array_data_ptr + ", " + array_size + ", " + array_step;
                             } else {
                                 throw CodeGenError("C backend FileRead supports formatted internal complex-array reads only for kind=4 or kind=8",
                                     value_expr->base.loc);
@@ -4541,7 +4548,7 @@ R"(    // Initialise Numpy
 
                         if (ASR::is_a<ASR::Logical_t>(*element_type)) {
                             int kind = ASR::down_cast<ASR::Logical_t>(element_type)->m_kind;
-                            args += ", 1, 1, " + array_data_ptr + ", " + array_size + ", " + step_expr;
+                            args += ", 1, 1, " + array_data_ptr + ", " + array_size + ", " + array_step;
                             if (kind != 4) {
                                 throw CodeGenError("C backend FileRead supports formatted internal logical-array reads only for kind=4",
                                     value_expr->base.loc);
@@ -4710,12 +4717,9 @@ R"(    // Initialise Numpy
                     std::string base = src;
                     ASR::ttype_t *base_type = ASRUtils::expr_type(base_expr);
                     ASR::array_physical_typeType base_phys = ASRUtils::extract_physical_type(base_type);
-                    std::string data_ptr = base;
-                    if (base_phys == ASR::array_physical_typeType::DescriptorArray ||
-                        base_phys == ASR::array_physical_typeType::PointerArray ||
-                        base_phys == ASR::array_physical_typeType::UnboundedPointerArray) {
-                        data_ptr += "->data";
-                    }
+                    std::string data_ptr = get_c_array_data_expr(base_expr, base);
+                    std::string base_offset_expr = get_c_array_offset_expr(base_expr, base);
+                    std::string base_stride_expr = get_c_array_stride_expr(base_expr, base);
 
                     std::string lower_bound_expr;
                     if (base_phys == ASR::array_physical_typeType::DescriptorArray ||
@@ -4781,7 +4785,9 @@ R"(    // Initialise Numpy
                         + "(((" + step_expr + ") < 0) && (" + idx_name + " >= " + end_expr + ")); "
                         + idx_name + " += (" + step_expr + "), " + off_name + " += (" + step_expr + ")) {\n";
 
-                    std::string elem_ptr = "&(" + data_ptr + "[" + off_name + "])";
+                    std::string elem_index = "(" + base_offset_expr + " + (" + base_stride_expr
+                        + ") * (" + off_name + "))";
+                    std::string elem_ptr = "&(" + data_ptr + "[" + elem_index + "])";
                     std::string inner_indent = indent + std::string(indentation_spaces, ' ');
                     if (ASR::is_a<ASR::Integer_t>(*element_type)) {
                         int kind = ASR::down_cast<ASR::Integer_t>(element_type)->m_kind;
@@ -4830,7 +4836,7 @@ R"(    // Initialise Numpy
                         internal_read_code += inner_indent + "int32_t " + tmp_name + " = 0;\n";
                         internal_read_code += inner_indent + "_lfortran_string_read_bool(" + unit_arg.first + ", " + unit_arg.second + ", "
                             + format_arg + ", &" + tmp_name + ", " + iostat_ptr + ", &" + offset_name + ");\n";
-                        internal_read_code += inner_indent + data_ptr + "[" + off_name + "] = (" + tmp_name + " != 0);\n";
+                        internal_read_code += inner_indent + data_ptr + "[" + elem_index + "] = (" + tmp_name + " != 0);\n";
                     }
                     internal_read_code += indent + "}\n";
                     continue;
@@ -5530,15 +5536,18 @@ R"(    // Initialise Numpy
             unit = unit_arg.first;
             unit_len = unit_arg.second;
             unit_len_name = get_unique_local_name("__lfortran_unit_len");
+            ASR::ttype_t *unit_type = ASRUtils::expr_type(x.m_unit);
+            is_unit_allocatable = ASRUtils::is_allocatable(unit_type);
+            is_unit_deferred = ASRUtils::is_deferredLength_string(unit_type);
+            if (is_unit_allocatable && is_unit_deferred) {
+                unit_len = "((" + unit + ") != NULL ? strlen(" + unit + ") : 0)";
+            }
             unit_setup += indent + "int64_t " + unit_len_name + " = (int64_t)(" + unit_len + ");\n";
-            if (ASR::is_a<ASR::Var_t>(*x.m_unit)) {
+            if (ASR::is_a<ASR::Var_t>(*x.m_unit) && !(is_unit_allocatable && is_unit_deferred)) {
                 unit_setup += indent + "if (" + unit + " == NULL) " + unit
                     + " = (char*) _lfortran_string_malloc_alloc(_lfortran_get_default_allocator(), "
                     + unit_len_name + ");\n";
             }
-            ASR::ttype_t *unit_type = ASRUtils::expr_type(x.m_unit);
-            is_unit_allocatable = ASRUtils::is_allocatable(unit_type);
-            is_unit_deferred = ASRUtils::is_deferredLength_string(unit_type);
         } else {
             this->visit_expr(*x.m_unit);
             unit = src;
@@ -6558,7 +6567,9 @@ R"(    // Initialise Numpy
         ASR::expr_t *raw_base_expr = unwrap_c_lvalue_expr(x.m_v);
         bool base_is_array_constant = raw_base_expr != nullptr
             && ASR::is_a<ASR::ArrayConstant_t>(*raw_base_expr);
-        if (is_c && x.n_args == 1 && is_data_only_array_expr(x.m_v)
+        if (is_c && x.n_args == 1
+                && (is_data_only_array_expr(x.m_v)
+                    || is_fixed_size_array_storage_expr(x.m_v))
                 && !base_is_array_constant) {
             this->visit_expr(*x.m_v);
             std::string base_expr = src;
@@ -6747,7 +6758,8 @@ R"(    // Initialise Numpy
     void visit_StringLen(const ASR::StringLen_t &x) {
         CHECK_FAST_C(compiler_options, x)
         this->visit_expr(*x.m_arg);
-        src = "strlen(" + src + ")";
+        std::string arg = src;
+        src = "((" + arg + ") != NULL ? strlen(" + arg + ") : 0)";
     }
 
     void visit_OMPRegion(const ASR::OMPRegion_t &x) {

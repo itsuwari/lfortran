@@ -986,6 +986,7 @@ RUN(NAME pointer_17 LABELS gfortran llvm c)
 RUN(NAME array_section_is_non_allocatable LABELS gfortran llvm llvm_wasm llvm_wasm_emcc fortran)
 RUN(NAME array_indices_array_section LABELS gfortran llvm llvm_wasm llvm_wasm_emcc fortran)
 RUN(NAME array_indices_array_section_assignment LABELS gfortran llvm llvm_wasm llvm_wasm_emcc fortran)
+RUN(NAME array_assumed_size_item_arg_01 LABELS gfortran c)
 RUN(NAME arrays_constructor_01 LABELS gfortran llvm llvm_wasm llvm_wasm_emcc fortran)
 RUN(NAME array_constructor_02 LABELS gfortran llvm llvm_wasm llvm_wasm_emcc fortran EXTRA_ARGS --realloc-lhs-arrays)
 RUN(NAME array_constructor_03 LABELS gfortran llvm llvm_wasm llvm_wasm_emcc fortran)
@@ -993,6 +994,10 @@ RUN(NAME array_constructor_04 LABELS gfortran llvm fortran EXTRA_ARGS --realloc-
 RUN(NAME array_constructor_05 LABELS gfortran llvm EXTRA_ARGS --realloc-lhs-arrays)
 RUN(NAME array_constructor_06 LABELS gfortran llvm llvm_wasm llvm_wasm_emcc fortran)
 RUN(NAME array_constructor_07 LABELS gfortran c EXTRA_ARGS --separate-compilation)
+RUN(NAME array_member_minval_01 LABELS gfortran c)
+RUN(NAME array_reshape_section_01 LABELS gfortran c)
+RUN(NAME string_alloc_concat_read_01 LABELS gfortran c)
+RUN(NAME string_transfer_01 LABELS gfortran c)
 RUN(NAME allocatble_c_ptr LABELS gfortran llvm llvm_wasm llvm_wasm_emcc fortran)
 RUN(NAME hashmap_struct_01 LABELS gfortran llvm llvm_wasm llvm_wasm_emcc fortran)
 RUN(NAME hashmap_nested_dealloc_derived_pointer LABELS gfortran llvm llvm_wasm llvm_wasm_emcc fortran)
@@ -1013,6 +1018,7 @@ RUN(NAME arrays_12 LABELS gfortran fortran) # constant arrays
 RUN(NAME arrays_13 LABELS gfortran llvm llvm_wasm llvm_wasm_emcc llvmStackArray fortran) # constant arrays
 RUN(NAME arrays_14 LABELS gfortran llvm llvm_wasm llvm_wasm_emcc llvmStackArray fortran)
 RUN(NAME arrays_15 LABELS gfortran llvm llvm_wasm llvm_wasm_emcc llvmStackArray fortran)
+RUN(NAME arrays_133 LABELS gfortran c)
 
 RUN(NAME arrays_inputs_15 LABELS gfortran llvm llvm_wasm llvm_wasm_emcc llvmStackArray fortran) # constant arrays
 RUN(NAME arrays_16_func LABELS gfortran llvm llvm_wasm llvm_wasm_emcc llvmStackArray fortran)

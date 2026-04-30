@@ -974,7 +974,7 @@ R"(#include <stdio.h>
             setup += extract_stmt_setup_from_expr(src);
             return src;
         }
-        return "strlen(" + expr_src + ")";
+        return "((" + expr_src + ") != NULL ? strlen(" + expr_src + ") : 0)";
     }
 
     void materialize_allocating_string_expr(ASR::expr_t *expr, std::string &expr_src,
@@ -987,7 +987,7 @@ R"(#include <stdio.h>
         setup += std::string(indentation_level * indentation_spaces, ' ')
             + "char* " + tmp_name + " = " + expr_src + ";\n";
         expr_src = tmp_name;
-        expr_len = "strlen(" + expr_src + ")";
+        expr_len = "((" + expr_src + ") != NULL ? strlen(" + expr_src + ") : 0)";
         cleanup += std::string(indentation_level * indentation_spaces, ' ')
             + "_lfortran_free_alloc(_lfortran_get_default_allocator(), "
             + tmp_name + ");\n";
@@ -3732,6 +3732,121 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         return true;
     }
 
+    bool try_emit_c_char_array_bitcast_assignment(const ASR::Assignment_t &x,
+            ASR::expr_t *target_expr) {
+        if (!is_c || target_expr == nullptr ||
+                !ASR::is_a<ASR::BitCast_t>(*x.m_value) ||
+                !is_len_one_character_array_type(ASRUtils::expr_type(target_expr))) {
+            return false;
+        }
+        ASR::BitCast_t *bitcast = ASR::down_cast<ASR::BitCast_t>(x.m_value);
+        ASR::expr_t *source = bitcast->m_value ? bitcast->m_value : bitcast->m_source;
+        if (source == nullptr) {
+            return false;
+        }
+
+        std::string setup;
+        std::string target_data, target_offset, target_stride, target_length;
+        if (!get_c_rank1_array_access(target_expr, "__lfortran_char_lhs",
+                setup, target_data, target_offset, target_stride, target_length)) {
+            return false;
+        }
+
+        std::string value_data, value_length, value_setup;
+        if (!try_get_unit_step_string_section_view(
+                source, value_data, value_length, value_setup)) {
+            return false;
+        }
+
+        std::string indent(indentation_level * indentation_spaces, ' ');
+        src = check_tmp_buffer();
+        src += indent + "{\n";
+        indentation_level++;
+        std::string inner_indent(indentation_level * indentation_spaces, ' ');
+        src += setup;
+        src += value_setup;
+        std::string index_name = get_unique_local_name("__lfortran_i");
+        src += inner_indent + "for (int64_t " + index_name + " = 0; "
+            + index_name + " < " + target_length + "; " + index_name + "++) {\n";
+        indentation_level++;
+        std::string loop_indent(indentation_level * indentation_spaces, ' ');
+        std::string zero_name = get_unique_local_name("__lfortran_zero_char");
+        src += loop_indent + "char " + zero_name + "[1] = {0};\n";
+        std::string source_name = get_unique_local_name("__lfortran_char_src");
+        src += loop_indent + "char* " + source_name + " = (" + index_name
+            + " < " + value_length + ") ? (" + value_data + " + "
+            + index_name + ") : " + zero_name + ";\n";
+        src += loop_indent + "_lfortran_strcpy_alloc(_lfortran_get_default_allocator(), &"
+            + target_data + "[" + target_offset + " + " + index_name
+            + " * " + target_stride + "], NULL, true, true, "
+            + source_name + ", 1);\n";
+        indentation_level--;
+        src += inner_indent + "}\n";
+        indentation_level--;
+        src += indent + "}\n";
+        headers.insert("string.h");
+        return true;
+    }
+
+    bool try_emit_c_array_section_reshape_assignment(const ASR::Assignment_t &x,
+            ASR::expr_t *target_expr) {
+        if (!is_c || target_expr == nullptr ||
+                !ASR::is_a<ASR::ArrayReshape_t>(*x.m_value) ||
+                !is_c_rank1_unit_array_expr(target_expr)) {
+            return false;
+        }
+        ASR::ttype_t *target_type = ASRUtils::expr_type(target_expr);
+        ASR::ttype_t *target_element_type = ASRUtils::type_get_past_array(
+            ASRUtils::type_get_past_allocatable_pointer(target_type));
+        if (target_element_type == nullptr || ASRUtils::is_character(*target_element_type)) {
+            return false;
+        }
+
+        std::string setup;
+        std::string target_data, target_offset, target_stride, target_length;
+        if (!get_c_rank1_array_access(target_expr, "__lfortran_reshape_lhs",
+                setup, target_data, target_offset, target_stride, target_length)) {
+            return false;
+        }
+
+        self().visit_expr(*x.m_value);
+        std::string value_expr = src;
+        std::string value_setup = drain_tmp_buffer();
+        value_setup += extract_stmt_setup_from_expr(value_expr);
+        std::string value_type = get_c_declared_array_wrapper_type_name(
+            ASRUtils::expr_type(x.m_value));
+        if (value_type.empty()) {
+            return false;
+        }
+        std::string value_name = get_unique_local_name("__lfortran_reshape_value");
+        std::string index_name = get_unique_local_name("__lfortran_i");
+
+        std::string indent(indentation_level * indentation_spaces, ' ');
+        src = check_tmp_buffer();
+        src += indent + "{\n";
+        indentation_level++;
+        std::string inner_indent(indentation_level * indentation_spaces, ' ');
+        src += setup;
+        src += value_setup;
+        src += inner_indent + value_type + " *" + value_name + " = "
+            + value_expr + ";\n";
+        src += inner_indent + "for (int64_t " + index_name + " = 0; "
+            + index_name + " < " + target_length + "; " + index_name + "++) {\n";
+        indentation_level++;
+        std::string loop_indent(indentation_level * indentation_spaces, ' ');
+        src += loop_indent + target_data + "[" + target_offset + " + "
+            + index_name + " * " + target_stride + "] = " + value_name
+            + "->data[" + index_name + "];\n";
+        indentation_level--;
+        src += inner_indent + "}\n";
+        src += inner_indent + "free(" + value_name + "->data);\n";
+        src += inner_indent + "free(" + value_name + ");\n";
+        indentation_level--;
+        src += indent + "}\n";
+        headers.insert("stdlib.h");
+        return true;
+    }
+
     bool try_emit_c_array_expr_assignment_plan(
             const CArrayExprLoweringPlan &plan) {
         if (try_emit_c_scalarized_array_expr_assignment(plan)) {
@@ -4714,21 +4829,28 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             ASR::down_cast<ASR::Variable_t>(sym));
     }
 
+    bool is_unlimited_polymorphic_storage_type(ASR::ttype_t *type) {
+        type = ASRUtils::type_get_past_allocatable_pointer(type);
+        if (type == nullptr) {
+            return false;
+        }
+        if (ASRUtils::is_array(type)) {
+            type = ASRUtils::type_get_past_array(type);
+        }
+        return type != nullptr
+            && ASR::is_a<ASR::StructType_t>(*type)
+            && ASR::down_cast<ASR::StructType_t>(type)->m_is_unlimited_polymorphic;
+    }
+
     bool is_unlimited_polymorphic_dummy_slot_type(ASR::Variable_t *var) {
-        if (!is_c || var == nullptr || !ASRUtils::is_arg_dummy(var->m_intent)
-                || ASRUtils::is_array(var->m_type)) {
+        if (!is_c || var == nullptr || !ASRUtils::is_arg_dummy(var->m_intent)) {
             return false;
         }
         if (!(var->m_intent == ASRUtils::intent_out
                 || var->m_intent == ASRUtils::intent_inout)) {
             return false;
         }
-        ASR::ttype_t *value_type =
-            ASRUtils::type_get_past_allocatable_pointer(var->m_type);
-        value_type = ASRUtils::type_get_past_array(value_type);
-        return value_type != nullptr
-            && ASR::is_a<ASR::StructType_t>(*value_type)
-            && ASR::down_cast<ASR::StructType_t>(value_type)->m_is_unlimited_polymorphic;
+        return is_unlimited_polymorphic_storage_type(var->m_type);
     }
 
     bool is_struct_or_class_type(ASR::ttype_t *type) {
@@ -4839,6 +4961,16 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         return expr_type != nullptr
             && ASRUtils::is_array(expr_type)
             && ASRUtils::is_fixed_size_array(expr_type);
+    }
+
+    bool is_data_only_array_section_expr(ASR::expr_t *expr) {
+        expr = unwrap_c_lvalue_expr(expr);
+        if (expr == nullptr || !ASR::is_a<ASR::ArraySection_t>(*expr)) {
+            return false;
+        }
+        ASR::ArraySection_t *section = ASR::down_cast<ASR::ArraySection_t>(expr);
+        return is_data_only_array_expr(section->m_v)
+            || is_fixed_size_array_storage_expr(section->m_v);
     }
 
     bool is_data_only_array_expr(ASR::expr_t *expr) {
@@ -5229,6 +5361,8 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 param, param_type, param_type_unwrapped);
             bool wants_pointer_dummy_slot_actual = is_pointer_dummy_slot_type(param);
             bool wants_aggregate_dummy_slot_actual = is_aggregate_dummy_slot_type(param);
+            bool wants_unlimited_polymorphic_dummy_slot_actual =
+                is_unlimited_polymorphic_dummy_slot_type(param);
             bool wants_scalar_alloc_dummy_slot_actual =
                 is_scalar_allocatable_dummy_slot_type(param);
             bool wants_aggregate_pointer_actual = is_c && i < f->n_args
@@ -5443,9 +5577,19 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             };
             bool pass_data_only_array_wrapper = is_c && param_is_c_array_wrapper
                 && (is_data_only_array_expr(call_arg)
-                    || is_fixed_size_array_storage_expr(call_arg));
+                    || is_fixed_size_array_storage_expr(call_arg)
+                    || is_data_only_array_section_expr(call_arg));
             if (pass_data_only_array_wrapper) {
-                args += pass_wrapper_arg(src);
+                std::string wrapper_arg = pass_wrapper_arg(src);
+                args += wrapper_arg;
+                if (param != nullptr) {
+                    no_copy_hidden_base_name = std::string(param->m_name);
+                    no_copy_hidden_shape_src =
+                        get_c_descriptor_member_base_expr(wrapper_arg);
+                    no_copy_hidden_rank = ASRUtils::extract_n_dims_from_ttype(
+                        ASRUtils::type_get_past_allocatable_pointer(param_type));
+                    no_copy_hidden_dim = 0;
+                }
                 if (is_count_callee && i == 0) {
                     count_mask_arg_src = src;
                 }
@@ -5474,6 +5618,8 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                     } else {
                         args += address_of_src(src);
                     }
+                } else if (wants_unlimited_polymorphic_dummy_slot_actual) {
+                    args += address_of_src(src);
                 } else if (wants_scalar_alloc_dummy_slot_actual) {
                     if (scalar_alloc_dummy_slot_actual) {
                         args += src;
@@ -5537,6 +5683,8 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                     } else {
                         args += address_of_src(src);
                     }
+                } else if (wants_unlimited_polymorphic_dummy_slot_actual) {
+                    args += address_of_src(src);
                 } else if (wants_scalar_alloc_dummy_slot_actual) {
                     if (is_c && ASR::is_a<ASR::StructInstanceMember_t>(*shape_call_arg)) {
                         ASR::StructInstanceMember_t *member_arg =
@@ -5675,6 +5823,8 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 param, param_type, param_type_unwrapped);
             bool wants_pointer_dummy_slot_actual = is_pointer_dummy_slot_type(param);
             bool wants_aggregate_dummy_slot_actual = is_aggregate_dummy_slot_type(param);
+            bool wants_unlimited_polymorphic_dummy_slot_actual =
+                is_unlimited_polymorphic_dummy_slot_type(param);
             bool wants_scalar_alloc_dummy_slot_actual =
                 is_scalar_allocatable_dummy_slot_type(param);
             bool wants_aggregate_pointer_actual = is_c && i < f->n_args
@@ -5889,9 +6039,19 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             };
             bool pass_data_only_array_wrapper = is_c && param_is_c_array_wrapper
                 && (is_data_only_array_expr(call_arg)
-                    || is_fixed_size_array_storage_expr(call_arg));
+                    || is_fixed_size_array_storage_expr(call_arg)
+                    || is_data_only_array_section_expr(call_arg));
             if (pass_data_only_array_wrapper) {
-                args += pass_wrapper_arg(src);
+                std::string wrapper_arg = pass_wrapper_arg(src);
+                args += wrapper_arg;
+                if (param != nullptr) {
+                    no_copy_hidden_base_name = std::string(param->m_name);
+                    no_copy_hidden_shape_src =
+                        get_c_descriptor_member_base_expr(wrapper_arg);
+                    no_copy_hidden_rank = ASRUtils::extract_n_dims_from_ttype(
+                        ASRUtils::type_get_past_allocatable_pointer(param_type));
+                    no_copy_hidden_dim = 0;
+                }
                 if (is_count_callee && i == start_idx) {
                     count_mask_arg_src = src;
                 }
@@ -5920,6 +6080,8 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                     } else {
                         args += address_of_src(src);
                     }
+                } else if (wants_unlimited_polymorphic_dummy_slot_actual) {
+                    args += address_of_src(src);
                 } else if (wants_scalar_alloc_dummy_slot_actual) {
                     if (scalar_alloc_dummy_slot_actual) {
                         args += src;
@@ -5983,6 +6145,8 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                     } else {
                         args += address_of_src(src);
                     }
+                } else if (wants_unlimited_polymorphic_dummy_slot_actual) {
+                    args += address_of_src(src);
                 } else if (wants_scalar_alloc_dummy_slot_actual) {
                     if (is_c && ASR::is_a<ASR::StructInstanceMember_t>(*shape_call_arg)) {
                         ASR::StructInstanceMember_t *member_arg =
@@ -6517,11 +6681,52 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         std::string indent(indentation_level*indentation_spaces, ' ');
         std::string expr_setup;
         ASR::expr_t *unwrapped_target_expr = unwrap_c_lvalue_expr(x.m_target);
+        if (is_c && current_function
+                && std::string(current_function->m_name).rfind("_lcompilers_move_alloc_", 0) == 0
+                && is_unlimited_polymorphic_storage_type(m_target_type)) {
+            self().visit_expr(*x.m_target);
+            std::string move_target = src;
+            self().visit_expr(*x.m_value);
+            std::string move_value = src;
+            headers.insert("string.h");
+            src = check_tmp_buffer();
+            src += indent + "if (*((void**)" + move_target + ") == NULL) {\n";
+            src += indent + std::string(indentation_spaces, ' ')
+                + "*((void**)" + move_target + ") = _lfortran_malloc_alloc(_lfortran_get_default_allocator(), sizeof(*"
+                + move_value + "));\n";
+            src += indent + "}\n";
+            src += indent + "memcpy(*((void**)" + move_target + "), " + move_value
+                + ", sizeof(*" + move_value + "));\n";
+            return;
+        }
+        if (is_c && is_unlimited_polymorphic_storage_type(m_target_type)
+                && ASRUtils::is_array(m_value_type)) {
+            self().visit_expr(*x.m_target);
+            std::string poly_target = src;
+            self().visit_expr(*x.m_value);
+            std::string poly_value = src;
+            headers.insert("string.h");
+            src = check_tmp_buffer();
+            src += indent + "if (" + poly_target + " == NULL) {\n";
+            src += indent + std::string(indentation_spaces, ' ')
+                + poly_target + " = _lfortran_malloc_alloc(_lfortran_get_default_allocator(), sizeof(*"
+                + poly_value + "));\n";
+            src += indent + "}\n";
+            src += indent + "memcpy(" + poly_target + ", " + poly_value
+                + ", sizeof(*" + poly_value + "));\n";
+            return;
+        }
         if (try_emit_vector_subscript_scalar_array_assignment(x, unwrapped_target_expr)) {
             return;
         }
         CArrayExprLoweringPlan array_expr_plan = plan_c_array_expr_assignment(x, x.m_target);
         if (try_emit_c_array_expr_assignment_plan(array_expr_plan)) {
+            return;
+        }
+        if (try_emit_c_char_array_bitcast_assignment(x, unwrapped_target_expr)) {
+            return;
+        }
+        if (try_emit_c_array_section_reshape_assignment(x, unwrapped_target_expr)) {
             return;
         }
         ASR::ttype_t *bitcast_target_type = nullptr;
@@ -6969,6 +7174,20 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         if (!expr_setup.empty()) {
             tmp_buffer_src.push_back(expr_setup);
         }
+        if (is_c && current_function
+                && std::string(current_function->m_name).rfind("_lcompilers_move_alloc_", 0) == 0
+                && target_is_unlimited_polymorphic_storage) {
+            headers.insert("string.h");
+            src = check_tmp_buffer();
+            src += indent + "if (*((void**)" + target + ") == NULL) {\n";
+            src += indent + std::string(indentation_spaces, ' ')
+                + "*((void**)" + target + ") = _lfortran_malloc_alloc(_lfortran_get_default_allocator(), sizeof(*"
+                + value + "));\n";
+            src += indent + "}\n";
+            src += indent + "memcpy(*((void**)" + target + "), " + value
+                + ", sizeof(*" + value + "));\n";
+            return;
+        }
         if (is_c && target_is_unlimited_polymorphic_storage) {
             src = check_tmp_buffer();
             src += indent + target + " = (void*)(" + value + ");\n";
@@ -7128,6 +7347,17 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         if (is_c && current_function &&
                 std::string(current_function->m_name).rfind("_lcompilers_move_alloc_", 0) == 0) {
             headers.insert("string.h");
+            if (ASRUtils::is_array(m_target_type)
+                    && is_unlimited_polymorphic_storage_type(m_target_type)) {
+                src += indent + "if (*((void**)" + target + ") == NULL) {\n";
+                src += indent + std::string(indentation_spaces, ' ')
+                    + "*((void**)" + target + ") = _lfortran_malloc_alloc(_lfortran_get_default_allocator(), sizeof(*"
+                    + value + "));\n";
+                src += indent + "}\n";
+                src += indent + "memcpy(*((void**)" + target + "), " + value
+                    + ", sizeof(*" + value + "));\n";
+                return;
+            }
             if (ASRUtils::is_array(m_target_type)) {
                 src += indent + "memcpy(" + target + ", " + value + ", sizeof(*" + target + "));\n";
             } else {

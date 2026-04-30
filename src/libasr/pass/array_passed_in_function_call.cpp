@@ -912,12 +912,12 @@ public:
                     Vec<ASR::dimension_t> allocate_dims; allocate_dims.reserve(al, 1);
                     ASR::expr_t* len_expr{}; // Character length to allocate with
                     size_t target_n_dims = ASRUtils::extract_n_dims_from_ttype(ASRUtils::expr_type(array_var_temporary));
-                    if( !set_allocation_size(al, arg_expr_past_cast, allocate_dims, target_n_dims, len_expr) ) {
+                    if( !set_allocation_size(al, arg_expr_past_cast, allocate_dims, target_n_dims, len_expr)
+                            || target_n_dims != allocate_dims.size() ) {
                         current_body->push_back(al, ASRUtils::STMT(ASR::make_Associate_t(
                             al, loc, array_var_temporary, arg_expr_past_cast)));
                         continue;
                     }
-                    LCOMPILERS_ASSERT(target_n_dims == allocate_dims.size());
                     Vec<ASR::alloc_arg_t> alloc_args; alloc_args.reserve(al, 1);
                     ASR::alloc_arg_t alloc_arg;
                     alloc_arg.loc = arg_expr_past_cast->base.loc;
