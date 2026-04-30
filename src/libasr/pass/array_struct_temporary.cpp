@@ -14,6 +14,27 @@
 
 namespace LCompilers {
 
+bool is_unit_rank1_array_section(ASR::expr_t* x) {
+    x = ASRUtils::get_past_array_physical_cast(x);
+    if (!ASR::is_a<ASR::ArraySection_t>(*x)) {
+        return false;
+    }
+    ASR::ArraySection_t* section = ASR::down_cast<ASR::ArraySection_t>(x);
+    if (section->n_args != 1) {
+        return false;
+    }
+    ASR::expr_t* step = section->m_args[0].m_step;
+    if (step == nullptr) {
+        return true;
+    }
+    ASR::expr_t* step_value = ASRUtils::expr_value(step);
+    if (step_value == nullptr) {
+        step_value = step;
+    }
+    return ASR::is_a<ASR::IntegerConstant_t>(*step_value)
+        && ASR::down_cast<ASR::IntegerConstant_t>(step_value)->m_n == 1;
+}
+
 bool is_vectorise_able(ASR::expr_t* x) {
     switch( x->type ) {
         case ASR::exprType::FunctionCall: {
@@ -38,6 +59,9 @@ bool is_vectorise_able(ASR::expr_t* x) {
         case ASR::exprType::ComplexUnaryMinus:
         case ASR::exprType::Var: {
             return true;
+        }
+        case ASR::exprType::ArraySection: {
+            return is_unit_rank1_array_section(x);
         }
         default: {
             return false;
@@ -1253,6 +1277,9 @@ bool is_directly_addressable_array_expr(ASR::expr_t* value) {
         case ASR::exprType::Var: {
             return true;
         }
+        case ASR::exprType::ArraySection: {
+            return is_unit_rank1_array_section(value);
+        }
         case ASR::exprType::StructInstanceMember: {
             ASR::StructInstanceMember_t* struct_instance_member = ASR::down_cast<ASR::StructInstanceMember_t>(value);
             return !ASRUtils::is_array(ASRUtils::expr_type(struct_instance_member->m_v));
@@ -2356,6 +2383,11 @@ class ReplaceExprWithTemporary: public ASR::BaseExprReplacer<ReplaceExprWithTemp
         }
 
         const Location& loc = x->base.base.loc;
+        if (is_unit_rank1_array_section(*current_expr)
+                && exprs_with_target.find(*current_expr) == exprs_with_target.end()
+                && !is_common_symbol_present_in_lhs_and_rhs(al, lhs_var, x->m_v)) {
+            return;
+        }
         if( is_simd_expression ) {
             if( is_current_expr_linked_to_target(exprs_with_target, current_expr) ) {
                 return ;

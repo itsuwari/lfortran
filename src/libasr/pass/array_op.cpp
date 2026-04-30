@@ -74,6 +74,67 @@ class ArrayVarAddressReplacer: public ASR::BaseExprReplacer<ArrayVarAddressRepla
     void replace_ArrayItem(ASR::ArrayItem_t* /*x*/) {
     }
 
+    void replace_ArraySection(ASR::ArraySection_t* x) {
+        if( ASRUtils::is_array(ASRUtils::expr_type((ASR::expr_t*) x)) ) {
+            vars.push_back(al, current_expr);
+        }
+    }
+
+    template <typename T>
+    void replace_BinOp_args(T* x) {
+        ASR::expr_t** current_expr_copy = current_expr;
+        current_expr = &(x->m_left);
+        replace_expr(x->m_left);
+        current_expr = &(x->m_right);
+        replace_expr(x->m_right);
+        current_expr = current_expr_copy;
+    }
+
+    void replace_IntegerBinOp(ASR::IntegerBinOp_t* x) {
+        replace_BinOp_args(x);
+    }
+
+    void replace_UnsignedIntegerBinOp(ASR::UnsignedIntegerBinOp_t* x) {
+        replace_BinOp_args(x);
+    }
+
+    void replace_RealBinOp(ASR::RealBinOp_t* x) {
+        replace_BinOp_args(x);
+    }
+
+    void replace_ComplexBinOp(ASR::ComplexBinOp_t* x) {
+        replace_BinOp_args(x);
+    }
+
+    void replace_LogicalBinOp(ASR::LogicalBinOp_t* x) {
+        replace_BinOp_args(x);
+    }
+
+    template <typename T>
+    void replace_Unary_arg(T* x) {
+        ASR::expr_t** current_expr_copy = current_expr;
+        current_expr = &(x->m_arg);
+        replace_expr(x->m_arg);
+        current_expr = current_expr_copy;
+    }
+
+    void replace_IntegerUnaryMinus(ASR::IntegerUnaryMinus_t* x) {
+        replace_Unary_arg(x);
+    }
+
+    void replace_RealUnaryMinus(ASR::RealUnaryMinus_t* x) {
+        replace_Unary_arg(x);
+    }
+
+    void replace_IntrinsicElementalFunction(ASR::IntrinsicElementalFunction_t* x) {
+        ASR::expr_t** current_expr_copy = current_expr;
+        for (size_t i = 0; i < x->n_args; i++) {
+            current_expr = &(x->m_args[i]);
+            replace_expr(x->m_args[i]);
+        }
+        current_expr = current_expr_copy;
+    }
+
     void replace_FunctionCall(ASR::FunctionCall_t* x) {
         if( !ASRUtils::is_elemental(x->m_name) ) {
             return ;
@@ -1754,13 +1815,15 @@ class ArrayOpVisitor: public ASR::CallReplacerOnExpressionsVisitor<ArrayOpVisito
             return;
         }
 
-        #define is_array_indexed_with_array_indices_check(expr) \
-            ASR::is_a<ASR::ArraySection_t>(*expr) || ( \
-            ASR::is_a<ASR::ArrayItem_t>(*expr) && \
-            ASRUtils::is_array_indexed_with_array_indices( \
-                ASR::down_cast<ASR::ArrayItem_t>(expr)))
-        if( ( is_array_indexed_with_array_indices_check(xx.m_value) ) ||
-            ( is_array_indexed_with_array_indices_check(xx.m_target) ) ) {
+        auto needs_array_indexed_loop = [&](ASR::expr_t *expr) {
+            return (ASR::is_a<ASR::ArraySection_t>(*expr)
+                    && !is_c_rank1_unit_section(expr))
+                || (ASR::is_a<ASR::ArrayItem_t>(*expr)
+                    && ASRUtils::is_array_indexed_with_array_indices(
+                        ASR::down_cast<ASR::ArrayItem_t>(expr)));
+        };
+        if( needs_array_indexed_loop(xx.m_value) ||
+            needs_array_indexed_loop(xx.m_target) ) {
             if (ASRUtils::is_array(ASRUtils::expr_type(xx.m_value))) {
                 bool per_assign_realloc = xx.m_realloc_lhs ||
                     ASRUtils::is_allocatable(ASRUtils::expr_type(xx.m_target)) ||
