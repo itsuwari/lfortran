@@ -3298,10 +3298,6 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             return false;
         }
         size_t n = ASRUtils::get_fixed_size_of_array(value_type);
-        static const size_t compact_constant_threshold = 64;
-        if (n < compact_constant_threshold) {
-            return false;
-        }
 
         ASR::ttype_t *base_type = ASRUtils::expr_type(base_expr);
         ASR::ttype_t *base_type_unwrapped =
