@@ -654,6 +654,67 @@ class ArrayOpVisitor: public ASR::CallReplacerOnExpressionsVisitor<ArrayOpVisito
             && ASR::down_cast<ASR::IntegerConstant_t>(value)->m_n == 1;
     }
 
+    bool is_c_rank1_unit_section(ASR::expr_t *expr) const {
+        if (!pass_options.c_backend || expr == nullptr
+                || !ASR::is_a<ASR::ArraySection_t>(*expr)) {
+            return false;
+        }
+        ASR::ArraySection_t *section = ASR::down_cast<ASR::ArraySection_t>(expr);
+        return section->n_args == 1
+            && is_unit_step_expr(section->m_args[0].m_step);
+    }
+
+    ASR::expr_t *get_c_section_left_bound(
+            ASR::ArraySection_t *section, const Location & /*loc*/) {
+        if (section->m_args[0].m_left != nullptr) {
+            return section->m_args[0].m_left;
+        }
+        return PassUtils::get_bound(section->m_v, 1, "lbound", al, get_index_kind());
+    }
+
+    ASR::expr_t *get_c_section_right_bound(
+            ASR::ArraySection_t *section, const Location & /*loc*/) {
+        if (section->m_args[0].m_right != nullptr) {
+            return section->m_args[0].m_right;
+        }
+        return PassUtils::get_bound(section->m_v, 1, "ubound", al, get_index_kind());
+    }
+
+    ASR::expr_t *get_c_section_loop_lbound(const Location &loc) {
+        return make_ConstantWithKind(make_IntegerConstant_t, make_Integer_t,
+            1, get_index_kind(), loc);
+    }
+
+    ASR::expr_t *get_c_section_loop_ubound(
+            ASR::ArraySection_t *section, const Location &loc) {
+        ASRUtils::ASRBuilder builder(al, loc);
+        ASR::expr_t *left = get_c_section_left_bound(section, loc);
+        ASR::expr_t *right = get_c_section_right_bound(section, loc);
+        ASR::expr_t *one = get_c_section_loop_lbound(loc);
+        return builder.Add(builder.Sub(right, left), one);
+    }
+
+    ASR::expr_t *make_c_section_element_ref(
+            ASR::ArraySection_t *section, ASR::expr_t *index_expr,
+            const Location &loc) {
+        ASRUtils::ASRBuilder builder(al, loc);
+        ASR::expr_t *one = get_c_section_loop_lbound(loc);
+        ASR::expr_t *base_index = builder.Add(
+            get_c_section_left_bound(section, loc), builder.Sub(index_expr, one));
+        Vec<ASR::array_index_t> indices;
+        indices.reserve(al, 1);
+        ASR::array_index_t array_index;
+        array_index.loc = loc;
+        array_index.m_left = nullptr;
+        array_index.m_right = base_index;
+        array_index.m_step = nullptr;
+        indices.push_back(al, array_index);
+        ASR::ttype_t *element_type = ASRUtils::extract_type(section->m_type);
+        return ASRUtils::EXPR(ASRUtils::make_ArrayItem_t_util(al, loc,
+            section->m_v, indices.p, indices.size(), element_type,
+            ASR::arraystorageType::ColMajor, nullptr));
+    }
+
     bool should_leave_large_array_constant_section_assignment_for_c(
             ASR::expr_t *target, ASR::expr_t *value) const {
         if (!pass_options.c_backend) {
@@ -942,8 +1003,10 @@ class ArrayOpVisitor: public ASR::CallReplacerOnExpressionsVisitor<ArrayOpVisito
             if( index_var == nullptr ) {
                 continue;
             }
-            ASR::expr_t* lbound = PassUtils::get_bound(vars_expr[i],
-                loop_depth + 1, "lbound", al, get_index_kind());
+            ASR::expr_t* lbound = is_c_rank1_unit_section(vars_expr[i])
+                ? get_c_section_loop_lbound(loc)
+                : PassUtils::get_bound(vars_expr[i],
+                    loop_depth + 1, "lbound", al, get_index_kind());
             ASR::stmt_t* set_index_var = ASRUtils::STMT(ASRUtils::make_Assignment_t_util(
                 al, loc, index_var, lbound, nullptr, false, false));
             dest_vec.push_back(al, set_index_var);
@@ -1270,8 +1333,14 @@ class ArrayOpVisitor: public ASR::CallReplacerOnExpressionsVisitor<ArrayOpVisito
             }
             ASR::ttype_t* var_i_type = ASRUtils::extract_type(
                 ASRUtils::expr_type(*vars[i]));
-            *vars[i] = ASRUtils::EXPR(ASRUtils::make_ArrayItem_t_util(al, loc, *vars[i], indices.p,
-                indices.size(), var_i_type, ASR::arraystorageType::ColMajor, nullptr));
+            if (is_c_rank1_unit_section(*vars[i])) {
+                *vars[i] = make_c_section_element_ref(
+                    ASR::down_cast<ASR::ArraySection_t>(*vars[i]),
+                    indices[0].m_right, loc);
+            } else {
+                *vars[i] = ASRUtils::EXPR(ASRUtils::make_ArrayItem_t_util(al, loc, *vars[i], indices.p,
+                    indices.size(), var_i_type, ASR::arraystorageType::ColMajor, nullptr));
+            }
         }
 
         ASRUtils::RemoveArrayProcessingNodeVisitor array_broadcast_visitor(al);
@@ -1296,10 +1365,17 @@ class ArrayOpVisitor: public ASR::CallReplacerOnExpressionsVisitor<ArrayOpVisito
         ASR::do_loop_head_t do_loop_head;
         do_loop_head.loc = loc;
         do_loop_head.m_v = var2indices[var_with_maxrank].p[0];
-        do_loop_head.m_start = PassUtils::get_bound(vars_expr[var_with_maxrank],
-            1, "lbound", al, get_index_kind());
-        do_loop_head.m_end = PassUtils::get_bound(vars_expr[var_with_maxrank],
-            1, "ubound", al, get_index_kind());
+        if (is_c_rank1_unit_section(vars_expr[var_with_maxrank])) {
+            ASR::ArraySection_t *section =
+                ASR::down_cast<ASR::ArraySection_t>(vars_expr[var_with_maxrank]);
+            do_loop_head.m_start = get_c_section_loop_lbound(loc);
+            do_loop_head.m_end = get_c_section_loop_ubound(section, loc);
+        } else {
+            do_loop_head.m_start = PassUtils::get_bound(vars_expr[var_with_maxrank],
+                1, "lbound", al, get_index_kind());
+            do_loop_head.m_end = PassUtils::get_bound(vars_expr[var_with_maxrank],
+                1, "ubound", al, get_index_kind());
+        }
         do_loop_head.m_increment = nullptr;
         Vec<ASR::stmt_t*> parent_do_loop_body; parent_do_loop_body.reserve(al, 1);
         Vec<ASR::stmt_t*> do_loop_body; do_loop_body.reserve(al, 1);

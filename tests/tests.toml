@@ -5234,6 +5234,14 @@ filename = "../integration_tests/arrays_130.f90"
 c = true
 
 [[test]]
+filename = "../integration_tests/arrays_131.f90"
+c = true
+
+[[test]]
+filename = "../integration_tests/arrays_132.f90"
+c = true
+
+[[test]]
 filename = "c_backend_string_concat_alloc_01.f90"
 run = true
 backend = "c"
