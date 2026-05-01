@@ -4339,48 +4339,20 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         ASR::ttype_t *source_type = ASRUtils::expr_type(source_lvalue);
         ASR::ttype_t *source_array_type =
             ASRUtils::type_get_past_allocatable_pointer(source_type);
-        bool source_is_array_pass_temp = false;
-        bool source_is_fixed_size_local_array = false;
         if (ASR::is_a<ASR::Var_t>(*source_lvalue)) {
             ASR::symbol_t *source_sym = ASRUtils::symbol_get_past_external(
                 ASR::down_cast<ASR::Var_t>(source_lvalue)->m_v);
             if (ASR::is_a<ASR::Variable_t>(*source_sym)) {
-                std::string source_name = ASR::down_cast<ASR::Variable_t>(
-                    source_sym)->m_name;
-                source_is_array_pass_temp = false;
                 source_src_copy = CUtils::get_c_variable_name(
                     *ASR::down_cast<ASR::Variable_t>(source_sym));
-                bool source_has_nondefault_lbound = false;
-                if (source_array_type != nullptr
-                        && ASRUtils::is_array(source_array_type)) {
-                    ASR::dimension_t *predicate_dims = nullptr;
-                    int predicate_rank = ASRUtils::extract_dimensions_from_ttype(
-                        source_array_type, predicate_dims);
-                    for (int i = 0; i < predicate_rank; i++) {
-                        int64_t start = 1;
-                        if (predicate_dims[i].m_start != nullptr
-                                && ASRUtils::extract_value(
-                                    ASRUtils::expr_value(predicate_dims[i].m_start),
-                                    start)
-                                && start != 1) {
-                            source_has_nondefault_lbound = true;
-                            break;
-                        }
-                    }
-                }
-                source_is_fixed_size_local_array =
-                    source_array_type != nullptr
-                    && ASRUtils::is_array(source_array_type)
-                    && ASRUtils::is_fixed_size_array(source_array_type)
-                    && source_has_nondefault_lbound;
             }
-        }
-        if (!source_is_array_pass_temp && !source_is_fixed_size_local_array) {
-            return source_src_copy;
         }
         if (!have_compatible_c_array_wrapper_element_type(target_type, source_type)
                 || is_data_only_array_expr(source_expr)
                 || is_fixed_size_array_storage_expr(source_expr)) {
+            return source_src_copy;
+        }
+        if (ASRUtils::is_allocatable(target_type) || ASRUtils::is_pointer(target_type)) {
             return source_src_copy;
         }
 
@@ -4395,7 +4367,6 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         if (target_rank <= 0 || target_rank != source_rank) {
             return source_src_copy;
         }
-
         std::string target_wrapper =
             get_c_declared_array_wrapper_type_name(
                 target_array_type, target_type_decl);
@@ -4406,14 +4377,10 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         std::string saved_src = src;
         std::string dims_init;
         for (int i = 0; i < target_rank; i++) {
-            std::string lower_bound = source_src_copy + "->dims["
-                + std::to_string(i) + "].lower_bound";
-            if (source_is_fixed_size_local_array) {
-                lower_bound = "1";
-                if (target_dims[i].m_start != nullptr) {
-                    self().visit_expr(*target_dims[i].m_start);
-                    lower_bound = src;
-                }
+            std::string lower_bound = "1";
+            if (target_dims[i].m_start != nullptr) {
+                self().visit_expr(*target_dims[i].m_start);
+                lower_bound = src;
             }
             if (i > 0) {
                 dims_init += ", ";
@@ -4426,20 +4393,23 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         src = saved_src;
 
         std::string view_name = get_unique_local_name("__lfortran_array_view");
-        std::string data_ptr = get_c_array_data_pointer_expr(source_expr, source_src_copy);
+        std::string data_ptr = get_c_array_data_expr(source_expr, source_src_copy);
+        std::string offset = get_c_array_offset_expr(source_expr, source_src_copy);
         std::string is_allocated = get_c_array_is_allocated_expr(source_expr, source_src_copy);
         if (!use_named_stack_view) {
             return "(&(" + target_wrapper + "){ .data = " + data_ptr
                 + ", .dims = {" + dims_init + "}, .n_dims = "
                 + std::to_string(target_rank)
-                + ", .offset = 0, .is_allocated = " + is_allocated + " })";
+                + ", .offset = " + offset
+                + ", .is_allocated = " + is_allocated + " })";
         }
         std::string indent(indentation_level * indentation_spaces, ' ');
         std::string view_decl = indent + target_wrapper + " " + view_name
             + " = { .data = " + data_ptr
             + ", .dims = {" + dims_init + "}, .n_dims = "
             + std::to_string(target_rank)
-            + ", .offset = 0, .is_allocated = " + is_allocated + " };\n";
+            + ", .offset = " + offset
+            + ", .is_allocated = " + is_allocated + " };\n";
         tmp_buffer_src.push_back(view_decl);
         return "&" + view_name;
     }
@@ -4489,33 +4459,6 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         arg_src = view_src;
         src = view_src;
         return true;
-    }
-
-    bool is_c_fixed_size_local_array_arg(ASR::expr_t *expr) {
-        ASR::expr_t *source_lvalue = unwrap_c_lvalue_expr(expr);
-        if (source_lvalue == nullptr || !ASR::is_a<ASR::Var_t>(*source_lvalue)) {
-            return false;
-        }
-        ASR::ttype_t *source_type =
-            ASRUtils::type_get_past_allocatable_pointer(
-                ASRUtils::expr_type(source_lvalue));
-        if (source_type == nullptr || !ASRUtils::is_array(source_type)
-                || is_data_only_array_expr(source_lvalue)
-                || is_fixed_size_array_storage_expr(source_lvalue)) {
-            return false;
-        }
-        ASR::dimension_t *dims = nullptr;
-        int rank = ASRUtils::extract_dimensions_from_ttype(source_type, dims);
-        for (int i = 0; i < rank; i++) {
-            int64_t start = 1;
-            if (dims[i].m_start != nullptr
-                    && ASRUtils::extract_value(
-                        ASRUtils::expr_value(dims[i].m_start), start)
-                    && start != 1) {
-                return true;
-            }
-        }
-        return false;
     }
 
     std::string get_c_descriptor_member_base_expr(const std::string &expr) {
@@ -5387,7 +5330,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                         use_named_no_copy_descriptor_views);
             if (no_copy_descriptor_view_actual) {
                 call_arg_setup += drain_tmp_buffer();
-                if (is_c_fixed_size_local_array_arg(call_arg)) {
+                if (param != nullptr) {
                     no_copy_hidden_base_name = param ? std::string(param->m_name) : "";
                     no_copy_hidden_shape_src = get_c_descriptor_member_base_expr(arg_src);
                     no_copy_hidden_rank = ASRUtils::extract_n_dims_from_ttype(
@@ -5849,7 +5792,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                         use_named_no_copy_descriptor_views);
             if (no_copy_descriptor_view_actual) {
                 call_arg_setup += drain_tmp_buffer();
-                if (is_c_fixed_size_local_array_arg(call_arg)) {
+                if (param != nullptr) {
                     no_copy_hidden_base_name = param ? std::string(param->m_name) : "";
                     no_copy_hidden_shape_src = get_c_descriptor_member_base_expr(arg_src);
                     no_copy_hidden_rank = ASRUtils::extract_n_dims_from_ttype(
