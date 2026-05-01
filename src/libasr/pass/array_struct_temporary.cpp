@@ -1467,6 +1467,21 @@ class ArgSimplifier: public ASR::CallReplacerOnExpressionsVisitor<ArgSimplifier>
         return !ASR::is_a<ASR::Var_t>(*expr) && ASRUtils::is_array(ASRUtils::expr_type(expr));
     }
 
+    bool is_direct_optional_allocatable_or_pointer_actual(ASR::expr_t *actual,
+            ASR::Variable_t *dummy) {
+        if (!actual || !dummy || dummy->m_presence != ASR::presenceType::Optional) {
+            return false;
+        }
+        actual = ASRUtils::get_past_array_physical_cast(actual);
+        if (!ASR::is_a<ASR::Var_t>(*actual)
+                && !ASR::is_a<ASR::StructInstanceMember_t>(*actual)) {
+            return false;
+        }
+        ASR::ttype_t *actual_type = ASRUtils::expr_type(actual);
+        return ASRUtils::is_allocatable(actual_type)
+            || ASRUtils::is_pointer(actual_type);
+    }
+
     ASR::expr_t* call_create_and_allocate_temporary_variable(ASR::expr_t*& expr, Allocator &al, Vec<ASR::stmt_t*>*& current_body,
         const std::string& name_hint, SymbolTable* current_scope, ExprsWithTargetType& exprs_with_target) {
         ASR::expr_t* x_m_args_i = ASRUtils::get_past_array_physical_cast(expr);
@@ -1582,7 +1597,9 @@ class ArgSimplifier: public ASR::CallReplacerOnExpressionsVisitor<ArgSimplifier>
                 if (orig_variable &&
                     (orig_variable->m_intent == ASRUtils::intent_out ||
                      orig_variable->m_intent == ASRUtils::intent_inout ||
-                     ASRUtils::is_pointer(orig_variable->m_type))) {
+                     ASRUtils::is_pointer(orig_variable->m_type) ||
+                     is_direct_optional_allocatable_or_pointer_actual(
+                         x_m_args[i].m_value, orig_variable))) {
                     x_m_args_vec.push_back(al, x_m_args[i]);
                     continue;
                 }

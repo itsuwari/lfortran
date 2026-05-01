@@ -6635,6 +6635,26 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             src += indent + move_target + " = (void*)(" + move_value + ");\n";
             return;
         }
+        if (is_c && x.m_move_allocation && current_function
+                && std::string(current_function->m_name).rfind("_lcompilers_move_alloc_", 0) == 0
+                && ASRUtils::is_array(m_target_type)) {
+            self().visit_expr(*x.m_target);
+            std::string move_target = src;
+            self().visit_expr(*x.m_value);
+            std::string move_value = src;
+            headers.insert("string.h");
+            src = check_tmp_buffer();
+            src += indent + "if (" + move_target + " == NULL) {\n";
+            src += indent + std::string(indentation_spaces, ' ')
+                + move_target + " = _lfortran_malloc_alloc(_lfortran_get_default_allocator(), sizeof(*"
+                + move_target + "));\n";
+            src += indent + std::string(indentation_spaces, ' ')
+                + "memset(" + move_target + ", 0, sizeof(*" + move_target + "));\n";
+            src += indent + "}\n";
+            src += indent + "memcpy(" + move_target + ", " + move_value
+                + ", sizeof(*" + move_target + "));\n";
+            return;
+        }
         if (is_c && is_unlimited_polymorphic_storage_type(m_target_type)
                 && ASRUtils::is_array(m_value_type)) {
             self().visit_expr(*x.m_target);
