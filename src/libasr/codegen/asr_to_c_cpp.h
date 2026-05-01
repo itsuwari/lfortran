@@ -6688,15 +6688,8 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             std::string move_target = src;
             self().visit_expr(*x.m_value);
             std::string move_value = src;
-            headers.insert("string.h");
             src = check_tmp_buffer();
-            src += indent + "if (*((void**)" + move_target + ") == NULL) {\n";
-            src += indent + std::string(indentation_spaces, ' ')
-                + "*((void**)" + move_target + ") = _lfortran_malloc_alloc(_lfortran_get_default_allocator(), sizeof(*"
-                + move_value + "));\n";
-            src += indent + "}\n";
-            src += indent + "memcpy(*((void**)" + move_target + "), " + move_value
-                + ", sizeof(*" + move_value + "));\n";
+            src += indent + move_target + " = (void*)(" + move_value + ");\n";
             return;
         }
         if (is_c && is_unlimited_polymorphic_storage_type(m_target_type)
@@ -7177,15 +7170,8 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         if (is_c && current_function
                 && std::string(current_function->m_name).rfind("_lcompilers_move_alloc_", 0) == 0
                 && target_is_unlimited_polymorphic_storage) {
-            headers.insert("string.h");
             src = check_tmp_buffer();
-            src += indent + "if (*((void**)" + target + ") == NULL) {\n";
-            src += indent + std::string(indentation_spaces, ' ')
-                + "*((void**)" + target + ") = _lfortran_malloc_alloc(_lfortran_get_default_allocator(), sizeof(*"
-                + value + "));\n";
-            src += indent + "}\n";
-            src += indent + "memcpy(*((void**)" + target + "), " + value
-                + ", sizeof(*" + value + "));\n";
+            src += indent + target + " = (void*)(" + value + ");\n";
             return;
         }
         if (is_c && target_is_unlimited_polymorphic_storage) {
@@ -7349,13 +7335,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             headers.insert("string.h");
             if (ASRUtils::is_array(m_target_type)
                     && is_unlimited_polymorphic_storage_type(m_target_type)) {
-                src += indent + "if (*((void**)" + target + ") == NULL) {\n";
-                src += indent + std::string(indentation_spaces, ' ')
-                    + "*((void**)" + target + ") = _lfortran_malloc_alloc(_lfortran_get_default_allocator(), sizeof(*"
-                    + value + "));\n";
-                src += indent + "}\n";
-                src += indent + "memcpy(*((void**)" + target + "), " + value
-                    + ", sizeof(*" + value + "));\n";
+                src += indent + target + " = (void*)(" + value + ");\n";
                 return;
             }
             if (ASRUtils::is_array(m_target_type)) {
