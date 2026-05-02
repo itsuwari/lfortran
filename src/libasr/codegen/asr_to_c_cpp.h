@@ -4330,15 +4330,25 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             return source_src;
         }
         std::string source_src_copy = source_src;
-        ASR::expr_t *source_lvalue = unwrap_c_lvalue_expr(source_expr);
+        ASR::expr_t *source_view_expr = unwrap_c_lvalue_expr(source_expr);
+        ASR::ArraySection_t *source_section = nullptr;
+        ASR::expr_t *source_lvalue = source_view_expr;
+        if (source_view_expr != nullptr
+                && ASR::is_a<ASR::ArraySection_t>(*source_view_expr)) {
+            source_section = ASR::down_cast<ASR::ArraySection_t>(source_view_expr);
+            source_lvalue = unwrap_c_lvalue_expr(source_section->m_v);
+        }
         if (source_lvalue == nullptr
                 || !(ASR::is_a<ASR::Var_t>(*source_lvalue)
                     || ASR::is_a<ASR::StructInstanceMember_t>(*source_lvalue))) {
             return source_src_copy;
         }
-        ASR::ttype_t *source_type = ASRUtils::expr_type(source_lvalue);
+        ASR::ttype_t *source_type = ASRUtils::expr_type(source_view_expr);
+        ASR::ttype_t *source_base_type = ASRUtils::expr_type(source_lvalue);
         ASR::ttype_t *source_array_type =
             ASRUtils::type_get_past_allocatable_pointer(source_type);
+        ASR::ttype_t *source_base_array_type =
+            ASRUtils::type_get_past_allocatable_pointer(source_base_type);
         if (ASR::is_a<ASR::Var_t>(*source_lvalue)) {
             ASR::symbol_t *source_sym = ASRUtils::symbol_get_past_external(
                 ASR::down_cast<ASR::Var_t>(source_lvalue)->m_v);
@@ -4372,6 +4382,107 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 target_array_type, target_type_decl);
         if (target_wrapper.empty()) {
             return source_src_copy;
+        }
+
+        if (source_section != nullptr) {
+            ASR::dimension_t *source_base_dims = nullptr;
+            int source_base_rank = ASRUtils::extract_dimensions_from_ttype(
+                source_base_array_type, source_base_dims);
+            if ((int) source_section->n_args != source_base_rank) {
+                return source_src_copy;
+            }
+
+            std::string saved_src = src;
+            std::string setup;
+            auto section_bound_src = [&](ASR::expr_t *expr,
+                    const std::string &fallback) -> std::string {
+                if (expr == nullptr) {
+                    return fallback;
+                }
+                self().visit_expr(*expr);
+                std::string expr_src = src;
+                setup += drain_tmp_buffer();
+                setup += extract_stmt_setup_from_expr(expr_src);
+                return expr_src;
+            };
+
+            std::vector<std::string> dim_inits;
+            dim_inits.reserve(target_rank);
+            std::vector<std::string> offset_terms;
+            offset_terms.push_back(source_src_copy + "->offset");
+            int target_dim = 0;
+            for (int source_dim = 0; source_dim < source_base_rank; source_dim++) {
+                ASR::array_index_t idx = source_section->m_args[source_dim];
+                std::string base_lb = source_src_copy + "->dims["
+                    + std::to_string(source_dim) + "].lower_bound";
+                std::string base_ub = "(" + base_lb + " + "
+                    + source_src_copy + "->dims[" + std::to_string(source_dim)
+                    + "].length - 1)";
+                std::string base_stride = source_src_copy + "->dims["
+                    + std::to_string(source_dim) + "].stride";
+                bool is_slice = idx.m_left || idx.m_step || idx.m_right == nullptr;
+                if (!is_slice) {
+                    std::string item = section_bound_src(idx.m_right, base_lb);
+                    offset_terms.push_back(base_stride + " * ((" + item
+                        + ") - " + base_lb + ")");
+                    continue;
+                }
+
+                if (target_dim >= target_rank) {
+                    return source_src_copy;
+                }
+                std::string left = section_bound_src(idx.m_left, base_lb);
+                std::string right = section_bound_src(idx.m_right, base_ub);
+                std::string step = section_bound_src(idx.m_step, "1");
+                std::string lower_bound = "1";
+                if (target_dims[target_dim].m_start != nullptr) {
+                    lower_bound = section_bound_src(
+                        target_dims[target_dim].m_start, "1");
+                }
+                std::string length = "((((" + right + ") - (" + left
+                    + ")) / (" + step + ")) + 1)";
+                std::string stride = "(" + base_stride + " * (" + step + "))";
+                dim_inits.push_back("{" + lower_bound + ", " + length
+                    + ", " + stride + "}");
+                offset_terms.push_back(base_stride + " * ((" + left
+                    + ") - " + base_lb + ")");
+                target_dim++;
+            }
+            src = saved_src;
+            if (target_dim != target_rank) {
+                return source_src_copy;
+            }
+
+            std::string dims_init;
+            for (size_t i = 0; i < dim_inits.size(); i++) {
+                if (i > 0) {
+                    dims_init += ", ";
+                }
+                dims_init += dim_inits[i];
+            }
+            std::string offset = "(";
+            for (size_t i = 0; i < offset_terms.size(); i++) {
+                if (i > 0) {
+                    offset += " + ";
+                }
+                offset += offset_terms[i];
+            }
+            offset += ")";
+            std::string view_init = "{ .data = " + source_src_copy
+                + "->data, .dims = {" + dims_init + "}, .n_dims = "
+                + std::to_string(target_rank) + ", .offset = " + offset
+                + ", .is_allocated = " + source_src_copy + "->is_allocated }";
+            if (!setup.empty()) {
+                tmp_buffer_src.push_back(setup);
+            }
+            if (!use_named_stack_view) {
+                return "(&(" + target_wrapper + ")" + view_init + ")";
+            }
+            std::string indent(indentation_level * indentation_spaces, ' ');
+            std::string view_name = get_unique_local_name("__lfortran_array_view");
+            tmp_buffer_src.push_back(indent + target_wrapper + " " + view_name
+                + " = " + view_init + ";\n");
+            return "&" + view_name;
         }
 
         std::string saved_src = src;
