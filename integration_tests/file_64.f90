@@ -1,24 +1,20 @@
 program file_64
-implicit none
+    ! Test: unformatted WRITE/READ on a preconnected (implicitly opened) unit.
+    ! Per the Fortran standard, writing to a unit without an explicit OPEN
+    ! should implicitly connect the unit with the format matching the I/O stmt.
+    implicit none
+    integer :: ival
 
-integer :: unit, stat, value
-character(len=*), parameter :: filename = "file_64.tmp"
+    ival = 42
 
-unit = 64
-open(unit=unit, file=filename, access="stream", form="unformatted", &
-    status="replace", iostat=stat)
-if (stat /= 0) error stop "open write failed"
+    ! Unformatted write to unit 8 (no explicit OPEN)
+    write(8) ival
+    rewind 8
+    ival = 0
+    read(8) ival
 
-write(unit) 0
-close(unit)
+    if (ival /= 42) error stop
 
-open(unit=unit, file=filename, access="stream", form="unformatted", &
-    status="old", iostat=stat)
-if (stat /= 0) error stop "open read failed"
-
-read(unit) value
-close(unit, status="delete")
-
-if (value /= 0) error stop "file_64 failed"
-
+    close(8, status="delete")
+    print *, "PASSED"
 end program

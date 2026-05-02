@@ -264,6 +264,17 @@ ASR::expr_t* create_temporary_variable_for_array(Allocator& al,
                 ASR::array_physical_typeType::FixedSizeArray, true);
         }
         var_type = value_type;
+        // DeferredLength string variables must be allocatable or pointer.
+        // When the element type is a DeferredLength string, wrap with Allocatable.
+        ASR::ttype_t* elem_type = ASRUtils::type_get_past_array(
+            ASRUtils::type_get_past_allocatable_pointer(var_type));
+        if (ASR::is_a<ASR::String_t>(*elem_type)) {
+            ASR::String_t* str_type = ASR::down_cast<ASR::String_t>(elem_type);
+            if (str_type->m_len_kind == ASR::string_length_kindType::DeferredLength &&
+                    !ASRUtils::is_allocatable(var_type) && !ASRUtils::is_pointer(var_type)) {
+                var_type = ASRUtils::TYPE(ASRUtils::make_Allocatable_t_util(al, var_type->base.loc, var_type));
+            }
+        }
     } else {
         var_type = ASRUtils::create_array_type_with_empty_dims(al, value_n_dims, value_type);
         if( ASR::is_a<ASR::ArraySection_t>(*value) && is_pointer_required &&
@@ -1728,6 +1739,49 @@ class ArgSimplifier: public ASR::CallReplacerOnExpressionsVisitor<ArgSimplifier>
                 }
             }
         }
+        // Handle struct-type RHS that aliases the LHS, e.g.:
+        //   chain2%next = chain2
+        // where the RHS expression contains the LHS as a sub-component (or
+        // shares a root variable with the LHS). Without a temporary, the
+        // deep-copy of the RHS into the LHS clobbers parts of the RHS
+        // mid-copy (especially via reallocation of nested allocatable
+        // components), producing incorrect results / segfaults.
+        {
+            std::function<ASR::symbol_t*(ASR::expr_t*)> get_root_var =
+                [&](ASR::expr_t* e) -> ASR::symbol_t* {
+                if (e == nullptr) return nullptr;
+                switch (e->type) {
+                    case ASR::exprType::Var:
+                        return ASR::down_cast<ASR::Var_t>(e)->m_v;
+                    case ASR::exprType::StructInstanceMember:
+                        return get_root_var(
+                            ASR::down_cast<ASR::StructInstanceMember_t>(e)->m_v);
+                    case ASR::exprType::ArrayItem:
+                        return get_root_var(
+                            ASR::down_cast<ASR::ArrayItem_t>(e)->m_v);
+                    case ASR::exprType::ArraySection:
+                        return get_root_var(
+                            ASR::down_cast<ASR::ArraySection_t>(e)->m_v);
+                    default:
+                        return nullptr;
+                }
+            };
+            if (ASRUtils::is_struct(*ASRUtils::expr_type(xx.m_value)) &&
+                !ASRUtils::is_array(ASRUtils::expr_type(xx.m_value)) &&
+                !ASRUtils::is_array(ASRUtils::expr_type(xx.m_target)) &&
+                ASR::is_a<ASR::StructInstanceMember_t>(*xx.m_target)) {
+                ASR::symbol_t* lhs_root = get_root_var(xx.m_target);
+                ASR::symbol_t* rhs_root = get_root_var(xx.m_value);
+                if (lhs_root && rhs_root && lhs_root == rhs_root) {
+                    std::string name_hint = "_struct_assign_";
+                    ASR::expr_t* struct_var_temporary =
+                        create_and_allocate_temporary_variable_for_struct(
+                            xx.m_value, name_hint, al, current_body,
+                            current_scope, exprs_with_target, realloc_lhs);
+                    xx.m_value = struct_var_temporary;
+                }
+            }
+        }
         ASR::expr_t* lhs_array_var = nullptr;
         if( ASRUtils::is_array(ASRUtils::expr_type(x.m_target)) ) {
             lhs_array_var = ASRUtils::extract_array_variable(x.m_target);
@@ -2306,6 +2360,10 @@ class ReplaceExprWithTemporary: public ASR::BaseExprReplacer<ReplaceExprWithTemp
         statement_cleanup_temps(nullptr),
         is_assignment_target_array_section_item(false), is_simd_expression(false), simd_type(nullptr),
         parent_expr(nullptr), lhs_var(nullptr) {}
+
+    void replace_ttype(ASR::ttype_t* /*x*/) {
+        // Do nothing
+    }
 
     bool is_current_expr_linked_to_target(ExprsWithTargetType& exprs_with_target, ASR::expr_t** &current_expr) {
         return exprs_with_target.find(*current_expr) != exprs_with_target.end();

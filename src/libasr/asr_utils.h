@@ -2596,6 +2596,16 @@ static inline ASR::expr_t* get_constant_zero_with_given_type(Allocator& al, ASR:
         case ASR::ttypeType::Logical: {
             return ASRUtils::EXPR(ASR::make_LogicalConstant_t(al, asr_type->base.loc, false, asr_type));
         }
+        case ASR::ttypeType::String: {
+            ASR::String_t* str_type = ASR::down_cast<ASR::String_t>(asr_type);
+            int64_t len = 1;
+            if (str_type->m_len) {
+                ASRUtils::extract_value(str_type->m_len, len);
+            }
+            std::string blank(len, ' ');
+            return ASRUtils::EXPR(ASR::make_StringConstant_t(al, asr_type->base.loc,
+                s2c(al, blank), asr_type));
+        }
         default: {
             throw LCompilersException("get_constant_zero_with_given_type: Not implemented " + std::to_string(asr_type->type));
         }
@@ -4184,7 +4194,8 @@ inline int extract_kind(ASR::expr_t* kind_expr, const Location& loc, diag::Diagn
             ASR::Variable_t* kind_variable = ASR::down_cast<ASR::Variable_t>(
                     symbol_get_past_external(kind_var->m_v));
             bool is_parent_enum = false;
-            if (kind_variable->m_parent_symtab->asr_owner != nullptr) {
+            if (kind_variable->m_parent_symtab->asr_owner != nullptr &&
+                    ASR::is_a<ASR::symbol_t>(*kind_variable->m_parent_symtab->asr_owner)) {
                 ASR::symbol_t *s = ASR::down_cast<ASR::symbol_t>(
                     kind_variable->m_parent_symtab->asr_owner);
                 is_parent_enum = ASR::is_a<ASR::Enum_t>(*s);
@@ -7930,7 +7941,8 @@ static inline void Call_t_body(Allocator& al, ASR::symbol_t* a_name,
                     dimension_.from_pointer_n_copy(al, arg_array_t->m_dims, arg_array_t->n_dims);
                     dimensions = &dimension_;
                     orig_arg_array_t->m_physical_type = ASR::array_physical_typeType::DescriptorArray;
-                } else if (ASRUtils::is_pointer(physical_cast_type)) {
+                } else if (ASRUtils::is_pointer(physical_cast_type) &&
+                           orig_arg_array_t->m_physical_type != ASR::array_physical_typeType::FixedSizeArray) {
                     dimensions = nullptr;
                 } else if (ASRUtils::is_fixed_size_array(orig_arg_array_t->m_dims, orig_arg_array_t->n_dims)) {
                     dimensions = &dimension_;

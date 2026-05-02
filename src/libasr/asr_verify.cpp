@@ -973,10 +973,32 @@ public:
             s = ASRUtils::symbol_get_past_external(x.m_v);
         }
 
-        // Allow any string variable that is either external or is not defined in this scope to pass FunctionType verification
-        if (is_a<ASR::Variable_t>(*s) && (is_a<ASR::ExternalSymbol_t>(*x.m_v) ||
-            (_is_return_type_string && !current_symtab->get_symbol(x_mv_name)))) {
+        // Allow any variable that is either external, is not defined in this scope,
+        // or is not a function argument (e.g., COMMON variables used as dimension bounds)
+        // to pass FunctionType verification.
+        // When check_external is false (e.g. during modfile deserialization),
+        // s is not dereferenced past ExternalSymbol, so we must also accept
+        // ExternalSymbol directly — its target cannot be verified yet.
+        if (is_a<ASR::ExternalSymbol_t>(*x.m_v)) {
             non_global_symbol_visited = false;
+        } else if (is_a<ASR::Variable_t>(*s) &&
+            (_is_return_type_string && !current_symtab->get_symbol(x_mv_name))) {
+            non_global_symbol_visited = false;
+        } else if (is_a<ASR::Variable_t>(*s) && current_symtab &&
+                   ASR::is_a<ASR::symbol_t>(*current_symtab->asr_owner) &&
+                   ASR::is_a<ASR::Function_t>(*(ASR::symbol_t*)current_symtab->asr_owner)) {
+            // Check if this variable is a function argument — only those should
+            // have been replaced by FunctionParam and thus trigger an error
+            ASR::Function_t* func = ASR::down_cast2<ASR::Function_t>(current_symtab->asr_owner);
+            bool is_arg = false;
+            for (size_t i = 0; i < func->n_args; i++) {
+                if (ASR::is_a<ASR::Var_t>(*func->m_args[i]) &&
+                    ASR::down_cast<ASR::Var_t>(func->m_args[i])->m_v == x.m_v) {
+                    is_arg = true;
+                    break;
+                }
+            }
+            non_global_symbol_visited = is_arg;
         } else {
             non_global_symbol_visited = true;
         }
@@ -1600,7 +1622,10 @@ public:
     void visit_Array(const Array_t& x) {
         require(!ASR::is_a<ASR::Allocatable_t>(*x.m_type),
             "Allocatable cannot be inside array");
+        bool _inside_array_physical_cast_type_copy = _inside_array_physical_cast_type;
+        _inside_array_physical_cast_type = false;
         visit_ttype(*x.m_type);
+        _inside_array_physical_cast_type = _inside_array_physical_cast_type_copy;
         if (x.m_physical_type == ASR::array_physical_typeType::AssumedRankArray) {
             require(x.n_dims == 0, "Assumed-rank arrays must have 0 dimensions");
             return ;

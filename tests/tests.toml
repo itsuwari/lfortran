@@ -443,6 +443,14 @@ filename = "errors/cpp_err6.f90"
 asr_preprocess = true
 
 [[test]]
+filename = "errors/cpp_err7.f90"
+asr_preprocess = true
+
+[[test]]
+filename = "warnings/cpp_warn1.f90"
+asr_preprocess = true
+
+[[test]]
 filename = "errors/template_error_01a.f90"
 asr = true
 
@@ -629,6 +637,10 @@ asr_preprocess = true
 
 [[test]]
 filename = "preprocessor22.f90"
+asr_preprocess = true
+
+[[test]]
+filename = "preprocessor23.f90"
 asr_preprocess = true
 
 [[test]]
@@ -2972,6 +2984,13 @@ filename = "fixed_form_with_exit.f"
 ast = true
 
 [[test]]
+filename = "../integration_tests/doloop_19.f90"
+ast = true
+ast_f90 = true
+ast_fixed_form = true
+ast_f90_fixed_form = true
+
+[[test]]
 filename = "fixedform_doloop.f"
 ast = true
 
@@ -3514,6 +3533,10 @@ ast = true
 
 [[test]]
 filename = "errors/fixed_form_5.f"
+ast = true
+
+[[test]]
+filename = "errors/fixed_form_6.f"
 ast = true
 
 [[test]]
@@ -5245,3 +5268,7 @@ c = true
 filename = "c_backend_string_concat_alloc_01.f90"
 run = true
 backend = "c"
+
+[[test]]
+filename = "../integration_tests/read_83.f90"
+llvm = true

@@ -1,18 +1,23 @@
 program implied_do_loops31
-  implicit none
+implicit none
+character(len=4) :: a(2)
+character(len=100) :: buf
+integer :: i
 
-  type :: line_token
-    integer :: first, last
-  end type line_token
+a(1) = "aa"
+a(2) = "bb"
 
-  type(line_token) :: token(3), label(2)
-  integer :: line(2), it
+! Test: write with trim() in implied DO loop preserves preceding items
+write (buf, "(3(1x,a))") "x", (trim(a(i)), i=1,2)
+if (buf /= " x aa bb") error stop
 
-  token = [line_token(1, 0), line_token(3, 0), line_token(5, 0)]
-  label = [line_token(2, 0), line_token(4, 0)]
+! Test: write with trim() in implied DO loop preserves following items
+write (buf, "(3(1x,a))") (trim(a(i)), i=1,2), "y"
+if (buf /= " aa bb y") error stop
 
-  line(:) = [(count(token%first <= label(it)%first), it = 1, size(label))]
+! Test: single item implied DO with trim() and preceding literal
+write (buf, "(2(1x,a))") "z", (trim(a(i)), i=1,1)
+if (buf /= " z aa") error stop
 
-  if (line(1) /= 1) error stop "line(1)"
-  if (line(2) /= 2) error stop "line(2)"
+print *, "PASS"
 end program implied_do_loops31

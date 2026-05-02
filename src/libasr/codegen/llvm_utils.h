@@ -2179,7 +2179,10 @@ class ASRToLLVMVisitor;
         llvm::Type* get_llvm_type(ASR::ttype_t* type, ASR::Struct_t* struct_sym){
             // TODO : Uncomment line below
             // LCOMPILERS_ASSERT(!(ASR::is_a<ASR::StructType_t>(*ASRUtils::extract_type(type)) ^ (struct_sym != nullptr)))
-            static auto const dummy_var_symbol = ASRUtils::EXPR(ASR::make_Var_t(al_, type->base.loc, nullptr));
+            // Note: must not be `static` — across separate-compilation units
+            // the Allocator backing this expression is destroyed between
+            // compilations, leaving a dangling pointer for subsequent calls.
+            auto const dummy_var_symbol = ASRUtils::EXPR(ASR::make_Var_t(al_, type->base.loc, nullptr));
             ASR::down_cast<ASR::Var_t>(dummy_var_symbol)->m_v = (ASR::symbol_t*)struct_sym;
             return llvm_utils_->get_type_from_ttype_t_util(dummy_var_symbol, type, llvm_utils_->module);
         }
@@ -2247,6 +2250,10 @@ class ASRToLLVMVisitor;
             // Module-scope non-allocatable, non-pointer string variables
             // (including arrays of strings) have their data in static global
             // buffers.  Attempting to free them crashes the leak detector.
+            // The same applies to module-scope struct variables that are
+            // statically initialized at compile time (e.g. COMMON block
+            // struct instances populated via BLOCK DATA): their character
+            // members point at constant string globals, not heap memory.
             {
                 ASR::symbol_t* owner = ASR::down_cast<ASR::symbol_t>(
                     v->m_parent_symtab->asr_owner);
@@ -2255,6 +2262,10 @@ class ASRToLLVMVisitor;
                         && !ASRUtils::is_pointer(v->m_type)) {
                     ASR::ttype_t* base_t = ASRUtils::type_get_past_array(v->m_type);
                     if (ASR::is_a<ASR::String_t>(*base_t)) {
+                        return true;
+                    }
+                    if (ASR::is_a<ASR::StructType_t>(*base_t)
+                            && v->m_symbolic_value != nullptr) {
                         return true;
                     }
                 }

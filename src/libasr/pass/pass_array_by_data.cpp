@@ -212,6 +212,17 @@ class PassArrayByDataProcedureVisitor : public PassUtils::PassVisitor<PassArrayB
                 }
             }
             std::string new_name = std::string(x->m_name) + suffix;
+            // In interactive mode the global symbol table persists across
+            // evaluations and the pass may run multiple times. If the
+            // generated procedure already exists in the current scope from
+            // a previous run, skip re-processing this function (which would
+            // trip add_symbol's uniqueness assertion). Call sites in the
+            // freshly translated AST will be rewritten by the call-site
+            // replacer using existing proc2newproc state populated below
+            // for newly inserted procedures only.
+            if (current_scope->get_symbol(new_name) != nullptr) {
+                return nullptr;
+            }
             if( ASR::is_a<ASR::Function_t>( *((ASR::symbol_t*) x) ) ) {
                 ASR::FunctionType_t* x_func_type = ASRUtils::get_FunctionType(x);
                 std::string new_bindc_name = "";
@@ -744,7 +755,19 @@ class EditProcedureCallsVisitor : public ASR::ASRPassBaseWalkVisitor<EditProcedu
                     if (ASRUtils::is_allocatable(array_type)) {
                         length = ASRUtils::get_size(array, i + 1, al_);
                     } else {
-                        length = PassUtils::get_bound(array, i + 1, "ubound", al_, index_kind);
+                        // Pass the extent (ubound - lbound + 1), not the
+                        // upper bound. The callee stores this value as the
+                        // dimension's extent in its descriptor; using ubound
+                        // would corrupt the upper bound for arrays with
+                        // non-default lower bounds.
+                        ASR::expr_t* ub = PassUtils::get_bound(array, i + 1, "ubound", al_, index_kind);
+                        ASR::expr_t* lb = PassUtils::get_bound(array, i + 1, "lbound", al_, index_kind);
+                        ASR::ttype_t* int_t = ASRUtils::TYPE(ASR::make_Integer_t(al_, array->base.loc, index_kind));
+                        ASR::expr_t* one = ASRUtils::EXPR(ASR::make_IntegerConstant_t(al_, array->base.loc, 1, int_t));
+                        ASR::expr_t* ub_minus_lb = ASRUtils::EXPR(ASR::make_IntegerBinOp_t(al_, array->base.loc,
+                            ub, ASR::binopType::Sub, lb, int_t, nullptr));
+                        length = ASRUtils::EXPR(ASR::make_IntegerBinOp_t(al_, array->base.loc,
+                            ub_minus_lb, ASR::binopType::Add, one, int_t, nullptr));
                     }
                 }
                 if ( ASRUtils::is_integer(*ASRUtils::expr_type(length)) ) {
@@ -1144,13 +1167,15 @@ class EditProcedureCallsVisitor : public ASR::ASRPassBaseWalkVisitor<EditProcedu
                         new_func_sym_ = ASR::down_cast<ASR::symbol_t>(
                             ASR::make_ExternalSymbol_t(al, x.m_name->base.loc, func_ext_sym->m_parent_symtab,
                                 new_func_sym_name_c, new_func_sym, s2c(al, module_name),
-                                func_ext_sym->m_scope_names, func_ext_sym->n_scope_names, new_func_sym_name_c,
+                                func_ext_sym->m_scope_names, func_ext_sym->n_scope_names,
+                                ASRUtils::symbol_name(new_func_sym),
                                 func_ext_sym->m_access));
                     } else {
                         new_func_sym_ = ASR::down_cast<ASR::symbol_t>(
                             ASR::make_ExternalSymbol_t(al, x.m_name->base.loc, func_ext_sym->m_parent_symtab,
                                 new_func_sym_name_c, new_func_sym, func_ext_sym->m_module_name,
-                                func_ext_sym->m_scope_names, func_ext_sym->n_scope_names, new_func_sym_name_c,
+                                func_ext_sym->m_scope_names, func_ext_sym->n_scope_names,
+                                ASRUtils::symbol_name(new_func_sym),
                                 func_ext_sym->m_access));
                     }
 

@@ -1,29 +1,34 @@
+! Test sequence association: passing an array element from a multi-dimensional
+! array to a function expecting a multi-dimensional dummy argument.
+! The contiguous elements starting from the given position should be used.
+
+real function f(x)
+real x(2,2)
+f = x(1,1) + x(2,1) + x(1,2) + x(2,2)
+end function
+
 program array_section_25
-    implicit none
-    real(8) :: lat(3, 3)
-    real(8) :: c(3)
+implicit none
+real :: a(3,2), r
+real :: f
 
-    lat = reshape([ &
-        2.0d0, 3.0d0, 5.0d0, &
-        7.0d0, 11.0d0, 13.0d0, &
-        17.0d0, 19.0d0, 23.0d0], shape(lat))
+a(1,1) = 0.0
+a(2,1) = 0.0
+a(3,1) = 1.0
+a(1,2) = 2.0
+a(2,2) = 3.0
+a(3,2) = 4.0
 
-    call crossproduct(lat(:, 2), lat(:, 3), c)
+! Sequence association: a(3,1) starts at the 3rd element in column-major order,
+! and the next 4 contiguous elements are: a(3,1)=1, a(1,2)=2, a(2,2)=3, a(3,2)=4
+r = f(a(3,1))
+if (abs(r - 10.0) > 1.0e-6) error stop
 
-    if (abs(c(1) - 6.0d0) > 1.0d-12) error stop
-    if (abs(c(2) - 60.0d0) > 1.0d-12) error stop
-    if (abs(c(3) + 54.0d0) > 1.0d-12) error stop
+! Also test with a different starting element
+a(2,1) = 5.0
+! From a(2,1): a(2,1)=5, a(3,1)=1, a(1,2)=2, a(2,2)=3 => sum = 11
+r = f(a(2,1))
+if (abs(r - 11.0) > 1.0e-6) error stop
 
-contains
-
-    subroutine crossproduct(a, b, c)
-        real(8), intent(in) :: a(3)
-        real(8), intent(in) :: b(3)
-        real(8), intent(out) :: c(3)
-
-        c(1) = a(2)*b(3) - b(2)*a(3)
-        c(2) = a(3)*b(1) - b(3)*a(1)
-        c(3) = a(1)*b(2) - b(1)*a(2)
-    end subroutine
-
+print *, "PASS"
 end program

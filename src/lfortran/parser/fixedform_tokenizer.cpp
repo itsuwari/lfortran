@@ -382,7 +382,7 @@ struct FixedFormRecursiveDescent {
     int64_t eat_label(unsigned char *&cur) {
         // consume label if it is available
         // for line beginnings
-        const int reserved_cols = 6;
+        const int reserved_cols = 5;
         std::string label;
         label.assign((char*)cur, reserved_cols);
         if (is_integer(label)) {
@@ -408,7 +408,7 @@ struct FixedFormRecursiveDescent {
     }
 
     void undo_label(unsigned char *&cur) {
-        cur -= 6;
+        cur -= 5;
         tokens.pop_back();
         stypes.pop_back();
         locations.pop_back();
@@ -874,6 +874,11 @@ struct FixedFormRecursiveDescent {
         // Try parsing array indices, if any
         while (*end == '(') {
             end++;  // Move past '('
+            if (*end == ')') {
+                // Empty parentheses, e.g. zero-argument statement function
+                end++;  // Move past ')'
+                continue;
+            }
             if (!try_expr(end, true)) {
                 return false;  // Parsing failed, it’s not an assignment
             }
@@ -1394,8 +1399,15 @@ struct FixedFormRecursiveDescent {
             // end entire loop nesting with single `CONTINUE`
             // the usual terminal statement for do loops
             if (next_is(cur, "continue")) {
-                push_token_advance(cur, "continue");
-                tokenize_line(cur);
+                // Drop the redundant CONTINUE keyword. The TK_LABEL pushed
+                // by eat_label() above already precedes the `end_do` we
+                // are about to push, so via `enddo : TK_LABEL KW_END_DO`
+                // it attaches as `m_do_label` on the DoLoop AST node and
+                // is converted to an ASR GoToTarget at the end of the
+                // (innermost) loop body during AST->ASR. This preserves
+                // `GO TO <label>` cycle semantics.
+                next_line(cur);
+                t.cur = cur;
             } else {
                 // TODO: add a continue label
                 lex_body_statement(cur);
@@ -1413,8 +1425,9 @@ struct FixedFormRecursiveDescent {
             // end entire loop nesting with single `CONTINUE`
             // the usual terminal statement for do loops
             if (next_is(cur, "continue")) {
-                push_token_advance(cur, "continue");
-                tokenize_line(cur);
+                // See note above; label attaches to innermost end_do.
+                next_line(cur);
+                t.cur = cur;
             } else {
                 // TODO: add a continue label
                 lex_body_statement(cur);
@@ -1429,8 +1442,9 @@ struct FixedFormRecursiveDescent {
         } else {
             // end one nesting of loop
             if (next_is(cur, "continue")) {
-                push_token_advance(cur, "continue");
-                tokenize_line(cur);
+                // See note above; label attaches to end_do.
+                next_line(cur);
+                t.cur = cur;
             } else {
                 // TODO: add a continue label
                 lex_body_statement(cur);
@@ -1539,10 +1553,12 @@ struct FixedFormRecursiveDescent {
     bool try_enddo_regular(unsigned char *&cur, int64_t continue_label) {
         if (next_is(cur, "enddo")) {
             // TODO: parse things correctly to distinguish enddo = 5;
-            if (continue_label != -1) {
-                push_token_no_advance(cur, "continue");
-                push_token_no_advance(cur, "\n");
-            }
+            // If a label preceded `end do` (`<label> end do`), the TK_LABEL
+            // was already pushed by eat_label() before this call. The
+            // grammar rule `enddo : TK_LABEL KW_END_DO` attaches it to the
+            // DoLoop AST node as `do_label`, so we just emit `end_do`
+            // directly here -- no synthetic `<label> continue` line.
+            (void)continue_label;
             push_token_no_advance(cur, "end_do");
             push_token_no_advance(cur, "\n");
             next_line(cur);
@@ -1672,7 +1688,14 @@ struct FixedFormRecursiveDescent {
             tokenize_line(cur);
             return true;
         }
-        lex_body_statement(cur);
+        unsigned char *prev = cur;
+        bool result = lex_body_statement(cur);
+        if (!result && cur == prev) {
+            // No progress was made (e.g. an unsupported statement like PAUSE).
+            // Abort the loop to avoid an infinite loop; the outer parser will
+            // emit an appropriate error.
+            return false;
+        }
         return true;
     }
 
