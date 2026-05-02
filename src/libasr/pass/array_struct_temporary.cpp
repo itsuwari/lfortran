@@ -20,19 +20,33 @@ bool is_unit_rank1_array_section(ASR::expr_t* x) {
         return false;
     }
     ASR::ArraySection_t* section = ASR::down_cast<ASR::ArraySection_t>(x);
-    if (section->n_args != 1) {
+    ASR::ttype_t *section_type = ASRUtils::expr_type(x);
+    if (!ASRUtils::is_array(section_type)
+            || ASRUtils::extract_n_dims_from_ttype(section_type) != 1) {
         return false;
     }
-    ASR::expr_t* step = section->m_args[0].m_step;
-    if (step == nullptr) {
-        return true;
+    size_t slice_dims = 0;
+    for (size_t i = 0; i < section->n_args; i++) {
+        ASR::array_index_t idx = section->m_args[i];
+        bool is_slice = idx.m_left || idx.m_step || idx.m_right == nullptr;
+        if (!is_slice) {
+            continue;
+        }
+        slice_dims++;
+        ASR::expr_t* step = idx.m_step;
+        if (step == nullptr) {
+            continue;
+        }
+        ASR::expr_t* step_value = ASRUtils::expr_value(step);
+        if (step_value == nullptr) {
+            step_value = step;
+        }
+        if (!ASR::is_a<ASR::IntegerConstant_t>(*step_value)
+                || ASR::down_cast<ASR::IntegerConstant_t>(step_value)->m_n != 1) {
+            return false;
+        }
     }
-    ASR::expr_t* step_value = ASRUtils::expr_value(step);
-    if (step_value == nullptr) {
-        step_value = step;
-    }
-    return ASR::is_a<ASR::IntegerConstant_t>(*step_value)
-        && ASR::down_cast<ASR::IntegerConstant_t>(step_value)->m_n == 1;
+    return slice_dims == 1;
 }
 
 bool is_vectorise_able(ASR::expr_t* x) {

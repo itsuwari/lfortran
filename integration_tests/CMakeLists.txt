@@ -1726,6 +1726,8 @@ RUN(NAME intrinsics_452 LABELS gfortran llvm) # findloc with Pointer-wrapped Exp
 RUN(NAME intrinsics_453 LABELS gfortran llvm) # Lgt intrinsic as while loop condition
 RUN(NAME intrinsics_454 LABELS gfortran c) # minloc with section extent and masked section
 
+RUN(NAME array_expr_scalarize_01 LABELS gfortran c) # C scalarizes/fuses rank-1 contiguous section expressions
+
 RUN(NAME la_constants LABELS gfortran llvm llvm_wasm llvm_wasm_emcc) # LAPACK constants
 
 RUN(NAME integer_boz_01 LABELS gfortran llvm llvm_wasm llvm_wasm_emcc)

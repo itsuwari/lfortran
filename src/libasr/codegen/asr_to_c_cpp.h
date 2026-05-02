@@ -3306,6 +3306,53 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 || ASRUtils::is_logical(*type));
     }
 
+    bool is_c_fixed_size_struct_member_array_expr(ASR::expr_t *expr) {
+        expr = unwrap_c_array_expr(expr);
+        if (expr == nullptr || !ASR::is_a<ASR::StructInstanceMember_t>(*expr)) {
+            return false;
+        }
+        ASR::StructInstanceMember_t *member =
+            ASR::down_cast<ASR::StructInstanceMember_t>(expr);
+        ASR::symbol_t *member_sym = ASRUtils::symbol_get_past_external(member->m_m);
+        if (!ASR::is_a<ASR::Variable_t>(*member_sym)) {
+            return false;
+        }
+        ASR::ttype_t *member_type = ASRUtils::type_get_past_allocatable_pointer(
+            ASR::down_cast<ASR::Variable_t>(member_sym)->m_type);
+        return member_type != nullptr
+            && ASR::is_a<ASR::Array_t>(*member_type)
+            && ASR::down_cast<ASR::Array_t>(member_type)->m_physical_type
+                == ASR::array_physical_typeType::FixedSizeArray;
+    }
+
+    bool is_c_compiler_created_array_temp_expr(ASR::expr_t *expr) {
+        expr = unwrap_c_array_expr(expr);
+        if (expr != nullptr && ASR::is_a<ASR::ArraySection_t>(*expr)) {
+            expr = unwrap_c_array_expr(ASR::down_cast<ASR::ArraySection_t>(expr)->m_v);
+        }
+        if (expr == nullptr || !ASR::is_a<ASR::Var_t>(*expr)) {
+            return false;
+        }
+        ASR::symbol_t *sym = ASRUtils::symbol_get_past_external(
+            ASR::down_cast<ASR::Var_t>(expr)->m_v);
+        if (!ASR::is_a<ASR::Variable_t>(*sym)) {
+            return false;
+        }
+        return std::string(ASR::down_cast<ASR::Variable_t>(sym)->m_name)
+            .rfind("__libasr_created_", 0) == 0;
+    }
+
+    bool is_c_whole_allocatable_or_pointer_array_expr(ASR::expr_t *expr) {
+        expr = unwrap_c_array_expr(expr);
+        if (expr == nullptr || ASR::is_a<ASR::ArraySection_t>(*expr)) {
+            return false;
+        }
+        ASR::ttype_t *type = ASRUtils::expr_type(expr);
+        return type != nullptr
+            && ASRUtils::is_array(type)
+            && ASRUtils::is_allocatable_or_pointer(type);
+    }
+
     bool is_c_rank1_unit_array_expr(ASR::expr_t *expr) {
         expr = unwrap_c_array_expr(expr);
         if (expr == nullptr || !ASRUtils::is_array(ASRUtils::expr_type(expr))) {
@@ -3313,7 +3360,27 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         }
         if (ASR::is_a<ASR::ArraySection_t>(*expr)) {
             ASR::ArraySection_t *section = ASR::down_cast<ASR::ArraySection_t>(expr);
-            return section->n_args == 1 && is_c_unit_step_expr(section->m_args[0].m_step);
+            if (is_c_fixed_size_struct_member_array_expr(section->m_v)) {
+                return false;
+            }
+            ASR::ttype_t *section_type = ASRUtils::expr_type(expr);
+            if (!ASRUtils::is_array(section_type)
+                    || ASRUtils::extract_n_dims_from_ttype(section_type) != 1) {
+                return false;
+            }
+            size_t slice_dims = 0;
+            for (size_t i = 0; i < section->n_args; i++) {
+                ASR::array_index_t idx = section->m_args[i];
+                bool is_slice = idx.m_left || idx.m_step || idx.m_right == nullptr;
+                if (!is_slice) {
+                    continue;
+                }
+                slice_dims++;
+                if (!is_c_unit_step_expr(idx.m_step)) {
+                    return false;
+                }
+            }
+            return slice_dims == 1;
         }
         ASR::ttype_t *type = ASRUtils::type_get_past_allocatable_pointer(
             ASRUtils::expr_type(expr));
@@ -3321,7 +3388,8 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             return false;
         }
         return ASR::is_a<ASR::Var_t>(*expr)
-            || ASR::is_a<ASR::StructInstanceMember_t>(*expr);
+            || (ASR::is_a<ASR::StructInstanceMember_t>(*expr)
+                && !is_c_fixed_size_struct_member_array_expr(expr));
     }
 
     bool is_c_scalarizable_array_expr(ASR::expr_t *expr) {
@@ -3433,16 +3501,53 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         std::string left = base_lb;
         std::string right = "(" + base_lb + " + " + base_len + " - 1)";
         std::string step = "1";
+        std::vector<std::string> offset_terms;
+        offset_terms.push_back(base + "->offset");
         if (section != nullptr) {
-            left = get_c_array_section_bound_expr(section->m_args[0].m_left, left);
-            setup += drain_tmp_buffer();
-            setup += extract_stmt_setup_from_expr(left);
-            right = get_c_array_section_bound_expr(section->m_args[0].m_right, right);
-            setup += drain_tmp_buffer();
-            setup += extract_stmt_setup_from_expr(right);
-            step = get_c_array_section_bound_expr(section->m_args[0].m_step, step);
-            setup += drain_tmp_buffer();
-            setup += extract_stmt_setup_from_expr(step);
+            ASR::ttype_t *base_type = ASRUtils::expr_type(base_expr);
+            ASR::dimension_t *base_dims = nullptr;
+            int base_rank = ASRUtils::extract_dimensions_from_ttype(base_type, base_dims);
+            if ((int)section->n_args != base_rank) {
+                return false;
+            }
+            bool found_slice = false;
+            for (int source_dim = 0; source_dim < base_rank; source_dim++) {
+                ASR::array_index_t idx = section->m_args[source_dim];
+                std::string dim_idx = std::to_string(source_dim);
+                std::string dim_lb = base + "->dims[" + dim_idx + "].lower_bound";
+                std::string dim_len = base + "->dims[" + dim_idx + "].length";
+                std::string dim_stride = base + "->dims[" + dim_idx + "].stride";
+                std::string dim_ub = "(" + dim_lb + " + " + dim_len + " - 1)";
+                bool is_slice = idx.m_left || idx.m_step || idx.m_right == nullptr;
+                if (!is_slice) {
+                    std::string item = get_c_array_section_bound_expr(idx.m_right, dim_lb);
+                    setup += drain_tmp_buffer();
+                    setup += extract_stmt_setup_from_expr(item);
+                    offset_terms.push_back(dim_stride + " * ((" + item + ") - "
+                        + dim_lb + ")");
+                    continue;
+                }
+                if (found_slice) {
+                    return false;
+                }
+                found_slice = true;
+                base_lb = dim_lb;
+                base_stride = dim_stride;
+                left = get_c_array_section_bound_expr(idx.m_left, dim_lb);
+                setup += drain_tmp_buffer();
+                setup += extract_stmt_setup_from_expr(left);
+                right = get_c_array_section_bound_expr(idx.m_right, dim_ub);
+                setup += drain_tmp_buffer();
+                setup += extract_stmt_setup_from_expr(right);
+                step = get_c_array_section_bound_expr(idx.m_step, "1");
+                setup += drain_tmp_buffer();
+                setup += extract_stmt_setup_from_expr(step);
+                offset_terms.push_back(dim_stride + " * ((" + left + ") - "
+                    + dim_lb + ")");
+            }
+            if (!found_slice) {
+                return false;
+            }
         }
 
         std::string indent(indentation_level * indentation_spaces, ' ');
@@ -3456,8 +3561,18 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                     ASRUtils::expr_type(base_expr))));
         setup += indent + elem_type + " *" + data_name + " = " + base + "->data;\n";
         setup += indent + "int64_t " + stride_name + " = " + base_stride + " * (" + step + ");\n";
-        setup += indent + "int64_t " + offset_name + " = " + base + "->offset + "
-            + base_stride + " * ((" + left + ") - " + base_lb + ");\n";
+        std::string offset_expr = "(";
+        for (size_t i = 0; i < offset_terms.size(); i++) {
+            if (i > 0) {
+                offset_expr += " + ";
+            }
+            offset_expr += offset_terms[i];
+        }
+        offset_expr += ")";
+        if (section == nullptr) {
+            offset_expr = base + "->offset";
+        }
+        setup += indent + "int64_t " + offset_name + " = " + offset_expr + ";\n";
         setup += indent + "int64_t " + length_name + " = ((((" + right + ") - ("
             + left + ")) / (" + step + ")) + 1);\n";
         return true;
@@ -3626,14 +3741,15 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         ASR::expr_t *base_expr = unwrapped_target_expr;
         if (ASR::is_a<ASR::ArraySection_t>(*unwrapped_target_expr)) {
             plan.target_section = ASR::down_cast<ASR::ArraySection_t>(unwrapped_target_expr);
-            if (plan.target_section->n_args != 1
-                    || !is_c_unit_step_expr(plan.target_section->m_args[0].m_step)) {
+            if (!is_c_rank1_unit_array_expr(unwrapped_target_expr)) {
                 return plan;
             }
             base_expr = plan.target_section->m_v;
         }
         plan.target_base_expr = base_expr;
         if (is_c_scalarizable_array_expr(x.m_value)
+                && !is_c_compiler_created_array_temp_expr(unwrapped_target_expr)
+                && !is_c_whole_allocatable_or_pointer_array_expr(unwrapped_target_expr)
                 && is_c_rank1_unit_array_expr(unwrapped_target_expr)) {
             plan.kind = CArrayExprLoweringKind::ScalarizedLoop;
             plan.value_expr = x.m_value;
@@ -3646,7 +3762,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         }
         int target_rank = ASRUtils::extract_n_dims_from_ttype(target_rank_type);
         bool target_is_rank1_section = ASR::is_a<ASR::ArraySection_t>(*unwrapped_target_expr)
-            && ASR::down_cast<ASR::ArraySection_t>(unwrapped_target_expr)->n_args == 1;
+            && is_c_rank1_unit_array_expr(unwrapped_target_expr);
         if (target_rank != 1 && !target_is_rank1_section) {
             return plan;
         }
@@ -6786,7 +6902,8 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         if (try_emit_vector_subscript_scalar_array_assignment(x, unwrapped_target_expr)) {
             return;
         }
-        CArrayExprLoweringPlan array_expr_plan = plan_c_array_expr_assignment(x, x.m_target);
+        CArrayExprLoweringPlan array_expr_plan = plan_c_array_expr_assignment(
+            x, unwrapped_target_expr);
         if (try_emit_c_array_expr_assignment_plan(array_expr_plan)) {
             return;
         }
