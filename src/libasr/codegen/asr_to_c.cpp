@@ -1275,6 +1275,10 @@ R"(
         if (count_lines(body) > max_inline_unit_lines) {
             return body;
         }
+        if (body.find("_lfortran_malloc_alloc") != std::string::npos
+                || body.find("_lfortran_free_alloc") != std::string::npos) {
+            return body;
+        }
         size_t line_start = 0;
         while (line_start < body.size()) {
             size_t line_end = body.find('\n', line_start);
