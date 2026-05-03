@@ -7,7 +7,7 @@
     "outfile_hash": null,
     "stdout": "run-c_backend_do_while_nested_print_01-69b43e7.stdout",
     "stdout_hash": "287b494464cdf881e14a41763eca690a1c5a3c2b437f9bbf42911876",
-    "stderr": "run-c_backend_do_while_nested_print_01-69b43e7.stderr",
-    "stderr_hash": "228c1d5c337f19ed0e371df51a23762c632554020b668a17c393f756",
+    "stderr": null,
+    "stderr_hash": null,
     "returncode": 0
 }

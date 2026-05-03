@@ -133,10 +133,6 @@ std::string c_compiler_optimization_flags(const std::vector<std::string> &O_flag
             flags += "-O" + level;
         }
     }
-    if (!flags.empty()) {
-        // Generated C still uses descriptor casts that are not strict-aliasing clean.
-        flags += " -fno-strict-aliasing";
-    }
     return flags;
 }
 

@@ -4116,7 +4116,8 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             section = ASR::down_cast<ASR::ArraySection_t>(expr);
             base_expr = unwrap_c_array_expr(section->m_v);
         }
-        if (!is_c_fixed_size_descriptor_storage_expr(base_expr)) {
+        bool base_is_simd = ASRUtils::is_simd_array(base_expr);
+        if (!base_is_simd && !is_c_fixed_size_descriptor_storage_expr(base_expr)) {
             return false;
         }
 
@@ -4211,8 +4212,10 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             offset_expr += offset_terms[i];
         }
         offset_expr += ")";
-        std::string base_data = is_c_local_fixed_size_descriptor_storage_expr(base_expr)
-            ? base + "_data" : base + "->data";
+        std::string base_data = base_is_simd
+            ? base
+            : (is_c_local_fixed_size_descriptor_storage_expr(base_expr)
+                ? base + "_data" : base + "->data");
         out = base_data + "[" + offset_expr + " + " + index_name
             + " * " + std::to_string(slice_stride) + "]";
         return true;

@@ -166,7 +166,7 @@ int main(int argc, char* argv[])
     a_data[(((0 + (1 * (2 - 1))) + ((1 * 2) * (1 - 1))) + (((1 * 2) * 2) * (1 - 1)))] =   1.20000000000000000e+01;
     struct r64_______ __lfortran_array_view = { .data = a->data, .dims = {{1, a->dims[0].length, a->dims[0].stride}, {1, a->dims[1].length, a->dims[1].stride}, {1, a->dims[2].length, a->dims[2].stride}}, .n_dims = 3, .offset = a->offset, .is_allocated = a->is_allocated };
     struct r64_______ __lfortran_array_view1 = { .data = b->data, .dims = {{1, b->dims[0].length, b->dims[0].stride}, {1, b->dims[1].length, b->dims[1].stride}, {1, b->dims[2].length, b->dims[2].stride}}, .n_dims = 3, .offset = b->offset, .is_allocated = b->is_allocated };
-    __lfortran_c_backend_section_assoc_temp_direct_01_m__copy_planes_real__________0_real__________1(&__lfortran_array_view, ((int32_t) (&__lfortran_array_view)->dims[0].length), ((int32_t) (&__lfortran_array_view)->dims[1].length), ((int32_t) (&__lfortran_array_view)->dims[2].length), &__lfortran_array_view1, ((int32_t) (&__lfortran_array_view1)->dims[0].length), ((int32_t) (&__lfortran_array_view1)->dims[1].length), ((int32_t) (&__lfortran_array_view1)->dims[2].length));
+    __lfortran_c_backend_section_assoc_temp_direct_01_m__copy_planes_real__________0_real__________1(&__lfortran_array_view, 2, 2, 1, &__lfortran_array_view1, 2, 2, 1);
     if (fabs(b_data[(((0 + (1 * (1 - 1))) + ((1 * 2) * (1 - 1))) + (((1 * 2) * 2) * (1 - 1)))] -   1.10000000000000000e+01) >   9.99999999999999980e-13) {
         fprintf(stderr, "ERROR STOP");
         exit(1);

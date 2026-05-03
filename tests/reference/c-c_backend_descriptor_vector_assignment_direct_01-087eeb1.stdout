@@ -372,7 +372,7 @@ int main(int argc, char* argv[])
     struct r64_____ __lfortran_array_view = { .data = xyz->data, .dims = {{1, xyz->dims[0].length, xyz->dims[0].stride}, {1, xyz->dims[1].length, xyz->dims[1].stride}}, .n_dims = 2, .offset = xyz->offset, .is_allocated = xyz->is_allocated };
     struct r64_____ __lfortran_array_view1 = { .data = trans->data, .dims = {{1, trans->dims[0].length, trans->dims[0].stride}, {1, trans->dims[1].length, trans->dims[1].stride}}, .n_dims = 2, .offset = trans->offset, .is_allocated = trans->is_allocated };
     struct r64___ __lfortran_array_view2 = { .data = vij->data, .dims = {{1, vij->dims[0].length, vij->dims[0].stride}}, .n_dims = 1, .offset = vij->offset, .is_allocated = vij->is_allocated };
-    __lfortran_c_backend_descriptor_vector_assignment_direct_01_m__shift_column_real_______0_real_______1(&__lfortran_array_view, ((int32_t) (&__lfortran_array_view)->dims[0].length), ((int32_t) (&__lfortran_array_view)->dims[1].length), &__lfortran_array_view1, ((int32_t) (&__lfortran_array_view1)->dims[0].length), ((int32_t) (&__lfortran_array_view1)->dims[1].length), &__lfortran_array_view2, 2, 1, 1);
+    __lfortran_c_backend_descriptor_vector_assignment_direct_01_m__shift_column_real_______0_real_______1(&__lfortran_array_view, 3, 2, &__lfortran_array_view1, 3, 1, &__lfortran_array_view2, 2, 1, 1);
     if (fabs(vij_data[(0 + (1 * (1 - 1)))] -   3.50000000000000000e+00) >   9.99999999999999980e-13) {
         fprintf(stderr, "ERROR STOP");
         exit(1);
@@ -387,7 +387,7 @@ int main(int argc, char* argv[])
     }
     struct r64_____ __lfortran_array_view3 = { .data = trans->data, .dims = {{1, trans->dims[0].length, trans->dims[0].stride}, {1, trans->dims[1].length, trans->dims[1].stride}}, .n_dims = 2, .offset = trans->offset, .is_allocated = trans->is_allocated };
     struct r64___ __lfortran_array_view4 = { .data = vij->data, .dims = {{1, vij->dims[0].length, vij->dims[0].stride}}, .n_dims = 1, .offset = vij->offset, .is_allocated = vij->is_allocated };
-    __lfortran_c_backend_descriptor_vector_assignment_direct_01_m__shift_component_column_real_______1__StructType(((struct c_backend_descriptor_vector_assignment_direct_01_m__molecule*)(mol)), &__lfortran_array_view3, ((int32_t) (&__lfortran_array_view3)->dims[0].length), ((int32_t) (&__lfortran_array_view3)->dims[1].length), &__lfortran_array_view4, 2, 1, 1);
+    __lfortran_c_backend_descriptor_vector_assignment_direct_01_m__shift_component_column_real_______1__StructType(mol, &__lfortran_array_view3, 3, 1, &__lfortran_array_view4, 2, 1, 1);
     if (fabs(vij_data[(0 + (1 * (1 - 1)))] -   3.50000000000000000e+00) >   9.99999999999999980e-13) {
         fprintf(stderr, "ERROR STOP");
         exit(1);
@@ -402,7 +402,7 @@ int main(int argc, char* argv[])
     }
     struct r64_____ __lfortran_array_view5 = { .data = trans0->data, .dims = {{0, trans0->dims[0].length, trans0->dims[0].stride}, {1, trans0->dims[1].length, trans0->dims[1].stride}}, .n_dims = 2, .offset = trans0->offset, .is_allocated = trans0->is_allocated };
     struct r64___ __lfortran_array_view6 = { .data = vij->data, .dims = {{1, vij->dims[0].length, vij->dims[0].stride}}, .n_dims = 1, .offset = vij->offset, .is_allocated = vij->is_allocated };
-    __lfortran_c_backend_descriptor_vector_assignment_direct_01_m__shift_lower0_column_real_______0(&__lfortran_array_view5, ((int32_t) (&__lfortran_array_view5)->dims[0].length), ((int32_t) (&__lfortran_array_view5)->dims[1].length), &__lfortran_array_view6, 1);
+    __lfortran_c_backend_descriptor_vector_assignment_direct_01_m__shift_lower0_column_real_______0(&__lfortran_array_view5, 3, 1, &__lfortran_array_view6, 1);
     if (fabs(vij_data[(0 + (1 * (1 - 1)))] -   7.00000000000000000e+00) >   9.99999999999999980e-13) {
         fprintf(stderr, "ERROR STOP");
         exit(1);
