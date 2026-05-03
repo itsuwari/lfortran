@@ -1270,11 +1270,42 @@ R"(
         return CUtils::sanitize_c_identifier(stem);
     }
 
+    std::string add_inline_hint_to_small_split_unit(const std::string &body,
+            size_t max_inline_unit_lines) const {
+        if (count_lines(body) > max_inline_unit_lines) {
+            return body;
+        }
+        size_t line_start = 0;
+        while (line_start < body.size()) {
+            size_t line_end = body.find('\n', line_start);
+            if (line_end == std::string::npos) {
+                line_end = body.size();
+            }
+            std::string line = body.substr(line_start, line_end - line_start);
+            std::string trimmed = trim_copy(line);
+            if (trimmed.empty()) {
+                line_start = line_end + (line_end < body.size() ? 1 : 0);
+                continue;
+            }
+            if (startswith(trimmed, "int main(")
+                    || startswith(trimmed, "__attribute__((always_inline))")
+                    || trimmed.find('(') == std::string::npos
+                    || trimmed.find(';') != std::string::npos) {
+                return body;
+            }
+            return body.substr(0, line_start)
+                + "__attribute__((always_inline)) "
+                + body.substr(line_start);
+        }
+        return body;
+    }
+
     std::vector<std::pair<std::string, std::string>> pack_split_units_by_budget(
             const std::vector<std::pair<std::string, std::string>> &units,
             const std::string &project_name) const {
         static const size_t pack_line_budget = 12000;
         static const size_t max_packable_unit_lines = 4000;
+        static const size_t max_inline_hint_unit_lines = 250;
 
         struct PackState {
             size_t index = 0;
@@ -1318,7 +1349,8 @@ R"(
 
             PackState &current_pack = active_packs[group];
             current_pack.body += "\n/* split-C packed from " + unit.first + " */\n";
-            current_pack.body += unit.second;
+            current_pack.body += add_inline_hint_to_small_split_unit(
+                unit.second, max_inline_hint_unit_lines);
             if (!endswith(current_pack.body, "\n")) {
                 current_pack.body += "\n";
             }
