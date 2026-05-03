@@ -1297,6 +1297,15 @@ R"(
                     || trimmed.find(';') != std::string::npos) {
                 return body;
             }
+            size_t open_paren = trimmed.find('(');
+            std::string before_args = trim_copy(trimmed.substr(0, open_paren));
+            size_t name_start = before_args.find_last_of(" *\t");
+            std::string function_name = before_args.substr(
+                name_start == std::string::npos ? 0 : name_start + 1);
+            if (!function_name.empty()
+                    && body.find(function_name + "(", line_end) != std::string::npos) {
+                return body;
+            }
             return body.substr(0, line_start)
                 + "__attribute__((always_inline)) "
                 + body.substr(line_start);

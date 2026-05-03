@@ -6,6 +6,8 @@
 #include <libasr/pass/nested_vars.h>
 #include <libasr/pass/pass_utils.h>
 #include <libasr/pass/intrinsic_function_registry.h>
+#include <algorithm>
+#include <cstdint>
 #include <set>
 
 namespace LCompilers {
@@ -24,6 +26,16 @@ static SymbolTable *get_host_scope(SymbolTable *scope) {
         scope = scope->parent;
     }
     return start;
+}
+
+static uint64_t get_stable_string_hash(const std::string &value)
+{
+    uint64_t hash = 1469598103934665603ULL;
+    for (unsigned char ch : value) {
+        hash ^= static_cast<uint64_t>(ch);
+        hash *= 1099511628211ULL;
+    }
+    return hash;
 }
 
 static bool is_nested_call_symbol(SymbolTable *current_scope, ASR::symbol_t *sym) {
@@ -468,6 +480,24 @@ class ReplaceNestedVisitor: public ASR::CallReplacerOnExpressionsVisitor<Replace
     void visit_TranslationUnit(const ASR::TranslationUnit_t &x) {
         current_scope = x.m_symtab;
         SymbolTable* current_scope_copy = current_scope;
+        std::vector<std::string> top_level_names;
+        for (const auto &item : current_scope_copy->get_scope()) {
+            if (ASR::is_a<ASR::Program_t>(*item.second)) {
+                top_level_names.push_back(item.first);
+            } else if (ASR::is_a<ASR::Module_t>(*item.second)) {
+                ASR::Module_t *mod = ASR::down_cast<ASR::Module_t>(item.second);
+                if (!mod->m_intrinsic && item.first.rfind(
+                        "__lcompilers_created__nested_context__", 0) != 0) {
+                    top_level_names.push_back(item.first);
+                }
+            }
+        }
+        std::sort(top_level_names.begin(), top_level_names.end());
+        std::string tu_name_key;
+        for (const std::string &name : top_level_names) {
+            tu_name_key += name + ";";
+        }
+        std::string tu_suffix = std::to_string(get_stable_string_hash(tu_name_key));
 
         // Add the nested vars by creating a new module
 
@@ -476,7 +506,7 @@ class ReplaceNestedVisitor: public ASR::CallReplacerOnExpressionsVisitor<Replace
             // a new module.
             current_scope = al.make_new<SymbolTable>(current_scope_copy);
             std::string module_name = "__lcompilers_created__nested_context__" + std::string(
-                                    ASRUtils::symbol_name(it.first)) + "_";
+                                    ASRUtils::symbol_name(it.first)) + "_" + tu_suffix + "_";
             bool is_any_variable_externally_defined = false;
             std::map<ASR::symbol_t*, std::string> sym_to_name;
             module_name = current_scope->get_unique_name(module_name, false);
