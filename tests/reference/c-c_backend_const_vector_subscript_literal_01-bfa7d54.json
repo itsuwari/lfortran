@@ -1,0 +1,13 @@
+{
+    "basename": "c-c_backend_const_vector_subscript_literal_01-bfa7d54",
+    "cmd": "lfortran --no-color --show-c {infile}",
+    "infile": "tests/c_backend_const_vector_subscript_literal_01.f90",
+    "infile_hash": "ce25b824435ea617215ce2f12ac6ec83e0700ad0829e017fd0863a18",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": "c-c_backend_const_vector_subscript_literal_01-bfa7d54.stdout",
+    "stdout_hash": "b2971e073d2d08959d837ed79d9f6bd415318b69544f789e8c8b0e81",
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

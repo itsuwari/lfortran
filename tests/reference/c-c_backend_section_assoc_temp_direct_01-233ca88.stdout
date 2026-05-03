@@ -98,7 +98,7 @@ void __lfortran_c_backend_section_assoc_temp_direct_01_m__copy_planes_real______
         __libasr_created__subroutine_call_copy_plane1->dims[1].lower_bound = 1;
         __libasr_created__subroutine_call_copy_plane1->dims[1].length = ((( (__3b + 1 - 1) - (1) )/1) + 1);
         __libasr_created__subroutine_call_copy_plane1->n_dims = 2;
-        __lfortran_c_backend_section_assoc_temp_direct_01_m__copy_plane(__libasr_created__subroutine_call_copy_plane, __libasr_created__subroutine_call_copy_plane1);
+        __lfortran_c_backend_section_assoc_temp_direct_01_m__copy_plane_real_______0_real_______1(__libasr_created__subroutine_call_copy_plane, ((int32_t) __libasr_created__subroutine_call_copy_plane->dims[0].length + __libasr_created__subroutine_call_copy_plane->dims[0].lower_bound - 1), ((int32_t) __libasr_created__subroutine_call_copy_plane->dims[1].length + __libasr_created__subroutine_call_copy_plane->dims[1].lower_bound - 1), __libasr_created__subroutine_call_copy_plane1, ((int32_t) __libasr_created__subroutine_call_copy_plane1->dims[0].length + __libasr_created__subroutine_call_copy_plane1->dims[0].lower_bound - 1), ((int32_t) __libasr_created__subroutine_call_copy_plane1->dims[1].length + __libasr_created__subroutine_call_copy_plane1->dims[1].lower_bound - 1));
     }
 }
 
