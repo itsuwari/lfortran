@@ -1,0 +1,13 @@
+{
+    "basename": "c-formatted_read_08-2bb07bb",
+    "cmd": "lfortran --no-color --show-c {infile}",
+    "infile": "tests/../integration_tests/formatted_read_08.f90",
+    "infile_hash": "5b7f6abef3d91a4f972dba435f3ee41ad594c7faadf89035d3484662",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": "c-formatted_read_08-2bb07bb.stdout",
+    "stdout_hash": "5e367904907836865938c6d4683e82dfe2d7a530255302577041fc1d",
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

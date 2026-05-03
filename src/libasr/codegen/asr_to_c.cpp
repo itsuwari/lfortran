@@ -5217,7 +5217,7 @@ R"(    // Initialise Numpy
                     + unit + ", " + iostat_ptr + ", " + size_ptr + ", "
                     + advance_arg.first + ", " + advance_arg.second + ", "
                     + fmt_arg.first + ", " + fmt_arg.second + ", "
-                    + "1, 0, 0, &(" + value + "), " + value_len + ");\n";
+                    + "1, 0, 0, &(" + value + "), (int64_t)(" + value_len + "));\n";
             }
         };
 
@@ -5255,7 +5255,8 @@ R"(    // Initialise Numpy
                     if (prepare_string_readback_target(value_expr, value_len,
                             tmp_name, setup_readback, post_readback)) {
                         setup += setup_readback;
-                        args += ", 0, 0, &(" + tmp_name + "), " + value_len;
+                        args += ", 0, 0, &(" + tmp_name + "), (int64_t)("
+                            + value_len + ")";
                         post += post_readback;
                         arg_count++;
                         return;
@@ -5264,7 +5265,8 @@ R"(    // Initialise Numpy
                     setup += indent + "if (" + value + " == NULL) " + value
                         + " = (char*) _lfortran_string_malloc_alloc(_lfortran_get_default_allocator(), "
                         + value_len + ");\n";
-                    args += ", 0, 0, &(" + value + "), " + value_len;
+                    args += ", 0, 0, &(" + value + "), (int64_t)("
+                        + value_len + ")";
                     arg_count++;
                     return;
                 }

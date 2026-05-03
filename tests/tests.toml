@@ -5178,6 +5178,10 @@ run = true
 options = "--backend=c --separate-compilation"
 
 [[test]]
+filename = "../integration_tests/formatted_read_08.f90"
+c = true
+
+[[test]]
 filename = "c_backend_array_section_temp_copy_01.f90"
 run = true
 options = "--backend=c --separate-compilation -O3"
