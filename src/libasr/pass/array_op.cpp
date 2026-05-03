@@ -843,6 +843,53 @@ class ArrayOpVisitor: public ASR::CallReplacerOnExpressionsVisitor<ArrayOpVisito
                 && !is_fixed_size_struct_member_array_expr(expr));
     }
 
+    bool is_c_rank1_vector_subscript_array_item_expr(ASR::expr_t *expr) const {
+        expr = ASRUtils::get_past_array_physical_cast(expr);
+        if (expr == nullptr || !ASR::is_a<ASR::ArrayItem_t>(*expr)) {
+            return false;
+        }
+        ASR::ttype_t *expr_type = ASRUtils::expr_type(expr);
+        if (!ASRUtils::is_array(expr_type)
+                || ASRUtils::extract_n_dims_from_ttype(expr_type) != 1
+                || !is_c_scalarizable_element_type(expr_type)) {
+            return false;
+        }
+        ASR::ArrayItem_t *item = ASR::down_cast<ASR::ArrayItem_t>(expr);
+        if (is_fixed_size_struct_member_array_expr(item->m_v)) {
+            return false;
+        }
+        size_t vector_dims = 0;
+        for (size_t i = 0; i < item->n_args; i++) {
+            ASR::expr_t *idx_expr = nullptr;
+            if (item->m_args[i].m_right) {
+                idx_expr = item->m_args[i].m_right;
+            } else if (item->m_args[i].m_left) {
+                idx_expr = item->m_args[i].m_left;
+            }
+            if (idx_expr == nullptr) {
+                return false;
+            }
+            idx_expr = ASRUtils::get_past_array_physical_cast(idx_expr);
+            ASR::expr_t *idx_value = ASRUtils::expr_value(idx_expr);
+            if (idx_value == nullptr) {
+                idx_value = idx_expr;
+            }
+            if (ASRUtils::is_array(ASRUtils::expr_type(idx_expr))
+                    || ASR::is_a<ASR::ArrayConstant_t>(*idx_value)
+                    || ASR::is_a<ASR::ArrayConstructor_t>(*idx_value)
+                    || ASR::is_a<ASR::ArrayReshape_t>(*idx_value)
+                    || ASR::is_a<ASR::ArrayBroadcast_t>(*idx_value)) {
+                vector_dims++;
+            }
+        }
+        return vector_dims == 1;
+    }
+
+    bool is_c_rank1_scalarizable_array_expr(ASR::expr_t *expr) const {
+        return is_c_rank1_unit_array_expr(expr)
+            || is_c_rank1_vector_subscript_array_item_expr(expr);
+    }
+
     bool is_c_scalarizable_array_expr(ASR::expr_t *expr) const {
         expr = ASRUtils::get_past_array_physical_cast(expr);
         if (expr == nullptr) {
@@ -860,6 +907,13 @@ class ArrayOpVisitor: public ASR::CallReplacerOnExpressionsVisitor<ArrayOpVisito
             case ASR::exprType::StructInstanceMember:
             case ASR::exprType::ArraySection: {
                 return is_c_rank1_unit_array_expr(expr);
+            }
+            case ASR::exprType::ArrayItem: {
+                return is_c_rank1_vector_subscript_array_item_expr(expr);
+            }
+            case ASR::exprType::ArrayBroadcast: {
+                return is_c_scalarizable_array_expr(
+                    ASR::down_cast<ASR::ArrayBroadcast_t>(expr)->m_array);
             }
             case ASR::exprType::RealBinOp: {
                 ASR::RealBinOp_t *binop = ASR::down_cast<ASR::RealBinOp_t>(expr);
@@ -920,6 +974,113 @@ class ArrayOpVisitor: public ASR::CallReplacerOnExpressionsVisitor<ArrayOpVisito
         }
     }
 
+    ASR::symbol_t *get_c_array_assignment_root_symbol(ASR::expr_t *expr) const {
+        expr = ASRUtils::get_past_array_physical_cast(expr);
+        while (expr != nullptr) {
+            if (ASR::is_a<ASR::ArrayItem_t>(*expr)) {
+                expr = ASR::down_cast<ASR::ArrayItem_t>(expr)->m_v;
+                expr = ASRUtils::get_past_array_physical_cast(expr);
+                continue;
+            }
+            if (ASR::is_a<ASR::ArraySection_t>(*expr)) {
+                expr = ASR::down_cast<ASR::ArraySection_t>(expr)->m_v;
+                expr = ASRUtils::get_past_array_physical_cast(expr);
+                continue;
+            }
+            break;
+        }
+        if (expr != nullptr && ASR::is_a<ASR::Var_t>(*expr)) {
+            return ASRUtils::symbol_get_past_external(ASR::down_cast<ASR::Var_t>(expr)->m_v);
+        }
+        return nullptr;
+    }
+
+    bool c_expr_references_root_symbol(ASR::expr_t *expr, ASR::symbol_t *root_sym) const {
+        if (expr == nullptr || root_sym == nullptr) {
+            return false;
+        }
+        expr = ASRUtils::get_past_array_physical_cast(expr);
+        switch (expr->type) {
+            case ASR::exprType::Var: {
+                return ASRUtils::symbol_get_past_external(
+                    ASR::down_cast<ASR::Var_t>(expr)->m_v) == root_sym;
+            }
+            case ASR::exprType::ArrayItem: {
+                ASR::ArrayItem_t *item = ASR::down_cast<ASR::ArrayItem_t>(expr);
+                if (c_expr_references_root_symbol(item->m_v, root_sym)) {
+                    return true;
+                }
+                for (size_t i = 0; i < item->n_args; i++) {
+                    if (c_expr_references_root_symbol(item->m_args[i].m_left, root_sym)
+                            || c_expr_references_root_symbol(item->m_args[i].m_right, root_sym)
+                            || c_expr_references_root_symbol(item->m_args[i].m_step, root_sym)) {
+                        return true;
+                    }
+                }
+                return false;
+            }
+            case ASR::exprType::ArraySection: {
+                ASR::ArraySection_t *section = ASR::down_cast<ASR::ArraySection_t>(expr);
+                if (c_expr_references_root_symbol(section->m_v, root_sym)) {
+                    return true;
+                }
+                for (size_t i = 0; i < section->n_args; i++) {
+                    if (c_expr_references_root_symbol(section->m_args[i].m_left, root_sym)
+                            || c_expr_references_root_symbol(section->m_args[i].m_right, root_sym)
+                            || c_expr_references_root_symbol(section->m_args[i].m_step, root_sym)) {
+                        return true;
+                    }
+                }
+                return false;
+            }
+            case ASR::exprType::StructInstanceMember: {
+                return c_expr_references_root_symbol(
+                    ASR::down_cast<ASR::StructInstanceMember_t>(expr)->m_v, root_sym);
+            }
+            case ASR::exprType::ArrayBroadcast: {
+                return c_expr_references_root_symbol(
+                    ASR::down_cast<ASR::ArrayBroadcast_t>(expr)->m_array, root_sym);
+            }
+            case ASR::exprType::RealBinOp: {
+                ASR::RealBinOp_t *binop = ASR::down_cast<ASR::RealBinOp_t>(expr);
+                return c_expr_references_root_symbol(binop->m_left, root_sym)
+                    || c_expr_references_root_symbol(binop->m_right, root_sym);
+            }
+            case ASR::exprType::IntegerBinOp: {
+                ASR::IntegerBinOp_t *binop = ASR::down_cast<ASR::IntegerBinOp_t>(expr);
+                return c_expr_references_root_symbol(binop->m_left, root_sym)
+                    || c_expr_references_root_symbol(binop->m_right, root_sym);
+            }
+            case ASR::exprType::UnsignedIntegerBinOp: {
+                ASR::UnsignedIntegerBinOp_t *binop =
+                    ASR::down_cast<ASR::UnsignedIntegerBinOp_t>(expr);
+                return c_expr_references_root_symbol(binop->m_left, root_sym)
+                    || c_expr_references_root_symbol(binop->m_right, root_sym);
+            }
+            case ASR::exprType::RealUnaryMinus: {
+                return c_expr_references_root_symbol(
+                    ASR::down_cast<ASR::RealUnaryMinus_t>(expr)->m_arg, root_sym);
+            }
+            case ASR::exprType::IntegerUnaryMinus: {
+                return c_expr_references_root_symbol(
+                    ASR::down_cast<ASR::IntegerUnaryMinus_t>(expr)->m_arg, root_sym);
+            }
+            case ASR::exprType::IntrinsicElementalFunction: {
+                ASR::IntrinsicElementalFunction_t *ief =
+                    ASR::down_cast<ASR::IntrinsicElementalFunction_t>(expr);
+                for (size_t i = 0; i < ief->n_args; i++) {
+                    if (c_expr_references_root_symbol(ief->m_args[i], root_sym)) {
+                        return true;
+                    }
+                }
+                return false;
+            }
+            default: {
+                return false;
+            }
+        }
+    }
+
     bool should_leave_scalarizable_array_assignment_for_c(
             ASR::expr_t *target, ASR::expr_t *value) const {
         return pass_options.c_backend
@@ -927,8 +1088,10 @@ class ArrayOpVisitor: public ASR::CallReplacerOnExpressionsVisitor<ArrayOpVisito
             && value != nullptr
             && !is_compiler_created_array_temp_expr(target)
             && !is_whole_allocatable_or_pointer_array_target(target)
-            && is_c_rank1_unit_array_expr(target)
-            && is_c_scalarizable_array_expr(value);
+            && is_c_rank1_scalarizable_array_expr(target)
+            && is_c_scalarizable_array_expr(value)
+            && !c_expr_references_root_symbol(value,
+                get_c_array_assignment_root_symbol(target));
     }
 
     ASR::expr_t *get_c_section_left_bound(

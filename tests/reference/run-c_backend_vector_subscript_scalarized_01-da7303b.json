@@ -1,0 +1,13 @@
+{
+    "basename": "run-c_backend_vector_subscript_scalarized_01-da7303b",
+    "cmd": "lfortran --no-color {infile}",
+    "infile": "tests/c_backend_vector_subscript_scalarized_01.f90",
+    "infile_hash": "d0a6e4afa38bf2bce1b32c51468fb49db2a7f6313da211b6772bba89",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

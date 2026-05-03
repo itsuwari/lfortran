@@ -3214,6 +3214,14 @@ class ReplaceExprWithTemporaryVisitor:
         if( ASRUtils::is_array(ASRUtils::expr_type(x.m_target)) ) {
             lhs_array_var = ASRUtils::extract_array_variable(x.m_target);
         }
+        if (lhs_array_var == nullptr) {
+            ASR::expr_t *target_unwrapped = ASRUtils::get_past_array_physical_cast(x.m_target);
+            if (ASR::is_a<ASR::ArrayItem_t>(*target_unwrapped)) {
+                lhs_array_var = ASR::down_cast<ASR::ArrayItem_t>(target_unwrapped)->m_v;
+            } else if (ASR::is_a<ASR::ArraySection_t>(*target_unwrapped)) {
+                lhs_array_var = ASR::down_cast<ASR::ArraySection_t>(target_unwrapped)->m_v;
+            }
+        }
         if( ASR::is_a<ASR::ArraySection_t>(*x.m_target) ||
             ASR::is_a<ASR::ArrayItem_t>(*x.m_target) ) {
             ASRUtils::extract_indices(x.m_target, m_args, n_args);
@@ -3240,6 +3248,14 @@ class ReplaceExprWithTemporaryVisitor:
             && lhs_array_var != nullptr
             && is_c_elementwise_array_expr(x.m_value)
             && rhs_common_refs_match_lhs_ref(al, x.m_target, x.m_value);
+        bool target_has_array_indices =
+            ASRUtils::is_array_indexed_with_array_indices(m_args, n_args);
+        bool c_elementwise_nonalias_vector_target = c_backend
+            && lhs_array_var != nullptr
+            && target_has_array_indices
+            && ASRUtils::is_array(ASRUtils::expr_type(x.m_value))
+            && is_c_elementwise_array_expr(x.m_value)
+            && !is_common_symbol_present_in_lhs_and_rhs(al, lhs_array_var, x.m_value);
 
         // For self-referencing allocatable array section assignments (e.g., arr = arr(2:3)),
         // we must create a temporary even when target is allocatable, because realloc
@@ -3258,12 +3274,19 @@ class ReplaceExprWithTemporaryVisitor:
             is_common_symbol_present_in_lhs_and_rhs(al, lhs_array_var, x.m_value);
 
         current_expr = const_cast<ASR::expr_t**>(&(x.m_value));
+        bool rhs_is_assignment_target_array_section_item =
+            replacer.is_assignment_target_array_section_item;
+        if (c_elementwise_nonalias_vector_target) {
+            replacer.is_assignment_target_array_section_item = true;
+        }
         call_replacer();
+        replacer.is_assignment_target_array_section_item =
+            rhs_is_assignment_target_array_section_item;
         replacer.lhs_var = nullptr;
         replacer.lhs_expr = nullptr;
-        bool is_assignment_target_array_section_item = ASRUtils::is_array_indexed_with_array_indices(m_args, n_args) &&
+        bool is_assignment_target_array_section_item = target_has_array_indices &&
                     ASRUtils::is_array(ASRUtils::expr_type(x.m_value)) && !is_directly_addressable_array_expr(x.m_value);
-        if(  is_assignment_target_array_section_item ||
+        if(  (is_assignment_target_array_section_item && !c_elementwise_nonalias_vector_target) ||
             ((ASR::is_a<ASR::ArraySection_t>(*x.m_target) || ASR::is_a<ASR::ArrayItem_t>(*x.m_target)) &&
             is_common_symbol_present_in_lhs_and_rhs(al, lhs_array_var, x.m_value) &&
             !c_elementwise_self_assignment) ||
