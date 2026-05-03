@@ -1,0 +1,63 @@
+#include <math.h>
+#include <string.h>
+
+#include <stdlib.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <string.h>
+#include <lfortran_intrinsics.h>
+
+
+#ifndef LFORTRAN_C_BACKEND_CONSTRUCTOR
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_CONSTRUCTOR __attribute__((constructor))
+#else
+#define LFORTRAN_C_BACKEND_CONSTRUCTOR
+#endif
+#endif
+
+
+struct dimension_descriptor
+{
+    int32_t lower_bound, length, stride;
+};
+#ifndef LFORTRAN_C_BACKEND_CONSTRUCTOR
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_CONSTRUCTOR __attribute__((constructor))
+#else
+#define LFORTRAN_C_BACKEND_CONSTRUCTOR
+#endif
+#endif
+
+struct c_backend_derived_dummy_restrict_01_m__box_t {
+ int64_t __lfortran_type_tag;
+ double x;
+};
+
+void __lfortran_c_backend_derived_dummy_restrict_01_m__read_box__StructType(struct c_backend_derived_dummy_restrict_01_m__box_t* restrict box, double *y);
+
+
+
+
+// Implementations
+void __lfortran_c_backend_derived_dummy_restrict_01_m__read_box__StructType(struct c_backend_derived_dummy_restrict_01_m__box_t* restrict box, double *y)
+{
+    (*y) = box->x;
+}
+
+int main(int argc, char* argv[])
+{
+    _lpython_set_argv(argc, argv);
+    struct c_backend_derived_dummy_restrict_01_m__box_t box_value;
+    memset(&box_value, 0, sizeof(box_value));
+    box_value.__lfortran_type_tag = 4252840001223717485;
+    struct c_backend_derived_dummy_restrict_01_m__box_t* box = &box_value;
+    double y;
+    box->x =   4.25000000000000000e+00;
+    __lfortran_c_backend_derived_dummy_restrict_01_m__read_box__StructType(((struct c_backend_derived_dummy_restrict_01_m__box_t*)(box)), &y);
+    if (fabs(y -   4.25000000000000000e+00) >   9.99999999999999980e-13) {
+        fprintf(stderr, "ERROR STOP");
+        exit(1);
+    }
+    return 0;
+}

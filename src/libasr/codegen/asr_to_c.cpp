@@ -3061,8 +3061,19 @@ R"(
                             && !ASRUtils::is_allocatable(v.m_type)) {
                         decl_use_ref = false;
                     }
-                    sub = format_type_c(dims, "struct " + der_type_name + ptr_char,
-                                        decl_name, decl_use_ref, dummy);
+                    std::string type_name = "struct " + der_type_name + ptr_char;
+                    bool owner_is_bindc = false;
+                    if (owner_sym && ASR::is_a<ASR::Function_t>(*owner_sym)) {
+                        ASR::FunctionType_t *owner_ftype = ASRUtils::get_FunctionType(
+                            ASR::down_cast<ASR::Function_t>(owner_sym));
+                        owner_is_bindc = owner_ftype->m_abi == ASR::abiType::BindC;
+                    }
+                    if (dummy && ptr_char == "*" && !owner_is_bindc
+                            && !ASRUtils::is_pointer(v.m_type)
+                            && !ASRUtils::is_allocatable(v.m_type)) {
+                        type_name += " restrict";
+                    }
+                    sub = format_type_c(dims, type_name, decl_name, decl_use_ref, dummy);
                 }
             } else if (ASR::is_a<ASR::UnionType_t>(*v_m_type)) {
                 std::string indent(indentation_level*indentation_spaces, ' ');

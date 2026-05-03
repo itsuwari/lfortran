@@ -1,0 +1,13 @@
+{
+    "basename": "c-c_backend_derived_dummy_restrict_01-47c91fb",
+    "cmd": "lfortran --no-color --show-c {infile}",
+    "infile": "tests/c_backend_derived_dummy_restrict_01.f90",
+    "infile_hash": "2b43a5008f542493507f2a30a8507b37c5f52f26249860015ba8fd4a",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": "c-c_backend_derived_dummy_restrict_01-47c91fb.stdout",
+    "stdout_hash": "a30f5f0c4e6429cb4eb75e169271361924e6d651689ca111278d19ce",
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}
