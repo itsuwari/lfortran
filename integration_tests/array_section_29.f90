@@ -7,9 +7,16 @@ program array_section_29
 
     allocate(xyz(3, 2), trans(3, 4))
 
-    xyz(:, 1) = [10.0d0, 20.0d0, 30.0d0]
-    xyz(:, 2) = [1.0d0, 2.0d0, 3.0d0]
-    trans(:, 4) = [7.0d0, 11.0d0, 13.0d0]
+    xyz(1, 1) = 10.0d0
+    xyz(2, 1) = 20.0d0
+    xyz(3, 1) = 30.0d0
+    xyz(1, 2) = 1.0d0
+    xyz(2, 2) = 2.0d0
+    xyz(3, 2) = 3.0d0
+    trans = 0.0d0
+    trans(1, 4) = 7.0d0
+    trans(2, 4) = 11.0d0
+    trans(3, 4) = 13.0d0
 
     call calc(xyz, trans, 2, 4, vec)
 

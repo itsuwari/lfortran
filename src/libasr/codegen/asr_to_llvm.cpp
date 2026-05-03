@@ -7245,6 +7245,14 @@ public:
                 ASR::is_a<ASR::StructInstanceMember_t>(*x.m_v)) ) {
                 llvm::Type *array_type = llvm_utils->get_type_from_ttype_t_util(x.m_v, x_mv_type_, module.get());
                 array = llvm_utils->CreateLoad2(array_type->getPointerTo(), array);
+            } else if (ASR::is_a<ASR::ArraySection_t>(*x.m_v) &&
+                       array_t->m_physical_type == ASR::array_physical_typeType::DescriptorArray) {
+                ASR::ArraySection_t* as = ASR::down_cast<ASR::ArraySection_t>(x.m_v);
+                ASR::ttype_t* base_type = ASRUtils::expr_type(as->m_v);
+                if (LLVM::is_llvm_pointer(*base_type)) {
+                    llvm::Type *array_type = llvm_utils->get_type_from_ttype_t_util(x.m_v, x_mv_type_, module.get());
+                    array = llvm_utils->CreateLoad2(array_type->getPointerTo(), array);
+                }
             } else if (array_t->m_physical_type == ASR::array_physical_typeType::PointerArray &&
                        !LLVM::is_llvm_pointer(*x_mv_type) &&
                        is_bindc_array &&
@@ -21261,11 +21269,18 @@ public:
                             // but the Fortran logical variable is wider (i8/i16/i32/i64).
                             // Use a temporary i1 alloca, call the function,
                             // then widen and store back.
-                            llvm::Value* tmp_bool = llvm_utils->CreateAlloca(*builder,
-                                llvm::Type::getInt1Ty(context));
-                            builder->CreateCall(fn, {tmp_bool, unit_val, iostat});
+                            // Initialize tmp_bool with the current value so that null
+                            // fields in list-directed I/O preserve the existing value.
                             int kind = ASRUtils::extract_kind_from_ttype_t(
                                 ASRUtils::type_get_past_allocatable_pointer(val_type));
+                            llvm::Value* tmp_bool = llvm_utils->CreateAlloca(*builder,
+                                llvm::Type::getInt1Ty(context));
+                            llvm::Value* cur_val = llvm_utils->CreateLoad2(
+                                llvm_utils->getIntType(kind), var_to_read_into);
+                            llvm::Value* cur_bool = builder->CreateTrunc(cur_val,
+                                llvm::Type::getInt1Ty(context));
+                            builder->CreateStore(cur_bool, tmp_bool);
+                            builder->CreateCall(fn, {tmp_bool, unit_val, iostat});
                             llvm::Value* loaded = llvm_utils->CreateLoad2(
                                 llvm::Type::getInt1Ty(context), tmp_bool);
                             llvm::Value* widened = builder->CreateZExt(loaded,

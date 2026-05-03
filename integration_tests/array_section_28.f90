@@ -1,29 +1,33 @@
-program array_section_28
+module array_section_28_mod
     implicit none
-    real(8) :: lat(3, 3)
-    real(8) :: c(3)
-
-    lat = reshape([ &
-        2.0d0, 3.0d0, 5.0d0, &
-        7.0d0, 11.0d0, 13.0d0, &
-        17.0d0, 19.0d0, 23.0d0], shape(lat))
-
-    call crossproduct(lat(:, 2), lat(:, 3), c)
-
-    if (abs(c(1) - 6.0d0) > 1.0d-12) error stop
-    if (abs(c(2) - 60.0d0) > 1.0d-12) error stop
-    if (abs(c(3) + 54.0d0) > 1.0d-12) error stop
-
-contains
-
-    subroutine crossproduct(a, b, c)
-        real(8), intent(in) :: a(3)
-        real(8), intent(in) :: b(3)
-        real(8), intent(out) :: c(3)
-
-        c(1) = a(2)*b(3) - b(2)*a(3)
-        c(2) = a(3)*b(1) - b(3)*a(1)
-        c(3) = a(1)*b(2) - b(1)*a(2)
+    type :: graph_type
+      integer, allocatable :: adjacency(:,:)
+    end type
+  contains
+    subroutine run(graph, parent_vertices, child_vertices, j, do_it)
+      type(graph_type), intent(in) :: graph
+      integer, allocatable, intent(in) :: parent_vertices(:)
+      integer, allocatable, intent(in) :: child_vertices(:)
+      integer, intent(in) :: j
+      logical, intent(in) :: do_it
+      if (do_it) then
+        call consume([graph%adjacency(parent_vertices(:), child_vertices(j))])
+      end if
     end subroutine
+    subroutine consume(arr)
+      integer, intent(in) :: arr(:)
+      if (size(arr) < 1) error stop
+    end subroutine
+  end module
 
-end program
+  program array_section_28
+    use array_section_28_mod
+    implicit none
+    type(graph_type) :: g
+    integer, allocatable :: pv(:), cv(:)
+    allocate(g%adjacency(3,3))
+    allocate(pv(3)); pv = [1,2,3]
+    allocate(cv(3)); cv = [1,2,3]
+    g%adjacency = reshape([1,2,3,4,5,6,7,8,9], [3,3])
+    call run(g, pv, cv, 2, .false.)
+end program array_section_28

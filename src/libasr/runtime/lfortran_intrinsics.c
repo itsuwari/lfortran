@@ -6001,8 +6001,15 @@ void remove_from_unit_to_file(int32_t unit_num) {
 }
 
 static void _lfortran_close_all_units(void) {
+    const char *scratch_prefix = "_lfortran_generated_file";
+    const size_t scratch_prefix_len = 24; // strlen("_lfortran_generated_file")
     for (int i = 0; i <= last_index_used; i++) {
         if (unit_to_file[i].filename != NULL) {
+            // Delete scratch files at normal program termination
+            if (strncmp(unit_to_file[i].filename, scratch_prefix,
+                        scratch_prefix_len) == 0) {
+                remove(unit_to_file[i].filename);
+            }
             internal_free(unit_to_file[i].filename);
             unit_to_file[i].filename = NULL;
         }
@@ -7961,16 +7968,11 @@ LFORTRAN_API void _lfortran_read_logical(bool *p, int32_t unit_num, int32_t *ios
         }
         
         if (c == ',') {
-            while ((c = fgetc(filep)) != EOF && isspace(c)) {
-            }
-            if (c == EOF) {
-                if (iostat) { *iostat = feof(filep) ? -1 : 1; return; }
-                fprintf(stderr, "Error: Invalid logical input from file (EOF).\n");
-                exit(1);
-            }
+            // Null field: two consecutive separators mean "keep current value"
+            return;
         }
         
-        if (c == ',' || c == '/') {
+        if (c == '/') {
             ungetc(c, filep);
             return;
         }

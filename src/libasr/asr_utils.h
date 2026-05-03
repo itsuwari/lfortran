@@ -824,6 +824,9 @@ static inline ASR::abiType expr_abi(ASR::expr_t* e) {
         case ASR::exprType::ArrayConstructor: {
             return ASR::abiType::Source;
         }
+        case ASR::exprType::ArraySection: {
+            return ASRUtils::expr_abi(ASR::down_cast<ASR::ArraySection_t>(e)->m_v);
+        }
         default:
             return ASR::abiType::Source;
     }
