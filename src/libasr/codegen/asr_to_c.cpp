@@ -6536,7 +6536,8 @@ R"(    // Initialise Numpy
             && is_data_only_array_expr(array_expr);
         bool use_fixed_size_data_only_indexing =
             array_t->m_physical_type == ASR::array_physical_typeType::FixedSizeArray
-            && is_fixed_size_array_storage_expr(array_expr);
+            && (is_fixed_size_array_storage_expr(array_expr)
+                || is_c_fixed_size_descriptor_storage_expr(array_expr));
         if( use_pointer_data_only_indexing ||
                 use_fixed_size_data_only_indexing ) {
             for( size_t idim = 0; idim < x.n_args; idim++ ) {

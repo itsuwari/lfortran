@@ -2192,14 +2192,15 @@ R"(#include <stdio.h>
         template_for_Kokkos.clear();
         template_number = 0;
         std::string sub, inl, static_attr;
+        ASR::FunctionType_t *f_type = ASRUtils::get_FunctionType(x);
 
         // This helps to check if the function is generic.
         // If it is generic we skip the codegen for that function.
         has_typevar = false;
-        if (ASRUtils::get_FunctionType(x)->m_inline && !is_pointer) {
+        if (f_type->m_inline && !is_pointer) {
             inl = "inline __attribute__((always_inline)) ";
         }
-        if( ASRUtils::get_FunctionType(x)->m_static && !is_pointer) {
+        if( f_type->m_static && !is_pointer) {
             static_attr = "static ";
         }
         if (x.m_return_var) {
@@ -2209,7 +2210,6 @@ R"(#include <stdio.h>
         } else {
             sub = "void ";
         }
-        ASR::FunctionType_t *f_type = ASRUtils::get_FunctionType(x);
         std::string sym_name = get_c_function_target_name(x);
         if (f_type->m_abi == ASR::abiType::BindPython &&
                 f_type->m_deftype == ASR::deftypeType::Implementation) {
@@ -3580,6 +3580,27 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 == ASR::array_physical_typeType::FixedSizeArray;
     }
 
+    bool is_c_fixed_size_descriptor_storage_expr(ASR::expr_t *expr) {
+        expr = unwrap_c_array_expr(expr);
+        if (expr == nullptr || !ASR::is_a<ASR::Var_t>(*expr)) {
+            return false;
+        }
+        ASR::symbol_t *sym = ASRUtils::symbol_get_past_external(
+            ASR::down_cast<ASR::Var_t>(expr)->m_v);
+        if (!ASR::is_a<ASR::Variable_t>(*sym)) {
+            return false;
+        }
+        ASR::Variable_t *var = ASR::down_cast<ASR::Variable_t>(sym);
+        if (ASRUtils::is_arg_dummy(var->m_intent)
+                || var->m_storage == ASR::storage_typeType::Parameter) {
+            return false;
+        }
+        ASR::ttype_t *type = ASRUtils::type_get_past_allocatable_pointer(var->m_type);
+        return type != nullptr
+            && ASRUtils::is_array(type)
+            && ASRUtils::is_fixed_size_array(type);
+    }
+
     bool is_c_compiler_created_array_temp_expr(ASR::expr_t *expr) {
         expr = unwrap_c_array_expr(expr);
         if (expr != nullptr && ASR::is_a<ASR::ArraySection_t>(*expr)) {
@@ -3775,6 +3796,9 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         if (expr == nullptr) {
             return fallback;
         }
+        if (ASR::is_a<ASR::ArrayBound_t>(*expr)) {
+            return fallback;
+        }
         self().visit_expr(*expr);
         return src;
     }
@@ -3797,18 +3821,54 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         setup += drain_tmp_buffer();
         setup += extract_stmt_setup_from_expr(base);
 
+        ASR::ttype_t *base_type = ASRUtils::type_get_past_allocatable_pointer(
+            ASRUtils::expr_type(base_expr));
+        ASR::dimension_t *base_dims = nullptr;
+        int base_rank = ASRUtils::extract_dimensions_from_ttype(base_type, base_dims);
+        bool use_static_base_dims = is_c_fixed_size_descriptor_storage_expr(base_expr)
+            && base_dims != nullptr && base_rank > 0;
+        std::vector<int64_t> static_lbs;
+        std::vector<int64_t> static_lengths;
+        std::vector<int64_t> static_strides;
+        if (use_static_base_dims) {
+            int64_t stride = 1;
+            static_lbs.reserve(base_rank);
+            static_lengths.reserve(base_rank);
+            static_strides.reserve(base_rank);
+            for (int i = 0; i < base_rank; i++) {
+                int64_t lb = 1, len = -1;
+                if (base_dims[i].m_start != nullptr
+                        && !get_c_constant_int_expr_value(base_dims[i].m_start, lb)) {
+                    use_static_base_dims = false;
+                    break;
+                }
+                if (base_dims[i].m_length == nullptr
+                        || !get_c_constant_int_expr_value(base_dims[i].m_length, len)
+                        || len <= 0) {
+                    use_static_base_dims = false;
+                    break;
+                }
+                static_lbs.push_back(lb);
+                static_lengths.push_back(len);
+                static_strides.push_back(stride);
+                stride *= len;
+            }
+        }
+
         std::string base_lb = base + "->dims[0].lower_bound";
         std::string base_len = base + "->dims[0].length";
         std::string base_stride = base + "->dims[0].stride";
+        if (use_static_base_dims) {
+            base_lb = std::to_string(static_lbs[0]);
+            base_len = std::to_string(static_lengths[0]);
+            base_stride = std::to_string(static_strides[0]);
+        }
         std::string left = base_lb;
         std::string right = "(" + base_lb + " + " + base_len + " - 1)";
         std::string step = "1";
         std::vector<std::string> offset_terms;
-        offset_terms.push_back(base + "->offset");
+        offset_terms.push_back(use_static_base_dims ? "0" : base + "->offset");
         if (section != nullptr) {
-            ASR::ttype_t *base_type = ASRUtils::expr_type(base_expr);
-            ASR::dimension_t *base_dims = nullptr;
-            int base_rank = ASRUtils::extract_dimensions_from_ttype(base_type, base_dims);
             if ((int)section->n_args != base_rank) {
                 return false;
             }
@@ -3819,6 +3879,11 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 std::string dim_lb = base + "->dims[" + dim_idx + "].lower_bound";
                 std::string dim_len = base + "->dims[" + dim_idx + "].length";
                 std::string dim_stride = base + "->dims[" + dim_idx + "].stride";
+                if (use_static_base_dims) {
+                    dim_lb = std::to_string(static_lbs[source_dim]);
+                    dim_len = std::to_string(static_lengths[source_dim]);
+                    dim_stride = std::to_string(static_strides[source_dim]);
+                }
                 std::string dim_ub = "(" + dim_lb + " + " + dim_len + " - 1)";
                 bool is_slice = idx.m_left || idx.m_step || idx.m_right == nullptr;
                 if (!is_slice) {
@@ -3872,12 +3937,87 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         }
         offset_expr += ")";
         if (section == nullptr) {
-            offset_expr = base + "->offset";
+            offset_expr = use_static_base_dims ? "0" : base + "->offset";
         }
         setup += indent + "int64_t " + offset_name + " = " + offset_expr + ";\n";
         setup += indent + "int64_t " + length_name + " = ((((" + right + ") - ("
             + left + ")) / (" + step + ")) + 1);\n";
         return true;
+    }
+
+    bool get_c_constant_int_expr_value(ASR::expr_t *expr, int64_t &value) {
+        if (expr == nullptr) {
+            return false;
+        }
+        ASR::expr_t *expr_value = ASRUtils::expr_value(expr);
+        if (expr_value == nullptr) {
+            expr_value = expr;
+        }
+        return ASRUtils::extract_value(expr_value, value);
+    }
+
+    bool get_c_rank1_compile_time_length(ASR::expr_t *expr, int64_t &length) {
+        expr = unwrap_c_array_expr(expr);
+        if (expr == nullptr || !ASRUtils::is_array(ASRUtils::expr_type(expr))) {
+            return false;
+        }
+        if (ASR::is_a<ASR::ArraySection_t>(*expr)) {
+            if (!is_c_rank1_unit_array_expr(expr)) {
+                return false;
+            }
+            ASR::ArraySection_t *section = ASR::down_cast<ASR::ArraySection_t>(expr);
+            for (size_t i = 0; i < section->n_args; i++) {
+                ASR::array_index_t idx = section->m_args[i];
+                bool is_slice = idx.m_left || idx.m_step || idx.m_right == nullptr;
+                if (!is_slice) {
+                    continue;
+                }
+                int64_t left = 1, right = -1, step = 1;
+                if (idx.m_left != nullptr
+                        && !get_c_constant_int_expr_value(idx.m_left, left)) {
+                    return false;
+                }
+                if (idx.m_right == nullptr
+                        || !get_c_constant_int_expr_value(idx.m_right, right)) {
+                    return false;
+                }
+                if (idx.m_step != nullptr
+                        && !get_c_constant_int_expr_value(idx.m_step, step)) {
+                    return false;
+                }
+                if (step <= 0 || right < left) {
+                    return false;
+                }
+                length = ((right - left) / step) + 1;
+                return length > 0;
+            }
+            return false;
+        }
+        if (ASR::is_a<ASR::ArrayItem_t>(*expr)) {
+            if (!is_c_rank1_vector_subscript_array_item_expr(expr)) {
+                return false;
+            }
+            ASR::ArrayItem_t *item = ASR::down_cast<ASR::ArrayItem_t>(expr);
+            int vector_dim = get_vector_subscript_dim(*item);
+            if (vector_dim < 0) {
+                return false;
+            }
+            ASR::expr_t *vector_expr = get_array_index_expr(item->m_args[vector_dim]);
+            ASR::ttype_t *vector_type = ASRUtils::type_get_past_allocatable_pointer(
+                ASRUtils::expr_type(vector_expr));
+            if (vector_type == nullptr || !ASRUtils::is_fixed_size_array(vector_type)) {
+                return false;
+            }
+            length = ASRUtils::get_fixed_size_of_array(vector_type);
+            return length > 0;
+        }
+        ASR::ttype_t *type = ASRUtils::type_get_past_allocatable_pointer(
+            ASRUtils::expr_type(expr));
+        if (type == nullptr || !ASRUtils::is_fixed_size_array(type)) {
+            return false;
+        }
+        length = ASRUtils::get_fixed_size_of_array(type);
+        return length > 0;
     }
 
     bool get_c_rank1_array_element_expr(ASR::expr_t *expr, const std::string &prefix,
@@ -4370,6 +4510,19 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         indentation_level++;
         std::string inner_indent(indentation_level * indentation_spaces, ' ');
         src += setup;
+        int64_t compile_time_length = -1;
+        if (get_c_rank1_compile_time_length(plan.target_expr, compile_time_length)
+                && compile_time_length > 0 && compile_time_length <= 8) {
+            src += inner_indent + "int64_t " + index_name + ";\n";
+            for (int64_t i = 0; i < compile_time_length; i++) {
+                src += inner_indent + index_name + " = "
+                    + std::to_string(i) + ";\n";
+                src += inner_indent + target_expr + " = " + value_expr + ";\n";
+            }
+            indentation_level--;
+            src += indent + "}\n";
+            return true;
+        }
         src += inner_indent + "for (int64_t " + index_name + " = 0; "
             + index_name + " < " + target_length + "; " + index_name + "++) {\n";
         indentation_level++;
@@ -6112,9 +6265,6 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             std::string arg_src = src;
             std::string arg_setup = drain_tmp_buffer();
             arg_setup += extract_stmt_setup_from_expr(arg_src);
-            if (!arg_setup.empty()) {
-                tmp_buffer_src.push_back(arg_setup);
-            }
             force_storage_expr_in_call_args = saved_force_storage_expr_in_call_args;
             bool no_copy_descriptor_view_actual = allow_no_copy_descriptor_views
                 && try_build_c_array_no_copy_descriptor_view_arg(
@@ -6130,6 +6280,9 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                         ASRUtils::type_get_past_allocatable_pointer(param_type));
                     no_copy_hidden_dim = 0;
                 }
+            }
+            if (!no_copy_descriptor_view_actual && !arg_setup.empty()) {
+                tmp_buffer_src.push_back(arg_setup);
             }
             if (is_c && is_compiler_created_scalar_storage_temp(arg_src)) {
                 src = canonicalize_raw_pointer_actual_src(arg_src);
@@ -6574,9 +6727,6 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             std::string arg_src = src;
             std::string arg_setup = drain_tmp_buffer();
             arg_setup += extract_stmt_setup_from_expr(arg_src);
-            if (!arg_setup.empty()) {
-                tmp_buffer_src.push_back(arg_setup);
-            }
             force_storage_expr_in_call_args = saved_force_storage_expr_in_call_args;
             bool no_copy_descriptor_view_actual = allow_no_copy_descriptor_views
                 && try_build_c_array_no_copy_descriptor_view_arg(
@@ -6592,6 +6742,9 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                         ASRUtils::type_get_past_allocatable_pointer(param_type));
                     no_copy_hidden_dim = 0;
                 }
+            }
+            if (!no_copy_descriptor_view_actual && !arg_setup.empty()) {
+                tmp_buffer_src.push_back(arg_setup);
             }
             if (is_c && is_compiler_created_scalar_storage_temp(arg_src)) {
                 src = canonicalize_raw_pointer_actual_src(arg_src);
