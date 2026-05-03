@@ -149,6 +149,7 @@ public:
     bool intrinsic_module = false;
     const ASR::Function_t *current_function = nullptr;
     std::string current_return_var_name;
+    std::vector<std::string> current_function_heap_array_data;
     std::map<uint64_t, SymbolInfo> sym_info;
     std::map<uint64_t, std::string> const_var_names;
     std::map<int32_t, std::string> gotoid2name;
@@ -217,6 +218,15 @@ public:
         const_vars_count{0}, loop_end_count{0}, bracket_open{0},
         is_string_concat_present{false} {
         }
+
+    std::string emit_current_function_heap_array_cleanup(const std::string &indent) const {
+        std::string cleanup;
+        for (auto it = current_function_heap_array_data.rbegin();
+                it != current_function_heap_array_data.rend(); ++it) {
+            cleanup += indent + "free(" + *it + ");\n";
+        }
+        return cleanup;
+    }
 
     std::string get_final_combined_src(std::string head, std::string unit_src) {
         std::string to_include = "";
@@ -2265,6 +2275,7 @@ R"(#include <stdio.h>
         emit_nested_functions();
 
         current_body = "";
+        current_function_heap_array_data.clear();
         SymbolTable* current_scope_copy = current_scope;
         current_scope = x.m_symtab;
         if (std::string(x.m_name) == "size" && intrinsic_module ) {
@@ -2425,7 +2436,10 @@ R"(#include <stdio.h>
             }
 
             if (!visited_return && !current_return_var_name.empty()) {
+                current_body += emit_current_function_heap_array_cleanup(indent);
                 current_body += indent + "return " + get_current_return_var_name() + ";\n";
+            } else if (!visited_return) {
+                current_body += emit_current_function_heap_array_cleanup(indent);
             }
 
             if (is_c
@@ -2450,6 +2464,7 @@ R"(#include <stdio.h>
                 sub += "{\n" + empty_body + "}\n";
             }
             current_return_var_name.clear();
+            current_function_heap_array_data.clear();
             indentation_level -= 1;
         }
         sub += "\n";
@@ -10539,10 +10554,11 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
 
     void visit_Return(const ASR::Return_t & /* x */) {
         std::string indent(indentation_level*indentation_spaces, ' ');
+        src = emit_current_function_heap_array_cleanup(indent);
         if (current_function && (!current_return_var_name.empty() || current_function->m_return_var)) {
-            src = indent + "return " + get_current_return_var_name() + ";\n";
+            src += indent + "return " + get_current_return_var_name() + ";\n";
         } else {
-            src = indent + "return;\n";
+            src += indent + "return;\n";
         }
     }
 

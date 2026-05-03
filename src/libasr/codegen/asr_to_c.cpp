@@ -1785,10 +1785,14 @@ R"(
                 }
                 sub += ";\n";
                 if( !is_fixed_size ) {
+                    std::string data_name = std::string(v_m_name) + "_data";
                     sub += indent + format_type_c("*", type_name_copy, std::string(v_m_name) + "_data",
                                                 use_ref, dummy);
                     if( dims.size() > 0 ) {
                         sub += " = " + dims + ";\n";
+                        if (var != nullptr && var->m_intent == ASRUtils::intent_local) {
+                            current_function_heap_array_data.push_back(data_name);
+                        }
                     } else {
                         sub += " = NULL;\n";
                     }
