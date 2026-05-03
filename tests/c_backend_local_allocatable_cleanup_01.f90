@@ -12,6 +12,9 @@ if (total /= -1.0_8) error stop
 call fill_then_return(5, total)
 if (abs(total - 5.0_8) > 1.0e-12_8) error stop
 
+call fill_from_callee(total)
+if (abs(total - 9.0_8) > 1.0e-12_8) error stop
+
 contains
 
 subroutine fill(n, total)
@@ -28,6 +31,21 @@ subroutine fill(n, total)
         scratch(i, :) = real(i, 8)
     end do
     total = sum(scratch)
+end subroutine
+
+subroutine fill_from_callee(total)
+    real(8), intent(out) :: total
+    real(8), allocatable :: scratch(:)
+
+    call make_array(scratch)
+    total = sum(scratch)
+end subroutine
+
+subroutine make_array(values)
+    real(8), allocatable, intent(out) :: values(:)
+
+    allocate(values(3))
+    values = 3.0_8
 end subroutine
 
 subroutine fill_then_return(n, total)

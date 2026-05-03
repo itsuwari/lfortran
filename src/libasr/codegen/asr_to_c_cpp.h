@@ -2420,6 +2420,12 @@ R"(#include <stdio.h>
                         v->m_intent == ASRUtils::intent_return_var) {
                         std::string d = indent + self().convert_variable_decl(*v) + ";\n";
                         decl += check_tmp_buffer() + d;
+                        if (is_c && v->m_intent == ASRUtils::intent_local
+                                && ASRUtils::is_allocatable(v->m_type)
+                                && ASRUtils::is_array(v->m_type)) {
+                            register_current_function_local_allocatable_array_cleanup(
+                                emitted_name);
+                        }
                     }
                     if (v->m_intent == ASRUtils::intent_return_var) {
                         current_return_var_name = emitted_name;
