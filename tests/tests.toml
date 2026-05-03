@@ -5298,5 +5298,9 @@ filename = "c_backend_automatic_array_cleanup_01.f90"
 c = true
 
 [[test]]
+filename = "c_backend_local_allocatable_cleanup_01.f90"
+c = true
+
+[[test]]
 filename = "../integration_tests/read_83.f90"
 llvm = true

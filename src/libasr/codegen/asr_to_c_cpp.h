@@ -150,6 +150,7 @@ public:
     const ASR::Function_t *current_function = nullptr;
     std::string current_return_var_name;
     std::vector<std::string> current_function_heap_array_data;
+    std::vector<std::string> current_function_local_allocatable_arrays;
     std::map<uint64_t, SymbolInfo> sym_info;
     std::map<uint64_t, std::string> const_var_names;
     std::map<int32_t, std::string> gotoid2name;
@@ -221,11 +222,34 @@ public:
 
     std::string emit_current_function_heap_array_cleanup(const std::string &indent) const {
         std::string cleanup;
+        for (auto it = current_function_local_allocatable_arrays.rbegin();
+                it != current_function_local_allocatable_arrays.rend(); ++it) {
+            cleanup += indent + "if ((" + *it + ") != NULL && (" + *it
+                + ")->is_allocated && (" + *it + ")->data != NULL) {\n"
+                + indent + "    _lfortran_free_alloc(_lfortran_get_default_allocator(), "
+                + "(char*) (" + *it + ")->data);\n"
+                + indent + "    (" + *it + ")->data = NULL;\n"
+                + indent + "}\n"
+                + indent + "if ((" + *it + ") != NULL) {\n"
+                + indent + "    (" + *it + ")->offset = 0;\n"
+                + indent + "    (" + *it + ")->is_allocated = false;\n"
+                + indent + "}\n";
+        }
         for (auto it = current_function_heap_array_data.rbegin();
                 it != current_function_heap_array_data.rend(); ++it) {
             cleanup += indent + "free(" + *it + ");\n";
         }
         return cleanup;
+    }
+
+    void register_current_function_local_allocatable_array_cleanup(
+            const std::string &descriptor) {
+        for (const std::string &existing: current_function_local_allocatable_arrays) {
+            if (existing == descriptor) {
+                return;
+            }
+        }
+        current_function_local_allocatable_arrays.push_back(descriptor);
     }
 
     std::string get_final_combined_src(std::string head, std::string unit_src) {
@@ -2276,6 +2300,7 @@ R"(#include <stdio.h>
 
         current_body = "";
         current_function_heap_array_data.clear();
+        current_function_local_allocatable_arrays.clear();
         SymbolTable* current_scope_copy = current_scope;
         current_scope = x.m_symtab;
         if (std::string(x.m_name) == "size" && intrinsic_module ) {
@@ -2465,6 +2490,7 @@ R"(#include <stdio.h>
             }
             current_return_var_name.clear();
             current_function_heap_array_data.clear();
+            current_function_local_allocatable_arrays.clear();
             indentation_level -= 1;
         }
         sub += "\n";
@@ -9750,12 +9776,14 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             ASR::ttype_t* type = nullptr;
             ASR::expr_t* tmp_expr = x.m_args[i].m_a;
             std::string sym;
+            ASR::Variable_t *target_var = nullptr;
             if( ASR::is_a<ASR::Var_t>(*tmp_expr) ) {
                 const ASR::Var_t* tmp_var = ASR::down_cast<ASR::Var_t>(tmp_expr);
                 type = ASRUtils::expr_type(tmp_expr);
                 ASR::symbol_t *var_sym = ASRUtils::symbol_get_past_external(tmp_var->m_v);
                 if (ASR::is_a<ASR::Variable_t>(*var_sym)) {
                     ASR::Variable_t *var = ASR::down_cast<ASR::Variable_t>(var_sym);
+                    target_var = var;
                     if (is_c && is_aggregate_dummy_slot_type(var)) {
                         sym = "(*" + CUtils::get_c_variable_name(*var) + ")";
                     } else if (is_c && is_scalar_allocatable_storage_type(var->m_type)) {
@@ -9800,6 +9828,13 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             if (ASRUtils::is_array(type)) {
                 if (is_c && is_vector_subscript_scalar_array_item(tmp_expr)) {
                     continue;
+                }
+                if (is_c && target_var != nullptr
+                        && current_function != nullptr
+                        && target_var->m_parent_symtab == current_function->m_symtab
+                        && target_var->m_intent == ASRUtils::intent_local
+                        && ASRUtils::is_allocatable(target_var->m_type)) {
+                    register_current_function_local_allocatable_array_cleanup(sym);
                 }
                 std::string size_str = "1";
                 std::string old_size_name;
