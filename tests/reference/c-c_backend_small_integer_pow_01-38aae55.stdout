@@ -1,3 +1,4 @@
+#include <inttypes.h>
 #include <math.h>
 
 #include <stdlib.h>
@@ -56,17 +57,23 @@ int main(int argc, char* argv[])
     a->dims[0].lower_bound = 1;
     a->dims[0].length = 3;
     a->dims[0].stride = 1;
+    double d;
+    int32_t n;
+    double q;
     float w;
     float x;
     float y;
     float z;
     x =   3.00000000000000000e+00;
-    a->data[(0 + (1 * (1 - 1)))] =   1.00000000000000000e+00;
-    a->data[(0 + (1 * (2 - 1)))] =   2.00000000000000000e+00;
-    a->data[(0 + (1 * (3 - 1)))] =   3.00000000000000000e+00;
+    n = 6;
+    d =   2.50000000000000000e-01;
+    a_data[(0 + (1 * (1 - 1)))] =   1.00000000000000000e+00;
+    a_data[(0 + (1 * (2 - 1)))] =   2.00000000000000000e+00;
+    a_data[(0 + (1 * (3 - 1)))] =   3.00000000000000000e+00;
     y = (x)*(x) + (x)*(x)*(x) + (x +   1.00000000000000000e+00)*(x +   1.00000000000000000e+00);
-    z = pow(__lfortran_c_backend_small_integer_pow_01__next_value(), 2);
-    w = (a->data[(0 + (1 * (1 - 1)))])*(a->data[(0 + (1 * (1 - 1)))]) + (a->data[(0 + (1 * (2 - 1)))])*(a->data[(0 + (1 * (2 - 1)))])*(a->data[(0 + (1 * (2 - 1)))]) + (a->data[(0 + (1 * (3 - 1)))])*(a->data[(0 + (1 * (3 - 1)))])*(a->data[(0 + (1 * (3 - 1)))])*(a->data[(0 + (1 * (3 - 1)))]);
+    z = __lfortran_c_powi_f32(__lfortran_c_backend_small_integer_pow_01__next_value(), 2);
+    w = (a_data[(0 + (1 * (1 - 1)))])*(a_data[(0 + (1 * (1 - 1)))]) + (a_data[(0 + (1 * (2 - 1)))])*(a_data[(0 + (1 * (2 - 1)))])*(a_data[(0 + (1 * (2 - 1)))]) + (a_data[(0 + (1 * (3 - 1)))])*(a_data[(0 + (1 * (3 - 1)))])*(a_data[(0 + (1 * (3 - 1)))])*(a_data[(0 + (1 * (3 - 1)))]);
+    q = __lfortran_c_powi_f64(  5.00000000000000000e-01/d, n/2) + __lfortran_c_powi_f64(d, -2);
     if (fabs(y -   5.20000000000000000e+01) >   9.99999997475242708e-07) {
         fprintf(stderr, "ERROR STOP");
         exit(1);
@@ -76,6 +83,10 @@ int main(int argc, char* argv[])
         exit(1);
     }
     if (fabs(w -   9.00000000000000000e+01) >   9.99999997475242708e-07) {
+        fprintf(stderr, "ERROR STOP");
+        exit(1);
+    }
+    if (fabs(q -   2.40000000000000000e+01) >   9.99999999999999980e-13) {
         fprintf(stderr, "ERROR STOP");
         exit(1);
     }

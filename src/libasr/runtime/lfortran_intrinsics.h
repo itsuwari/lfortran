@@ -139,6 +139,36 @@ LFORTRAN_API void _lfortran_complex_div_64(struct _lfortran_complex_64* a,
         struct _lfortran_complex_64* b, struct _lfortran_complex_64 *result);
 LFORTRAN_API void _lfortran_complex_pow_64(struct _lfortran_complex_64* a,
         struct _lfortran_complex_64* b, struct _lfortran_complex_64 *result);
+static inline double __lfortran_c_powi_f64(double base, int64_t exponent)
+{
+    double result = 1.0;
+    bool invert = exponent < 0;
+    uint64_t n = invert ? ((uint64_t)(-(exponent + 1)) + 1) : (uint64_t)exponent;
+    while (n != 0) {
+        if ((n & 1) != 0) {
+            result *= base;
+        }
+        base *= base;
+        n >>= 1;
+    }
+    return invert ? 1.0 / result : result;
+}
+
+static inline float __lfortran_c_powi_f32(float base, int64_t exponent)
+{
+    float result = 1.0f;
+    bool invert = exponent < 0;
+    uint64_t n = invert ? ((uint64_t)(-(exponent + 1)) + 1) : (uint64_t)exponent;
+    while (n != 0) {
+        if ((n & 1) != 0) {
+            result *= base;
+        }
+        base *= base;
+        n >>= 1;
+    }
+    return invert ? 1.0f / result : result;
+}
+
 LFORTRAN_API void _lfortran_complex_aimag_32(struct _lfortran_complex_32 *x, float *res);
 LFORTRAN_API void _lfortran_complex_aimag_64(struct _lfortran_complex_64 *x, double *res);
 LFORTRAN_API float_complex_t _lfortran_csqrt(float_complex_t x);

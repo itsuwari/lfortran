@@ -2,11 +2,11 @@
     "basename": "c-c_backend_small_integer_pow_01-38aae55",
     "cmd": "lfortran --no-color --show-c {infile}",
     "infile": "tests/c_backend_small_integer_pow_01.f90",
-    "infile_hash": "dd67c7a02cb6311166fc55c05de160b858ad9099632d891d59df67ee",
+    "infile_hash": "75783c4b8a45051907caa5627c9373a8655522104b550ea92a58da9a",
     "outfile": null,
     "outfile_hash": null,
     "stdout": "c-c_backend_small_integer_pow_01-38aae55.stdout",
-    "stdout_hash": "7e3cbaecf315ec539e7aab1cd9c3db21cbf2c17d04ddd53443c51fdc",
+    "stdout_hash": "b31a44f5c2b5b89c918bc36c4341d6072a06811116b517524b417691",
     "stderr": null,
     "stderr_hash": null,
     "returncode": 0

@@ -10911,6 +10911,28 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         return true;
     }
 
+    bool try_emit_c_real_integer_power(ASR::expr_t *left_expr, ASR::expr_t *right_expr,
+            const std::string &left, const std::string &right) {
+        if (!is_c) {
+            return false;
+        }
+        ASR::ttype_t *left_type = ASRUtils::extract_type(ASRUtils::expr_type(left_expr));
+        ASR::ttype_t *right_type = ASRUtils::extract_type(ASRUtils::expr_type(right_expr));
+        if (!ASRUtils::is_real(*left_type) || !ASRUtils::is_integer(*right_type)) {
+            return false;
+        }
+        int left_kind = ASRUtils::extract_kind_from_ttype_t(left_type);
+        if (left_kind == 4) {
+            src = "__lfortran_c_powi_f32(" + left + ", " + right + ")";
+        } else if (left_kind == 8) {
+            src = "__lfortran_c_powi_f64(" + left + ", " + right + ")";
+        } else {
+            return false;
+        }
+        last_expr_precedence = 2;
+        return true;
+    }
+
     template <typename T>
     void handle_BinOp(const T &x) {
         CHECK_FAST_C_CPP(compiler_options, x)
@@ -10933,6 +10955,9 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             case (ASR::binopType::LBitRShift) : { last_expr_precedence = 7; break; }
             case (ASR::binopType::Pow) : {
                 if (try_emit_small_integer_power(x.m_left, x.m_right, left)) {
+                    return;
+                }
+                if (try_emit_c_real_integer_power(x.m_left, x.m_right, left, right)) {
                     return;
                 }
                 src = "pow(" + left + ", " + right + ")";
