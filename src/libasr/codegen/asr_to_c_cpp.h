@@ -3805,7 +3805,8 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
 
     bool get_c_rank1_array_access(ASR::expr_t *expr, const std::string &prefix,
             std::string &setup, std::string &data_name, std::string &offset_name,
-            std::string &stride_name, std::string &length_name) {
+            std::string &stride_name, std::string &length_name,
+            bool need_length=true) {
         expr = unwrap_c_array_expr(expr);
         if (expr == nullptr || !is_c_rank1_unit_array_expr(expr)) {
             return false;
@@ -3921,7 +3922,10 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         data_name = get_unique_local_name(prefix + "_data");
         offset_name = get_unique_local_name(prefix + "_offset");
         stride_name = get_unique_local_name(prefix + "_stride");
-        length_name = get_unique_local_name(prefix + "_length");
+        length_name.clear();
+        if (need_length) {
+            length_name = get_unique_local_name(prefix + "_length");
+        }
         std::string elem_type = CUtils::get_c_type_from_ttype_t(
             ASRUtils::type_get_past_array(
                 ASRUtils::type_get_past_allocatable_pointer(
@@ -3940,8 +3944,10 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             offset_expr = use_static_base_dims ? "0" : base + "->offset";
         }
         setup += indent + "int64_t " + offset_name + " = " + offset_expr + ";\n";
-        setup += indent + "int64_t " + length_name + " = ((((" + right + ") - ("
-            + left + ")) / (" + step + ")) + 1);\n";
+        if (need_length) {
+            setup += indent + "int64_t " + length_name + " = ((((" + right + ") - ("
+                + left + ")) / (" + step + ")) + 1);\n";
+        }
         return true;
     }
 
@@ -4022,7 +4028,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
 
     bool get_c_rank1_array_element_expr(ASR::expr_t *expr, const std::string &prefix,
             const std::string &index_name, std::string &setup, std::string &out,
-            std::string &length_name) {
+            std::string &length_name, bool need_length=true) {
         expr = unwrap_c_array_expr(expr);
         if (expr == nullptr) {
             return false;
@@ -4030,7 +4036,8 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         if (is_c_rank1_unit_array_expr(expr)) {
             std::string data_name, offset_name, stride_name;
             if (!get_c_rank1_array_access(expr, prefix,
-                    setup, data_name, offset_name, stride_name, length_name)) {
+                    setup, data_name, offset_name, stride_name, length_name,
+                    need_length)) {
                 return false;
             }
             out = data_name + "[" + offset_name + " + " + index_name
@@ -4067,15 +4074,20 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         std::string vec_data = get_unique_local_name(prefix + "_vec_data");
         std::string vec_offset = get_unique_local_name(prefix + "_vec_offset");
         std::string vec_stride = get_unique_local_name(prefix + "_vec_stride");
-        length_name = get_unique_local_name(prefix + "_length");
+        length_name.clear();
+        if (need_length) {
+            length_name = get_unique_local_name(prefix + "_length");
+        }
         setup += indent + index_c_type + " *" + vec_data + " = "
             + get_c_array_data_expr(vector_expr, vector_src) + ";\n";
         setup += indent + "int64_t " + vec_offset + " = "
             + get_c_array_offset_expr(vector_expr, vector_src) + ";\n";
         setup += indent + "int64_t " + vec_stride + " = "
             + get_c_array_stride_expr(vector_expr, vector_src) + ";\n";
-        setup += indent + "int64_t " + length_name + " = "
-            + get_c_array_length_expr(vector_expr, vector_src) + ";\n";
+        if (need_length) {
+            setup += indent + "int64_t " + length_name + " = "
+                + get_c_array_length_expr(vector_expr, vector_src) + ";\n";
+        }
 
         std::vector<std::string> indices;
         indices.reserve(item->n_args);
@@ -4118,10 +4130,12 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
 
     template <typename T>
     bool get_c_scalarized_binop_expr(const T &x, const std::string &index_name,
-            std::string &setup, std::string &out) {
+            std::string &setup, std::string &out, bool need_length=true) {
         std::string left, right;
-        if (!get_c_scalarized_array_expr(x.m_left, index_name, setup, left)
-                || !get_c_scalarized_array_expr(x.m_right, index_name, setup, right)) {
+        if (!get_c_scalarized_array_expr(x.m_left, index_name, setup, left,
+                    need_length)
+                || !get_c_scalarized_array_expr(x.m_right, index_name, setup, right,
+                    need_length)) {
             return false;
         }
         out = "(" + left + c_binop_to_str(x.m_op) + right + ")";
@@ -4129,12 +4143,14 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
     }
 
     bool get_c_scalarized_intrinsic_expr(const ASR::IntrinsicElementalFunction_t &x,
-            const std::string &index_name, std::string &setup, std::string &out) {
+            const std::string &index_name, std::string &setup, std::string &out,
+            bool need_length=true) {
         using IEF = ASRUtils::IntrinsicElementalFunctions;
         std::vector<std::string> args;
         for (size_t i = 0; i < x.n_args; i++) {
             std::string arg;
-            if (!get_c_scalarized_array_expr(x.m_args[i], index_name, setup, arg)) {
+            if (!get_c_scalarized_array_expr(x.m_args[i], index_name, setup, arg,
+                    need_length)) {
                 return false;
             }
             args.push_back(arg);
@@ -4190,7 +4206,8 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
     }
 
     bool get_c_scalarized_array_expr(ASR::expr_t *expr,
-            const std::string &index_name, std::string &setup, std::string &out) {
+            const std::string &index_name, std::string &setup, std::string &out,
+            bool need_length=true) {
         expr = unwrap_c_array_expr(expr);
         if (expr == nullptr) {
             return false;
@@ -4206,14 +4223,15 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 }
             }
             if (has_array_arg) {
-                return get_c_scalarized_intrinsic_expr(*ief, index_name, setup, out);
+                return get_c_scalarized_intrinsic_expr(*ief, index_name, setup, out,
+                    need_length);
             }
         }
         if (ASR::is_a<ASR::RealSqrt_t>(*expr)) {
             std::string arg;
             if (!get_c_scalarized_array_expr(
                     ASR::down_cast<ASR::RealSqrt_t>(expr)->m_arg,
-                    index_name, setup, arg)) {
+                    index_name, setup, arg, need_length)) {
                 return false;
             }
             headers.insert("math.h");
@@ -4234,7 +4252,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             case ASR::exprType::ArrayItem: {
                 std::string length_name;
                 if (!get_c_rank1_array_element_expr(expr, "__lfortran_rhs",
-                        index_name, setup, out, length_name)) {
+                        index_name, setup, out, length_name, need_length)) {
                     return false;
                 }
                 return true;
@@ -4242,22 +4260,25 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             case ASR::exprType::ArrayBroadcast: {
                 return get_c_scalarized_array_expr(
                     ASR::down_cast<ASR::ArrayBroadcast_t>(expr)->m_array,
-                    index_name, setup, out);
+                    index_name, setup, out, need_length);
             }
             case ASR::exprType::RealBinOp:
                 return get_c_scalarized_binop_expr(
-                    *ASR::down_cast<ASR::RealBinOp_t>(expr), index_name, setup, out);
+                    *ASR::down_cast<ASR::RealBinOp_t>(expr), index_name, setup, out,
+                    need_length);
             case ASR::exprType::IntegerBinOp:
                 return get_c_scalarized_binop_expr(
-                    *ASR::down_cast<ASR::IntegerBinOp_t>(expr), index_name, setup, out);
+                    *ASR::down_cast<ASR::IntegerBinOp_t>(expr), index_name, setup, out,
+                    need_length);
             case ASR::exprType::UnsignedIntegerBinOp:
                 return get_c_scalarized_binop_expr(
-                    *ASR::down_cast<ASR::UnsignedIntegerBinOp_t>(expr), index_name, setup, out);
+                    *ASR::down_cast<ASR::UnsignedIntegerBinOp_t>(expr), index_name, setup, out,
+                    need_length);
             case ASR::exprType::RealUnaryMinus: {
                 std::string arg;
                 if (!get_c_scalarized_array_expr(
                         ASR::down_cast<ASR::RealUnaryMinus_t>(expr)->m_arg,
-                        index_name, setup, arg)) return false;
+                        index_name, setup, arg, need_length)) return false;
                 out = "-(" + arg + ")";
                 return true;
             }
@@ -4265,7 +4286,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 std::string arg;
                 if (!get_c_scalarized_array_expr(
                         ASR::down_cast<ASR::IntegerUnaryMinus_t>(expr)->m_arg,
-                        index_name, setup, arg)) return false;
+                        index_name, setup, arg, need_length)) return false;
                 out = "-(" + arg + ")";
                 return true;
             }
@@ -4273,7 +4294,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 std::string arg;
                 if (!get_c_scalarized_array_expr(
                         ASR::down_cast<ASR::RealSqrt_t>(expr)->m_arg,
-                        index_name, setup, arg)) return false;
+                        index_name, setup, arg, need_length)) return false;
                 headers.insert("math.h");
                 out = "sqrt(" + arg + ")";
                 return true;
@@ -4281,7 +4302,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             case ASR::exprType::IntrinsicElementalFunction:
                 return get_c_scalarized_intrinsic_expr(
                     *ASR::down_cast<ASR::IntrinsicElementalFunction_t>(expr),
-                    index_name, setup, out);
+                    index_name, setup, out, need_length);
             default:
                 return false;
         }
@@ -4495,13 +4516,18 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         std::string setup;
         std::string target_expr, target_length;
         std::string index_name = get_unique_local_name("__lfortran_i");
+        int64_t compile_time_length = -1;
+        bool use_unrolled = get_c_rank1_compile_time_length(
+            plan.target_expr, compile_time_length)
+            && compile_time_length > 0 && compile_time_length <= 8;
+        bool need_length = !use_unrolled;
         if (!get_c_rank1_array_element_expr(plan.target_expr, "__lfortran_lhs",
-                index_name, setup, target_expr, target_length)) {
+                index_name, setup, target_expr, target_length, need_length)) {
             return false;
         }
         std::string value_expr;
         if (!get_c_scalarized_array_expr(
-                plan.value_expr, index_name, setup, value_expr)) {
+                plan.value_expr, index_name, setup, value_expr, need_length)) {
             return false;
         }
         std::string indent(indentation_level * indentation_spaces, ' ');
@@ -4510,9 +4536,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         indentation_level++;
         std::string inner_indent(indentation_level * indentation_spaces, ' ');
         src += setup;
-        int64_t compile_time_length = -1;
-        if (get_c_rank1_compile_time_length(plan.target_expr, compile_time_length)
-                && compile_time_length > 0 && compile_time_length <= 8) {
+        if (use_unrolled) {
             src += inner_indent + "int64_t " + index_name + ";\n";
             for (int64_t i = 0; i < compile_time_length; i++) {
                 src += inner_indent + index_name + " = "
