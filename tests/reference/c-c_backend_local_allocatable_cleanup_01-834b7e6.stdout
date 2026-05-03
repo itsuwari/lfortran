@@ -244,7 +244,7 @@ void __lfortran_c_backend_local_allocatable_cleanup_01__fill(int32_t n, double *
         {
         double *__lfortran_lhs_data = scratch->data;
         int64_t __lfortran_lhs_stride = scratch->dims[1].stride * (1);
-        int64_t __lfortran_lhs_offset = (scratch->offset + scratch->dims[0].stride * ((i) - scratch->dims[0].lower_bound) + scratch->dims[1].stride * ((scratch->dims[1].lower_bound) - scratch->dims[1].lower_bound));
+        int64_t __lfortran_lhs_offset = (scratch->offset + scratch->dims[0].stride * ((i) - scratch->dims[0].lower_bound));
         int64_t __lfortran_lhs_length = (((((scratch->dims[1].lower_bound + scratch->dims[1].length - 1)) - (scratch->dims[1].lower_bound)) / (1)) + 1);
             for (int64_t __lfortran_i = 0; __lfortran_i < __lfortran_lhs_length; __lfortran_i++) {
                 __lfortran_lhs_data[__lfortran_lhs_offset + __lfortran_i * __lfortran_lhs_stride] = __lfortran__lcompilers_real_i32(i);

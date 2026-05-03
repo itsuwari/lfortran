@@ -4329,8 +4329,12 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 step = get_c_array_section_bound_expr(idx.m_step, "1");
                 setup += drain_tmp_buffer();
                 setup += extract_stmt_setup_from_expr(step);
-                offset_terms.push_back(dim_stride + " * ((" + left + ") - "
-                    + dim_lb + ")");
+                bool left_is_default = idx.m_left == nullptr
+                    || ASR::is_a<ASR::ArrayBound_t>(*idx.m_left);
+                if (!left_is_default) {
+                    offset_terms.push_back(dim_stride + " * ((" + left + ") - "
+                        + dim_lb + ")");
+                }
             }
             if (!found_slice) {
                 return false;
