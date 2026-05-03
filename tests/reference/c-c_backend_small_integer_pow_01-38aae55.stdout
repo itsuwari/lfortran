@@ -1,0 +1,49 @@
+#include <math.h>
+
+#include <stdlib.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <string.h>
+#include <lfortran_intrinsics.h>
+
+
+#ifndef LFORTRAN_C_BACKEND_CONSTRUCTOR
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_CONSTRUCTOR __attribute__((constructor))
+#else
+#define LFORTRAN_C_BACKEND_CONSTRUCTOR
+#endif
+#endif
+
+float __lfortran_c_backend_small_integer_pow_01__next_value();
+
+
+
+
+// Implementations
+float __lfortran_c_backend_small_integer_pow_01__next_value()
+{
+    float r;
+    r =   2.00000000000000000e+00;
+    return r;
+}
+
+int main(int argc, char* argv[])
+{
+    _lpython_set_argv(argc, argv);
+    float x;
+    float y;
+    float z;
+    x =   3.00000000000000000e+00;
+    y = (x)*(x) + (x)*(x)*(x) + (x +   1.00000000000000000e+00)*(x +   1.00000000000000000e+00);
+    z = pow(__lfortran_c_backend_small_integer_pow_01__next_value(), 2);
+    if (fabs(y -   5.20000000000000000e+01) >   9.99999997475242708e-07) {
+        fprintf(stderr, "ERROR STOP");
+        exit(1);
+    }
+    if (fabs(z -   4.00000000000000000e+00) >   9.99999997475242708e-07) {
+        fprintf(stderr, "ERROR STOP");
+        exit(1);
+    }
+    return 0;
+}

@@ -9539,6 +9539,87 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         src = out;
     }
 
+    int get_small_integer_power_exponent(ASR::expr_t *expr) {
+        ASR::expr_t *value = ASRUtils::expr_value(expr);
+        if (value == nullptr) {
+            value = expr;
+        }
+        if (!ASR::is_a<ASR::IntegerConstant_t>(*value)) {
+            return -1;
+        }
+        int64_t exponent = ASR::down_cast<ASR::IntegerConstant_t>(value)->m_n;
+        if (exponent < 2 || exponent > 4) {
+            return -1;
+        }
+        return static_cast<int>(exponent);
+    }
+
+    bool is_c_duplicate_safe_power_base(ASR::expr_t *expr) {
+        if (expr == nullptr) {
+            return false;
+        }
+        switch (expr->type) {
+            case ASR::exprType::Var:
+            case ASR::exprType::IntegerConstant:
+            case ASR::exprType::UnsignedIntegerConstant:
+            case ASR::exprType::RealConstant: {
+                return true;
+            }
+            case ASR::exprType::Cast: {
+                return is_c_duplicate_safe_power_base(
+                    ASR::down_cast<ASR::Cast_t>(expr)->m_arg);
+            }
+            case ASR::exprType::RealUnaryMinus: {
+                return is_c_duplicate_safe_power_base(
+                    ASR::down_cast<ASR::RealUnaryMinus_t>(expr)->m_arg);
+            }
+            case ASR::exprType::IntegerUnaryMinus: {
+                return is_c_duplicate_safe_power_base(
+                    ASR::down_cast<ASR::IntegerUnaryMinus_t>(expr)->m_arg);
+            }
+            case ASR::exprType::UnsignedIntegerUnaryMinus: {
+                return is_c_duplicate_safe_power_base(
+                    ASR::down_cast<ASR::UnsignedIntegerUnaryMinus_t>(expr)->m_arg);
+            }
+            case ASR::exprType::RealBinOp: {
+                ASR::RealBinOp_t *binop = ASR::down_cast<ASR::RealBinOp_t>(expr);
+                return binop->m_op != ASR::binopType::Pow
+                    && is_c_duplicate_safe_power_base(binop->m_left)
+                    && is_c_duplicate_safe_power_base(binop->m_right);
+            }
+            case ASR::exprType::IntegerBinOp: {
+                ASR::IntegerBinOp_t *binop = ASR::down_cast<ASR::IntegerBinOp_t>(expr);
+                return binop->m_op != ASR::binopType::Pow
+                    && is_c_duplicate_safe_power_base(binop->m_left)
+                    && is_c_duplicate_safe_power_base(binop->m_right);
+            }
+            case ASR::exprType::UnsignedIntegerBinOp: {
+                ASR::UnsignedIntegerBinOp_t *binop =
+                    ASR::down_cast<ASR::UnsignedIntegerBinOp_t>(expr);
+                return binop->m_op != ASR::binopType::Pow
+                    && is_c_duplicate_safe_power_base(binop->m_left)
+                    && is_c_duplicate_safe_power_base(binop->m_right);
+            }
+            default: {
+                return false;
+            }
+        }
+    }
+
+    bool try_emit_small_integer_power(ASR::expr_t *left_expr, ASR::expr_t *right_expr,
+            const std::string &left) {
+        int exponent = get_small_integer_power_exponent(right_expr);
+        if (exponent == -1 || !is_c_duplicate_safe_power_base(left_expr)) {
+            return false;
+        }
+        src = "(" + left + ")";
+        for (int i = 1; i < exponent; i++) {
+            src += "*(" + left + ")";
+        }
+        last_expr_precedence = 5;
+        return true;
+    }
+
     template <typename T>
     void handle_BinOp(const T &x) {
         CHECK_FAST_C_CPP(compiler_options, x)
@@ -9560,6 +9641,9 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             case (ASR::binopType::BitRShift) : { last_expr_precedence = 7; break; }
             case (ASR::binopType::LBitRShift) : { last_expr_precedence = 7; break; }
             case (ASR::binopType::Pow) : {
+                if (try_emit_small_integer_power(x.m_left, x.m_right, left)) {
+                    return;
+                }
                 src = "pow(" + left + ", " + right + ")";
                 if (is_c) {
                     headers.insert("math.h");
