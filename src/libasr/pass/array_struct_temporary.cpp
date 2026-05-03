@@ -1635,15 +1635,21 @@ class ArgSimplifier: public ASR::CallReplacerOnExpressionsVisitor<ArgSimplifier>
     ExprsWithTargetType& exprs_with_target;
     ASR::expr_t* lhs_var;
     bool realloc_lhs;
+    bool c_backend;
     bool inside_where;
+    bool c_elementwise_nonalias_vector_assignment;
     Vec<ASR::expr_t*> statement_cleanup_temps;
 
     public:
 
-    ArgSimplifier(Allocator& al_, ExprsWithTargetType& exprs_with_target_, bool realloc_lhs_) :
+    ArgSimplifier(Allocator& al_, ExprsWithTargetType& exprs_with_target_,
+            bool realloc_lhs_, bool c_backend_) :
         al(al_), current_body(nullptr), parent_body_for_where(nullptr),
             exprs_with_target(exprs_with_target_), lhs_var(nullptr), realloc_lhs(realloc_lhs_),
-            inside_where(false) {(void)realloc_lhs; /*Silence-Warning*/}
+            c_backend(c_backend_), inside_where(false),
+            c_elementwise_nonalias_vector_assignment(false) {
+        (void)realloc_lhs; /*Silence-Warning*/
+    }
 
 
     void transform_stmts(ASR::stmt_t**& m_body, size_t& n_body) {
@@ -1669,6 +1675,16 @@ class ArgSimplifier: public ASR::CallReplacerOnExpressionsVisitor<ArgSimplifier>
 
     bool var_check(ASR::expr_t* expr) {
         return !ASR::is_a<ASR::Var_t>(*expr) && ASRUtils::is_array(ASRUtils::expr_type(expr));
+    }
+
+    bool is_c_vector_subscript_array_item_expr(ASR::expr_t* expr) {
+        expr = ASRUtils::get_past_array_physical_cast(expr);
+        if (expr == nullptr || !ASR::is_a<ASR::ArrayItem_t>(*expr)) {
+            return false;
+        }
+        ASR::ArrayItem_t* item = ASR::down_cast<ASR::ArrayItem_t>(expr);
+        return ASRUtils::is_array(ASRUtils::expr_type(expr))
+            && ASRUtils::is_array_indexed_with_array_indices(item);
     }
 
     bool is_direct_optional_allocatable_or_pointer_actual(ASR::expr_t *actual,
@@ -1965,9 +1981,33 @@ class ArgSimplifier: public ASR::CallReplacerOnExpressionsVisitor<ArgSimplifier>
         if( ASRUtils::is_array(ASRUtils::expr_type(x.m_target)) ) {
             lhs_array_var = ASRUtils::extract_array_variable(x.m_target);
         }
+        if (lhs_array_var == nullptr) {
+            ASR::expr_t *target_unwrapped = ASRUtils::get_past_array_physical_cast(x.m_target);
+            if (ASR::is_a<ASR::ArrayItem_t>(*target_unwrapped)) {
+                lhs_array_var = ASR::down_cast<ASR::ArrayItem_t>(target_unwrapped)->m_v;
+            } else if (ASR::is_a<ASR::ArraySection_t>(*target_unwrapped)) {
+                lhs_array_var = ASR::down_cast<ASR::ArraySection_t>(target_unwrapped)->m_v;
+            }
+        }
+        ASR::array_index_t* target_args = nullptr;
+        size_t target_n_args = 0;
+        if (ASR::is_a<ASR::ArraySection_t>(*x.m_target) ||
+                ASR::is_a<ASR::ArrayItem_t>(*x.m_target)) {
+            ASRUtils::extract_indices(x.m_target, target_args, target_n_args);
+        }
+        bool saved_c_elementwise_nonalias_vector_assignment =
+            c_elementwise_nonalias_vector_assignment;
+        c_elementwise_nonalias_vector_assignment = c_backend
+            && lhs_array_var != nullptr
+            && ASRUtils::is_array_indexed_with_array_indices(target_args, target_n_args)
+            && ASRUtils::is_array(ASRUtils::expr_type(x.m_value))
+            && is_c_elementwise_array_expr(x.m_value)
+            && !is_common_symbol_present_in_lhs_and_rhs(al, lhs_array_var, x.m_value);
         lhs_var = lhs_array_var;
         ASR::CallReplacerOnExpressionsVisitor<ArgSimplifier>::visit_Assignment(x);
         lhs_var = nullptr;
+        c_elementwise_nonalias_vector_assignment =
+            saved_c_elementwise_nonalias_vector_assignment;
     }
 
     void visit_Where(const ASR::Where_t &x) {
@@ -2070,6 +2110,11 @@ class ArgSimplifier: public ASR::CallReplacerOnExpressionsVisitor<ArgSimplifier>
     }
 
     ASR::expr_t* visit_BinOp_expr(ASR::expr_t* expr, const std::string& name_hint, ASR::exprType allowed_expr) {
+        if (c_backend
+                && c_elementwise_nonalias_vector_assignment
+                && is_c_vector_subscript_array_item_expr(expr)) {
+            return expr;
+        }
         if (ASRUtils::is_array(ASRUtils::expr_type(expr)) &&
             !ASR::is_a<ASR::ArrayBroadcast_t>(*expr) &&
             !is_vectorise_able(expr) &&
@@ -2828,6 +2873,11 @@ class ReplaceExprWithTemporary: public ASR::BaseExprReplacer<ReplaceExprWithTemp
     void replace_ArrayItem(ASR::ArrayItem_t* x) {
         if( ASRUtils::is_array_indexed_with_array_indices(x) ) {
             ASR::BaseExprReplacer<ReplaceExprWithTemporary>::replace_ArrayItem(x);
+            if (c_backend && lhs_expr != nullptr
+                    && ASRUtils::is_array(x->m_type)
+                    && !is_common_symbol_present_in_lhs_and_rhs(al, lhs_var, x->m_v)) {
+                return;
+            }
             if( (exprs_with_target.find(*current_expr) == exprs_with_target.end() &&
                 !is_assignment_target_array_section_item) ||
                 is_common_symbol_present_in_lhs_and_rhs(al, lhs_var, x->m_v)) {
@@ -3280,10 +3330,12 @@ class ReplaceExprWithTemporaryVisitor:
             replacer.is_assignment_target_array_section_item = true;
         }
         call_replacer();
-        replacer.is_assignment_target_array_section_item =
-            rhs_is_assignment_target_array_section_item;
-        replacer.lhs_var = nullptr;
-        replacer.lhs_expr = nullptr;
+        if (!c_elementwise_nonalias_vector_target) {
+            replacer.is_assignment_target_array_section_item =
+                rhs_is_assignment_target_array_section_item;
+            replacer.lhs_var = nullptr;
+            replacer.lhs_expr = nullptr;
+        }
         bool is_assignment_target_array_section_item = target_has_array_indices &&
                     ASRUtils::is_array(ASRUtils::expr_type(x.m_value)) && !is_directly_addressable_array_expr(x.m_value);
         if(  (is_assignment_target_array_section_item && !c_elementwise_nonalias_vector_target) ||
@@ -3304,6 +3356,12 @@ class ReplaceExprWithTemporaryVisitor:
         replacer.simd_type = simd_type_copy;
         if( !ASRUtils::is_simd_array(x.m_value) ) {
             visit_expr(*x.m_value);
+        }
+        if (c_elementwise_nonalias_vector_target) {
+            replacer.is_assignment_target_array_section_item =
+                rhs_is_assignment_target_array_section_item;
+            replacer.lhs_var = nullptr;
+            replacer.lhs_expr = nullptr;
         }
         if (x.m_overloaded) {
             visit_stmt(*x.m_overloaded);
@@ -3903,7 +3961,8 @@ void pass_array_struct_temporary(Allocator &al, ASR::TranslationUnit_t &unit,
     init_expr_with_target.visit_TranslationUnit(unit);
     TransformVariableInitialiser a(al, exprs_with_target);
     a.visit_TranslationUnit(unit);
-    ArgSimplifier b(al, exprs_with_target, pass_options.realloc_lhs_arrays);
+    ArgSimplifier b(al, exprs_with_target, pass_options.realloc_lhs_arrays,
+        pass_options.c_backend);
     b.visit_TranslationUnit(unit);
     ReplaceExprWithTemporaryVisitor c(al, exprs_with_target,
         pass_options.realloc_lhs_arrays, pass_options.c_backend);
