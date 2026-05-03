@@ -681,6 +681,7 @@ class ArrayOpVisitor: public ASR::CallReplacerOnExpressionsVisitor<ArrayOpVisito
     bool realloc_lhs;
     bool bounds_checking;
     bool remove_original_stmt;
+    bool skip_allocate_source_expansion;
     const LCompilers::PassOptions& pass_options;
     inline static std::set<const ASR::Assignment_t*> debug_inserted;
 
@@ -692,6 +693,39 @@ class ArrayOpVisitor: public ASR::CallReplacerOnExpressionsVisitor<ArrayOpVisito
 
     ASR::ttype_t* get_index_type(const Location& loc) {
         return ASRUtils::TYPE(ASR::make_Integer_t(al, loc, get_index_kind()));
+    }
+
+    bool allocate_source_assignment_follows(const ASR::Allocate_t& x,
+            ASR::stmt_t **body, size_t n_body, size_t stmt_index) {
+        if (x.m_source == nullptr) {
+            return false;
+        }
+        if (ASRUtils::extract_n_dims_from_ttype(
+                ASRUtils::expr_type(x.m_source)) != 0) {
+            return false;
+        }
+        bool needs_existing_assignment = false;
+        size_t next_stmt_index = stmt_index + 1;
+        for (size_t i = 0; i < x.n_args; i++) {
+            if (!ASRUtils::is_array(ASRUtils::expr_type(x.m_args[i].m_a))) {
+                continue;
+            }
+            if (x.m_args[i].m_type != nullptr) {
+                continue;
+            }
+            needs_existing_assignment = true;
+            if (next_stmt_index >= n_body
+                    || !ASR::is_a<ASR::Assignment_t>(*body[next_stmt_index])) {
+                return false;
+            }
+            ASR::Assignment_t *assign =
+                ASR::down_cast<ASR::Assignment_t>(body[next_stmt_index]);
+            if (!ASRUtils::expr_equal(assign->m_target, x.m_args[i].m_a)) {
+                return false;
+            }
+            next_stmt_index++;
+        }
+        return needs_existing_assignment;
     }
 
     ASR::expr_t* unwrap_array_op_lvalue(ASR::expr_t *expr) const {
@@ -1219,7 +1253,8 @@ class ArrayOpVisitor: public ASR::CallReplacerOnExpressionsVisitor<ArrayOpVisito
         al(al_), replacer(al, pass_result, remove_original_stmt),
         parent_body(nullptr), realloc_lhs(pass_options_.realloc_lhs_arrays),
         bounds_checking(pass_options_.bounds_checking),
-        remove_original_stmt(false), pass_options(pass_options_) {
+        remove_original_stmt(false), skip_allocate_source_expansion(false),
+        pass_options(pass_options_) {
         pass_result.n = 0;
         pass_result.reserve(al, 0);
     }
@@ -1379,7 +1414,19 @@ class ArrayOpVisitor: public ASR::CallReplacerOnExpressionsVisitor<ArrayOpVisito
             remove_original_stmt = false;
             Vec<ASR::stmt_t*>* parent_body_copy = parent_body;
             parent_body = &body;
+            bool skip_allocate_source_expansion_copy =
+                skip_allocate_source_expansion;
+            if (ASR::is_a<ASR::Allocate_t>(*m_body[i])) {
+                skip_allocate_source_expansion =
+                    allocate_source_assignment_follows(
+                        *ASR::down_cast<ASR::Allocate_t>(m_body[i]),
+                        m_body, n_body, i);
+            } else {
+                skip_allocate_source_expansion = false;
+            }
             visit_stmt(*m_body[i]);
+            skip_allocate_source_expansion =
+                skip_allocate_source_expansion_copy;
             parent_body = parent_body_copy;
             if( pass_result.size() > 0 ) {
                 for (size_t j=0; j < pass_result.size(); j++) {
@@ -2091,6 +2138,10 @@ class ArrayOpVisitor: public ASR::CallReplacerOnExpressionsVisitor<ArrayOpVisito
         ASR::Allocate_t& xx = const_cast<ASR::Allocate_t&>(x);
         if (xx.m_source) {
             pass_result.push_back(al, &(xx.base));
+            if (skip_allocate_source_expansion) {
+                xx.m_source = nullptr;
+                return;
+            }
             bool generated_loop = false;
             // Pushing assignment statements to source
             for (size_t i = 0; i < x.n_args ; i++) {
