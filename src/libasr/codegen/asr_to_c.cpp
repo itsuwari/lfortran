@@ -1293,6 +1293,7 @@ R"(
             }
             if (startswith(trimmed, "int main(")
                     || startswith(trimmed, "__attribute__((always_inline))")
+                    || startswith(trimmed, "inline __attribute__((always_inline))")
                     || trimmed.find('(') == std::string::npos
                     || trimmed.find(';') != std::string::npos) {
                 return body;
@@ -1307,7 +1308,7 @@ R"(
                 return body;
             }
             return body.substr(0, line_start)
-                + "__attribute__((always_inline)) "
+                + "inline __attribute__((always_inline)) "
                 + body.substr(line_start);
         }
         return body;
