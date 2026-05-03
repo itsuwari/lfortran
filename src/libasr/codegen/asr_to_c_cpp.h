@@ -3803,6 +3803,119 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         return src;
     }
 
+    bool get_c_static_rank1_array_element_expr(ASR::expr_t *expr,
+            const std::string &index_name, std::string &setup, std::string &out) {
+        expr = unwrap_c_array_expr(expr);
+        if (expr == nullptr || !is_c_rank1_unit_array_expr(expr)) {
+            return false;
+        }
+
+        ASR::expr_t *base_expr = expr;
+        ASR::ArraySection_t *section = nullptr;
+        if (ASR::is_a<ASR::ArraySection_t>(*expr)) {
+            section = ASR::down_cast<ASR::ArraySection_t>(expr);
+            base_expr = unwrap_c_array_expr(section->m_v);
+        }
+        if (!is_c_fixed_size_descriptor_storage_expr(base_expr)) {
+            return false;
+        }
+
+        ASR::ttype_t *base_type = ASRUtils::type_get_past_allocatable_pointer(
+            ASRUtils::expr_type(base_expr));
+        ASR::dimension_t *base_dims = nullptr;
+        int base_rank = ASRUtils::extract_dimensions_from_ttype(base_type, base_dims);
+        if (base_dims == nullptr || base_rank <= 0) {
+            return false;
+        }
+
+        std::vector<int64_t> static_lbs;
+        std::vector<int64_t> static_lengths;
+        std::vector<int64_t> static_strides;
+        int64_t stride = 1;
+        static_lbs.reserve(base_rank);
+        static_lengths.reserve(base_rank);
+        static_strides.reserve(base_rank);
+        for (int i = 0; i < base_rank; i++) {
+            int64_t lb = 1, len = -1;
+            if (base_dims[i].m_start != nullptr
+                    && !get_c_constant_int_expr_value(base_dims[i].m_start, lb)) {
+                return false;
+            }
+            if (base_dims[i].m_length == nullptr
+                    || !get_c_constant_int_expr_value(base_dims[i].m_length, len)
+                    || len <= 0) {
+                return false;
+            }
+            static_lbs.push_back(lb);
+            static_lengths.push_back(len);
+            static_strides.push_back(stride);
+            stride *= len;
+        }
+
+        self().visit_expr(*base_expr);
+        std::string base = src;
+        setup += drain_tmp_buffer();
+        setup += extract_stmt_setup_from_expr(base);
+
+        std::vector<std::string> offset_terms;
+        offset_terms.push_back("0");
+        int64_t slice_stride = 1;
+        if (section == nullptr) {
+            if (base_rank != 1) {
+                return false;
+            }
+            slice_stride = static_strides[0];
+        } else {
+            if ((int)section->n_args != base_rank) {
+                return false;
+            }
+            bool found_slice = false;
+            for (int source_dim = 0; source_dim < base_rank; source_dim++) {
+                ASR::array_index_t idx = section->m_args[source_dim];
+                bool is_slice = idx.m_left || idx.m_step || idx.m_right == nullptr;
+                if (is_slice) {
+                    bool left_is_default = idx.m_left == nullptr
+                        || ASR::is_a<ASR::ArrayBound_t>(*idx.m_left);
+                    bool right_is_default = idx.m_right == nullptr
+                        || ASR::is_a<ASR::ArrayBound_t>(*idx.m_right);
+                    if (found_slice || !left_is_default || !right_is_default
+                            || !is_c_unit_step_expr(idx.m_step)) {
+                        return false;
+                    }
+                    found_slice = true;
+                    slice_stride = static_strides[source_dim];
+                    continue;
+                }
+                ASR::expr_t *idx_expr = get_array_index_expr(idx);
+                if (idx_expr == nullptr) {
+                    return false;
+                }
+                self().visit_expr(*idx_expr);
+                std::string idx_src = src;
+                setup += drain_tmp_buffer();
+                setup += extract_stmt_setup_from_expr(idx_src);
+                offset_terms.push_back(std::to_string(static_strides[source_dim])
+                    + " * ((" + idx_src + ") - "
+                    + std::to_string(static_lbs[source_dim]) + ")");
+            }
+            if (!found_slice) {
+                return false;
+            }
+        }
+
+        std::string offset_expr = "(";
+        for (size_t i = 0; i < offset_terms.size(); i++) {
+            if (i > 0) {
+                offset_expr += " + ";
+            }
+            offset_expr += offset_terms[i];
+        }
+        offset_expr += ")";
+        out = base + "->data[" + offset_expr + " + " + index_name
+            + " * " + std::to_string(slice_stride) + "]";
+        return true;
+    }
+
     bool get_c_rank1_array_access(ASR::expr_t *expr, const std::string &prefix,
             std::string &setup, std::string &data_name, std::string &offset_name,
             std::string &stride_name, std::string &length_name,
@@ -4034,6 +4147,12 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             return false;
         }
         if (is_c_rank1_unit_array_expr(expr)) {
+            if (!need_length
+                    && get_c_static_rank1_array_element_expr(
+                        expr, index_name, setup, out)) {
+                length_name.clear();
+                return true;
+            }
             std::string data_name, offset_name, stride_name;
             if (!get_c_rank1_array_access(expr, prefix,
                     setup, data_name, offset_name, stride_name, length_name,

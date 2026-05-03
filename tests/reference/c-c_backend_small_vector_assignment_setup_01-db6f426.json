@@ -2,11 +2,11 @@
     "basename": "c-c_backend_small_vector_assignment_setup_01-db6f426",
     "cmd": "lfortran --no-color --show-c {infile}",
     "infile": "tests/c_backend_small_vector_assignment_setup_01.f90",
-    "infile_hash": "bcf874e1338cd5fcd8c7eebc71c582ec059412dfb1b23f564a02e9ab",
+    "infile_hash": "0a74fedd401e963cb265b569de91ce5df0772dba2e35363e6bf5f6b0",
     "outfile": null,
     "outfile_hash": null,
     "stdout": "c-c_backend_small_vector_assignment_setup_01-db6f426.stdout",
-    "stdout_hash": "2cc0ad2ce6a75ba6782cb2df246a9cb18da3db34ca0f971a90df6fd2",
+    "stdout_hash": "3f89f33f857af672d3e75501106648d49446f8c8aaa1aaac900c6b3c",
     "stderr": null,
     "stderr_hash": null,
     "returncode": 0
