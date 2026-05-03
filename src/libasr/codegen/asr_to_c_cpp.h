@@ -4177,14 +4177,18 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 if (found_slice || !is_c_unit_step_expr(idx.m_step)) {
                     return false;
                 }
-                std::string left = get_c_array_section_bound_expr(idx.m_left, base_lb);
-                setup += drain_tmp_buffer();
-                setup += extract_stmt_setup_from_expr(left);
+                bool left_is_default = idx.m_left == nullptr
+                    || ASR::is_a<ASR::ArrayBound_t>(*idx.m_left);
+                if (!left_is_default) {
+                    std::string left = get_c_array_section_bound_expr(idx.m_left, base_lb);
+                    setup += drain_tmp_buffer();
+                    setup += extract_stmt_setup_from_expr(left);
+                    offset_terms.push_back(base_stride + " * ((" + left + ") - "
+                        + base_lb + ")");
+                }
                 std::string step = get_c_array_section_bound_expr(idx.m_step, "1");
                 setup += drain_tmp_buffer();
                 setup += extract_stmt_setup_from_expr(step);
-                offset_terms.push_back(base_stride + " * ((" + left + ") - "
-                    + base_lb + ")");
                 slice_stride = "(" + base_stride + " * (" + step + "))";
                 found_slice = true;
                 continue;
