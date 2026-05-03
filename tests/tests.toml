@@ -5146,6 +5146,11 @@ run = true
 options = "--backend=c --separate-compilation -O3"
 
 [[test]]
+filename = "c_backend_realloc_array_section_temp_01.f90"
+run = true
+options = "--backend=c --separate-compilation -O3"
+
+[[test]]
 filename = "c_backend_optional_alloc_absent_scalar_01.f90"
 run = true
 options = "--backend=c --separate-compilation -O3"

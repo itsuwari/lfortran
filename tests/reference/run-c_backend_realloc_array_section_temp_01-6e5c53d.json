@@ -1,0 +1,13 @@
+{
+    "basename": "run-c_backend_realloc_array_section_temp_01-6e5c53d",
+    "cmd": "lfortran --no-color {infile}",
+    "infile": "tests/c_backend_realloc_array_section_temp_01.f90",
+    "infile_hash": "cd4abdda5527711dbc64d824a95d4bf38fcaa8044bab001bc5dc9394",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

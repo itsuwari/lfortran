@@ -9739,6 +9739,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
     template <typename T>
     void handle_alloc_realloc(const T &x) {
         std::string indent(indentation_level*indentation_spaces, ' ');
+        bool is_realloc = T::class_type == ASR::stmtType::ReAlloc;
         if (is_c && current_function &&
                 std::string(current_function->m_name).rfind("_lcompilers_move_alloc_", 0) == 0) {
             src = indent + "/* move_alloc helper: allocation handled by ownership transfer */\n";
@@ -9801,6 +9802,23 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                     continue;
                 }
                 std::string size_str = "1";
+                std::string old_size_name;
+                if (is_realloc) {
+                    old_size_name = get_unique_local_name("__lfortran_realloc_old_size");
+                    std::string dim_name =
+                        get_unique_local_name("__lfortran_realloc_dim");
+                    out += indent + "int64_t " + old_size_name + " = 0;\n";
+                    out += indent + "if (" + sym + " != NULL && " + sym
+                        + "->is_allocated && " + sym + "->data != NULL) {\n";
+                    out += indent + "    " + old_size_name + " = 1;\n";
+                    out += indent + "    for (int32_t " + dim_name + " = 0; "
+                        + dim_name + " < " + sym + "->n_dims; " + dim_name
+                        + "++) {\n";
+                    out += indent + "        " + old_size_name + " *= " + sym
+                        + "->dims[" + dim_name + "].length;\n";
+                    out += indent + "    }\n";
+                    out += indent + "}\n";
+                }
                 out += indent + sym + "->n_dims = " + std::to_string(x.m_args[i].n_dims) + ";\n";
                 std::string stride = "1";
                 for (size_t j = 0; j < x.m_args[i].n_dims; j++) {
@@ -9847,23 +9865,63 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 std::string elem_count = size_str;
                 size_str += "*sizeof(" + ty + ")";
                 out += indent + sym + "->offset = 0;\n";
-                out += indent + sym + "->data = (" + ty + "*) _lfortran_malloc_alloc(_lfortran_get_default_allocator(), " + size_str + ")";
-                out += ";\n";
+                std::string did_allocate_name;
+                if (is_realloc && element_struct_t != nullptr) {
+                    did_allocate_name =
+                        get_unique_local_name("__lfortran_realloc_did_allocate");
+                    out += indent + "bool " + did_allocate_name + " = false;\n";
+                }
+                if (is_realloc) {
+                    std::string new_size_name =
+                        get_unique_local_name("__lfortran_realloc_new_size");
+                    out += indent + "int64_t " + new_size_name + " = "
+                        + elem_count + ";\n";
+                    out += indent + "if (" + sym + "->is_allocated && " + sym
+                        + "->data != NULL && " + old_size_name + " != "
+                        + new_size_name + ") {\n";
+                    out += indent + "    _lfortran_free_alloc(_lfortran_get_default_allocator(), "
+                        + "(char*) " + sym + "->data);\n";
+                    out += indent + "    " + sym + "->data = NULL;\n";
+                    out += indent + "    " + sym + "->is_allocated = false;\n";
+                    out += indent + "}\n";
+                    out += indent + "if (!" + sym + "->is_allocated || "
+                        + sym + "->data == NULL) {\n";
+                    out += indent + "    " + sym + "->data = (" + ty
+                        + "*) _lfortran_malloc_alloc(_lfortran_get_default_allocator(), "
+                        + size_str + ");\n";
+                    if (!did_allocate_name.empty()) {
+                        out += indent + "    " + did_allocate_name + " = true;\n";
+                    }
+                    out += indent + "}\n";
+                } else {
+                    out += indent + sym + "->data = (" + ty
+                        + "*) _lfortran_malloc_alloc(_lfortran_get_default_allocator(), "
+                        + size_str + ")";
+                    out += ";\n";
+                }
                 out += indent + sym + "->is_allocated = true;\n";
                 if (is_c && element_struct_t != nullptr) {
-                    out += indent + "memset(" + sym + "->data, 0, " + size_str + ");\n";
+                    std::string init_indent = indent;
+                    if (!did_allocate_name.empty()) {
+                        out += indent + "if (" + did_allocate_name + ") {\n";
+                        init_indent += "    ";
+                    }
+                    out += init_indent + "memset(" + sym + "->data, 0, " + size_str + ");\n";
                     std::string init_idx = get_unique_local_name("__lfortran_struct_array_init_i");
-                    out += indent + "for (int64_t " + init_idx + " = 0; " + init_idx
+                    out += init_indent + "for (int64_t " + init_idx + " = 0; " + init_idx
                         + " < " + elem_count + "; " + init_idx + "++) {\n";
                     std::string elem_ptr = "(&(" + sym + "->data[" + init_idx + "]))";
-                    out += indent + "    " + elem_ptr + "->"
+                    out += init_indent + "    " + elem_ptr + "->"
                         + get_runtime_type_tag_member_name() + " = "
                         + std::to_string(get_struct_runtime_type_id(element_struct_sym)) + ";\n";
                     self().initialize_struct_instance_members(
-                        element_struct_t, out, indent + "    ", elem_ptr);
+                        element_struct_t, out, init_indent + "    ", elem_ptr);
                     self().allocate_array_members_of_struct(
-                        element_struct_t, out, indent + "    ", elem_ptr);
-                    out += indent + "}\n";
+                        element_struct_t, out, init_indent + "    ", elem_ptr);
+                    out += init_indent + "}\n";
+                    if (!did_allocate_name.empty()) {
+                        out += indent + "}\n";
+                    }
                 }
             } else {
                 ASR::ttype_t *past_alloc_type = ASRUtils::type_get_past_allocatable_pointer(type);
