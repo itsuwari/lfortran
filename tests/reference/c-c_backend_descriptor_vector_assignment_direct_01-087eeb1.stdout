@@ -91,13 +91,9 @@ void __lfortran_c_backend_descriptor_vector_assignment_direct_01_m__shift_column
     local_vij->dims[0].length = 3;
     local_vij->dims[0].stride = 1;
     {
-        int64_t __lfortran_i;
-        __lfortran_i = 0;
-        local_vij_data[(0) + __lfortran_i * 1] = ((xyz->data[(xyz->offset + xyz->dims[1].stride * ((jat) - 1)) + __lfortran_i * (xyz->dims[0].stride * (1))] + trans->data[(trans->offset + trans->dims[1].stride * ((jtr) - 1)) + __lfortran_i * (trans->dims[0].stride * (1))]) - xyz->data[(xyz->offset + xyz->dims[1].stride * ((iat) - 1)) + __lfortran_i * (xyz->dims[0].stride * (1))]);
-        __lfortran_i = 1;
-        local_vij_data[(0) + __lfortran_i * 1] = ((xyz->data[(xyz->offset + xyz->dims[1].stride * ((jat) - 1)) + __lfortran_i * (xyz->dims[0].stride * (1))] + trans->data[(trans->offset + trans->dims[1].stride * ((jtr) - 1)) + __lfortran_i * (trans->dims[0].stride * (1))]) - xyz->data[(xyz->offset + xyz->dims[1].stride * ((iat) - 1)) + __lfortran_i * (xyz->dims[0].stride * (1))]);
-        __lfortran_i = 2;
-        local_vij_data[(0) + __lfortran_i * 1] = ((xyz->data[(xyz->offset + xyz->dims[1].stride * ((jat) - 1)) + __lfortran_i * (xyz->dims[0].stride * (1))] + trans->data[(trans->offset + trans->dims[1].stride * ((jtr) - 1)) + __lfortran_i * (trans->dims[0].stride * (1))]) - xyz->data[(xyz->offset + xyz->dims[1].stride * ((iat) - 1)) + __lfortran_i * (xyz->dims[0].stride * (1))]);
+        local_vij_data[(0) + 0 * 1] = ((xyz->data[(xyz->offset + xyz->dims[1].stride * ((jat) - 1)) + 0 * (xyz->dims[0].stride * (1))] + trans->data[(trans->offset + trans->dims[1].stride * ((jtr) - 1)) + 0 * (trans->dims[0].stride * (1))]) - xyz->data[(xyz->offset + xyz->dims[1].stride * ((iat) - 1)) + 0 * (xyz->dims[0].stride * (1))]);
+        local_vij_data[(0) + 1 * 1] = ((xyz->data[(xyz->offset + xyz->dims[1].stride * ((jat) - 1)) + 1 * (xyz->dims[0].stride * (1))] + trans->data[(trans->offset + trans->dims[1].stride * ((jtr) - 1)) + 1 * (trans->dims[0].stride * (1))]) - xyz->data[(xyz->offset + xyz->dims[1].stride * ((iat) - 1)) + 1 * (xyz->dims[0].stride * (1))]);
+        local_vij_data[(0) + 2 * 1] = ((xyz->data[(xyz->offset + xyz->dims[1].stride * ((jat) - 1)) + 2 * (xyz->dims[0].stride * (1))] + trans->data[(trans->offset + trans->dims[1].stride * ((jtr) - 1)) + 2 * (trans->dims[0].stride * (1))]) - xyz->data[(xyz->offset + xyz->dims[1].stride * ((iat) - 1)) + 2 * (xyz->dims[0].stride * (1))]);
     }
     __libasr_created__array_section_pointer_->data = (local_vij->data + (0 + (1 * (((int32_t)local_vij->dims[1-1].lower_bound) - 1))));
     __libasr_created__array_section_pointer_->offset = 0;
@@ -141,13 +137,9 @@ void __lfortran_c_backend_descriptor_vector_assignment_direct_01_m__shift_compon
     local_vij->dims[0].length = 3;
     local_vij->dims[0].stride = 1;
     {
-        int64_t __lfortran_i;
-        __lfortran_i = 0;
-        local_vij_data[(0) + __lfortran_i * 1] = ((mol->xyz->data[(mol->xyz->offset + mol->xyz->dims[1].stride * ((jat) - mol->xyz->dims[1].lower_bound)) + __lfortran_i * (mol->xyz->dims[0].stride * (1))] + trans->data[(trans->offset + trans->dims[1].stride * ((jtr) - 1)) + __lfortran_i * (trans->dims[0].stride * (1))]) - mol->xyz->data[(mol->xyz->offset + mol->xyz->dims[1].stride * ((iat) - mol->xyz->dims[1].lower_bound)) + __lfortran_i * (mol->xyz->dims[0].stride * (1))]);
-        __lfortran_i = 1;
-        local_vij_data[(0) + __lfortran_i * 1] = ((mol->xyz->data[(mol->xyz->offset + mol->xyz->dims[1].stride * ((jat) - mol->xyz->dims[1].lower_bound)) + __lfortran_i * (mol->xyz->dims[0].stride * (1))] + trans->data[(trans->offset + trans->dims[1].stride * ((jtr) - 1)) + __lfortran_i * (trans->dims[0].stride * (1))]) - mol->xyz->data[(mol->xyz->offset + mol->xyz->dims[1].stride * ((iat) - mol->xyz->dims[1].lower_bound)) + __lfortran_i * (mol->xyz->dims[0].stride * (1))]);
-        __lfortran_i = 2;
-        local_vij_data[(0) + __lfortran_i * 1] = ((mol->xyz->data[(mol->xyz->offset + mol->xyz->dims[1].stride * ((jat) - mol->xyz->dims[1].lower_bound)) + __lfortran_i * (mol->xyz->dims[0].stride * (1))] + trans->data[(trans->offset + trans->dims[1].stride * ((jtr) - 1)) + __lfortran_i * (trans->dims[0].stride * (1))]) - mol->xyz->data[(mol->xyz->offset + mol->xyz->dims[1].stride * ((iat) - mol->xyz->dims[1].lower_bound)) + __lfortran_i * (mol->xyz->dims[0].stride * (1))]);
+        local_vij_data[(0) + 0 * 1] = ((mol->xyz->data[(mol->xyz->offset + mol->xyz->dims[1].stride * ((jat) - mol->xyz->dims[1].lower_bound)) + 0 * (mol->xyz->dims[0].stride * (1))] + trans->data[(trans->offset + trans->dims[1].stride * ((jtr) - 1)) + 0 * (trans->dims[0].stride * (1))]) - mol->xyz->data[(mol->xyz->offset + mol->xyz->dims[1].stride * ((iat) - mol->xyz->dims[1].lower_bound)) + 0 * (mol->xyz->dims[0].stride * (1))]);
+        local_vij_data[(0) + 1 * 1] = ((mol->xyz->data[(mol->xyz->offset + mol->xyz->dims[1].stride * ((jat) - mol->xyz->dims[1].lower_bound)) + 1 * (mol->xyz->dims[0].stride * (1))] + trans->data[(trans->offset + trans->dims[1].stride * ((jtr) - 1)) + 1 * (trans->dims[0].stride * (1))]) - mol->xyz->data[(mol->xyz->offset + mol->xyz->dims[1].stride * ((iat) - mol->xyz->dims[1].lower_bound)) + 1 * (mol->xyz->dims[0].stride * (1))]);
+        local_vij_data[(0) + 2 * 1] = ((mol->xyz->data[(mol->xyz->offset + mol->xyz->dims[1].stride * ((jat) - mol->xyz->dims[1].lower_bound)) + 2 * (mol->xyz->dims[0].stride * (1))] + trans->data[(trans->offset + trans->dims[1].stride * ((jtr) - 1)) + 2 * (trans->dims[0].stride * (1))]) - mol->xyz->data[(mol->xyz->offset + mol->xyz->dims[1].stride * ((iat) - mol->xyz->dims[1].lower_bound)) + 2 * (mol->xyz->dims[0].stride * (1))]);
     }
     __libasr_created__array_section_pointer_->data = (local_vij->data + (0 + (1 * (((int32_t)local_vij->dims[1-1].lower_bound) - 1))));
     __libasr_created__array_section_pointer_->offset = 0;
@@ -200,13 +192,9 @@ void __lfortran_c_backend_descriptor_vector_assignment_direct_01_m__shift_lower0
     __libasr_created__array_section_pointer_->dims[0].length = ((( (__1trans + 0 - 1) - (0) )/1) + 1);
     __libasr_created__array_section_pointer_->n_dims = 1;
     {
-        int64_t __lfortran_i;
-        __lfortran_i = 0;
-        local_vij_data[(0) + __lfortran_i * 1] = __libasr_created__array_section_pointer_->data[(__libasr_created__array_section_pointer_->offset + __lfortran_i * __libasr_created__array_section_pointer_->dims[0].stride)];
-        __lfortran_i = 1;
-        local_vij_data[(0) + __lfortran_i * 1] = __libasr_created__array_section_pointer_->data[(__libasr_created__array_section_pointer_->offset + __lfortran_i * __libasr_created__array_section_pointer_->dims[0].stride)];
-        __lfortran_i = 2;
-        local_vij_data[(0) + __lfortran_i * 1] = __libasr_created__array_section_pointer_->data[(__libasr_created__array_section_pointer_->offset + __lfortran_i * __libasr_created__array_section_pointer_->dims[0].stride)];
+        local_vij_data[(0) + 0 * 1] = __libasr_created__array_section_pointer_->data[(__libasr_created__array_section_pointer_->offset + 0 * __libasr_created__array_section_pointer_->dims[0].stride)];
+        local_vij_data[(0) + 1 * 1] = __libasr_created__array_section_pointer_->data[(__libasr_created__array_section_pointer_->offset + 1 * __libasr_created__array_section_pointer_->dims[0].stride)];
+        local_vij_data[(0) + 2 * 1] = __libasr_created__array_section_pointer_->data[(__libasr_created__array_section_pointer_->offset + 2 * __libasr_created__array_section_pointer_->dims[0].stride)];
     }
     __libasr_created__array_section_pointer_1->data = (local_vij->data + (0 + (1 * (((int32_t)local_vij->dims[1-1].lower_bound) - 0))));
     __libasr_created__array_section_pointer_1->offset = 0;

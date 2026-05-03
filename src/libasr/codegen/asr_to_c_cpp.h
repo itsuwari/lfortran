@@ -59,6 +59,20 @@ static inline uint64_t get_stable_string_hash(const std::string &value)
     return hash;
 }
 
+static inline std::string replace_all_substrings(std::string value,
+        const std::string &from, const std::string &to)
+{
+    if (from.empty()) {
+        return value;
+    }
+    size_t pos = 0;
+    while ((pos = value.find(from, pos)) != std::string::npos) {
+        value.replace(pos, from.size(), to);
+        pos += to.size();
+    }
+    return value;
+}
+
 struct SymbolInfo
 {
     bool needs_declaration = true;
@@ -5057,11 +5071,22 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         std::string inner_indent(indentation_level * indentation_spaces, ' ');
         src += setup;
         if (use_unrolled) {
-            src += inner_indent + "int64_t " + index_name + ";\n";
-            for (int64_t i = 0; i < compile_time_length; i++) {
-                src += inner_indent + index_name + " = "
-                    + std::to_string(i) + ";\n";
-                src += inner_indent + target_expr + " = " + value_expr + ";\n";
+            if (setup.find(index_name) == std::string::npos) {
+                for (int64_t i = 0; i < compile_time_length; i++) {
+                    std::string index_literal = std::to_string(i);
+                    src += inner_indent
+                        + replace_all_substrings(target_expr, index_name, index_literal)
+                        + " = "
+                        + replace_all_substrings(value_expr, index_name, index_literal)
+                        + ";\n";
+                }
+            } else {
+                src += inner_indent + "int64_t " + index_name + ";\n";
+                for (int64_t i = 0; i < compile_time_length; i++) {
+                    src += inner_indent + index_name + " = "
+                        + std::to_string(i) + ";\n";
+                    src += inner_indent + target_expr + " = " + value_expr + ";\n";
+                }
             }
             indentation_level--;
             src += indent + "}\n";

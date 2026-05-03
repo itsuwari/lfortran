@@ -102,13 +102,9 @@ void __lfortran_c_backend_automatic_array_cleanup_01__accumulate(int32_t n, doub
     }
     for (i=1; i<=n; i++) {
         {
-            int64_t __lfortran_i;
-            __lfortran_i = 0;
-            work->data[(work->offset + work->dims[0].stride * ((i) - 1)) + __lfortran_i * (work->dims[1].stride * (1))] = __lfortran__lcompilers_real_i32(i);
-            __lfortran_i = 1;
-            work->data[(work->offset + work->dims[0].stride * ((i) - 1)) + __lfortran_i * (work->dims[1].stride * (1))] = __lfortran__lcompilers_real_i32(i);
-            __lfortran_i = 2;
-            work->data[(work->offset + work->dims[0].stride * ((i) - 1)) + __lfortran_i * (work->dims[1].stride * (1))] = __lfortran__lcompilers_real_i32(i);
+            work->data[(work->offset + work->dims[0].stride * ((i) - 1)) + 0 * (work->dims[1].stride * (1))] = __lfortran__lcompilers_real_i32(i);
+            work->data[(work->offset + work->dims[0].stride * ((i) - 1)) + 1 * (work->dims[1].stride * (1))] = __lfortran__lcompilers_real_i32(i);
+            work->data[(work->offset + work->dims[0].stride * ((i) - 1)) + 2 * (work->dims[1].stride * (1))] = __lfortran__lcompilers_real_i32(i);
         }
     }
     (*total) = __lfortran__lcompilers_Sum_8_2_0_idx4_real_______0((&(struct r64_____){ .data = work->data, .dims = {{1, work->dims[0].length, work->dims[0].stride}, {1, work->dims[1].length, work->dims[1].stride}}, .n_dims = 2, .offset = work->offset, .is_allocated = work->is_allocated }), ((int32_t) (&(struct r64_____){ .data = work->data, .dims = {{1, work->dims[0].length, work->dims[0].stride}, {1, work->dims[1].length, work->dims[1].stride}}, .n_dims = 2, .offset = work->offset, .is_allocated = work->is_allocated })->dims[0].length), ((int32_t) (&(struct r64_____){ .data = work->data, .dims = {{1, work->dims[0].length, work->dims[0].stride}, {1, work->dims[1].length, work->dims[1].stride}}, .n_dims = 2, .offset = work->offset, .is_allocated = work->is_allocated })->dims[1].length));
