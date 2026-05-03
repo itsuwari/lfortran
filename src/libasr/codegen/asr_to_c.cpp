@@ -1845,6 +1845,43 @@ R"(
                         needs_runtime_init = init_brace.empty();
                     }
                 }
+                bool static_parameter_data = var != nullptr
+                    && var->m_storage == ASR::storage_typeType::Parameter
+                    && !init_brace.empty()
+                    && !element_needs_null_init;
+                if (static_parameter_data && is_fixed_size && !is_pointer && !dummy) {
+                    std::string data_name = std::string(v_m_name) + "_data";
+                    std::string variable_name = std::string(v_m_name) + "_value";
+                    sub = "static "
+                        + format_type_c(dims, type_name_copy, data_name, use_ref, dummy)
+                        + " = " + init_brace + ";\n";
+                    sub += indent + "static "
+                        + format_type_c("", type_name_without_ptr, variable_name, use_ref, dummy)
+                        + " = { .data = " + data_name
+                        + ", .n_dims = " + std::to_string(n_dims)
+                        + ", .offset = 0, .is_allocated = true, .dims = {";
+                    std::string stride = "1";
+                    for (int i = 0; i < n_dims; i++) {
+                        std::string start = "1", length = "0";
+                        if (m_dims[i].m_start) {
+                            this->visit_expr(*m_dims[i].m_start);
+                            start = src;
+                        }
+                        if (m_dims[i].m_length) {
+                            this->visit_expr(*m_dims[i].m_length);
+                            length = src;
+                        }
+                        if (i > 0) {
+                            sub += ", ";
+                        }
+                        sub += "{" + start + ", " + length + ", " + stride + "}";
+                        stride = "(" + stride + "*" + length + ")";
+                    }
+                    sub += "} };\n";
+                    sub += indent + format_type_c("", type_name, v_m_name, use_ref, dummy)
+                        + " = &" + variable_name;
+                    return;
+                }
                 sub += ";\n";
                 if( !is_fixed_size ) {
                     std::string data_name = std::string(v_m_name) + "_data";
@@ -1881,10 +1918,6 @@ R"(
                         }
                     }
                 } else {
-                    bool static_parameter_data = var != nullptr
-                        && var->m_storage == ASR::storage_typeType::Parameter
-                        && !init_brace.empty()
-                        && !element_needs_null_init;
                     sub += indent;
                     if (static_parameter_data) {
                         sub += "static ";
