@@ -1,0 +1,13 @@
+{
+    "basename": "c-c_backend_dummy_array_restrict_01-27895aa",
+    "cmd": "lfortran --no-color --show-c {infile}",
+    "infile": "tests/c_backend_dummy_array_restrict_01.f90",
+    "infile_hash": "e387870536ef51d119052eda22bb49bd921cd55ee6430a516c669039",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": "c-c_backend_dummy_array_restrict_01-27895aa.stdout",
+    "stdout_hash": "337600ceefae7913732ee03953a3e38dd1cd28dd93fb4c8adf409359",
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

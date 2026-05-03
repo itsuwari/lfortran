@@ -1,0 +1,113 @@
+#include <inttypes.h>
+#include <math.h>
+
+#include <stdlib.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <string.h>
+#include <lfortran_intrinsics.h>
+
+
+#ifndef LFORTRAN_C_BACKEND_CONSTRUCTOR
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_CONSTRUCTOR __attribute__((constructor))
+#else
+#define LFORTRAN_C_BACKEND_CONSTRUCTOR
+#endif
+#endif
+
+
+struct dimension_descriptor
+{
+    int32_t lower_bound, length, stride;
+};
+#ifndef LFORTRAN_C_BACKEND_CONSTRUCTOR
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_CONSTRUCTOR __attribute__((constructor))
+#else
+#define LFORTRAN_C_BACKEND_CONSTRUCTOR
+#endif
+#endif
+
+
+struct r64___
+{
+    double *data;
+    struct dimension_descriptor dims[32];
+    int32_t n_dims;
+    int32_t offset;
+    bool is_allocated;
+};
+
+void __lfortran_add_arrays(int32_t n, struct r64___* restrict a, struct r64___* restrict b, struct r64___* restrict c);
+
+
+
+
+// Implementations
+void __lfortran_add_arrays(int32_t n, struct r64___* restrict a, struct r64___* restrict b, struct r64___* restrict c)
+{
+    int32_t i;
+    for (i=1; i<=n; i++) {
+        c->data[((0 + (c->dims[0].stride * (i - c->dims[0].lower_bound))) + c->offset)] = a->data[((0 + (a->dims[0].stride * (i - a->dims[0].lower_bound))) + a->offset)] + b->data[((0 + (b->dims[0].stride * (i - b->dims[0].lower_bound))) + b->offset)];
+    }
+}
+
+int main(int argc, char* argv[])
+{
+    _lpython_set_argv(argc, argv);
+    struct r64___ a_value;
+    struct r64___* a = &a_value;
+    double a_data[3];
+    a->data = a_data;
+    a->n_dims = 1;
+    a->offset = 0;
+    a->is_allocated = true;
+    a->dims[0].lower_bound = 1;
+    a->dims[0].length = 3;
+    a->dims[0].stride = 1;
+    struct r64___ b_value;
+    struct r64___* b = &b_value;
+    double b_data[3];
+    b->data = b_data;
+    b->n_dims = 1;
+    b->offset = 0;
+    b->is_allocated = true;
+    b->dims[0].lower_bound = 1;
+    b->dims[0].length = 3;
+    b->dims[0].stride = 1;
+    struct r64___ c_value;
+    struct r64___* c = &c_value;
+    double c_data[3];
+    c->data = c_data;
+    c->n_dims = 1;
+    c->offset = 0;
+    c->is_allocated = true;
+    c->dims[0].lower_bound = 1;
+    c->dims[0].length = 3;
+    c->dims[0].stride = 1;
+    const int32_t n = 3;
+    a->data[(0 + (1 * (1 - 1)))] =   1.00000000000000000e+00;
+    a->data[(0 + (1 * (2 - 1)))] =   2.00000000000000000e+00;
+    a->data[(0 + (1 * (3 - 1)))] =   3.00000000000000000e+00;
+    b->data[(0 + (1 * (1 - 1)))] =   5.00000000000000000e-01;
+    b->data[(0 + (1 * (2 - 1)))] =   1.50000000000000000e+00;
+    b->data[(0 + (1 * (3 - 1)))] =   2.50000000000000000e+00;
+    struct r64___ __lfortran_array_view = { .data = a->data, .dims = {{1, a->dims[0].length, a->dims[0].stride}}, .n_dims = 1, .offset = a->offset, .is_allocated = a->is_allocated };
+    struct r64___ __lfortran_array_view1 = { .data = b->data, .dims = {{1, b->dims[0].length, b->dims[0].stride}}, .n_dims = 1, .offset = b->offset, .is_allocated = b->is_allocated };
+    struct r64___ __lfortran_array_view2 = { .data = c->data, .dims = {{1, c->dims[0].length, c->dims[0].stride}}, .n_dims = 1, .offset = c->offset, .is_allocated = c->is_allocated };
+    __lfortran_add_arrays(n, &__lfortran_array_view, &__lfortran_array_view1, &__lfortran_array_view2);
+    if (fabs(c->data[(0 + (1 * (1 - 1)))] -   1.50000000000000000e+00) >   9.99999999999999980e-13) {
+        fprintf(stderr, "ERROR STOP");
+        exit(1);
+    }
+    if (fabs(c->data[(0 + (1 * (2 - 1)))] -   3.50000000000000000e+00) >   9.99999999999999980e-13) {
+        fprintf(stderr, "ERROR STOP");
+        exit(1);
+    }
+    if (fabs(c->data[(0 + (1 * (3 - 1)))] -   5.50000000000000000e+00) >   9.99999999999999980e-13) {
+        fprintf(stderr, "ERROR STOP");
+        exit(1);
+    }
+    return 0;
+}

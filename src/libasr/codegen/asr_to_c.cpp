@@ -1762,6 +1762,11 @@ R"(
             sub = original_type_name + " " + v_m_name + " __attribute__ (( vector_size(sizeof(" + original_type_name + ") * " + std::to_string(size) + ") ))";
             return;
         }
+        if (dummy && m_abi != ASR::abiType::BindC && !is_pointer
+                && var != nullptr && !ASRUtils::is_allocatable(var->m_type)
+                && !ASRUtils::is_pointer(var->m_type)) {
+            type_name += " restrict";
+        }
         if( declare_value ) {
             std::string variable_name = std::string(v_m_name) + "_value";
             sub = format_type_c("", type_name_without_ptr, variable_name, use_ref, dummy);

@@ -5140,6 +5140,10 @@ filename = "c_backend_small_vector_assignment_setup_01.f90"
 c = true
 
 [[test]]
+filename = "c_backend_dummy_array_restrict_01.f90"
+c = true
+
+[[test]]
 filename = "c_backend_small_integer_pow_01.f90"
 c = true
 
