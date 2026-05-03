@@ -1828,7 +1828,16 @@ R"(
             std::string variable_name = std::string(v_m_name) + "_value";
             sub = format_type_c("", type_name_without_ptr, variable_name, use_ref, dummy);
             if (is_pointer) {
-                sub += " = {0}";
+                bool compiler_created_pointer_array =
+                    var != nullptr
+                    && std::string(var->m_name).rfind("__libasr_created_", 0) == 0;
+                if (compiler_created_pointer_array) {
+                    sub += ";\n";
+                    sub += indent + variable_name + ".data = NULL;\n";
+                    sub += indent + variable_name + ".is_allocated = false";
+                } else {
+                    sub += " = {0}";
+                }
             }
             sub += ";\n";
             sub += indent + format_type_c("", type_name, v_m_name, use_ref, dummy);

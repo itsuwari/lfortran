@@ -78,7 +78,9 @@ void __lfortran_c_backend_descriptor_vector_assignment_direct_01_m__shift_lower0
 // Implementations
 void __lfortran_c_backend_descriptor_vector_assignment_direct_01_m__shift_column_real_______0_real_______1(struct r64_____* restrict xyz, int32_t __1xyz, int32_t __2xyz, struct r64_____* restrict trans, int32_t __1trans, int32_t __2trans, struct r64___* restrict vij, int32_t jat, int32_t iat, int32_t jtr)
 {
-    struct r64___ __libasr_created__array_section_pointer__value = {0};
+    struct r64___ __libasr_created__array_section_pointer__value;
+    __libasr_created__array_section_pointer__value.data = NULL;
+    __libasr_created__array_section_pointer__value.is_allocated = false;
     struct r64___* __libasr_created__array_section_pointer_ = &__libasr_created__array_section_pointer__value;
     struct r64___ local_vij_value;
     struct r64___* local_vij = &local_vij_value;
@@ -140,7 +142,9 @@ void __lfortran_c_backend_descriptor_vector_assignment_direct_01_m__shift_column
 
 void __lfortran_c_backend_descriptor_vector_assignment_direct_01_m__shift_component_column_real_______1__StructType(struct c_backend_descriptor_vector_assignment_direct_01_m__molecule* restrict mol, struct r64_____* restrict trans, int32_t __1trans, int32_t __2trans, struct r64___* restrict vij, int32_t jat, int32_t iat, int32_t jtr)
 {
-    struct r64___ __libasr_created__array_section_pointer__value = {0};
+    struct r64___ __libasr_created__array_section_pointer__value;
+    __libasr_created__array_section_pointer__value.data = NULL;
+    __libasr_created__array_section_pointer__value.is_allocated = false;
     struct r64___* __libasr_created__array_section_pointer_ = &__libasr_created__array_section_pointer__value;
     struct r64___ local_vij_value;
     struct r64___* local_vij = &local_vij_value;
@@ -196,9 +200,13 @@ void __lfortran_c_backend_descriptor_vector_assignment_direct_01_m__shift_compon
 
 void __lfortran_c_backend_descriptor_vector_assignment_direct_01_m__shift_lower0_column_real_______0(struct r64_____* restrict trans, int32_t __1trans, int32_t __2trans, struct r64___* restrict vij, int32_t jtr)
 {
-    struct r64___ __libasr_created__array_section_pointer__value = {0};
+    struct r64___ __libasr_created__array_section_pointer__value;
+    __libasr_created__array_section_pointer__value.data = NULL;
+    __libasr_created__array_section_pointer__value.is_allocated = false;
     struct r64___* __libasr_created__array_section_pointer_ = &__libasr_created__array_section_pointer__value;
-    struct r64___ __libasr_created__array_section_pointer_1_value = {0};
+    struct r64___ __libasr_created__array_section_pointer_1_value;
+    __libasr_created__array_section_pointer_1_value.data = NULL;
+    __libasr_created__array_section_pointer_1_value.is_allocated = false;
     struct r64___* __libasr_created__array_section_pointer_1 = &__libasr_created__array_section_pointer_1_value;
     struct r64___ local_vij_value;
     struct r64___* local_vij = &local_vij_value;

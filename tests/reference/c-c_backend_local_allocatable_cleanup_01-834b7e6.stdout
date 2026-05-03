@@ -216,7 +216,9 @@ void __lfortran_c_backend_local_allocatable_cleanup_01__fill(int32_t n, double *
 {
     int32_t __lcompilers_i_0;
     int32_t __lcompilers_i_1;
-    struct r64_____ __libasr_created__function_call__lcompilers_Sum_8_2_0_idx4_real_______0_value = {0};
+    struct r64_____ __libasr_created__function_call__lcompilers_Sum_8_2_0_idx4_real_______0_value;
+    __libasr_created__function_call__lcompilers_Sum_8_2_0_idx4_real_______0_value.data = NULL;
+    __libasr_created__function_call__lcompilers_Sum_8_2_0_idx4_real_______0_value.is_allocated = false;
     struct r64_____* __libasr_created__function_call__lcompilers_Sum_8_2_0_idx4_real_______0 = &__libasr_created__function_call__lcompilers_Sum_8_2_0_idx4_real_______0_value;
     int32_t i;
     struct r64_____ scratch_value;
@@ -348,7 +350,9 @@ void __lfortran_c_backend_local_allocatable_cleanup_01__make_array(struct r64___
 void __lfortran_c_backend_local_allocatable_cleanup_01__fill_from_callee(double *total)
 {
     int32_t __lcompilers_i_0;
-    struct r64___ __libasr_created__function_call__lcompilers_Sum_8_1_0_idx4_real____0_value = {0};
+    struct r64___ __libasr_created__function_call__lcompilers_Sum_8_1_0_idx4_real____0_value;
+    __libasr_created__function_call__lcompilers_Sum_8_1_0_idx4_real____0_value.data = NULL;
+    __libasr_created__function_call__lcompilers_Sum_8_1_0_idx4_real____0_value.is_allocated = false;
     struct r64___* __libasr_created__function_call__lcompilers_Sum_8_1_0_idx4_real____0 = &__libasr_created__function_call__lcompilers_Sum_8_1_0_idx4_real____0_value;
     struct r64___ scratch_value;
     struct r64___* scratch = &scratch_value;
@@ -445,7 +449,9 @@ void __lfortran_c_backend_local_allocatable_cleanup_01__make_holder__StructType(
 void __lfortran_c_backend_local_allocatable_cleanup_01__fill_holder_from_callee(double *total)
 {
     int32_t __lcompilers_i_0;
-    struct i32___ __libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_integer____0_value = {0};
+    struct i32___ __libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_integer____0_value;
+    __libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_integer____0_value.data = NULL;
+    __libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_integer____0_value.is_allocated = false;
     struct i32___* __libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_integer____0 = &__libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_integer____0_value;
     int32_t __libasr_created__intrinsic_array_function_Sum;
     struct c_backend_local_allocatable_cleanup_01__holder h_value;
@@ -527,7 +533,9 @@ void __lfortran_c_backend_local_allocatable_cleanup_01__fill_polymorphic(double 
     if (((item) != NULL) && (((struct __lfortran_runtime_type_header*)(item))->__lfortran_type_tag == 4162475211595533072)) {
         do {
             int32_t __lcompilers_i_0;
-            struct r64___ __libasr_created__function_call__lcompilers_Sum_8_1_0_idx4_real____0_value = {0};
+            struct r64___ __libasr_created__function_call__lcompilers_Sum_8_1_0_idx4_real____0_value;
+            __libasr_created__function_call__lcompilers_Sum_8_1_0_idx4_real____0_value.data = NULL;
+            __libasr_created__function_call__lcompilers_Sum_8_1_0_idx4_real____0_value.is_allocated = false;
             struct r64___* __libasr_created__function_call__lcompilers_Sum_8_1_0_idx4_real____0 = &__libasr_created__function_call__lcompilers_Sum_8_1_0_idx4_real____0_value;
             int32_t __libasr_index_0_;
             ((struct c_backend_local_allocatable_cleanup_01__child_holder*)(item))->values->n_dims = 1;
@@ -611,7 +619,9 @@ void __lfortran_c_backend_local_allocatable_cleanup_01__fill_polymorphic(double 
 void __lfortran_c_backend_local_allocatable_cleanup_01__fill_then_return(int32_t n, double *total)
 {
     int32_t __lcompilers_i_0;
-    struct r64___ __libasr_created__function_call__lcompilers_Sum_8_1_0_idx4_real____0_value = {0};
+    struct r64___ __libasr_created__function_call__lcompilers_Sum_8_1_0_idx4_real____0_value;
+    __libasr_created__function_call__lcompilers_Sum_8_1_0_idx4_real____0_value.data = NULL;
+    __libasr_created__function_call__lcompilers_Sum_8_1_0_idx4_real____0_value.is_allocated = false;
     struct r64___* __libasr_created__function_call__lcompilers_Sum_8_1_0_idx4_real____0 = &__libasr_created__function_call__lcompilers_Sum_8_1_0_idx4_real____0_value;
     int32_t __libasr_index_0_;
     struct r64___ scratch_value;

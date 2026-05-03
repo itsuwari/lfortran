@@ -128,9 +128,13 @@ int main(int argc, char* argv[])
     int32_t __lcompilers_i_0;
     int32_t __lcompilers_i_01;
     int32_t __lcompilers_i_1;
-    struct r32___ __libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_real____0_value = {0};
+    struct r32___ __libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_real____0_value;
+    __libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_real____0_value.data = NULL;
+    __libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_real____0_value.is_allocated = false;
     struct r32___* __libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_real____0 = &__libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_real____0_value;
-    struct r32_____ __libasr_created__function_call__lcompilers_Sum_4_2_0_idx4_real_______0_value = {0};
+    struct r32_____ __libasr_created__function_call__lcompilers_Sum_4_2_0_idx4_real_______0_value;
+    __libasr_created__function_call__lcompilers_Sum_4_2_0_idx4_real_______0_value.data = NULL;
+    __libasr_created__function_call__lcompilers_Sum_4_2_0_idx4_real_______0_value.is_allocated = false;
     struct r32_____* __libasr_created__function_call__lcompilers_Sum_4_2_0_idx4_real_______0 = &__libasr_created__function_call__lcompilers_Sum_4_2_0_idx4_real_______0_value;
     float __libasr_created__intrinsic_array_function_Sum;
     float __libasr_created__intrinsic_array_function_Sum1;
