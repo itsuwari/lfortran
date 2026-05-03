@@ -5165,6 +5165,10 @@ filename = "c_backend_descriptor_vector_assignment_direct_01.f90"
 c = true
 
 [[test]]
+filename = "c_backend_specialized_pass_array_no_copy_01.f90"
+c = true
+
+[[test]]
 filename = "c_backend_small_integer_pow_01.f90"
 c = true
 

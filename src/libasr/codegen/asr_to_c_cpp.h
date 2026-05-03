@@ -2402,6 +2402,93 @@ R"(#include <stdio.h>
         return !target_name.empty();
     }
 
+    bool try_construct_specialized_pass_array_no_copy_call_args(
+            ASR::Function_t *f, size_t n_args, ASR::call_arg_t *m_args,
+            std::string &args) {
+        if (!is_c || f == nullptr || n_args != f->n_args) {
+            return false;
+        }
+        std::vector<size_t> public_arg_positions;
+        std::vector<size_t> public_indices_with_hidden_dims;
+        std::string pass_suffix;
+        if (!get_specialized_pass_array_by_data_args(
+                *f, public_arg_positions, public_indices_with_hidden_dims,
+                pass_suffix)) {
+            return false;
+        }
+
+        std::string call_arg_setup;
+        for (size_t i = 0; i < n_args; i++) {
+            if (m_args[i].m_value == nullptr || !ASR::is_a<ASR::Var_t>(*f->m_args[i])) {
+                return false;
+            }
+
+            ASR::expr_t *call_arg = m_args[i].m_value;
+            ASR::Variable_t *param = ASRUtils::EXPR2VAR(f->m_args[i]);
+            ASR::ttype_t *param_type = ASRUtils::expr_type(f->m_args[i]);
+            ASR::ttype_t *param_type_unwrapped =
+                ASRUtils::type_get_past_allocatable_pointer(param_type);
+            bool param_is_array = param_type_unwrapped
+                && ASRUtils::is_array(param_type_unwrapped);
+            if (param_is_array) {
+                ASR::ttype_t *param_element_type =
+                    ASRUtils::type_get_past_allocatable_pointer(
+                        ASRUtils::extract_type(param_type_unwrapped));
+                ASR::ttype_t *arg_element_type =
+                    ASRUtils::type_get_past_allocatable_pointer(
+                        ASRUtils::extract_type(ASRUtils::expr_type(call_arg)));
+                if ((param_element_type && ASRUtils::is_character(*param_element_type))
+                        || (arg_element_type && ASRUtils::is_character(*arg_element_type))) {
+                    return false;
+                }
+            }
+            if (!param_is_array) {
+                if (param->m_intent != ASRUtils::intent_in) {
+                    return false;
+                }
+                if (ASRUtils::is_pointer(param_type)
+                        || ASRUtils::is_allocatable(param_type)) {
+                    return false;
+                }
+                if (ASRUtils::is_aggregate_type(param_type)) {
+                    ASR::expr_t *raw_arg = unwrap_c_lvalue_expr(call_arg);
+                    if (raw_arg == nullptr
+                            || !ASR::is_a<ASR::Var_t>(*raw_arg)) {
+                        return false;
+                    }
+                }
+            }
+
+            self().visit_expr(*call_arg);
+            std::string arg_src = src;
+            std::string arg_setup = drain_tmp_buffer();
+            arg_setup += extract_stmt_setup_from_expr(arg_src);
+
+            if (param_is_array) {
+                bool no_copy_descriptor_view_actual =
+                    try_build_c_array_no_copy_descriptor_view_arg(
+                        call_arg, param_type,
+                        param ? param->m_type_declaration : nullptr, arg_src,
+                        true);
+                call_arg_setup += drain_tmp_buffer();
+                if (!no_copy_descriptor_view_actual) {
+                    call_arg_setup += arg_setup;
+                }
+            } else {
+                call_arg_setup += arg_setup;
+            }
+
+            if (!args.empty()) {
+                args += ", ";
+            }
+            args += arg_src;
+        }
+        if (!call_arg_setup.empty()) {
+            tmp_buffer_src.push_back(call_arg_setup);
+        }
+        return true;
+    }
+
     bool try_construct_pass_array_by_data_direct_call_args(
             ASR::Function_t *f, size_t n_args, ASR::call_arg_t *m_args,
             const std::vector<size_t> &indices, std::string &args) {
@@ -12143,6 +12230,8 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                     && try_construct_pass_array_by_data_direct_call_args(
                         s, x.n_args, x.m_args, pass_array_by_data_indices, call_args)) {
                 sym_name = direct_target_name;
+            } else if (try_construct_specialized_pass_array_no_copy_call_args(
+                    s, x.n_args, x.m_args, call_args)) {
             } else {
                 call_args = construct_call_args(
                     s, x.n_args, x.m_args, false, true, true);
