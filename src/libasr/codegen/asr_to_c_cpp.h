@@ -10246,6 +10246,28 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             case ASR::exprType::RealConstant: {
                 return true;
             }
+            case ASR::exprType::StructInstanceMember: {
+                ASR::StructInstanceMember_t *member =
+                    ASR::down_cast<ASR::StructInstanceMember_t>(expr);
+                return is_c_duplicate_safe_power_base(member->m_v);
+            }
+            case ASR::exprType::ArrayItem: {
+                if (ASRUtils::is_array(ASRUtils::expr_type(expr))) {
+                    return false;
+                }
+                ASR::ArrayItem_t *item = ASR::down_cast<ASR::ArrayItem_t>(expr);
+                if (!is_c_duplicate_safe_power_base(item->m_v)) {
+                    return false;
+                }
+                for (size_t i = 0; i < item->n_args; i++) {
+                    ASR::expr_t *idx_expr = get_array_index_expr(item->m_args[i]);
+                    if (idx_expr == nullptr || is_vector_subscript_expr(idx_expr)
+                            || !is_c_duplicate_safe_power_base(idx_expr)) {
+                        return false;
+                    }
+                }
+                return true;
+            }
             case ASR::exprType::Cast: {
                 return is_c_duplicate_safe_power_base(
                     ASR::down_cast<ASR::Cast_t>(expr)->m_arg);

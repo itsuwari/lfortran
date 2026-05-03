@@ -15,6 +15,21 @@
 #endif
 #endif
 
+
+struct dimension_descriptor
+{
+    int32_t lower_bound, length, stride;
+};
+
+struct r32___
+{
+    float *data;
+    struct dimension_descriptor dims[32];
+    int32_t n_dims;
+    int32_t offset;
+    bool is_allocated;
+};
+
 float __lfortran_c_backend_small_integer_pow_01__next_value();
 
 
@@ -31,17 +46,36 @@ float __lfortran_c_backend_small_integer_pow_01__next_value()
 int main(int argc, char* argv[])
 {
     _lpython_set_argv(argc, argv);
+    struct r32___ a_value;
+    struct r32___* a = &a_value;
+    float a_data[3];
+    a->data = a_data;
+    a->n_dims = 1;
+    a->offset = 0;
+    a->is_allocated = true;
+    a->dims[0].lower_bound = 1;
+    a->dims[0].length = 3;
+    a->dims[0].stride = 1;
+    float w;
     float x;
     float y;
     float z;
     x =   3.00000000000000000e+00;
+    a->data[(0 + (1 * (1 - 1)))] =   1.00000000000000000e+00;
+    a->data[(0 + (1 * (2 - 1)))] =   2.00000000000000000e+00;
+    a->data[(0 + (1 * (3 - 1)))] =   3.00000000000000000e+00;
     y = (x)*(x) + (x)*(x)*(x) + (x +   1.00000000000000000e+00)*(x +   1.00000000000000000e+00);
     z = pow(__lfortran_c_backend_small_integer_pow_01__next_value(), 2);
+    w = (a->data[(0 + (1 * (1 - 1)))])*(a->data[(0 + (1 * (1 - 1)))]) + (a->data[(0 + (1 * (2 - 1)))])*(a->data[(0 + (1 * (2 - 1)))])*(a->data[(0 + (1 * (2 - 1)))]) + (a->data[(0 + (1 * (3 - 1)))])*(a->data[(0 + (1 * (3 - 1)))])*(a->data[(0 + (1 * (3 - 1)))])*(a->data[(0 + (1 * (3 - 1)))]);
     if (fabs(y -   5.20000000000000000e+01) >   9.99999997475242708e-07) {
         fprintf(stderr, "ERROR STOP");
         exit(1);
     }
     if (fabs(z -   4.00000000000000000e+00) >   9.99999997475242708e-07) {
+        fprintf(stderr, "ERROR STOP");
+        exit(1);
+    }
+    if (fabs(w -   9.00000000000000000e+01) >   9.99999997475242708e-07) {
         fprintf(stderr, "ERROR STOP");
         exit(1);
     }
