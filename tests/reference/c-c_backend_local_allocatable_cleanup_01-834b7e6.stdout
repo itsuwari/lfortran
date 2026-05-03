@@ -1,5 +1,6 @@
 #include <inttypes.h>
 #include <math.h>
+#include <string.h>
 
 #include <stdlib.h>
 #include <stdbool.h>
@@ -30,6 +31,16 @@ struct dimension_descriptor
 #endif
 
 
+struct i32___
+{
+    int32_t *data;
+    struct dimension_descriptor dims[32];
+    int32_t n_dims;
+    int32_t offset;
+    bool is_allocated;
+};
+
+
 struct r64___
 {
     double *data;
@@ -47,6 +58,11 @@ struct r64_____
     int32_t n_dims;
     int32_t offset;
     bool is_allocated;
+};
+
+struct c_backend_local_allocatable_cleanup_01__holder {
+ int64_t __lfortran_type_tag;
+ struct i32___* data;
 };
 
 
@@ -69,20 +85,51 @@ struct Allocatable_r64____
     bool is_allocated;
 };
 
+
+struct Allocatable_i32____
+{
+    int32_t *data;
+    struct dimension_descriptor dims[32];
+    int32_t n_dims;
+    int32_t offset;
+    bool is_allocated;
+};
+
+int32_t __lfortran__lcompilers_Sum_4_1_0_idx4_integer____0(struct i32___* array, int32_t __1array);
+int32_t __lfortran__lcompilers_Sum_4_1_0_idx4(struct i32___* array);
 double __lfortran__lcompilers_Sum_8_1_0_idx4_real____0(struct r64___* array, int32_t __1array);
 double __lfortran__lcompilers_Sum_8_1_0_idx4(struct r64___* array);
 double __lfortran__lcompilers_Sum_8_2_0_idx4_real_______0(struct r64_____* array, int32_t __1array, int32_t __2array);
 double __lfortran__lcompilers_Sum_8_2_0_idx4(struct r64_____* array);
 double __lfortran__lcompilers_real_i32(int32_t x);
+double __lfortran__lcompilers_real_i321(int32_t x);
 void __lfortran_c_backend_local_allocatable_cleanup_01__fill(int32_t n, double *total);
 void __lfortran_c_backend_local_allocatable_cleanup_01__make_array(struct r64___* values);
 void __lfortran_c_backend_local_allocatable_cleanup_01__fill_from_callee(double *total);
+void __lfortran_c_backend_local_allocatable_cleanup_01__make_holder__StructType(struct c_backend_local_allocatable_cleanup_01__holder* h);
+void __lfortran_c_backend_local_allocatable_cleanup_01__fill_holder_from_callee(double *total);
 void __lfortran_c_backend_local_allocatable_cleanup_01__fill_then_return(int32_t n, double *total);
 
 
 
 
 // Implementations
+int32_t __lfortran__lcompilers_Sum_4_1_0_idx4_integer____0(struct i32___* array, int32_t __1array)
+{
+    int32_t __1_i;
+    int32_t result;
+    result = 0;
+    for (__1_i=1; __1_i<=__1array + 1 - 1; __1_i++) {
+        result = result + array->data[((0 + (array->dims[0].stride * (__1_i - array->dims[0].lower_bound))) + array->offset)];
+    }
+    return result;
+}
+
+int32_t __lfortran__lcompilers_Sum_4_1_0_idx4(struct i32___* array)
+{
+    return __lfortran__lcompilers_Sum_4_1_0_idx4_integer____0(array, ((int32_t)array->dims[0].length + array->dims[0].lower_bound - 1));
+}
+
 double __lfortran__lcompilers_Sum_8_1_0_idx4_real____0(struct r64___* array, int32_t __1array)
 {
     int32_t __1_i;
@@ -123,6 +170,13 @@ double __lfortran__lcompilers_real_i32(int32_t x)
     double _lcompilers_real_i32;
     _lcompilers_real_i32 = (double)(x);
     return _lcompilers_real_i32;
+}
+
+double __lfortran__lcompilers_real_i321(int32_t x)
+{
+    double _lcompilers_real_i321;
+    _lcompilers_real_i321 = (double)(x);
+    return _lcompilers_real_i321;
 }
 
 void __lfortran_c_backend_local_allocatable_cleanup_01__fill(int32_t n, double *total)
@@ -324,6 +378,109 @@ void __lfortran_c_backend_local_allocatable_cleanup_01__fill_from_callee(double 
     }
 }
 
+void __lfortran_c_backend_local_allocatable_cleanup_01__make_holder__StructType(struct c_backend_local_allocatable_cleanup_01__holder* h)
+{
+    int32_t __libasr_index_0_;
+    memset(h, 0, sizeof(*h));
+    h->__lfortran_type_tag = 4528448415562256283;
+    struct i32___* struct_member_data_0;
+    struct_member_data_0 = _lfortran_malloc_alloc(_lfortran_get_default_allocator(), sizeof(*struct_member_data_0));
+    memset(struct_member_data_0, 0, sizeof(*struct_member_data_0));
+    h->data = struct_member_data_0;
+    if ((((*h).data) != NULL && ((*h).data)->data != NULL)) {
+        if (((*h).data) != NULL && ((*h).data)->is_allocated && ((*h).data)->data != NULL) {
+            _lfortran_free_alloc(_lfortran_get_default_allocator(), (char*) ((*h).data)->data);
+            ((*h).data)->data = NULL;
+        }
+        if (((*h).data) != NULL) {
+            ((*h).data)->offset = 0;
+            ((*h).data)->is_allocated = false;
+        }
+    }
+    (*h).data->n_dims = 1;
+    (*h).data->dims[0].lower_bound = 1;
+    (*h).data->dims[0].length = 4;
+    (*h).data->dims[0].stride = 1;
+    (*h).data->offset = 0;
+    (*h).data->data = (int32_t*) _lfortran_malloc_alloc(_lfortran_get_default_allocator(), 1*(*h).data->dims[0].length*sizeof(int32_t));
+    (*h).data->is_allocated = true;
+    for (__libasr_index_0_=((int32_t)(*h).data->dims[1-1].lower_bound); __libasr_index_0_<=((int32_t) (*h).data->dims[1-1].length + (*h).data->dims[1-1].lower_bound - 1); __libasr_index_0_++) {
+        (*h).data->data[((0 + ((*h).data->dims[0].stride * (__libasr_index_0_ - (*h).data->dims[0].lower_bound))) + (*h).data->offset)] = 2;
+    }
+}
+
+void __lfortran_c_backend_local_allocatable_cleanup_01__fill_holder_from_callee(double *total)
+{
+    int32_t __lcompilers_i_0;
+    struct i32___ __libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_integer____0_value = {0};
+    struct i32___* __libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_integer____0 = &__libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_integer____0_value;
+    int32_t __libasr_created__intrinsic_array_function_Sum;
+    struct c_backend_local_allocatable_cleanup_01__holder h_value;
+    memset(&h_value, 0, sizeof(h_value));
+    h_value.__lfortran_type_tag = 4528448415562256283;
+    struct i32___* struct_member_data_1;
+    struct_member_data_1 = _lfortran_malloc_alloc(_lfortran_get_default_allocator(), sizeof(*struct_member_data_1));
+    memset(struct_member_data_1, 0, sizeof(*struct_member_data_1));
+    (&(h_value))->data = struct_member_data_1;
+    struct c_backend_local_allocatable_cleanup_01__holder* h = &h_value;
+    struct i32___* struct_member_data_2;
+    struct_member_data_2 = _lfortran_malloc_alloc(_lfortran_get_default_allocator(), sizeof(*struct_member_data_2));
+    memset(struct_member_data_2, 0, sizeof(*struct_member_data_2));
+    h->data = struct_member_data_2;
+    __lfortran_c_backend_local_allocatable_cleanup_01__make_holder__StructType(((struct c_backend_local_allocatable_cleanup_01__holder*)(h)));
+    if (!((!h->data->is_allocated || (true && (h->data->dims[0].stride == 1))) && ((int32_t)h->data->dims[1-1].lower_bound) == 1)) {
+        if ((__libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_integer____0) != NULL && (__libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_integer____0)->is_allocated && (__libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_integer____0)->data != NULL) {
+            _lfortran_free_alloc(_lfortran_get_default_allocator(), (char*) (__libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_integer____0)->data);
+            (__libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_integer____0)->data = NULL;
+        }
+        if ((__libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_integer____0) != NULL) {
+            (__libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_integer____0)->offset = 0;
+            (__libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_integer____0)->is_allocated = false;
+        }
+        __libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_integer____0->n_dims = 1;
+        __libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_integer____0->dims[0].lower_bound = 1;
+        __libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_integer____0->dims[0].length = ((int32_t)h->data->dims[1-1].length);
+        __libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_integer____0->dims[0].stride = 1;
+        __libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_integer____0->offset = 0;
+        __libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_integer____0->data = (int32_t*) _lfortran_malloc_alloc(_lfortran_get_default_allocator(), 1*__libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_integer____0->dims[0].length*sizeof(int32_t));
+        __libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_integer____0->is_allocated = true;
+        for (__lcompilers_i_0=((int32_t)__libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_integer____0->dims[1-1].lower_bound); __lcompilers_i_0<=((int32_t) __libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_integer____0->dims[1-1].length + __libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_integer____0->dims[1-1].lower_bound - 1); __lcompilers_i_0++) {
+            __libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_integer____0->data[((0 + (__libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_integer____0->dims[0].stride * (__lcompilers_i_0 - __libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_integer____0->dims[0].lower_bound))) + __libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_integer____0->offset)] = h->data->data[((0 + (h->data->dims[0].stride * (((int32_t)h->data->dims[1-1].lower_bound) + (__lcompilers_i_0 - ((int32_t)__libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_integer____0->dims[1-1].lower_bound)) - h->data->dims[0].lower_bound))) + h->data->offset)];
+        }
+    } else {
+        __libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_integer____0 = ((struct i32___*)(h->data));
+    }
+    __libasr_created__intrinsic_array_function_Sum = __lfortran__lcompilers_Sum_4_1_0_idx4_integer____0((&(struct i32___){ .data = __libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_integer____0->data, .dims = {{1, __libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_integer____0->dims[0].length, __libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_integer____0->dims[0].stride}}, .n_dims = 1, .offset = __libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_integer____0->offset, .is_allocated = __libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_integer____0->is_allocated }), ((int32_t) (&(struct i32___){ .data = __libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_integer____0->data, .dims = {{1, __libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_integer____0->dims[0].length, __libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_integer____0->dims[0].stride}}, .n_dims = 1, .offset = __libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_integer____0->offset, .is_allocated = __libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_integer____0->is_allocated })->dims[0].length));
+    if ((!h->data->is_allocated || (true && (h->data->dims[0].stride == 1))) && ((int32_t)h->data->dims[1-1].lower_bound) == 1) {
+        __libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_integer____0 = &__libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_integer____0_value;
+        if ((__libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_integer____0) != NULL) {
+            (__libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_integer____0)->data = NULL;
+            (__libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_integer____0)->offset = 0;
+            (__libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_integer____0)->is_allocated = false;
+        }
+    } else {
+        if ((__libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_integer____0) != NULL && (__libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_integer____0)->is_allocated && (__libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_integer____0)->data != NULL) {
+            _lfortran_free_alloc(_lfortran_get_default_allocator(), (char*) (__libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_integer____0)->data);
+            (__libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_integer____0)->data = NULL;
+        }
+        if ((__libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_integer____0) != NULL) {
+            (__libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_integer____0)->offset = 0;
+            (__libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_integer____0)->is_allocated = false;
+        }
+    }
+    (*total) = __lfortran__lcompilers_real_i321(__libasr_created__intrinsic_array_function_Sum);
+    if (((&(h_value))->data) != NULL && ((&(h_value))->data)->is_allocated && ((&(h_value))->data)->data != NULL) {
+        _lfortran_free_alloc(_lfortran_get_default_allocator(), (char*) ((&(h_value))->data)->data);
+        ((&(h_value))->data)->data = NULL;
+    }
+    if (((&(h_value))->data) != NULL) {
+        ((&(h_value))->data)->offset = 0;
+        ((&(h_value))->data)->is_allocated = false;
+        _lfortran_free_alloc(_lfortran_get_default_allocator(), (char*) (&(h_value))->data);
+        (&(h_value))->data = NULL;
+    }
+}
+
 void __lfortran_c_backend_local_allocatable_cleanup_01__fill_then_return(int32_t n, double *total)
 {
     int32_t __lcompilers_i_0;
@@ -434,6 +591,11 @@ int main(int argc, char* argv[])
     }
     __lfortran_c_backend_local_allocatable_cleanup_01__fill_from_callee(&total);
     if (fabs(total -   9.00000000000000000e+00) >   9.99999999999999980e-13) {
+        fprintf(stderr, "ERROR STOP");
+        exit(1);
+    }
+    __lfortran_c_backend_local_allocatable_cleanup_01__fill_holder_from_callee(&total);
+    if (fabs(total -   8.00000000000000000e+00) >   9.99999999999999980e-13) {
         fprintf(stderr, "ERROR STOP");
         exit(1);
     }

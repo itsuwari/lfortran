@@ -1,6 +1,10 @@
 program c_backend_local_allocatable_cleanup_01
 implicit none
 
+type holder
+    integer, allocatable :: data(:)
+end type
+
 real(8) :: total
 
 call fill(4, total)
@@ -14,6 +18,9 @@ if (abs(total - 5.0_8) > 1.0e-12_8) error stop
 
 call fill_from_callee(total)
 if (abs(total - 9.0_8) > 1.0e-12_8) error stop
+
+call fill_holder_from_callee(total)
+if (abs(total - 8.0_8) > 1.0e-12_8) error stop
 
 contains
 
@@ -46,6 +53,21 @@ subroutine make_array(values)
 
     allocate(values(3))
     values = 3.0_8
+end subroutine
+
+subroutine fill_holder_from_callee(total)
+    real(8), intent(out) :: total
+    type(holder) :: h
+
+    call make_holder(h)
+    total = real(sum(h%data), 8)
+end subroutine
+
+subroutine make_holder(h)
+    type(holder), intent(out) :: h
+
+    allocate(h%data(4))
+    h%data = 2
 end subroutine
 
 subroutine fill_then_return(n, total)

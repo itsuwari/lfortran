@@ -151,6 +151,7 @@ public:
     std::string current_return_var_name;
     std::vector<std::string> current_function_heap_array_data;
     std::vector<std::string> current_function_local_allocatable_arrays;
+    std::vector<std::pair<std::string, ASR::Struct_t*>> current_function_local_structs;
     std::map<uint64_t, SymbolInfo> sym_info;
     std::map<uint64_t, std::string> const_var_names;
     std::map<int32_t, std::string> gotoid2name;
@@ -222,6 +223,10 @@ public:
 
     std::string emit_current_function_heap_array_cleanup(const std::string &indent) const {
         std::string cleanup;
+        for (auto it = current_function_local_structs.rbegin();
+                it != current_function_local_structs.rend(); ++it) {
+            cleanup += emit_c_struct_member_cleanup(it->second, indent, it->first);
+        }
         for (auto it = current_function_local_allocatable_arrays.rbegin();
                 it != current_function_local_allocatable_arrays.rend(); ++it) {
             cleanup += indent + "if ((" + *it + ") != NULL && (" + *it
@@ -250,6 +255,99 @@ public:
             }
         }
         current_function_local_allocatable_arrays.push_back(descriptor);
+    }
+
+    std::string emit_c_struct_member_cleanup(ASR::Struct_t *struct_t,
+            const std::string &indent, const std::string &target) const {
+        std::string cleanup;
+        if (struct_t->m_parent != nullptr) {
+            ASR::symbol_t *parent_sym = ASRUtils::symbol_get_past_external(
+                struct_t->m_parent);
+            if (parent_sym != nullptr && ASR::is_a<ASR::Struct_t>(*parent_sym)) {
+                cleanup += emit_c_struct_member_cleanup(
+                    ASR::down_cast<ASR::Struct_t>(parent_sym), indent, target);
+            }
+        }
+        for (size_t i = 0; i < struct_t->n_members; i++) {
+            if (struct_t->m_members[i] == nullptr) {
+                continue;
+            }
+            ASR::symbol_t *member_sym0 = struct_t->m_symtab->get_symbol(
+                struct_t->m_members[i]);
+            if (member_sym0 == nullptr) {
+                continue;
+            }
+            ASR::symbol_t *member_sym = ASRUtils::symbol_get_past_external(
+                member_sym0);
+            if (member_sym == nullptr || !ASR::is_a<ASR::Variable_t>(*member_sym)) {
+                continue;
+            }
+            ASR::Variable_t *member_var = ASR::down_cast<ASR::Variable_t>(member_sym);
+            std::string member = target + "->" + CUtils::get_c_member_name(member_sym);
+            ASR::ttype_t *member_type = ASRUtils::type_get_past_allocatable_pointer(
+                member_var->m_type);
+            ASR::ttype_t *member_element_type = ASRUtils::extract_type(member_type);
+            if (ASRUtils::is_allocatable(member_var->m_type)
+                    && ASRUtils::is_array(member_var->m_type)
+                    && !ASRUtils::is_class_type(member_element_type)
+                    && !(ASR::is_a<ASR::StructType_t>(*member_element_type)
+                        && ASR::down_cast<ASR::StructType_t>(
+                            member_element_type)->m_is_unlimited_polymorphic)) {
+                cleanup += indent + "if ((" + member + ") != NULL && (" + member
+                    + ")->is_allocated && (" + member + ")->data != NULL) {\n"
+                    + indent + "    _lfortran_free_alloc(_lfortran_get_default_allocator(), "
+                    + "(char*) (" + member + ")->data);\n"
+                    + indent + "    (" + member + ")->data = NULL;\n"
+                    + indent + "}\n"
+                    + indent + "if ((" + member + ") != NULL) {\n"
+                    + indent + "    (" + member + ")->offset = 0;\n"
+                    + indent + "    (" + member + ")->is_allocated = false;\n"
+                    + indent + "    _lfortran_free_alloc(_lfortran_get_default_allocator(), "
+                    + "(char*) " + member + ");\n"
+                    + indent + "    " + member + " = NULL;\n"
+                    + indent + "}\n";
+            } else {
+                bool is_plain_struct_member = !ASRUtils::is_array(member_var->m_type)
+                    && !ASRUtils::is_allocatable(member_var->m_type)
+                    && !ASRUtils::is_pointer(member_var->m_type)
+                    && ASR::is_a<ASR::StructType_t>(*member_type)
+                    && !ASRUtils::is_class_type(member_type);
+                if (is_plain_struct_member && member_var->m_type_declaration != nullptr) {
+                    ASR::symbol_t *member_struct_sym =
+                        ASRUtils::symbol_get_past_external(member_var->m_type_declaration);
+                    if (member_struct_sym != nullptr
+                            && ASR::is_a<ASR::Struct_t>(*member_struct_sym)) {
+                        cleanup += emit_c_struct_member_cleanup(
+                            ASR::down_cast<ASR::Struct_t>(member_struct_sym),
+                            indent, "(&(" + member + "))");
+                    }
+                }
+            }
+        }
+        return cleanup;
+    }
+
+    void register_current_function_local_struct_cleanup(
+            const std::string &target, ASR::Struct_t *struct_t) {
+        for (const auto &existing: current_function_local_structs) {
+            if (existing.first == target) {
+                return;
+            }
+        }
+        current_function_local_structs.push_back({target, struct_t});
+    }
+
+    std::string get_c_local_struct_cleanup_target(const ASR::Variable_t &v,
+            const std::string &emitted_name) const {
+        bool force_value_struct_temp =
+            std::string(v.m_name).find("__libasr_created__struct_constructor_") != std::string::npos ||
+            std::string(v.m_name).find("temp_struct_var__") != std::string::npos;
+        if (force_value_struct_temp) {
+            return "(&(" + emitted_name + "))";
+        }
+        std::string value_var_name = v.m_parent_symtab->get_unique_name(
+            emitted_name + "_value");
+        return "(&(" + value_var_name + "))";
     }
 
     std::string get_final_combined_src(std::string head, std::string unit_src) {
@@ -2301,6 +2399,7 @@ R"(#include <stdio.h>
         current_body = "";
         current_function_heap_array_data.clear();
         current_function_local_allocatable_arrays.clear();
+        current_function_local_structs.clear();
         SymbolTable* current_scope_copy = current_scope;
         current_scope = x.m_symtab;
         if (std::string(x.m_name) == "size" && intrinsic_module ) {
@@ -2425,6 +2524,24 @@ R"(#include <stdio.h>
                                 && ASRUtils::is_array(v->m_type)) {
                             register_current_function_local_allocatable_array_cleanup(
                                 emitted_name);
+                        } else if (is_c && v->m_intent == ASRUtils::intent_local
+                                && !ASRUtils::is_allocatable(v->m_type)
+                                && !ASRUtils::is_pointer(v->m_type)
+                                && !ASRUtils::is_array(v->m_type)) {
+                            ASR::ttype_t *v_type_unwrapped =
+                                ASRUtils::type_get_past_allocatable_pointer(v->m_type);
+                            if (ASR::is_a<ASR::StructType_t>(*v_type_unwrapped)
+                                    && !ASRUtils::is_class_type(v_type_unwrapped)
+                                    && v->m_type_declaration != nullptr) {
+                                ASR::symbol_t *struct_sym =
+                                    ASRUtils::symbol_get_past_external(v->m_type_declaration);
+                                if (struct_sym != nullptr
+                                        && ASR::is_a<ASR::Struct_t>(*struct_sym)) {
+                                    register_current_function_local_struct_cleanup(
+                                        get_c_local_struct_cleanup_target(*v, emitted_name),
+                                        ASR::down_cast<ASR::Struct_t>(struct_sym));
+                                }
+                            }
                         }
                     }
                     if (v->m_intent == ASRUtils::intent_return_var) {
@@ -2497,6 +2614,7 @@ R"(#include <stdio.h>
             current_return_var_name.clear();
             current_function_heap_array_data.clear();
             current_function_local_allocatable_arrays.clear();
+            current_function_local_structs.clear();
             indentation_level -= 1;
         }
         sub += "\n";

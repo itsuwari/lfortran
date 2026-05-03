@@ -2,11 +2,11 @@
     "basename": "c-c_backend_local_allocatable_cleanup_01-834b7e6",
     "cmd": "lfortran --no-color --show-c {infile}",
     "infile": "tests/c_backend_local_allocatable_cleanup_01.f90",
-    "infile_hash": "8617f071250ce7ff776920801ddbd0932fb06baa2dc712dc5312df0b",
+    "infile_hash": "259746853ef201239cf25fb1807c28d4e1e74cf4844fdf16c2318559",
     "outfile": null,
     "outfile_hash": null,
     "stdout": "c-c_backend_local_allocatable_cleanup_01-834b7e6.stdout",
-    "stdout_hash": "81ab1ad2ff112f94f210fd094ba02572ac4462f27ebc8464df6a7758",
+    "stdout_hash": "7c310ca49c3b67011da93b088cf3e41206cdf284fa34267b2d73fb1f",
     "stderr": null,
     "stderr_hash": null,
     "returncode": 0
