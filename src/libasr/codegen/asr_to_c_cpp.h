@@ -4148,6 +4148,20 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         if (base_rank <= 0) {
             return false;
         }
+        std::vector<bool> has_known_base_lbs(static_cast<size_t>(base_rank), false);
+        std::vector<int64_t> known_base_lbs(static_cast<size_t>(base_rank), 0);
+        if (base_dims != nullptr
+                && ASRUtils::extract_physical_type(base_type)
+                    == ASR::array_physical_typeType::PointerArray) {
+            for (int i = 0; i < base_rank; i++) {
+                int64_t lb = 1;
+                if (base_dims[i].m_start != nullptr
+                        && get_c_constant_int_expr_value(base_dims[i].m_start, lb)) {
+                    has_known_base_lbs[static_cast<size_t>(i)] = true;
+                    known_base_lbs[static_cast<size_t>(i)] = lb;
+                }
+            }
+        }
 
         if (section == nullptr) {
             if (base_rank != 1) {
@@ -4170,6 +4184,10 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             ASR::array_index_t idx = section->m_args[source_dim];
             std::string base_lb = base + "->dims[" + std::to_string(source_dim)
                 + "].lower_bound";
+            if (has_known_base_lbs[static_cast<size_t>(source_dim)]) {
+                base_lb = std::to_string(
+                    known_base_lbs[static_cast<size_t>(source_dim)]);
+            }
             std::string base_stride = base + "->dims[" + std::to_string(source_dim)
                 + "].stride";
             bool is_slice = idx.m_left || idx.m_step || idx.m_right == nullptr;
@@ -4183,8 +4201,15 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                     std::string left = get_c_array_section_bound_expr(idx.m_left, base_lb);
                     setup += drain_tmp_buffer();
                     setup += extract_stmt_setup_from_expr(left);
-                    offset_terms.push_back(base_stride + " * ((" + left + ") - "
-                        + base_lb + ")");
+                    int64_t left_value = 0;
+                    bool left_is_known_lb =
+                        has_known_base_lbs[static_cast<size_t>(source_dim)]
+                        && get_c_constant_int_expr_value(idx.m_left, left_value)
+                        && left_value == known_base_lbs[static_cast<size_t>(source_dim)];
+                    if (!left_is_known_lb) {
+                        offset_terms.push_back(base_stride + " * ((" + left + ") - "
+                            + base_lb + ")");
+                    }
                 }
                 std::string step = get_c_array_section_bound_expr(idx.m_step, "1");
                 setup += drain_tmp_buffer();

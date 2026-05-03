@@ -69,6 +69,8 @@ void __lfortran_c_backend_descriptor_vector_assignment_direct_01_m__shift_column
 void __lfortran_c_backend_descriptor_vector_assignment_direct_01_m__shift_column(struct r64_____* restrict xyz, struct r64_____* restrict trans, struct r64___* restrict vij, int32_t jat, int32_t iat, int32_t jtr);
 void __lfortran_c_backend_descriptor_vector_assignment_direct_01_m__shift_component_column_real_______1__StructType(struct c_backend_descriptor_vector_assignment_direct_01_m__molecule* restrict mol, struct r64_____* restrict trans, int32_t __1trans, int32_t __2trans, struct r64___* restrict vij, int32_t jat, int32_t iat, int32_t jtr);
 void __lfortran_c_backend_descriptor_vector_assignment_direct_01_m__shift_component_column__StructType(struct c_backend_descriptor_vector_assignment_direct_01_m__molecule* restrict mol, struct r64_____* restrict trans, struct r64___* restrict vij, int32_t jat, int32_t iat, int32_t jtr);
+void __lfortran_c_backend_descriptor_vector_assignment_direct_01_m__shift_lower0_column_real_______0(struct r64_____* restrict trans, int32_t __1trans, int32_t __2trans, struct r64___* restrict vij, int32_t jtr);
+void __lfortran_c_backend_descriptor_vector_assignment_direct_01_m__shift_lower0_column(struct r64_____* restrict trans, struct r64___* restrict vij, int32_t jtr);
 
 
 
@@ -91,11 +93,11 @@ void __lfortran_c_backend_descriptor_vector_assignment_direct_01_m__shift_column
     {
         int64_t __lfortran_i;
         __lfortran_i = 0;
-        local_vij_data[(0) + __lfortran_i * 1] = ((xyz->data[(xyz->offset + xyz->dims[0].stride * ((1) - xyz->dims[0].lower_bound) + xyz->dims[1].stride * ((jat) - xyz->dims[1].lower_bound)) + __lfortran_i * (xyz->dims[0].stride * (1))] + trans->data[(trans->offset + trans->dims[0].stride * ((1) - trans->dims[0].lower_bound) + trans->dims[1].stride * ((jtr) - trans->dims[1].lower_bound)) + __lfortran_i * (trans->dims[0].stride * (1))]) - xyz->data[(xyz->offset + xyz->dims[0].stride * ((1) - xyz->dims[0].lower_bound) + xyz->dims[1].stride * ((iat) - xyz->dims[1].lower_bound)) + __lfortran_i * (xyz->dims[0].stride * (1))]);
+        local_vij_data[(0) + __lfortran_i * 1] = ((xyz->data[(xyz->offset + xyz->dims[1].stride * ((jat) - 1)) + __lfortran_i * (xyz->dims[0].stride * (1))] + trans->data[(trans->offset + trans->dims[1].stride * ((jtr) - 1)) + __lfortran_i * (trans->dims[0].stride * (1))]) - xyz->data[(xyz->offset + xyz->dims[1].stride * ((iat) - 1)) + __lfortran_i * (xyz->dims[0].stride * (1))]);
         __lfortran_i = 1;
-        local_vij_data[(0) + __lfortran_i * 1] = ((xyz->data[(xyz->offset + xyz->dims[0].stride * ((1) - xyz->dims[0].lower_bound) + xyz->dims[1].stride * ((jat) - xyz->dims[1].lower_bound)) + __lfortran_i * (xyz->dims[0].stride * (1))] + trans->data[(trans->offset + trans->dims[0].stride * ((1) - trans->dims[0].lower_bound) + trans->dims[1].stride * ((jtr) - trans->dims[1].lower_bound)) + __lfortran_i * (trans->dims[0].stride * (1))]) - xyz->data[(xyz->offset + xyz->dims[0].stride * ((1) - xyz->dims[0].lower_bound) + xyz->dims[1].stride * ((iat) - xyz->dims[1].lower_bound)) + __lfortran_i * (xyz->dims[0].stride * (1))]);
+        local_vij_data[(0) + __lfortran_i * 1] = ((xyz->data[(xyz->offset + xyz->dims[1].stride * ((jat) - 1)) + __lfortran_i * (xyz->dims[0].stride * (1))] + trans->data[(trans->offset + trans->dims[1].stride * ((jtr) - 1)) + __lfortran_i * (trans->dims[0].stride * (1))]) - xyz->data[(xyz->offset + xyz->dims[1].stride * ((iat) - 1)) + __lfortran_i * (xyz->dims[0].stride * (1))]);
         __lfortran_i = 2;
-        local_vij_data[(0) + __lfortran_i * 1] = ((xyz->data[(xyz->offset + xyz->dims[0].stride * ((1) - xyz->dims[0].lower_bound) + xyz->dims[1].stride * ((jat) - xyz->dims[1].lower_bound)) + __lfortran_i * (xyz->dims[0].stride * (1))] + trans->data[(trans->offset + trans->dims[0].stride * ((1) - trans->dims[0].lower_bound) + trans->dims[1].stride * ((jtr) - trans->dims[1].lower_bound)) + __lfortran_i * (trans->dims[0].stride * (1))]) - xyz->data[(xyz->offset + xyz->dims[0].stride * ((1) - xyz->dims[0].lower_bound) + xyz->dims[1].stride * ((iat) - xyz->dims[1].lower_bound)) + __lfortran_i * (xyz->dims[0].stride * (1))]);
+        local_vij_data[(0) + __lfortran_i * 1] = ((xyz->data[(xyz->offset + xyz->dims[1].stride * ((jat) - 1)) + __lfortran_i * (xyz->dims[0].stride * (1))] + trans->data[(trans->offset + trans->dims[1].stride * ((jtr) - 1)) + __lfortran_i * (trans->dims[0].stride * (1))]) - xyz->data[(xyz->offset + xyz->dims[1].stride * ((iat) - 1)) + __lfortran_i * (xyz->dims[0].stride * (1))]);
     }
     __libasr_created__array_section_pointer_->data = (local_vij->data + (0 + (1 * (((int32_t)local_vij->dims[1-1].lower_bound) - 1))));
     __libasr_created__array_section_pointer_->offset = 0;
@@ -141,11 +143,11 @@ void __lfortran_c_backend_descriptor_vector_assignment_direct_01_m__shift_compon
     {
         int64_t __lfortran_i;
         __lfortran_i = 0;
-        local_vij_data[(0) + __lfortran_i * 1] = ((mol->xyz->data[(mol->xyz->offset + mol->xyz->dims[1].stride * ((jat) - mol->xyz->dims[1].lower_bound)) + __lfortran_i * (mol->xyz->dims[0].stride * (1))] + trans->data[(trans->offset + trans->dims[0].stride * ((1) - trans->dims[0].lower_bound) + trans->dims[1].stride * ((jtr) - trans->dims[1].lower_bound)) + __lfortran_i * (trans->dims[0].stride * (1))]) - mol->xyz->data[(mol->xyz->offset + mol->xyz->dims[1].stride * ((iat) - mol->xyz->dims[1].lower_bound)) + __lfortran_i * (mol->xyz->dims[0].stride * (1))]);
+        local_vij_data[(0) + __lfortran_i * 1] = ((mol->xyz->data[(mol->xyz->offset + mol->xyz->dims[1].stride * ((jat) - mol->xyz->dims[1].lower_bound)) + __lfortran_i * (mol->xyz->dims[0].stride * (1))] + trans->data[(trans->offset + trans->dims[1].stride * ((jtr) - 1)) + __lfortran_i * (trans->dims[0].stride * (1))]) - mol->xyz->data[(mol->xyz->offset + mol->xyz->dims[1].stride * ((iat) - mol->xyz->dims[1].lower_bound)) + __lfortran_i * (mol->xyz->dims[0].stride * (1))]);
         __lfortran_i = 1;
-        local_vij_data[(0) + __lfortran_i * 1] = ((mol->xyz->data[(mol->xyz->offset + mol->xyz->dims[1].stride * ((jat) - mol->xyz->dims[1].lower_bound)) + __lfortran_i * (mol->xyz->dims[0].stride * (1))] + trans->data[(trans->offset + trans->dims[0].stride * ((1) - trans->dims[0].lower_bound) + trans->dims[1].stride * ((jtr) - trans->dims[1].lower_bound)) + __lfortran_i * (trans->dims[0].stride * (1))]) - mol->xyz->data[(mol->xyz->offset + mol->xyz->dims[1].stride * ((iat) - mol->xyz->dims[1].lower_bound)) + __lfortran_i * (mol->xyz->dims[0].stride * (1))]);
+        local_vij_data[(0) + __lfortran_i * 1] = ((mol->xyz->data[(mol->xyz->offset + mol->xyz->dims[1].stride * ((jat) - mol->xyz->dims[1].lower_bound)) + __lfortran_i * (mol->xyz->dims[0].stride * (1))] + trans->data[(trans->offset + trans->dims[1].stride * ((jtr) - 1)) + __lfortran_i * (trans->dims[0].stride * (1))]) - mol->xyz->data[(mol->xyz->offset + mol->xyz->dims[1].stride * ((iat) - mol->xyz->dims[1].lower_bound)) + __lfortran_i * (mol->xyz->dims[0].stride * (1))]);
         __lfortran_i = 2;
-        local_vij_data[(0) + __lfortran_i * 1] = ((mol->xyz->data[(mol->xyz->offset + mol->xyz->dims[1].stride * ((jat) - mol->xyz->dims[1].lower_bound)) + __lfortran_i * (mol->xyz->dims[0].stride * (1))] + trans->data[(trans->offset + trans->dims[0].stride * ((1) - trans->dims[0].lower_bound) + trans->dims[1].stride * ((jtr) - trans->dims[1].lower_bound)) + __lfortran_i * (trans->dims[0].stride * (1))]) - mol->xyz->data[(mol->xyz->offset + mol->xyz->dims[1].stride * ((iat) - mol->xyz->dims[1].lower_bound)) + __lfortran_i * (mol->xyz->dims[0].stride * (1))]);
+        local_vij_data[(0) + __lfortran_i * 1] = ((mol->xyz->data[(mol->xyz->offset + mol->xyz->dims[1].stride * ((jat) - mol->xyz->dims[1].lower_bound)) + __lfortran_i * (mol->xyz->dims[0].stride * (1))] + trans->data[(trans->offset + trans->dims[1].stride * ((jtr) - 1)) + __lfortran_i * (trans->dims[0].stride * (1))]) - mol->xyz->data[(mol->xyz->offset + mol->xyz->dims[1].stride * ((iat) - mol->xyz->dims[1].lower_bound)) + __lfortran_i * (mol->xyz->dims[0].stride * (1))]);
     }
     __libasr_created__array_section_pointer_->data = (local_vij->data + (0 + (1 * (((int32_t)local_vij->dims[1-1].lower_bound) - 1))));
     __libasr_created__array_section_pointer_->offset = 0;
@@ -172,6 +174,65 @@ void __lfortran_c_backend_descriptor_vector_assignment_direct_01_m__shift_compon
 void __lfortran_c_backend_descriptor_vector_assignment_direct_01_m__shift_component_column__StructType(struct c_backend_descriptor_vector_assignment_direct_01_m__molecule* restrict mol, struct r64_____* restrict trans, struct r64___* restrict vij, int32_t jat, int32_t iat, int32_t jtr)
 {
     __lfortran_c_backend_descriptor_vector_assignment_direct_01_m__shift_component_column_real_______1__StructType(mol, trans, ((int32_t)trans->dims[0].length + trans->dims[0].lower_bound - 1), ((int32_t)trans->dims[1].length + trans->dims[1].lower_bound - 1), vij, jat, iat, jtr);
+}
+
+void __lfortran_c_backend_descriptor_vector_assignment_direct_01_m__shift_lower0_column_real_______0(struct r64_____* restrict trans, int32_t __1trans, int32_t __2trans, struct r64___* restrict vij, int32_t jtr)
+{
+    struct r64___ __libasr_created__array_section_pointer__value = {0};
+    struct r64___* __libasr_created__array_section_pointer_ = &__libasr_created__array_section_pointer__value;
+    struct r64___ __libasr_created__array_section_pointer_1_value = {0};
+    struct r64___* __libasr_created__array_section_pointer_1 = &__libasr_created__array_section_pointer_1_value;
+    struct r64___ local_vij_value;
+    struct r64___* local_vij = &local_vij_value;
+    double local_vij_data[3];
+    local_vij->data = local_vij_data;
+    local_vij->n_dims = 1;
+    local_vij->offset = 0;
+    local_vij->is_allocated = true;
+    local_vij->dims[0].lower_bound = 0;
+    local_vij->dims[0].length = 3;
+    local_vij->dims[0].stride = 1;
+    __libasr_created__array_section_pointer_->data = trans->data;
+    __libasr_created__array_section_pointer_->offset = ((trans->offset + (trans->dims[0].stride * ((0) - trans->dims[0].lower_bound))) + (trans->dims[1].stride * ((jtr) - trans->dims[1].lower_bound)));
+    __libasr_created__array_section_pointer_->is_allocated = true;
+    __libasr_created__array_section_pointer_->dims[0].stride = (trans->dims[0].stride * (1));
+    __libasr_created__array_section_pointer_->dims[0].lower_bound = 1;
+    __libasr_created__array_section_pointer_->dims[0].length = ((( (__1trans + 0 - 1) - (0) )/1) + 1);
+    __libasr_created__array_section_pointer_->n_dims = 1;
+    {
+        int64_t __lfortran_i;
+        __lfortran_i = 0;
+        local_vij_data[(0) + __lfortran_i * 1] = __libasr_created__array_section_pointer_->data[(__libasr_created__array_section_pointer_->offset + __lfortran_i * __libasr_created__array_section_pointer_->dims[0].stride)];
+        __lfortran_i = 1;
+        local_vij_data[(0) + __lfortran_i * 1] = __libasr_created__array_section_pointer_->data[(__libasr_created__array_section_pointer_->offset + __lfortran_i * __libasr_created__array_section_pointer_->dims[0].stride)];
+        __lfortran_i = 2;
+        local_vij_data[(0) + __lfortran_i * 1] = __libasr_created__array_section_pointer_->data[(__libasr_created__array_section_pointer_->offset + __lfortran_i * __libasr_created__array_section_pointer_->dims[0].stride)];
+    }
+    __libasr_created__array_section_pointer_1->data = (local_vij->data + (0 + (1 * (((int32_t)local_vij->dims[1-1].lower_bound) - 0))));
+    __libasr_created__array_section_pointer_1->offset = 0;
+    __libasr_created__array_section_pointer_1->is_allocated = true;
+    __libasr_created__array_section_pointer_1->dims[0].stride = (1*1);
+    __libasr_created__array_section_pointer_1->dims[0].lower_bound = 1;
+    __libasr_created__array_section_pointer_1->dims[0].length = ((( (((int32_t) local_vij->dims[1-1].length + local_vij->dims[1-1].lower_bound - 1)) - (((int32_t)local_vij->dims[1-1].lower_bound)) )/1) + 1);
+    __libasr_created__array_section_pointer_1->n_dims = 1;
+    {
+    double *__lfortran_lhs_data = vij->data;
+    int64_t __lfortran_lhs_stride = vij->dims[0].stride * (1);
+    int64_t __lfortran_lhs_offset = (vij->offset + vij->dims[0].stride * ((1) - vij->dims[0].lower_bound));
+    int64_t __lfortran_lhs_length = ((((3 + 1 - 1) - (1)) / (1)) + 1);
+    double *__lfortran_rhs_data = __libasr_created__array_section_pointer_1->data;
+    int64_t __lfortran_rhs_stride = __libasr_created__array_section_pointer_1->dims[0].stride * (1);
+    int64_t __lfortran_rhs_offset = __libasr_created__array_section_pointer_1->offset;
+    int64_t __lfortran_rhs_length = (((((__libasr_created__array_section_pointer_1->dims[0].lower_bound + __libasr_created__array_section_pointer_1->dims[0].length - 1)) - (__libasr_created__array_section_pointer_1->dims[0].lower_bound)) / (1)) + 1);
+        for (int64_t __lfortran_i1 = 0; __lfortran_i1 < __lfortran_lhs_length; __lfortran_i1++) {
+            __lfortran_lhs_data[__lfortran_lhs_offset + __lfortran_i1 * __lfortran_lhs_stride] = __lfortran_rhs_data[__lfortran_rhs_offset + __lfortran_i1 * __lfortran_rhs_stride];
+        }
+    }
+}
+
+void __lfortran_c_backend_descriptor_vector_assignment_direct_01_m__shift_lower0_column(struct r64_____* restrict trans, struct r64___* restrict vij, int32_t jtr)
+{
+    __lfortran_c_backend_descriptor_vector_assignment_direct_01_m__shift_lower0_column_real_______0(trans, ((int32_t)trans->dims[0].length + trans->dims[0].lower_bound - 1), ((int32_t)trans->dims[1].length + trans->dims[1].lower_bound - 1), vij, jtr);
 }
 
 int main(int argc, char* argv[])
@@ -226,6 +287,19 @@ int main(int argc, char* argv[])
     trans->dims[1].lower_bound = 1;
     trans->dims[1].length = 1;
     trans->dims[1].stride = (1*3);
+    struct r64_____ trans0_value;
+    struct r64_____* trans0 = &trans0_value;
+    double trans0_data[3];
+    trans0->data = trans0_data;
+    trans0->n_dims = 2;
+    trans0->offset = 0;
+    trans0->is_allocated = true;
+    trans0->dims[0].lower_bound = 0;
+    trans0->dims[0].length = 3;
+    trans0->dims[0].stride = 1;
+    trans0->dims[1].lower_bound = 1;
+    trans0->dims[1].length = 1;
+    trans0->dims[1].stride = (1*3);
     struct r64___ vij_value;
     struct r64___* vij = &vij_value;
     double vij_data[3];
@@ -260,6 +334,9 @@ int main(int argc, char* argv[])
     trans_data[(0 + (1 * ((((int32_t)trans->dims[1-1].lower_bound) + ((1) - (1)) * (1)) - 1)))] =   5.00000000000000000e-01;
     trans_data[(0 + (1 * ((((int32_t)trans->dims[1-1].lower_bound) + ((2) - (1)) * (1)) - 1)))] =  -1.00000000000000000e+00;
     trans_data[(0 + (1 * ((((int32_t)trans->dims[1-1].lower_bound) + ((3) - (1)) * (1)) - 1)))] =   2.00000000000000000e+00;
+    trans0_data[(0 + (1 * ((((int32_t)trans0->dims[1-1].lower_bound) + ((1) - (1)) * (1)) - 0)))] =   7.00000000000000000e+00;
+    trans0_data[(0 + (1 * ((((int32_t)trans0->dims[1-1].lower_bound) + ((2) - (1)) * (1)) - 0)))] =   8.00000000000000000e+00;
+    trans0_data[(0 + (1 * ((((int32_t)trans0->dims[1-1].lower_bound) + ((3) - (1)) * (1)) - 0)))] =   9.00000000000000000e+00;
     mol->xyz->n_dims = 2;
     mol->xyz->dims[0].lower_bound = 1;
     mol->xyz->dims[0].length = 3;
@@ -332,6 +409,21 @@ int main(int argc, char* argv[])
         exit(1);
     }
     if (fabs(vij_data[(0 + (1 * (3 - 1)))] -   5.00000000000000000e+00) >   9.99999999999999980e-13) {
+        fprintf(stderr, "ERROR STOP");
+        exit(1);
+    }
+    struct r64_____ __lfortran_array_view5 = { .data = trans0->data, .dims = {{0, trans0->dims[0].length, trans0->dims[0].stride}, {1, trans0->dims[1].length, trans0->dims[1].stride}}, .n_dims = 2, .offset = trans0->offset, .is_allocated = trans0->is_allocated };
+    struct r64___ __lfortran_array_view6 = { .data = vij->data, .dims = {{1, vij->dims[0].length, vij->dims[0].stride}}, .n_dims = 1, .offset = vij->offset, .is_allocated = vij->is_allocated };
+    __lfortran_c_backend_descriptor_vector_assignment_direct_01_m__shift_lower0_column_real_______0(&__lfortran_array_view5, ((int32_t) (&__lfortran_array_view5)->dims[0].length), ((int32_t) (&__lfortran_array_view5)->dims[1].length), &__lfortran_array_view6, 1);
+    if (fabs(vij_data[(0 + (1 * (1 - 1)))] -   7.00000000000000000e+00) >   9.99999999999999980e-13) {
+        fprintf(stderr, "ERROR STOP");
+        exit(1);
+    }
+    if (fabs(vij_data[(0 + (1 * (2 - 1)))] -   8.00000000000000000e+00) >   9.99999999999999980e-13) {
+        fprintf(stderr, "ERROR STOP");
+        exit(1);
+    }
+    if (fabs(vij_data[(0 + (1 * (3 - 1)))] -   9.00000000000000000e+00) >   9.99999999999999980e-13) {
         fprintf(stderr, "ERROR STOP");
         exit(1);
     }
