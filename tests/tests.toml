@@ -5161,6 +5161,10 @@ filename = "c_backend_const_vector_subscript_literal_01.f90"
 c = true
 
 [[test]]
+filename = "c_backend_descriptor_vector_assignment_direct_01.f90"
+c = true
+
+[[test]]
 filename = "c_backend_small_integer_pow_01.f90"
 c = true
 

@@ -1,0 +1,13 @@
+{
+    "basename": "c-c_backend_descriptor_vector_assignment_direct_01-087eeb1",
+    "cmd": "lfortran --no-color --show-c {infile}",
+    "infile": "tests/c_backend_descriptor_vector_assignment_direct_01.f90",
+    "infile_hash": "4d54530d29f2583b7950c999e08b5886ac72ca25ff9d99b34a2bd300",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": "c-c_backend_descriptor_vector_assignment_direct_01-087eeb1.stdout",
+    "stdout_hash": "c99a36bf23f341d96594bbcea7855cebc6e531f6a78b7efda7369ede",
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

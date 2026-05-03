@@ -4117,6 +4117,107 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         return true;
     }
 
+    bool get_c_direct_rank1_descriptor_element_expr(ASR::expr_t *expr,
+            const std::string &index_name, std::string &setup, std::string &out) {
+        expr = unwrap_c_array_expr(expr);
+        if (expr == nullptr || !is_c_rank1_unit_array_expr(expr)) {
+            return false;
+        }
+
+        ASR::expr_t *base_expr = expr;
+        ASR::ArraySection_t *section = nullptr;
+        if (ASR::is_a<ASR::ArraySection_t>(*expr)) {
+            section = ASR::down_cast<ASR::ArraySection_t>(expr);
+            base_expr = unwrap_c_array_expr(section->m_v);
+        }
+        if (base_expr == nullptr || is_c_fixed_size_descriptor_storage_expr(base_expr)
+                || !(ASR::is_a<ASR::Var_t>(*base_expr)
+                    || ASR::is_a<ASR::StructInstanceMember_t>(*base_expr))) {
+            return false;
+        }
+
+        self().visit_expr(*base_expr);
+        std::string base = src;
+        setup += drain_tmp_buffer();
+        setup += extract_stmt_setup_from_expr(base);
+
+        ASR::ttype_t *base_type = ASRUtils::type_get_past_allocatable_pointer(
+            ASRUtils::expr_type(base_expr));
+        ASR::dimension_t *base_dims = nullptr;
+        int base_rank = ASRUtils::extract_dimensions_from_ttype(base_type, base_dims);
+        if (base_rank <= 0) {
+            return false;
+        }
+
+        if (section == nullptr) {
+            if (base_rank != 1) {
+                return false;
+            }
+            out = base + "->data[(" + base + "->offset + " + index_name
+                + " * " + base + "->dims[0].stride)]";
+            return true;
+        }
+
+        if ((int)section->n_args != base_rank) {
+            return false;
+        }
+
+        std::vector<std::string> offset_terms;
+        offset_terms.push_back(base + "->offset");
+        std::string slice_stride;
+        bool found_slice = false;
+        for (int source_dim = 0; source_dim < base_rank; source_dim++) {
+            ASR::array_index_t idx = section->m_args[source_dim];
+            std::string base_lb = base + "->dims[" + std::to_string(source_dim)
+                + "].lower_bound";
+            std::string base_stride = base + "->dims[" + std::to_string(source_dim)
+                + "].stride";
+            bool is_slice = idx.m_left || idx.m_step || idx.m_right == nullptr;
+            if (is_slice) {
+                if (found_slice || !is_c_unit_step_expr(idx.m_step)) {
+                    return false;
+                }
+                std::string left = get_c_array_section_bound_expr(idx.m_left, base_lb);
+                setup += drain_tmp_buffer();
+                setup += extract_stmt_setup_from_expr(left);
+                std::string step = get_c_array_section_bound_expr(idx.m_step, "1");
+                setup += drain_tmp_buffer();
+                setup += extract_stmt_setup_from_expr(step);
+                offset_terms.push_back(base_stride + " * ((" + left + ") - "
+                    + base_lb + ")");
+                slice_stride = "(" + base_stride + " * (" + step + "))";
+                found_slice = true;
+                continue;
+            }
+
+            ASR::expr_t *idx_expr = get_array_index_expr(idx);
+            if (idx_expr == nullptr) {
+                return false;
+            }
+            self().visit_expr(*idx_expr);
+            std::string idx_src = src;
+            setup += drain_tmp_buffer();
+            setup += extract_stmt_setup_from_expr(idx_src);
+            offset_terms.push_back(base_stride + " * ((" + idx_src + ") - "
+                + base_lb + ")");
+        }
+        if (!found_slice) {
+            return false;
+        }
+
+        std::string offset_expr = "(";
+        for (size_t i = 0; i < offset_terms.size(); i++) {
+            if (i > 0) {
+                offset_expr += " + ";
+            }
+            offset_expr += offset_terms[i];
+        }
+        offset_expr += ")";
+        out = base + "->data[" + offset_expr + " + " + index_name
+            + " * " + slice_stride + "]";
+        return true;
+    }
+
     bool get_c_rank1_array_access(ASR::expr_t *expr, const std::string &prefix,
             std::string &setup, std::string &data_name, std::string &offset_name,
             std::string &stride_name, std::string &length_name,
@@ -4390,6 +4491,12 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         if (is_c_rank1_unit_array_expr(expr)) {
             if (!need_length
                     && get_c_static_rank1_array_element_expr(
+                        expr, index_name, setup, out)) {
+                length_name.clear();
+                return true;
+            }
+            if (!need_length
+                    && get_c_direct_rank1_descriptor_element_expr(
                         expr, index_name, setup, out)) {
                 length_name.clear();
                 return true;
