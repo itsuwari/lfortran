@@ -60,14 +60,34 @@ void __lfortran_c_backend_section_assoc_temp_direct_01_m__copy_planes(struct r64
 // Implementations
 void __lfortran_c_backend_section_assoc_temp_direct_01_m__copy_plane(struct r64_____* restrict a, struct r64_____* restrict b)
 {
-    b->data[(((0 + (b->dims[0].stride * (1 - b->dims[0].lower_bound))) + (b->dims[1].stride * (1 - b->dims[1].lower_bound))) + b->offset)] = a->data[(((0 + (a->dims[0].stride * (1 - a->dims[0].lower_bound))) + (a->dims[1].stride * (1 - a->dims[1].lower_bound))) + a->offset)];
-    b->data[(((0 + (b->dims[0].stride * (2 - b->dims[0].lower_bound))) + (b->dims[1].stride * (1 - b->dims[1].lower_bound))) + b->offset)] = a->data[(((0 + (a->dims[0].stride * (2 - a->dims[0].lower_bound))) + (a->dims[1].stride * (1 - a->dims[1].lower_bound))) + a->offset)];
+    const int32_t __lfortran_a_offset = a->offset;
+    const int32_t __lfortran_a_dim1_lower_bound = a->dims[0].lower_bound;
+    const int32_t __lfortran_a_dim1_stride = a->dims[0].stride;
+    const int32_t __lfortran_a_dim2_lower_bound = a->dims[1].lower_bound;
+    const int32_t __lfortran_a_dim2_stride = a->dims[1].stride;
+    const int32_t __lfortran_b_offset = b->offset;
+    const int32_t __lfortran_b_dim1_lower_bound = b->dims[0].lower_bound;
+    const int32_t __lfortran_b_dim1_stride = b->dims[0].stride;
+    const int32_t __lfortran_b_dim2_lower_bound = b->dims[1].lower_bound;
+    const int32_t __lfortran_b_dim2_stride = b->dims[1].stride;
+    b->data[(((0 + (__lfortran_b_dim1_stride * (1 - __lfortran_b_dim1_lower_bound))) + (__lfortran_b_dim2_stride * (1 - __lfortran_b_dim2_lower_bound))) + __lfortran_b_offset)] = a->data[(((0 + (__lfortran_a_dim1_stride * (1 - __lfortran_a_dim1_lower_bound))) + (__lfortran_a_dim2_stride * (1 - __lfortran_a_dim2_lower_bound))) + __lfortran_a_offset)];
+    b->data[(((0 + (__lfortran_b_dim1_stride * (2 - __lfortran_b_dim1_lower_bound))) + (__lfortran_b_dim2_stride * (1 - __lfortran_b_dim2_lower_bound))) + __lfortran_b_offset)] = a->data[(((0 + (__lfortran_a_dim1_stride * (2 - __lfortran_a_dim1_lower_bound))) + (__lfortran_a_dim2_stride * (1 - __lfortran_a_dim2_lower_bound))) + __lfortran_a_offset)];
 }
 
 void __lfortran_c_backend_section_assoc_temp_direct_01_m__copy_plane_real_______0_real_______1(struct r64_____* restrict a, int32_t __1a, int32_t __2a, struct r64_____* restrict b, int32_t __1b, int32_t __2b)
 {
-    b->data[(((0 + (b->dims[0].stride * (1 - b->dims[0].lower_bound))) + (b->dims[1].stride * (1 - b->dims[1].lower_bound))) + b->offset)] = a->data[(((0 + (a->dims[0].stride * (1 - a->dims[0].lower_bound))) + (a->dims[1].stride * (1 - a->dims[1].lower_bound))) + a->offset)];
-    b->data[(((0 + (b->dims[0].stride * (2 - b->dims[0].lower_bound))) + (b->dims[1].stride * (1 - b->dims[1].lower_bound))) + b->offset)] = a->data[(((0 + (a->dims[0].stride * (2 - a->dims[0].lower_bound))) + (a->dims[1].stride * (1 - a->dims[1].lower_bound))) + a->offset)];
+    const int32_t __lfortran_a_offset = a->offset;
+    const int32_t __lfortran_a_dim1_lower_bound = a->dims[0].lower_bound;
+    const int32_t __lfortran_a_dim1_stride = a->dims[0].stride;
+    const int32_t __lfortran_a_dim2_lower_bound = a->dims[1].lower_bound;
+    const int32_t __lfortran_a_dim2_stride = a->dims[1].stride;
+    const int32_t __lfortran_b_offset = b->offset;
+    const int32_t __lfortran_b_dim1_lower_bound = b->dims[0].lower_bound;
+    const int32_t __lfortran_b_dim1_stride = b->dims[0].stride;
+    const int32_t __lfortran_b_dim2_lower_bound = b->dims[1].lower_bound;
+    const int32_t __lfortran_b_dim2_stride = b->dims[1].stride;
+    b->data[(((0 + (__lfortran_b_dim1_stride * (1 - __lfortran_b_dim1_lower_bound))) + (__lfortran_b_dim2_stride * (1 - __lfortran_b_dim2_lower_bound))) + __lfortran_b_offset)] = a->data[(((0 + (__lfortran_a_dim1_stride * (1 - __lfortran_a_dim1_lower_bound))) + (__lfortran_a_dim2_stride * (1 - __lfortran_a_dim2_lower_bound))) + __lfortran_a_offset)];
+    b->data[(((0 + (__lfortran_b_dim1_stride * (2 - __lfortran_b_dim1_lower_bound))) + (__lfortran_b_dim2_stride * (1 - __lfortran_b_dim2_lower_bound))) + __lfortran_b_offset)] = a->data[(((0 + (__lfortran_a_dim1_stride * (2 - __lfortran_a_dim1_lower_bound))) + (__lfortran_a_dim2_stride * (1 - __lfortran_a_dim2_lower_bound))) + __lfortran_a_offset)];
 }
 
 void __lfortran_c_backend_section_assoc_temp_direct_01_m__copy_planes_real__________0_real__________1(struct r64_______* restrict a, int32_t __1a, int32_t __2a, int32_t __3a, struct r64_______* restrict b, int32_t __1b, int32_t __2b, int32_t __3b)
@@ -77,6 +97,20 @@ void __lfortran_c_backend_section_assoc_temp_direct_01_m__copy_planes_real______
     struct r64_____ __libasr_created__subroutine_call_copy_plane1_value = {0};
     struct r64_____* __libasr_created__subroutine_call_copy_plane1 = &__libasr_created__subroutine_call_copy_plane1_value;
     int32_t k;
+    const int32_t __lfortran_a_offset = a->offset;
+    const int32_t __lfortran_a_dim1_lower_bound = a->dims[0].lower_bound;
+    const int32_t __lfortran_a_dim1_stride = a->dims[0].stride;
+    const int32_t __lfortran_a_dim2_lower_bound = a->dims[1].lower_bound;
+    const int32_t __lfortran_a_dim2_stride = a->dims[1].stride;
+    const int32_t __lfortran_a_dim3_lower_bound = a->dims[2].lower_bound;
+    const int32_t __lfortran_a_dim3_stride = a->dims[2].stride;
+    const int32_t __lfortran_b_offset = b->offset;
+    const int32_t __lfortran_b_dim1_lower_bound = b->dims[0].lower_bound;
+    const int32_t __lfortran_b_dim1_stride = b->dims[0].stride;
+    const int32_t __lfortran_b_dim2_lower_bound = b->dims[1].lower_bound;
+    const int32_t __lfortran_b_dim2_stride = b->dims[1].stride;
+    const int32_t __lfortran_b_dim3_lower_bound = b->dims[2].lower_bound;
+    const int32_t __lfortran_b_dim3_stride = b->dims[2].stride;
     for (k=1; k<=__1a; k++) {
         __libasr_created__subroutine_call_copy_plane->data = a->data;
         __libasr_created__subroutine_call_copy_plane->offset = (((a->offset + (a->dims[0].stride * ((k) - a->dims[0].lower_bound))) + (a->dims[1].stride * ((1) - a->dims[1].lower_bound))) + (a->dims[2].stride * ((1) - a->dims[2].lower_bound)));

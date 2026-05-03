@@ -49,8 +49,11 @@ void __lfortran_c_backend_local_fixed_array_wrapper_01__run_case();
 void __lfortran_c_backend_local_fixed_array_wrapper_01__takes_array_real____0(struct r64___* restrict x, int32_t __1x)
 {
     double __libasr_created__array_item_;
-    __libasr_created__array_item_ = x->data[((0 + (x->dims[0].stride * (1 - x->dims[0].lower_bound))) + x->offset)];
-    x->data[((0 + (x->dims[0].stride * (1 - x->dims[0].lower_bound))) + x->offset)] = __libasr_created__array_item_ +   1.00000000000000000e+00;
+    const int32_t __lfortran_x_offset = x->offset;
+    const int32_t __lfortran_x_dim1_lower_bound = x->dims[0].lower_bound;
+    const int32_t __lfortran_x_dim1_stride = x->dims[0].stride;
+    __libasr_created__array_item_ = x->data[((0 + (__lfortran_x_dim1_stride * (1 - __lfortran_x_dim1_lower_bound))) + __lfortran_x_offset)];
+    x->data[((0 + (__lfortran_x_dim1_stride * (1 - __lfortran_x_dim1_lower_bound))) + __lfortran_x_offset)] = __libasr_created__array_item_ +   1.00000000000000000e+00;
 }
 
 void __lfortran_c_backend_local_fixed_array_wrapper_01__takes_array(struct r64___* restrict x)

@@ -141,6 +141,12 @@ struct CLocalScalarStructCleanup {
     bool is_polymorphic;
 };
 
+struct CArrayDescriptorCache {
+    std::string offset;
+    std::vector<std::string> lower_bounds;
+    std::vector<std::string> strides;
+};
+
 template <class StructType>
 class BaseCCPPVisitor : public ASR::BaseVisitor<StructType>
 {
@@ -173,6 +179,7 @@ public:
     std::vector<std::string> current_function_local_allocatable_arrays;
     std::vector<CLocalScalarStructCleanup> current_function_local_allocatable_structs;
     std::vector<std::pair<std::string, ASR::Struct_t*>> current_function_local_structs;
+    std::map<std::string, CArrayDescriptorCache> current_function_array_descriptor_cache;
     std::map<uint64_t, SymbolInfo> sym_info;
     std::map<uint64_t, std::string> const_var_names;
     std::map<int32_t, std::string> gotoid2name;
@@ -413,6 +420,83 @@ public:
             }
         }
         current_function_local_structs.push_back({target, struct_t});
+    }
+
+    std::string emit_current_function_array_descriptor_cache_decls(
+            const ASR::Function_t &x, const std::string &indent) {
+        current_function_array_descriptor_cache.clear();
+        if (!is_c) {
+            return "";
+        }
+        ASR::FunctionType_t *f_type = ASRUtils::get_FunctionType(x);
+        if (f_type && f_type->m_abi == ASR::abiType::BindC) {
+            return "";
+        }
+        std::string decl;
+        auto emit_cache_for_array_expr = [&](const std::string &array_expr,
+                const std::string &cache_name_base, int n_dims) {
+            if (n_dims <= 0
+                    || current_function_array_descriptor_cache.find(array_expr)
+                        != current_function_array_descriptor_cache.end()) {
+                return;
+            }
+            CArrayDescriptorCache cache;
+            cache.offset = get_unique_local_name(
+                "__lfortran_" + cache_name_base + "_offset");
+            decl += indent + "const int32_t " + cache.offset + " = "
+                + array_expr + "->offset;\n";
+            for (int j = 0; j < n_dims; j++) {
+                std::string dim_prefix = "__lfortran_" + cache_name_base + "_dim"
+                    + std::to_string(j + 1);
+                std::string lower_bound =
+                    get_unique_local_name(dim_prefix + "_lower_bound");
+                std::string stride =
+                    get_unique_local_name(dim_prefix + "_stride");
+                decl += indent + "const int32_t " + lower_bound + " = "
+                    + array_expr + "->dims[" + std::to_string(j) + "].lower_bound;\n";
+                decl += indent + "const int32_t " + stride + " = "
+                    + array_expr + "->dims[" + std::to_string(j) + "].stride;\n";
+                cache.lower_bounds.push_back(lower_bound);
+                cache.strides.push_back(stride);
+            }
+            current_function_array_descriptor_cache[array_expr] = cache;
+        };
+        for (size_t i = 0; i < x.n_args; i++) {
+            ASR::expr_t *arg = x.m_args[i];
+            if (arg == nullptr || !ASR::is_a<ASR::Var_t>(*arg)) {
+                continue;
+            }
+            ASR::symbol_t *arg_sym = ASRUtils::symbol_get_past_external(
+                ASR::down_cast<ASR::Var_t>(arg)->m_v);
+            if (arg_sym == nullptr || !ASR::is_a<ASR::Variable_t>(*arg_sym)) {
+                continue;
+            }
+            ASR::Variable_t *arg_var = ASR::down_cast<ASR::Variable_t>(arg_sym);
+            std::string arg_name = CUtils::get_c_variable_name(*arg_var);
+            if (ASRUtils::is_array(arg_var->m_type)
+                    && !ASRUtils::is_allocatable(arg_var->m_type)
+                    && !ASRUtils::is_pointer(arg_var->m_type)) {
+                ASR::dimension_t *dims = nullptr;
+                int n_dims = ASRUtils::extract_dimensions_from_ttype(
+                    arg_var->m_type, dims);
+                emit_cache_for_array_expr(arg_name, arg_name, n_dims);
+            }
+        }
+        return decl;
+    }
+
+    const CArrayDescriptorCache *get_current_function_array_descriptor_cache(
+            const std::string &arr, int n_args) const {
+        if (!is_c) {
+            return nullptr;
+        }
+        auto it = current_function_array_descriptor_cache.find(arr);
+        if (it == current_function_array_descriptor_cache.end()
+                || static_cast<int>(it->second.lower_bounds.size()) < n_args
+                || static_cast<int>(it->second.strides.size()) < n_args) {
+            return nullptr;
+        }
+        return &it->second;
     }
 
     std::string get_c_local_struct_cleanup_target(const ASR::Variable_t &v,
@@ -2725,6 +2809,7 @@ R"(#include <stdio.h>
         current_function_local_allocatable_arrays.clear();
         current_function_local_allocatable_structs.clear();
         current_function_local_structs.clear();
+        current_function_array_descriptor_cache.clear();
         SymbolTable* current_scope_copy = current_scope;
         current_scope = x.m_symtab;
         if (std::string(x.m_name) == "size" && intrinsic_module ) {
@@ -2913,6 +2998,7 @@ R"(#include <stdio.h>
 
             current_function = &x;
             self().emit_function_arg_initialization(x, current_body, indent);
+            decl += emit_current_function_array_descriptor_cache_decls(x, indent);
 
             for (size_t i=0; i<x.n_body; i++) {
                 self().visit_stmt(*x.m_body[i]);
@@ -2959,6 +3045,7 @@ R"(#include <stdio.h>
             current_function_local_allocatable_arrays.clear();
             current_function_local_allocatable_structs.clear();
             current_function_local_structs.clear();
+            current_function_array_descriptor_cache.clear();
             indentation_level -= 1;
         }
         sub += "\n";
@@ -9054,18 +9141,22 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         int n_args, bool check_for_bounds) {
         std::string dim_des_arr_ptr = arr + "->dims";
         std::string idx = "0";
+        const CArrayDescriptorCache *cache =
+            get_current_function_array_descriptor_cache(arr, n_args);
         for( int r = 0; r < n_args; r++ ) {
             std::string curr_llvm_idx = m_args[r];
             std::string dim_des_ptr = dim_des_arr_ptr + "[" + std::to_string(r) + "]";
-            std::string lval = dim_des_ptr + ".lower_bound";
+            std::string lval = cache ? cache->lower_bounds[r]
+                : dim_des_ptr + ".lower_bound";
             curr_llvm_idx = "(" + curr_llvm_idx + " - " + lval + ")";
             if( check_for_bounds ) {
                 // check_single_element(curr_llvm_idx, arr); TODO: To be implemented
             }
-            std::string stride = dim_des_ptr + ".stride";
+            std::string stride = cache ? cache->strides[r]
+                : dim_des_ptr + ".stride";
             idx = "(" + idx + " + (" + stride + " * " + curr_llvm_idx + "))";
         }
-        std::string offset_val = arr + "->offset";
+        std::string offset_val = cache ? cache->offset : arr + "->offset";
         return "(" + idx + " + " + offset_val + ")";
     }
 

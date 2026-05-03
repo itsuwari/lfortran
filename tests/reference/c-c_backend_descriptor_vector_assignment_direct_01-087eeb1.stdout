@@ -90,6 +90,19 @@ void __lfortran_c_backend_descriptor_vector_assignment_direct_01_m__shift_column
     local_vij->dims[0].lower_bound = 1;
     local_vij->dims[0].length = 3;
     local_vij->dims[0].stride = 1;
+    const int32_t __lfortran_xyz_offset = xyz->offset;
+    const int32_t __lfortran_xyz_dim1_lower_bound = xyz->dims[0].lower_bound;
+    const int32_t __lfortran_xyz_dim1_stride = xyz->dims[0].stride;
+    const int32_t __lfortran_xyz_dim2_lower_bound = xyz->dims[1].lower_bound;
+    const int32_t __lfortran_xyz_dim2_stride = xyz->dims[1].stride;
+    const int32_t __lfortran_trans_offset = trans->offset;
+    const int32_t __lfortran_trans_dim1_lower_bound = trans->dims[0].lower_bound;
+    const int32_t __lfortran_trans_dim1_stride = trans->dims[0].stride;
+    const int32_t __lfortran_trans_dim2_lower_bound = trans->dims[1].lower_bound;
+    const int32_t __lfortran_trans_dim2_stride = trans->dims[1].stride;
+    const int32_t __lfortran_vij_offset = vij->offset;
+    const int32_t __lfortran_vij_dim1_lower_bound = vij->dims[0].lower_bound;
+    const int32_t __lfortran_vij_dim1_stride = vij->dims[0].stride;
     {
         local_vij_data[(0) + 0 * 1] = ((xyz->data[(xyz->offset + xyz->dims[1].stride * ((jat) - 1)) + 0 * (xyz->dims[0].stride * (1))] + trans->data[(trans->offset + trans->dims[1].stride * ((jtr) - 1)) + 0 * (trans->dims[0].stride * (1))]) - xyz->data[(xyz->offset + xyz->dims[1].stride * ((iat) - 1)) + 0 * (xyz->dims[0].stride * (1))]);
         local_vij_data[(0) + 1 * 1] = ((xyz->data[(xyz->offset + xyz->dims[1].stride * ((jat) - 1)) + 1 * (xyz->dims[0].stride * (1))] + trans->data[(trans->offset + trans->dims[1].stride * ((jtr) - 1)) + 1 * (trans->dims[0].stride * (1))]) - xyz->data[(xyz->offset + xyz->dims[1].stride * ((iat) - 1)) + 1 * (xyz->dims[0].stride * (1))]);
@@ -136,6 +149,14 @@ void __lfortran_c_backend_descriptor_vector_assignment_direct_01_m__shift_compon
     local_vij->dims[0].lower_bound = 1;
     local_vij->dims[0].length = 3;
     local_vij->dims[0].stride = 1;
+    const int32_t __lfortran_trans_offset = trans->offset;
+    const int32_t __lfortran_trans_dim1_lower_bound = trans->dims[0].lower_bound;
+    const int32_t __lfortran_trans_dim1_stride = trans->dims[0].stride;
+    const int32_t __lfortran_trans_dim2_lower_bound = trans->dims[1].lower_bound;
+    const int32_t __lfortran_trans_dim2_stride = trans->dims[1].stride;
+    const int32_t __lfortran_vij_offset = vij->offset;
+    const int32_t __lfortran_vij_dim1_lower_bound = vij->dims[0].lower_bound;
+    const int32_t __lfortran_vij_dim1_stride = vij->dims[0].stride;
     {
         local_vij_data[(0) + 0 * 1] = ((mol->xyz->data[(mol->xyz->offset + mol->xyz->dims[1].stride * ((jat) - mol->xyz->dims[1].lower_bound)) + 0 * (mol->xyz->dims[0].stride * (1))] + trans->data[(trans->offset + trans->dims[1].stride * ((jtr) - 1)) + 0 * (trans->dims[0].stride * (1))]) - mol->xyz->data[(mol->xyz->offset + mol->xyz->dims[1].stride * ((iat) - mol->xyz->dims[1].lower_bound)) + 0 * (mol->xyz->dims[0].stride * (1))]);
         local_vij_data[(0) + 1 * 1] = ((mol->xyz->data[(mol->xyz->offset + mol->xyz->dims[1].stride * ((jat) - mol->xyz->dims[1].lower_bound)) + 1 * (mol->xyz->dims[0].stride * (1))] + trans->data[(trans->offset + trans->dims[1].stride * ((jtr) - 1)) + 1 * (trans->dims[0].stride * (1))]) - mol->xyz->data[(mol->xyz->offset + mol->xyz->dims[1].stride * ((iat) - mol->xyz->dims[1].lower_bound)) + 1 * (mol->xyz->dims[0].stride * (1))]);
@@ -184,6 +205,14 @@ void __lfortran_c_backend_descriptor_vector_assignment_direct_01_m__shift_lower0
     local_vij->dims[0].lower_bound = 0;
     local_vij->dims[0].length = 3;
     local_vij->dims[0].stride = 1;
+    const int32_t __lfortran_trans_offset = trans->offset;
+    const int32_t __lfortran_trans_dim1_lower_bound = trans->dims[0].lower_bound;
+    const int32_t __lfortran_trans_dim1_stride = trans->dims[0].stride;
+    const int32_t __lfortran_trans_dim2_lower_bound = trans->dims[1].lower_bound;
+    const int32_t __lfortran_trans_dim2_stride = trans->dims[1].stride;
+    const int32_t __lfortran_vij_offset = vij->offset;
+    const int32_t __lfortran_vij_dim1_lower_bound = vij->dims[0].lower_bound;
+    const int32_t __lfortran_vij_dim1_stride = vij->dims[0].stride;
     __libasr_created__array_section_pointer_->data = trans->data;
     __libasr_created__array_section_pointer_->offset = ((trans->offset + (trans->dims[0].stride * ((0) - trans->dims[0].lower_bound))) + (trans->dims[1].stride * ((jtr) - trans->dims[1].lower_bound)));
     __libasr_created__array_section_pointer_->is_allocated = true;
