@@ -5148,6 +5148,11 @@ filename = "c_backend_derived_dummy_restrict_01.f90"
 c = true
 
 [[test]]
+filename = "c_backend_submodule_proc_name_01.f90"
+run = true
+options = "--backend=c --separate-compilation"
+
+[[test]]
 filename = "c_backend_small_integer_pow_01.f90"
 c = true
 

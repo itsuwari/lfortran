@@ -1,0 +1,13 @@
+{
+    "basename": "run-c_backend_submodule_proc_name_01-ba60528",
+    "cmd": "lfortran --no-color {infile}",
+    "infile": "tests/c_backend_submodule_proc_name_01.f90",
+    "infile_hash": "bfef5ec8aceb6310d4981b9ec5861e1591c234794407e2edf1291a59",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

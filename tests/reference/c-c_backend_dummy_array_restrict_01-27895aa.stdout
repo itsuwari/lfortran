@@ -87,25 +87,25 @@ int main(int argc, char* argv[])
     c->dims[0].length = 3;
     c->dims[0].stride = 1;
     const int32_t n = 3;
-    a->data[(0 + (1 * (1 - 1)))] =   1.00000000000000000e+00;
-    a->data[(0 + (1 * (2 - 1)))] =   2.00000000000000000e+00;
-    a->data[(0 + (1 * (3 - 1)))] =   3.00000000000000000e+00;
-    b->data[(0 + (1 * (1 - 1)))] =   5.00000000000000000e-01;
-    b->data[(0 + (1 * (2 - 1)))] =   1.50000000000000000e+00;
-    b->data[(0 + (1 * (3 - 1)))] =   2.50000000000000000e+00;
+    a_data[(0 + (1 * (1 - 1)))] =   1.00000000000000000e+00;
+    a_data[(0 + (1 * (2 - 1)))] =   2.00000000000000000e+00;
+    a_data[(0 + (1 * (3 - 1)))] =   3.00000000000000000e+00;
+    b_data[(0 + (1 * (1 - 1)))] =   5.00000000000000000e-01;
+    b_data[(0 + (1 * (2 - 1)))] =   1.50000000000000000e+00;
+    b_data[(0 + (1 * (3 - 1)))] =   2.50000000000000000e+00;
     struct r64___ __lfortran_array_view = { .data = a->data, .dims = {{1, a->dims[0].length, a->dims[0].stride}}, .n_dims = 1, .offset = a->offset, .is_allocated = a->is_allocated };
     struct r64___ __lfortran_array_view1 = { .data = b->data, .dims = {{1, b->dims[0].length, b->dims[0].stride}}, .n_dims = 1, .offset = b->offset, .is_allocated = b->is_allocated };
     struct r64___ __lfortran_array_view2 = { .data = c->data, .dims = {{1, c->dims[0].length, c->dims[0].stride}}, .n_dims = 1, .offset = c->offset, .is_allocated = c->is_allocated };
     __lfortran_add_arrays(n, &__lfortran_array_view, &__lfortran_array_view1, &__lfortran_array_view2);
-    if (fabs(c->data[(0 + (1 * (1 - 1)))] -   1.50000000000000000e+00) >   9.99999999999999980e-13) {
+    if (fabs(c_data[(0 + (1 * (1 - 1)))] -   1.50000000000000000e+00) >   9.99999999999999980e-13) {
         fprintf(stderr, "ERROR STOP");
         exit(1);
     }
-    if (fabs(c->data[(0 + (1 * (2 - 1)))] -   3.50000000000000000e+00) >   9.99999999999999980e-13) {
+    if (fabs(c_data[(0 + (1 * (2 - 1)))] -   3.50000000000000000e+00) >   9.99999999999999980e-13) {
         fprintf(stderr, "ERROR STOP");
         exit(1);
     }
-    if (fabs(c->data[(0 + (1 * (3 - 1)))] -   5.50000000000000000e+00) >   9.99999999999999980e-13) {
+    if (fabs(c_data[(0 + (1 * (3 - 1)))] -   5.50000000000000000e+00) >   9.99999999999999980e-13) {
         fprintf(stderr, "ERROR STOP");
         exit(1);
     }

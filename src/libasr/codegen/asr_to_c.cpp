@@ -6562,6 +6562,11 @@ R"(    // Initialise Numpy
             array_t->m_physical_type == ASR::array_physical_typeType::FixedSizeArray
             && (is_fixed_size_array_storage_expr(array_expr)
                 || is_c_fixed_size_descriptor_storage_expr(array_expr));
+        std::string fixed_size_data_name;
+        if (use_fixed_size_data_only_indexing
+                && is_c_local_fixed_size_descriptor_storage_expr(array_expr)) {
+            fixed_size_data_name = array + "_data";
+        }
         if( use_pointer_data_only_indexing ||
                 use_fixed_size_data_only_indexing ) {
             for( size_t idim = 0; idim < x.n_args; idim++ ) {
@@ -6586,7 +6591,8 @@ R"(    // Initialise Numpy
             src = arr_get_single_element(array, indices, x.n_args,
                                                 use_pointer_data_only_indexing,
                                                 use_fixed_size_data_only_indexing,
-                                                diminfo, false);
+                                                diminfo, false,
+                                                fixed_size_data_name);
         }
         last_expr_precedence = 2;
     }

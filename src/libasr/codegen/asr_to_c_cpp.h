@@ -1603,10 +1603,52 @@ R"(#include <stdio.h>
         return sub;
     }
 
+    std::string get_c_function_symbol_name(const ASR::Function_t &x) {
+        ASR::FunctionType_t *func_type =
+            ASR::down_cast<ASR::FunctionType_t>(x.m_function_signature);
+        SymbolTable *parent_symtab = ASRUtils::symbol_parent_symtab(
+            reinterpret_cast<ASR::symbol_t*>(const_cast<ASR::Function_t*>(&x)));
+        ASR::asr_t *owner = parent_symtab ? parent_symtab->asr_owner : nullptr;
+        if (owner && ASR::is_a<ASR::symbol_t>(*owner)) {
+            ASR::symbol_t *owner_sym = ASRUtils::symbol_get_past_external(
+                ASR::down_cast<ASR::symbol_t>(owner));
+            if (ASR::is_a<ASR::Module_t>(*owner_sym)) {
+                ASR::Module_t *owner_mod = ASR::down_cast<ASR::Module_t>(owner_sym);
+                if (owner_mod->m_parent_module && func_type->m_module) {
+                    std::string root_module = std::string(owner_mod->m_parent_module);
+                    SymbolTable *tu_symtab = owner_mod->m_symtab
+                        ? owner_mod->m_symtab->parent : nullptr;
+                    if (tu_symtab) {
+                        ASR::symbol_t *parent_sym = tu_symtab->get_symbol(root_module);
+                        while (parent_sym && ASR::is_a<ASR::Module_t>(*parent_sym)) {
+                            ASR::Module_t *parent_mod =
+                                ASR::down_cast<ASR::Module_t>(parent_sym);
+                            if (!parent_mod->m_parent_module) {
+                                break;
+                            }
+                            root_module = std::string(parent_mod->m_parent_module);
+                            parent_sym = tu_symtab->get_symbol(root_module);
+                        }
+                    }
+                    std::string name = CUtils::sanitize_c_identifier(std::string(x.m_name));
+                    std::string prefix = CUtils::sanitize_c_identifier(root_module) + "__";
+                    if (name.rfind(prefix, 0) != 0) {
+                        name = prefix + name;
+                    }
+                    if (CUtils::uses_split_local_link_name(name)) {
+                        name += CUtils::get_split_local_symbol_suffix();
+                    }
+                    return name;
+                }
+            }
+        }
+        return CUtils::get_c_symbol_name(
+            reinterpret_cast<ASR::symbol_t*>(const_cast<ASR::Function_t*>(&x)));
+    }
+
     std::string get_emitted_function_name(const ASR::Function_t &x) {
         std::string sym_name = "__lfortran_"
-            + CUtils::get_c_symbol_name(
-                reinterpret_cast<ASR::symbol_t*>(const_cast<ASR::Function_t*>(&x)));
+            + get_c_function_symbol_name(x);
         if (x.n_args > 0) {
             ASR::Variable_t *arg0 = ASRUtils::EXPR2VAR(x.m_args[0]);
             ASR::ttype_t *arg0_type = ASRUtils::type_get_past_allocatable_pointer(arg0->m_type);
@@ -3601,6 +3643,40 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             && ASRUtils::is_fixed_size_array(type);
     }
 
+    bool is_c_local_fixed_size_descriptor_storage_expr(ASR::expr_t *expr) {
+        expr = unwrap_c_array_expr(expr);
+        if (expr == nullptr || !ASR::is_a<ASR::Var_t>(*expr)) {
+            return false;
+        }
+        ASR::symbol_t *sym = ASRUtils::symbol_get_past_external(
+            ASR::down_cast<ASR::Var_t>(expr)->m_v);
+        if (!ASR::is_a<ASR::Variable_t>(*sym)) {
+            return false;
+        }
+        ASR::Variable_t *var = ASR::down_cast<ASR::Variable_t>(sym);
+        if (var->m_storage == ASR::storage_typeType::Parameter
+                || ASRUtils::is_arg_dummy(var->m_intent)
+                || ASRUtils::is_allocatable(var->m_type)
+                || ASRUtils::is_pointer(var->m_type)
+                || !(var->m_intent == ASRUtils::intent_local
+                    || var->m_intent == ASRUtils::intent_return_var)) {
+            return false;
+        }
+        ASR::asr_t *owner = var->m_parent_symtab
+            ? var->m_parent_symtab->asr_owner : nullptr;
+        if (!(owner
+                && (CUtils::is_symbol_owner<ASR::Program_t>(owner)
+                    || CUtils::is_symbol_owner<ASR::Function_t>(owner)
+                    || CUtils::is_symbol_owner<ASR::Block_t>(owner)
+                    || CUtils::is_symbol_owner<ASR::AssociateBlock_t>(owner)))) {
+            return false;
+        }
+        ASR::ttype_t *type = ASRUtils::type_get_past_allocatable_pointer(var->m_type);
+        return type != nullptr
+            && ASRUtils::is_array(type)
+            && ASRUtils::is_fixed_size_array(type);
+    }
+
     bool is_c_compiler_created_array_temp_expr(ASR::expr_t *expr) {
         expr = unwrap_c_array_expr(expr);
         if (expr != nullptr && ASR::is_a<ASR::ArraySection_t>(*expr)) {
@@ -3911,7 +3987,9 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             offset_expr += offset_terms[i];
         }
         offset_expr += ")";
-        out = base + "->data[" + offset_expr + " + " + index_name
+        std::string base_data = is_c_local_fixed_size_descriptor_storage_expr(base_expr)
+            ? base + "_data" : base + "->data";
+        out = base_data + "[" + offset_expr + " + " + index_name
             + " * " + std::to_string(slice_stride) + "]";
         return true;
     }
@@ -8584,7 +8662,8 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
 
     std::string arr_get_single_element(std::string array,
         std::vector<std::string>& m_args, int n_args, bool data_only,
-        bool is_fixed_size, std::vector<std::string>& diminfo, bool is_unbounded_pointer_to_data) {
+        bool is_fixed_size, std::vector<std::string>& diminfo, bool is_unbounded_pointer_to_data,
+        const std::string &fixed_size_data_name="") {
         std::string tmp = "";
         // TODO: Uncomment later
         // bool check_for_bounds = is_explicit_shape(v);
@@ -8596,7 +8675,9 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             if (is_unbounded_pointer_to_data) {
                 tmp = array + "->data[(" + array + "->offset + " + idx + ")]";
             } else if( is_fixed_size ) {
-                tmp = array + "->data[" + idx + "]" ;
+                std::string data_name = fixed_size_data_name.empty()
+                    ? array + "->data" : fixed_size_data_name;
+                tmp = data_name + "[" + idx + "]" ;
             } else {
                 tmp = array + "->data[" + idx + "]";
             }
