@@ -4339,6 +4339,8 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         if (base_rank <= 0) {
             return false;
         }
+        const CArrayDescriptorCache *cache =
+            get_current_function_array_descriptor_cache(base, base_rank);
         std::vector<bool> has_known_base_lbs(static_cast<size_t>(base_rank), false);
         std::vector<int64_t> known_base_lbs(static_cast<size_t>(base_rank), 0);
         if (base_dims != nullptr
@@ -4358,8 +4360,11 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             if (base_rank != 1) {
                 return false;
             }
-            out = base + "->data[(" + base + "->offset + " + index_name
-                + " * " + base + "->dims[0].stride)]";
+            std::string offset = cache ? cache->offset : base + "->offset";
+            std::string stride = cache ? cache->strides[0]
+                : base + "->dims[0].stride";
+            out = base + "->data[(" + offset + " + " + index_name
+                + " * " + stride + ")]";
             return true;
         }
 
@@ -4368,19 +4373,25 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         }
 
         std::vector<std::string> offset_terms;
-        offset_terms.push_back(base + "->offset");
+        offset_terms.push_back(cache ? cache->offset : base + "->offset");
         std::string slice_stride;
         bool found_slice = false;
         for (int source_dim = 0; source_dim < base_rank; source_dim++) {
             ASR::array_index_t idx = section->m_args[source_dim];
             std::string base_lb = base + "->dims[" + std::to_string(source_dim)
                 + "].lower_bound";
+            if (cache) {
+                base_lb = cache->lower_bounds[source_dim];
+            }
             if (has_known_base_lbs[static_cast<size_t>(source_dim)]) {
                 base_lb = std::to_string(
                     known_base_lbs[static_cast<size_t>(source_dim)]);
             }
             std::string base_stride = base + "->dims[" + std::to_string(source_dim)
                 + "].stride";
+            if (cache) {
+                base_stride = cache->strides[source_dim];
+            }
             bool is_slice = idx.m_left || idx.m_step || idx.m_right == nullptr;
             if (is_slice) {
                 if (found_slice || !is_c_unit_step_expr(idx.m_step)) {
@@ -4499,11 +4510,19 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             base_len = std::to_string(static_lengths[0]);
             base_stride = std::to_string(static_strides[0]);
         }
+        const CArrayDescriptorCache *cache =
+            use_static_base_dims ? nullptr
+            : get_current_function_array_descriptor_cache(base, base_rank);
+        if (cache) {
+            base_lb = cache->lower_bounds[0];
+            base_stride = cache->strides[0];
+        }
         std::string left = base_lb;
         std::string right = "(" + base_lb + " + " + base_len + " - 1)";
         std::string step = "1";
         std::vector<std::string> offset_terms;
-        offset_terms.push_back(use_static_base_dims ? "0" : base + "->offset");
+        offset_terms.push_back(use_static_base_dims ? "0" :
+            (cache ? cache->offset : base + "->offset"));
         if (section != nullptr) {
             if ((int)section->n_args != base_rank) {
                 return false;
@@ -4519,6 +4538,9 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                     dim_lb = std::to_string(static_lbs[source_dim]);
                     dim_len = std::to_string(static_lengths[source_dim]);
                     dim_stride = std::to_string(static_strides[source_dim]);
+                } else if (cache) {
+                    dim_lb = cache->lower_bounds[source_dim];
+                    dim_stride = cache->strides[source_dim];
                 }
                 std::string dim_ub = "(" + dim_lb + " + " + dim_len + " - 1)";
                 bool is_slice = idx.m_left || idx.m_step || idx.m_right == nullptr;
@@ -4580,7 +4602,8 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         }
         offset_expr += ")";
         if (section == nullptr) {
-            offset_expr = use_static_base_dims ? "0" : base + "->offset";
+            offset_expr = use_static_base_dims ? "0" :
+                (cache ? cache->offset : base + "->offset");
         }
         setup += indent + "int64_t " + offset_name + " = " + offset_expr + ";\n";
         if (need_length) {
