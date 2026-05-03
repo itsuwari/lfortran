@@ -1,0 +1,13 @@
+{
+    "basename": "run-c_backend_array_section_temp_copy_01-27c71e1",
+    "cmd": "lfortran --no-color {infile}",
+    "infile": "tests/c_backend_array_section_temp_copy_01.f90",
+    "infile_hash": "ec377d743c8a62bc01f4beca996c27e552bb106f205891fa7cb945c3",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

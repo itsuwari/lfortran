@@ -1240,7 +1240,8 @@ ASR::expr_t* create_and_allocate_temporary_variable_for_array(
     Vec<ASR::stmt_t*>*& current_body, SymbolTable* current_scope,
     ExprsWithTargetType& exprs_with_target, bool is_pointer_required=false,
     ASR::expr_t* allocate_size_reference=nullptr, bool override_physical_type=false,
-    Vec<ASR::expr_t*>* cleanup_temps=nullptr) {
+    Vec<ASR::expr_t*>* cleanup_temps=nullptr,
+    bool defer_section_copy_allocation=false) {
     const Location& loc = array_expr->base.loc;
     if( allocate_size_reference == nullptr ) {
         allocate_size_reference = array_expr;
@@ -1256,8 +1257,17 @@ ASR::expr_t* create_and_allocate_temporary_variable_for_array(
         current_body->push_back(al, ASRUtils::STMT(ASR::make_Associate_t(
             al, loc, array_var_temporary, array_expr)));
     } else {
+        bool copies_section_through_pointer = !is_pointer_required
+            && !ASRUtils::is_simd_array(array_expr)
+            && ((ASR::is_a<ASR::ArraySection_t>(*array_expr)
+                    && !ASRUtils::is_array_indexed_with_array_indices(
+                        ASR::down_cast<ASR::ArraySection_t>(array_expr)))
+                || (ASR::is_a<ASR::ArrayItem_t>(*array_expr)
+                    && !ASRUtils::is_array_indexed_with_array_indices(
+                        ASR::down_cast<ASR::ArrayItem_t>(array_expr))));
         bool defer_allocation_to_array_op =
-            should_defer_temp_allocation_to_array_op(array_expr);
+            should_defer_temp_allocation_to_array_op(array_expr)
+            || (defer_section_copy_allocation && copies_section_through_pointer);
         bool allocated_temporary = false;
         if (!defer_allocation_to_array_op) {
             allocated_temporary = insert_allocate_stmt_for_array(
@@ -2343,6 +2353,7 @@ class ReplaceExprWithTemporary: public ASR::BaseExprReplacer<ReplaceExprWithTemp
     Allocator& al;
     ExprsWithTargetType& exprs_with_target;
     bool realloc_lhs;
+    bool c_backend;
 
     public:
 
@@ -2355,8 +2366,10 @@ class ReplaceExprWithTemporary: public ASR::BaseExprReplacer<ReplaceExprWithTemp
     ASR::expr_t* parent_expr;
     ASR::expr_t* lhs_var;
 
-    ReplaceExprWithTemporary(Allocator& al_, ExprsWithTargetType& exprs_with_target_, bool realloc_lhs_) :
-        al(al_), exprs_with_target(exprs_with_target_), realloc_lhs(realloc_lhs_), current_scope(nullptr),
+    ReplaceExprWithTemporary(Allocator& al_, ExprsWithTargetType& exprs_with_target_,
+            bool realloc_lhs_, bool c_backend_) :
+        al(al_), exprs_with_target(exprs_with_target_), realloc_lhs(realloc_lhs_),
+        c_backend(c_backend_), current_scope(nullptr),
         statement_cleanup_temps(nullptr),
         is_assignment_target_array_section_item(false), is_simd_expression(false), simd_type(nullptr),
         parent_expr(nullptr), lhs_var(nullptr) {}
@@ -2390,7 +2403,7 @@ class ReplaceExprWithTemporary: public ASR::BaseExprReplacer<ReplaceExprWithTemp
         *current_expr = create_and_allocate_temporary_variable_for_array(
                 *current_expr, name_hint, al, current_body,
                 current_scope, exprs_with_target, is_assignment_target_array_section_item,
-                nullptr, false, statement_cleanup_temps);
+                nullptr, false, statement_cleanup_temps, c_backend);
     }
 
     void force_replace_current_expr_for_struct(ASR::expr_t** &current_expr, const std::string& name_hint, Allocator& al,
@@ -2581,7 +2594,7 @@ class ReplaceExprWithTemporary: public ASR::BaseExprReplacer<ReplaceExprWithTemp
                 *current_expr = create_and_allocate_temporary_variable_for_array(
                     *current_expr, "_array_section_", al, current_body,
                     current_scope, exprs_with_target, false, nullptr, false,
-                    statement_cleanup_temps);
+                    statement_cleanup_temps, c_backend);
             }
             return ;
         }
@@ -2615,7 +2628,7 @@ class ReplaceExprWithTemporary: public ASR::BaseExprReplacer<ReplaceExprWithTemp
                 *current_expr = create_and_allocate_temporary_variable_for_array(
                     *current_expr, "_array_section_", al, current_body,
                     current_scope, exprs_with_target, false, nullptr, false,
-                    statement_cleanup_temps);
+                    statement_cleanup_temps, c_backend);
             } else {
                 generate_associate_for_array_section(current_expr, al, loc, current_scope, current_body);
             }
@@ -2646,7 +2659,7 @@ class ReplaceExprWithTemporary: public ASR::BaseExprReplacer<ReplaceExprWithTemp
                 *current_expr = create_and_allocate_temporary_variable_for_array(
                     *current_expr, "_array_item_", al, current_body,
                     current_scope, exprs_with_target, false, nullptr, false,
-                    statement_cleanup_temps);
+                    statement_cleanup_temps, c_backend);
             }
             return ;
         } else if( is_common_symbol_present_in_lhs_and_rhs(al, lhs_var, x->m_v) ) {
@@ -2789,8 +2802,10 @@ class ReplaceExprWithTemporaryVisitor:
 
     public:
 
-    ReplaceExprWithTemporaryVisitor(Allocator& al_, ExprsWithTargetType& exprs_with_target_, bool realloc_lhs_):
-        al(al_), exprs_with_target(exprs_with_target_), replacer(al, exprs_with_target, realloc_lhs_),
+    ReplaceExprWithTemporaryVisitor(Allocator& al_, ExprsWithTargetType& exprs_with_target_,
+            bool realloc_lhs_, bool c_backend_):
+        al(al_), exprs_with_target(exprs_with_target_),
+        replacer(al, exprs_with_target, realloc_lhs_, c_backend_),
         parent_body_for_where(nullptr), inside_where(false), forall_replacement(nullptr) {
         replacer.call_replacer_on_value = false;
         call_replacer_on_value = false;
@@ -3682,7 +3697,8 @@ void pass_array_struct_temporary(Allocator &al, ASR::TranslationUnit_t &unit,
     a.visit_TranslationUnit(unit);
     ArgSimplifier b(al, exprs_with_target, pass_options.realloc_lhs_arrays);
     b.visit_TranslationUnit(unit);
-    ReplaceExprWithTemporaryVisitor c(al, exprs_with_target, pass_options.realloc_lhs_arrays);
+    ReplaceExprWithTemporaryVisitor c(al, exprs_with_target,
+        pass_options.realloc_lhs_arrays, pass_options.c_backend);
     c.visit_TranslationUnit(unit);
     PassUtils::UpdateDependenciesVisitor d(al);
     d.visit_TranslationUnit(unit);
