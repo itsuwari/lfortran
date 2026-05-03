@@ -148,6 +148,11 @@ struct CArrayDescriptorCache {
     std::vector<std::string> strides;
 };
 
+struct CScalarExprCacheEntry {
+    std::string name;
+    std::set<ASR::symbol_t*> deps;
+};
+
 template <class StructType>
 class BaseCCPPVisitor : public ASR::BaseVisitor<StructType>
 {
@@ -181,6 +186,8 @@ public:
     std::vector<CLocalScalarStructCleanup> current_function_local_allocatable_structs;
     std::vector<std::pair<std::string, ASR::Struct_t*>> current_function_local_structs;
     std::map<std::string, CArrayDescriptorCache> current_function_array_descriptor_cache;
+    std::map<std::string, CScalarExprCacheEntry> current_function_pow_cache;
+    int c_pow_cache_suppression_depth = 0;
     std::map<uint64_t, SymbolInfo> sym_info;
     std::map<uint64_t, std::string> const_var_names;
     std::map<int32_t, std::string> gotoid2name;
@@ -506,6 +513,122 @@ public:
             return nullptr;
         }
         return &it->second;
+    }
+
+    void clear_c_pow_cache() {
+        current_function_pow_cache.clear();
+    }
+
+    void visit_expr_without_c_pow_cache(ASR::expr_t &expr) {
+        c_pow_cache_suppression_depth++;
+        self().visit_expr(expr);
+        c_pow_cache_suppression_depth--;
+    }
+
+    bool collect_c_pow_cache_dependencies(ASR::expr_t *expr,
+            std::set<ASR::symbol_t*> &deps) {
+        if (expr == nullptr) {
+            return false;
+        }
+        expr = unwrap_c_lvalue_expr(expr);
+        if (expr == nullptr || ASRUtils::is_array(ASRUtils::expr_type(expr))) {
+            return false;
+        }
+        switch (expr->type) {
+            case ASR::exprType::Var: {
+                deps.insert(ASRUtils::symbol_get_past_external(
+                    ASR::down_cast<ASR::Var_t>(expr)->m_v));
+                return true;
+            }
+            case ASR::exprType::IntegerConstant:
+            case ASR::exprType::UnsignedIntegerConstant:
+            case ASR::exprType::RealConstant:
+            case ASR::exprType::LogicalConstant: {
+                return true;
+            }
+            case ASR::exprType::StructInstanceMember: {
+                return collect_c_pow_cache_dependencies(
+                    ASR::down_cast<ASR::StructInstanceMember_t>(expr)->m_v, deps);
+            }
+            case ASR::exprType::ArrayItem: {
+                ASR::ArrayItem_t *item = ASR::down_cast<ASR::ArrayItem_t>(expr);
+                if (!collect_c_pow_cache_dependencies(item->m_v, deps)) {
+                    return false;
+                }
+                for (size_t i = 0; i < item->n_args; i++) {
+                    ASR::expr_t *idx_expr = get_array_index_expr(item->m_args[i]);
+                    if (idx_expr == nullptr || is_vector_subscript_expr(idx_expr)
+                            || !collect_c_pow_cache_dependencies(idx_expr, deps)) {
+                        return false;
+                    }
+                }
+                return true;
+            }
+            case ASR::exprType::Cast: {
+                return collect_c_pow_cache_dependencies(
+                    ASR::down_cast<ASR::Cast_t>(expr)->m_arg, deps);
+            }
+            case ASR::exprType::RealUnaryMinus: {
+                return collect_c_pow_cache_dependencies(
+                    ASR::down_cast<ASR::RealUnaryMinus_t>(expr)->m_arg, deps);
+            }
+            case ASR::exprType::IntegerUnaryMinus: {
+                return collect_c_pow_cache_dependencies(
+                    ASR::down_cast<ASR::IntegerUnaryMinus_t>(expr)->m_arg, deps);
+            }
+            case ASR::exprType::UnsignedIntegerUnaryMinus: {
+                return collect_c_pow_cache_dependencies(
+                    ASR::down_cast<ASR::UnsignedIntegerUnaryMinus_t>(expr)->m_arg, deps);
+            }
+            case ASR::exprType::RealBinOp: {
+                ASR::RealBinOp_t *binop = ASR::down_cast<ASR::RealBinOp_t>(expr);
+                return binop->m_op != ASR::binopType::Pow
+                    && collect_c_pow_cache_dependencies(binop->m_left, deps)
+                    && collect_c_pow_cache_dependencies(binop->m_right, deps);
+            }
+            case ASR::exprType::IntegerBinOp: {
+                ASR::IntegerBinOp_t *binop = ASR::down_cast<ASR::IntegerBinOp_t>(expr);
+                return binop->m_op != ASR::binopType::Pow
+                    && collect_c_pow_cache_dependencies(binop->m_left, deps)
+                    && collect_c_pow_cache_dependencies(binop->m_right, deps);
+            }
+            case ASR::exprType::UnsignedIntegerBinOp: {
+                ASR::UnsignedIntegerBinOp_t *binop =
+                    ASR::down_cast<ASR::UnsignedIntegerBinOp_t>(expr);
+                return binop->m_op != ASR::binopType::Pow
+                    && collect_c_pow_cache_dependencies(binop->m_left, deps)
+                    && collect_c_pow_cache_dependencies(binop->m_right, deps);
+            }
+            default: {
+                return false;
+            }
+        }
+    }
+
+    void invalidate_c_pow_cache_for_expr(ASR::expr_t *expr) {
+        if (!is_c || expr == nullptr || current_function_pow_cache.empty()) {
+            return;
+        }
+        std::set<ASR::symbol_t*> deps;
+        if (!collect_c_pow_cache_dependencies(expr, deps) || deps.empty()) {
+            clear_c_pow_cache();
+            return;
+        }
+        for (auto it = current_function_pow_cache.begin();
+                it != current_function_pow_cache.end();) {
+            bool erase = false;
+            for (ASR::symbol_t *dep: deps) {
+                if (it->second.deps.find(dep) != it->second.deps.end()) {
+                    erase = true;
+                    break;
+                }
+            }
+            if (erase) {
+                it = current_function_pow_cache.erase(it);
+            } else {
+                ++it;
+            }
+        }
     }
 
     std::string get_c_local_struct_cleanup_target(const ASR::Variable_t &v,
@@ -2552,7 +2675,7 @@ R"(#include <stdio.h>
                 }
             }
 
-            self().visit_expr(*call_arg);
+            visit_expr_without_c_pow_cache(*call_arg);
             std::string arg_src = src;
             std::string arg_setup = drain_tmp_buffer();
             arg_setup += extract_stmt_setup_from_expr(arg_src);
@@ -2618,7 +2741,7 @@ R"(#include <stdio.h>
             bool param_is_array = param_type_unwrapped
                 && ASRUtils::is_array(param_type_unwrapped);
 
-            self().visit_expr(*call_arg);
+            visit_expr_without_c_pow_cache(*call_arg);
             std::string arg_src = src;
             std::string arg_setup = drain_tmp_buffer();
             arg_setup += extract_stmt_setup_from_expr(arg_src);
@@ -2819,6 +2942,7 @@ R"(#include <stdio.h>
         current_function_local_allocatable_structs.clear();
         current_function_local_structs.clear();
         current_function_array_descriptor_cache.clear();
+        current_function_pow_cache.clear();
         SymbolTable* current_scope_copy = current_scope;
         current_scope = x.m_symtab;
         if (std::string(x.m_name) == "size" && intrinsic_module ) {
@@ -3055,6 +3179,7 @@ R"(#include <stdio.h>
             current_function_local_allocatable_structs.clear();
             current_function_local_structs.clear();
             current_function_array_descriptor_cache.clear();
+            current_function_pow_cache.clear();
             indentation_level -= 1;
         }
         sub += "\n";
@@ -6940,7 +7065,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             ASR::expr_t *call_arg = m_args[i].m_value;
             ASR::expr_t *raw_call_arg = unwrap_c_lvalue_expr(call_arg);
             ASR::expr_t *shape_call_arg = raw_call_arg ? raw_call_arg : call_arg;
-            self().visit_expr(*call_arg);
+            visit_expr_without_c_pow_cache(*call_arg);
             std::string arg_src = src;
             std::string arg_setup = drain_tmp_buffer();
             arg_setup += extract_stmt_setup_from_expr(arg_src);
@@ -8330,6 +8455,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
     }
 
     void visit_Assignment(const ASR::Assignment_t &x) {
+        invalidate_c_pow_cache_for_expr(x.m_target);
         auto is_unlimited_polymorphic_storage_type = [&](ASR::ttype_t *type) -> bool {
             type = ASRUtils::type_get_past_allocatable_pointer(type);
             if (type == nullptr) {
@@ -11154,6 +11280,41 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         return true;
     }
 
+    bool try_emit_cached_c_real_power(ASR::expr_t *left_expr, ASR::expr_t *right_expr,
+            ASR::ttype_t *result_type, const std::string &left,
+            const std::string &right) {
+        if (!is_c || current_function == nullptr || bracket_open != 0
+                || c_pow_cache_suppression_depth > 0) {
+            return false;
+        }
+        ASR::ttype_t *type = ASRUtils::extract_type(result_type);
+        if (type == nullptr || !ASRUtils::is_real(*type)) {
+            return false;
+        }
+        std::set<ASR::symbol_t*> deps;
+        if (!collect_c_pow_cache_dependencies(left_expr, deps)
+                || !collect_c_pow_cache_dependencies(right_expr, deps)
+                || deps.empty()) {
+            return false;
+        }
+        std::string key = "pow(" + left + ", " + right + ")";
+        auto it = current_function_pow_cache.find(key);
+        if (it != current_function_pow_cache.end()) {
+            src = it->second.name;
+            last_expr_precedence = 2;
+            return true;
+        }
+        std::string name = get_unique_local_name("__lfortran_pow_cache");
+        std::string indent(indentation_level * indentation_spaces, ' ');
+        headers.insert("math.h");
+        tmp_buffer_src.push_back(indent + CUtils::get_c_type_from_ttype_t(type)
+            + " " + name + " = pow(" + left + ", " + right + ");\n");
+        current_function_pow_cache[key] = {name, deps};
+        src = name;
+        last_expr_precedence = 2;
+        return true;
+    }
+
     template <typename T>
     void handle_BinOp(const T &x) {
         CHECK_FAST_C_CPP(compiler_options, x)
@@ -11179,6 +11340,10 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                     return;
                 }
                 if (try_emit_c_real_integer_power(x.m_left, x.m_right, left, right)) {
+                    return;
+                }
+                if (try_emit_cached_c_real_power(
+                        x.m_left, x.m_right, x.m_type, left, right)) {
                     return;
                 }
                 src = "pow(" + left + ", " + right + ")";
@@ -11951,6 +12116,9 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
 
     void visit_Select(const ASR::Select_t& x)
     {
+        std::map<std::string, CScalarExprCacheEntry> pow_cache_copy =
+            current_function_pow_cache;
+        current_function_pow_cache.clear();
         auto is_character_expr = [&](ASR::expr_t *expr) -> bool {
             return expr != nullptr && ASRUtils::is_character(*ASRUtils::expr_type(expr));
         };
@@ -12055,9 +12223,13 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             indentation_level -= 1;
         }
         src = check_tmp_buffer() + out;
+        current_function_pow_cache = pow_cache_copy;
     }
 
     void visit_WhileLoop(const ASR::WhileLoop_t &x) {
+        std::map<std::string, CScalarExprCacheEntry> pow_cache_copy =
+            current_function_pow_cache;
+        current_function_pow_cache.clear();
         std::string indent(indentation_level*indentation_spaces, ' ');
         bracket_open++;
         std::string out = indent + "while (";
@@ -12073,6 +12245,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         out += indent + "}\n";
         indentation_level -= 1;
         src = out;
+        current_function_pow_cache = pow_cache_copy;
     }
 
     void visit_Exit(const ASR::Exit_t & /* x */) {
@@ -12202,6 +12375,9 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
 
     void visit_DoLoop(const ASR::DoLoop_t &x) {
         std::string current_body_copy = current_body;
+        std::map<std::string, CScalarExprCacheEntry> pow_cache_copy =
+            current_function_pow_cache;
+        current_function_pow_cache.clear();
         current_body = "";
         std::string loop_end_decl = "";
         std::string indent(indentation_level*indentation_spaces, ' ');
@@ -12276,10 +12452,14 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         indentation_level -= 1;
         src = loop_end_decl + out;
         current_body = current_body_copy;
+        current_function_pow_cache = pow_cache_copy;
     }
 
     void visit_If(const ASR::If_t &x) {
         std::string current_body_copy = current_body;
+        std::map<std::string, CScalarExprCacheEntry> pow_cache_copy =
+            current_function_pow_cache;
+        current_function_pow_cache.clear();
         current_body = "";
         std::string indent(indentation_level*indentation_spaces, ' ');
         std::string out = indent + "if (";
@@ -12310,6 +12490,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         indentation_level -= 1;
         src = out;
         current_body = current_body_copy;
+        current_function_pow_cache = pow_cache_copy;
     }
 
     void visit_IfExp(const ASR::IfExp_t &x) {
@@ -12328,6 +12509,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
     }
 
     void visit_SubroutineCall(const ASR::SubroutineCall_t &x) {
+        clear_c_pow_cache();
         std::string indent(indentation_level*indentation_spaces, ' ');
         ASR::symbol_t *callee_sym = ASRUtils::symbol_get_past_external(x.m_name);
         if (is_c) {
@@ -12459,7 +12641,10 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         }
 
     void visit_IntrinsicElementalFunction(const ASR::IntrinsicElementalFunction_t &x) {
-        CHECK_FAST_C_CPP(compiler_options, x);
+        if (compiler_options.po.fast && x.m_value != nullptr) {
+            visit_expr_without_c_pow_cache(*x.m_value);
+            return;
+        }
         if (x.m_intrinsic_id == static_cast<int64_t>(
                 ASRUtils::IntrinsicElementalFunctions::CompilerVersion)) {
             LCOMPILERS_ASSERT(x.m_value);
@@ -12480,7 +12665,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             SET_INTRINSIC_NAME(Tanh, "tanh");
             case (static_cast<int64_t>(ASRUtils::IntrinsicElementalFunctions::Abs)) : {
                 ASR::ttype_t *t = ASRUtils::expr_type(x.m_args[0]);
-                this->visit_expr(*x.m_args[0]);
+                visit_expr_without_c_pow_cache(*x.m_args[0]);
                 headers.insert("math.h");
                 if (ASRUtils::is_real(*t)) {
                     src = "fabs(" + src + ")";
@@ -12502,21 +12687,21 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             SET_INTRINSIC_NAME(StringLenTrim, "len_trim");
             SET_INTRINSIC_NAME(StringTrim, "trim");
             case (static_cast<int64_t>(ASRUtils::IntrinsicElementalFunctions::FMA)) : {
-                this->visit_expr(*x.m_args[0]);
+                visit_expr_without_c_pow_cache(*x.m_args[0]);
                 std::string a = src;
-                this->visit_expr(*x.m_args[1]);
+                visit_expr_without_c_pow_cache(*x.m_args[1]);
                 std::string b = src;
-                this->visit_expr(*x.m_args[2]);
+                visit_expr_without_c_pow_cache(*x.m_args[2]);
                 std::string c = src;
                 src = a +" + "+ b +"*"+ c;
                 return;
             }
             case (static_cast<int64_t>(ASRUtils::IntrinsicElementalFunctions::Max)) : {
                 ASR::ttype_t *t = ASRUtils::expr_type(x.m_args[0]);
-                this->visit_expr(*x.m_args[0]);
+                visit_expr_without_c_pow_cache(*x.m_args[0]);
                 std::string result = src;
                 for (size_t i = 1; i < x.n_args; i++) {
-                    this->visit_expr(*x.m_args[i]);
+                    visit_expr_without_c_pow_cache(*x.m_args[i]);
                     if (ASRUtils::is_real(*t)) {
                         headers.insert("math.h");
                         result = "fmax(" + result + ", " + src + ")";
@@ -12530,10 +12715,10 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             }
             case (static_cast<int64_t>(ASRUtils::IntrinsicElementalFunctions::Min)) : {
                 ASR::ttype_t *t = ASRUtils::expr_type(x.m_args[0]);
-                this->visit_expr(*x.m_args[0]);
+                visit_expr_without_c_pow_cache(*x.m_args[0]);
                 std::string result = src;
                 for (size_t i = 1; i < x.n_args; i++) {
-                    this->visit_expr(*x.m_args[i]);
+                    visit_expr_without_c_pow_cache(*x.m_args[i]);
                     if (ASRUtils::is_real(*t)) {
                         headers.insert("math.h");
                         result = "fmin(" + result + ", " + src + ")";
@@ -12562,7 +12747,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             }
         }
         headers.insert("math.h");
-        this->visit_expr(*x.m_args[0]);
+        visit_expr_without_c_pow_cache(*x.m_args[0]);
         out += "(" + src + ")";
         src = out;
     }
