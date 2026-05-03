@@ -118,6 +118,28 @@ std::string get_system_temp_dir()
 
 std::string LFORTRAN_TEMP_DIR = get_system_temp_dir();
 
+std::string c_compiler_optimization_flags(const std::vector<std::string> &O_flags)
+{
+    std::string flags;
+    for (const std::string &level : O_flags) {
+        if (!flags.empty()) {
+            flags += " ";
+        }
+        if (level.empty()) {
+            flags += "-O";
+        } else if (level.rfind("-O", 0) == 0) {
+            flags += level;
+        } else {
+            flags += "-O" + level;
+        }
+    }
+    if (!flags.empty()) {
+        // Generated C still uses descriptor casts that are not strict-aliasing clean.
+        flags += " -fno-strict-aliasing";
+    }
+    return flags;
+}
+
 bool write_file_atomically(const std::filesystem::path &fullpath,
         const std::string &contents, bool binary=false)
 {
@@ -1845,7 +1867,8 @@ int compile_to_object_file_c(const std::string &infile,
         const std::string &outfile, bool verbose,
         bool assembly, const std::string &rtlib_header_dir,
         LCompilers::PassManager pass_manager,
-        CompilerOptions &compiler_options)
+        CompilerOptions &compiler_options,
+        const std::vector<std::string> &O_flags)
 {
     namespace fs = std::filesystem;
     if (assembly) {
@@ -1933,13 +1956,17 @@ int compile_to_object_file_c(const std::string &infile,
         }
 
         std::string CC = "gcc";
+        std::string optimization_flags = c_compiler_optimization_flags(O_flags);
         std::vector<std::string> object_files;
         object_files.reserve(split_result.result.source_files.size());
         for (const auto &src_file : split_result.result.source_files) {
             fs::path src_path = split_dir / src_file;
             fs::path obj_path = split_dir / fs::path(src_file).replace_extension(".o");
-            std::string cmd = CC
-                + " -I" + effective_rtlib_header_dir
+            std::string cmd = CC;
+            if (!optimization_flags.empty()) {
+                cmd += " " + optimization_flags;
+            }
+            cmd += " -I" + effective_rtlib_header_dir
                 + " -I" + split_dir.string()
                 + " -o " + obj_path.string()
                 + " -c " + src_path.string();
@@ -1960,8 +1987,11 @@ int compile_to_object_file_c(const std::string &infile,
                 std::ofstream out(empty_src);
                 out << "/* Header-only split C package: emit an empty object. */\n";
             }
-            std::string cmd = CC
-                + " -o " + outfile
+            std::string cmd = CC;
+            if (!optimization_flags.empty()) {
+                cmd += " " + optimization_flags;
+            }
+            cmd += " -o " + outfile
                 + " -c " + empty_src.string();
             if (verbose) {
                 std::cout << cmd << std::endl;
@@ -3024,7 +3054,8 @@ int main_app(int argc, char *argv[]) {
 #endif
         } else if (backend == Backend::c) {
             result = compile_to_object_file_c(opts.arg_file, outfile, opts.arg_v, false,
-                    rtlib_c_header_dir, lfortran_pass_manager, compiler_options);
+                    rtlib_c_header_dir, lfortran_pass_manager, compiler_options,
+                    opts.O_flags);
         } else if (backend == Backend::cpp) {
             result = compile_to_object_file_cpp(opts.arg_file, outfile, opts.arg_v, false,
                     true, rtlib_c_header_dir, compiler_options);
@@ -3085,7 +3116,8 @@ int main_app(int argc, char *argv[]) {
                         true, rtlib_header_dir, compiler_options);
             } else if (backend == Backend::c) {
                 err = compile_to_object_file_c(arg_file, tmp_o, opts.arg_v,
-                        false, rtlib_c_header_dir, lfortran_pass_manager, compiler_options);
+                        false, rtlib_c_header_dir, lfortran_pass_manager,
+                        compiler_options, opts.O_flags);
             } else if (backend == Backend::fortran) {
                 err = compile_to_binary_fortran(arg_file, tmp_o, compiler_options);
             } else if (backend == Backend::wasm) {

@@ -591,6 +591,24 @@ bool fill_new_args(Vec<ASR::call_arg_t>& new_args, Allocator& al,
                 ASR::expr_t* dummy_variable = PassUtils::create_auxiliary_variable(
                     x.m_args[i].loc, dummy_variable_name, al, scope, dummy_variable_type, ASR::intentType::Local, arg_decl, func->m_args[j]);
 
+                ASR::ttype_t* dummy_base_type = ASRUtils::type_get_past_allocatable_pointer(dummy_variable_type);
+                ASR::expr_t* dummy_init = nullptr;
+                if (!ASRUtils::is_array(dummy_variable_type) && ASRUtils::is_integer(*dummy_base_type)) {
+                    dummy_init = ASRUtils::EXPR(ASR::make_IntegerConstant_t(
+                        al, dummy_variable_type->base.loc, 0, dummy_base_type));
+                } else if (!ASRUtils::is_array(dummy_variable_type) && ASRUtils::is_logical(*dummy_base_type)) {
+                    dummy_init = ASRUtils::EXPR(ASR::make_LogicalConstant_t(
+                        al, dummy_variable_type->base.loc, false, dummy_base_type));
+                } else if (!ASRUtils::is_array(dummy_variable_type) && ASRUtils::is_real(*dummy_base_type)) {
+                    dummy_init = ASRUtils::EXPR(ASR::make_RealConstant_t(
+                        al, dummy_variable_type->base.loc, 0.0, dummy_base_type));
+                }
+                if (dummy_init != nullptr) {
+                    pass_result.push_back(al, ASRUtils::STMT(
+                        ASRUtils::make_Assignment_t_util(al, x.m_args[i].loc,
+                            dummy_variable, dummy_init, nullptr, false, false)));
+                }
+
                 std::string pointer_name = scope->get_unique_name("__libasr_created_variable_pointer_");
                 pointer_variable_type = ASRUtils::TYPE(ASR::make_Pointer_t(al, pointer_variable_type->base.loc, pointer_variable_type));
                 ASR::expr_t* pointer_variable = PassUtils::create_auxiliary_variable(

@@ -292,7 +292,7 @@ namespace LCompilers::CommandLineInterface {
         app.add_flag("--version", opts.arg_version, "Display compiler version information");
         app.add_option("-W", opts.linker_flags, "Linker flags")->allow_extra_args(false);
         app.add_option("-f", opts.f_flags, "All `-f*` flags (only -fPIC & -fdefault-integer-8 supported for now)")->allow_extra_args(false);
-        app.add_option("-O", opts.O_flags, "Optimization level (ignored for now)")->allow_extra_args(false);
+        app.add_option("-O", opts.O_flags, "Optimization level")->allow_extra_args(false);
         app.add_option("--fpe-trap", fpe_traps_str, "Enable floating point exception trapping. Comma-separated list of: invalid, zero, overflow, underflow, inexact, denormal");
 
         // LFortran specific options
