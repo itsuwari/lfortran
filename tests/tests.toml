@@ -5153,6 +5153,10 @@ run = true
 options = "--backend=c --separate-compilation"
 
 [[test]]
+filename = "c_backend_section_assoc_temp_direct_01.f90"
+c = true
+
+[[test]]
 filename = "c_backend_small_integer_pow_01.f90"
 c = true
 

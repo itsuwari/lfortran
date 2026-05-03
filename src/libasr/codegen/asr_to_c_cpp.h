@@ -191,6 +191,7 @@ public:
     bool force_storage_expr_in_call_args = false;
     bool reuse_array_compare_temps_in_call_args = false;
     std::map<std::string, std::string> array_compare_temp_cache;
+    std::set<uint64_t> c_array_section_association_temps;
 
     std::unique_ptr<CCPPDSUtils> c_ds_api;
     std::unique_ptr<CUtils::CUtilFunctions> c_utils_functions;
@@ -3694,6 +3695,18 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             .rfind("__libasr_created_", 0) == 0;
     }
 
+    bool is_c_array_section_association_temp_expr(ASR::expr_t *expr) {
+        expr = unwrap_c_array_expr(expr);
+        if (expr == nullptr || !ASR::is_a<ASR::Var_t>(*expr)) {
+            return false;
+        }
+        ASR::symbol_t *sym = ASRUtils::symbol_get_past_external(
+            ASR::down_cast<ASR::Var_t>(expr)->m_v);
+        return c_array_section_association_temps.find(
+            get_hash(reinterpret_cast<ASR::asr_t*>(sym))) !=
+            c_array_section_association_temps.end();
+    }
+
     bool is_c_whole_allocatable_or_pointer_array_expr(ASR::expr_t *expr) {
         expr = unwrap_c_array_expr(expr);
         if (expr == nullptr || ASR::is_a<ASR::ArraySection_t>(*expr)) {
@@ -5406,6 +5419,14 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 target_array_type, target_type_decl);
         if (target_wrapper.empty()) {
             return source_src_copy;
+        }
+        if (source_section == nullptr
+                && is_c_array_section_association_temp_expr(source_lvalue)) {
+            std::string source_wrapper =
+                get_c_declared_array_wrapper_type_name(source_array_type);
+            if (source_wrapper == target_wrapper) {
+                return source_src_copy;
+            }
         }
 
         if (source_section != nullptr) {
@@ -8946,6 +8967,14 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
 
     void visit_Associate(const ASR::Associate_t &x) {
         if (ASR::is_a<ASR::ArraySection_t>(*x.m_value)) {
+            if (is_c && ASR::is_a<ASR::Var_t>(*x.m_target)
+                    && ASRUtils::is_pointer(ASRUtils::expr_type(x.m_target))
+                    && ASRUtils::is_array(ASRUtils::expr_type(x.m_target))) {
+                ASR::symbol_t *target_sym = ASRUtils::symbol_get_past_external(
+                    ASR::down_cast<ASR::Var_t>(x.m_target)->m_v);
+                c_array_section_association_temps.insert(
+                    get_hash(reinterpret_cast<ASR::asr_t*>(target_sym)));
+            }
             ASR::ArraySection_t *array_section = ASR::down_cast<ASR::ArraySection_t>(x.m_value);
             ASR::expr_t *raw_value = unwrap_c_lvalue_expr(array_section->m_v);
             if (is_c && array_section->n_args == 1 && raw_value != nullptr
