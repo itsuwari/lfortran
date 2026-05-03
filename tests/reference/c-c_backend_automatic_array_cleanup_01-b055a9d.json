@@ -2,11 +2,11 @@
     "basename": "c-c_backend_automatic_array_cleanup_01-b055a9d",
     "cmd": "lfortran --no-color --show-c {infile}",
     "infile": "tests/c_backend_automatic_array_cleanup_01.f90",
-    "infile_hash": "801ff2f30353320c142abc9576aac80f2538b4ce7d99cd605458aae6",
+    "infile_hash": "c89897d6206f77668cfafc5461e0ff17a891c6d4eaa5964f0767be6e",
     "outfile": null,
     "outfile_hash": null,
     "stdout": "c-c_backend_automatic_array_cleanup_01-b055a9d.stdout",
-    "stdout_hash": "ec5c0e29c915d110b6fcf41374169fe075fccc8517125c3c963d3f04",
+    "stdout_hash": "3a2f9aff95e97205c97a48bc98309cf0a544a4f1844a030020ed6f92",
     "stderr": null,
     "stderr_hash": null,
     "returncode": 0

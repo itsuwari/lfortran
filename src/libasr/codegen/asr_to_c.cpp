@@ -1703,11 +1703,15 @@ R"(
 
     std::string convert_dims_c(size_t n_dims, ASR::dimension_t *m_dims,
                                ASR::ttype_t* element_type, bool& is_fixed_size,
-                               bool convert_to_1d=false)
+                               bool convert_to_1d=false,
+                               std::string *dynamic_stack_size_expr=nullptr)
     {
         std::string dims = "";
         size_t size = 1;
         std::string array_size = "";
+        if (dynamic_stack_size_expr != nullptr) {
+            dynamic_stack_size_expr->clear();
+        }
         for (size_t i=0; i<n_dims; i++) {
             ASR::expr_t *length = m_dims[i].m_length;
             if (!length) {
@@ -1729,6 +1733,12 @@ R"(
             }
         }
         if( size == 0 ) {
+            if (convert_to_1d && dynamic_stack_size_expr != nullptr) {
+                *dynamic_stack_size_expr = array_size.empty()
+                    ? "1" : array_size.substr(1);
+                is_fixed_size = false;
+                return dims;
+            }
             std::string element_type_str = CUtils::get_c_type_from_ttype_t(element_type);
             dims = "(" + element_type_str + "*)" + " malloc(sizeof(" + element_type_str + ")" + array_size + ")";
             is_fixed_size = false;
@@ -1749,7 +1759,8 @@ R"(
                              bool is_pointer,
                              ASR::abiType m_abi,
                              bool is_simd_array,
-                             const ASR::Variable_t *var = nullptr) {
+                             const ASR::Variable_t *var = nullptr,
+                             const std::string &dynamic_stack_size_expr = "") {
         std::string indent(indentation_level*indentation_spaces, ' ');
         std::string type_name_copy = type_name;
         std::string original_type_name = type_name;
@@ -1791,15 +1802,37 @@ R"(
                 sub += ";\n";
                 if( !is_fixed_size ) {
                     std::string data_name = std::string(v_m_name) + "_data";
-                    sub += indent + format_type_c("*", type_name_copy, std::string(v_m_name) + "_data",
-                                                use_ref, dummy);
-                    if( dims.size() > 0 ) {
-                        sub += " = " + dims + ";\n";
-                        if (var != nullptr && var->m_intent == ASRUtils::intent_local) {
-                            current_function_heap_array_data.push_back(data_name);
-                        }
+                    if (!dynamic_stack_size_expr.empty()) {
+                        std::string size_name = get_unique_local_name(
+                            std::string(v_m_name) + "_data_size");
+                        std::string stack_data_name = data_name + "_stack";
+                        sub += indent + "int64_t " + size_name + " = "
+                            + dynamic_stack_size_expr + ";\n";
+                        sub += indent + format_type_c(
+                            "[(" + size_name + " > 0 && " + size_name + " <= 4096 ? "
+                                + size_name + " : 1)]",
+                            type_name_copy, stack_data_name, use_ref, dummy) + ";\n";
+                        sub += indent + format_type_c("*", type_name_copy, data_name,
+                                                    use_ref, dummy)
+                            + " = " + stack_data_name + ";\n";
+                        sub += indent + "if (" + size_name + " > 4096) {\n";
+                        sub += indent + "    " + data_name + " = (" + type_name_copy
+                            + "*) malloc(sizeof(" + type_name_copy + ")*" + size_name
+                            + ");\n";
+                        sub += indent + "}\n";
+                        current_function_heap_array_data.push_back("(" + size_name
+                            + " > 4096 ? " + data_name + " : NULL)");
                     } else {
-                        sub += " = NULL;\n";
+                        sub += indent + format_type_c("*", type_name_copy, data_name,
+                                                    use_ref, dummy);
+                        if( dims.size() > 0 ) {
+                            sub += " = " + dims + ";\n";
+                            if (var != nullptr && var->m_intent == ASRUtils::intent_local) {
+                                current_function_heap_array_data.push_back(data_name);
+                            }
+                        } else {
+                            sub += " = NULL;\n";
+                        }
                     }
                 } else {
                     bool static_parameter_data = var != nullptr
@@ -2224,9 +2257,22 @@ R"(
         }
         if( is_array ) {
                 bool is_fixed_size = true;
-                dims = convert_dims_c(n_dims, m_dims, v_m_type, is_fixed_size, true);
                 bool is_struct_type_member = ASR::is_a<ASR::Struct_t>(
                     *ASR::down_cast<ASR::symbol_t>(v.m_parent_symtab->asr_owner));
+                bool is_module_var = ASR::is_a<ASR::Module_t>(
+                    *ASR::down_cast<ASR::symbol_t>(v.m_parent_symtab->asr_owner));
+                bool use_dynamic_stack_storage = v.m_intent == ASRUtils::intent_local
+                    && !dummy && !force_declare && !is_struct_type_member
+                    && !is_module_var && v.m_storage != ASR::storage_typeType::Parameter
+                    && !ASRUtils::is_allocatable(v.m_type)
+                    && !ASRUtils::is_pointer(v.m_type)
+                    && !ASRUtils::is_character(*v_m_type)
+                    && !ASR::is_a<ASR::StructType_t>(*v_m_type)
+                    && !ASR::is_a<ASR::UnionType_t>(*v_m_type)
+                    && !ASR::is_a<ASR::EnumType_t>(*v_m_type);
+                std::string dynamic_stack_size_expr;
+                dims = convert_dims_c(n_dims, m_dims, v_m_type, is_fixed_size,
+                    true, use_dynamic_stack_storage ? &dynamic_stack_size_expr : nullptr);
                 if( is_fixed_size && is_struct_type_member ) {
                     if( !force_declare ) {
                         force_declare_name = v_name;
@@ -2245,8 +2291,6 @@ R"(
                     if( !force_declare ) {
                         force_declare_name = v_name;
                     }
-                bool is_module_var = ASR::is_a<ASR::Module_t>(
-                    *ASR::down_cast<ASR::symbol_t>(v.m_parent_symtab->asr_owner));
                 bool is_simd_array = (ASR::is_a<ASR::Array_t>(*v.m_type) &&
                     ASR::down_cast<ASR::Array_t>(v.m_type)->m_physical_type
                         == ASR::array_physical_typeType::SIMDArray);
@@ -2258,7 +2302,8 @@ R"(
                                     v.m_intent != ASRUtils::intent_out &&
                                     v.m_intent != ASRUtils::intent_unspecified &&
                                     !is_struct_type_member && !is_module_var) || force_declare,
-                                    is_fixed_size, false, ASR::abiType::Source, is_simd_array, &v);
+                                    is_fixed_size, false, ASR::abiType::Source, is_simd_array,
+                                    &v, dynamic_stack_size_expr);
             }
         } else {
             bool is_fixed_size = true;

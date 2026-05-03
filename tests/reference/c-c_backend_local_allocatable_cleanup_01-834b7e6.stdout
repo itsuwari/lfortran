@@ -113,18 +113,18 @@ struct Allocatable_i32____
     bool is_allocated;
 };
 
-int32_t __lfortran__lcompilers_Sum_4_1_0_idx4_integer____0(struct i32___* array, int32_t __1array);
-int32_t __lfortran__lcompilers_Sum_4_1_0_idx4(struct i32___* array);
-double __lfortran__lcompilers_Sum_8_1_0_idx4_real____0(struct r64___* array, int32_t __1array);
-double __lfortran__lcompilers_Sum_8_1_0_idx4(struct r64___* array);
-double __lfortran__lcompilers_Sum_8_2_0_idx4_real_______0(struct r64_____* array, int32_t __1array, int32_t __2array);
-double __lfortran__lcompilers_Sum_8_2_0_idx4(struct r64_____* array);
+int32_t __lfortran__lcompilers_Sum_4_1_0_idx4_integer____0(struct i32___* restrict array, int32_t __1array);
+int32_t __lfortran__lcompilers_Sum_4_1_0_idx4(struct i32___* restrict array);
+double __lfortran__lcompilers_Sum_8_1_0_idx4_real____0(struct r64___* restrict array, int32_t __1array);
+double __lfortran__lcompilers_Sum_8_1_0_idx4(struct r64___* restrict array);
+double __lfortran__lcompilers_Sum_8_2_0_idx4_real_______0(struct r64_____* restrict array, int32_t __1array, int32_t __2array);
+double __lfortran__lcompilers_Sum_8_2_0_idx4(struct r64_____* restrict array);
 double __lfortran__lcompilers_real_i32(int32_t x);
 double __lfortran__lcompilers_real_i321(int32_t x);
 void __lfortran_c_backend_local_allocatable_cleanup_01__fill(int32_t n, double *total);
 void __lfortran_c_backend_local_allocatable_cleanup_01__make_array(struct r64___* values);
 void __lfortran_c_backend_local_allocatable_cleanup_01__fill_from_callee(double *total);
-void __lfortran_c_backend_local_allocatable_cleanup_01__make_holder__StructType(struct c_backend_local_allocatable_cleanup_01__holder* h);
+void __lfortran_c_backend_local_allocatable_cleanup_01__make_holder__StructType(struct c_backend_local_allocatable_cleanup_01__holder* restrict h);
 void __lfortran_c_backend_local_allocatable_cleanup_01__fill_holder_from_callee(double *total);
 void __lfortran_c_backend_local_allocatable_cleanup_01__fill_polymorphic(double *total);
 void __lfortran_c_backend_local_allocatable_cleanup_01__fill_then_return(int32_t n, double *total);
@@ -133,7 +133,7 @@ void __lfortran_c_backend_local_allocatable_cleanup_01__fill_then_return(int32_t
 
 
 // Implementations
-int32_t __lfortran__lcompilers_Sum_4_1_0_idx4_integer____0(struct i32___* array, int32_t __1array)
+int32_t __lfortran__lcompilers_Sum_4_1_0_idx4_integer____0(struct i32___* restrict array, int32_t __1array)
 {
     int32_t __1_i;
     int32_t result;
@@ -144,12 +144,12 @@ int32_t __lfortran__lcompilers_Sum_4_1_0_idx4_integer____0(struct i32___* array,
     return result;
 }
 
-int32_t __lfortran__lcompilers_Sum_4_1_0_idx4(struct i32___* array)
+int32_t __lfortran__lcompilers_Sum_4_1_0_idx4(struct i32___* restrict array)
 {
     return __lfortran__lcompilers_Sum_4_1_0_idx4_integer____0(array, ((int32_t)array->dims[0].length + array->dims[0].lower_bound - 1));
 }
 
-double __lfortran__lcompilers_Sum_8_1_0_idx4_real____0(struct r64___* array, int32_t __1array)
+double __lfortran__lcompilers_Sum_8_1_0_idx4_real____0(struct r64___* restrict array, int32_t __1array)
 {
     int32_t __1_i;
     double result;
@@ -160,12 +160,12 @@ double __lfortran__lcompilers_Sum_8_1_0_idx4_real____0(struct r64___* array, int
     return result;
 }
 
-double __lfortran__lcompilers_Sum_8_1_0_idx4(struct r64___* array)
+double __lfortran__lcompilers_Sum_8_1_0_idx4(struct r64___* restrict array)
 {
     return __lfortran__lcompilers_Sum_8_1_0_idx4_real____0(array, ((int32_t)array->dims[0].length + array->dims[0].lower_bound - 1));
 }
 
-double __lfortran__lcompilers_Sum_8_2_0_idx4_real_______0(struct r64_____* array, int32_t __1array, int32_t __2array)
+double __lfortran__lcompilers_Sum_8_2_0_idx4_real_______0(struct r64_____* restrict array, int32_t __1array, int32_t __2array)
 {
     int32_t __1_i;
     int32_t __2_i;
@@ -179,7 +179,7 @@ double __lfortran__lcompilers_Sum_8_2_0_idx4_real_______0(struct r64_____* array
     return result;
 }
 
-double __lfortran__lcompilers_Sum_8_2_0_idx4(struct r64_____* array)
+double __lfortran__lcompilers_Sum_8_2_0_idx4(struct r64_____* restrict array)
 {
     return __lfortran__lcompilers_Sum_8_2_0_idx4_real_______0(array, ((int32_t)array->dims[0].length + array->dims[0].lower_bound - 1), ((int32_t)array->dims[1].length + array->dims[1].lower_bound - 1));
 }
@@ -244,8 +244,8 @@ void __lfortran_c_backend_local_allocatable_cleanup_01__fill(int32_t n, double *
         {
         double *__lfortran_lhs_data = scratch->data;
         int64_t __lfortran_lhs_stride = scratch->dims[1].stride * (1);
-        int64_t __lfortran_lhs_offset = (scratch->offset + scratch->dims[0].stride * ((i) - scratch->dims[0].lower_bound) + scratch->dims[1].stride * ((((int32_t)scratch->dims[2-1].lower_bound)) - scratch->dims[1].lower_bound));
-        int64_t __lfortran_lhs_length = ((((((int32_t) scratch->dims[2-1].length + scratch->dims[2-1].lower_bound - 1)) - (((int32_t)scratch->dims[2-1].lower_bound))) / (1)) + 1);
+        int64_t __lfortran_lhs_offset = (scratch->offset + scratch->dims[0].stride * ((i) - scratch->dims[0].lower_bound) + scratch->dims[1].stride * ((scratch->dims[1].lower_bound) - scratch->dims[1].lower_bound));
+        int64_t __lfortran_lhs_length = (((((scratch->dims[1].lower_bound + scratch->dims[1].length - 1)) - (scratch->dims[1].lower_bound)) / (1)) + 1);
             for (int64_t __lfortran_i = 0; __lfortran_i < __lfortran_lhs_length; __lfortran_i++) {
                 __lfortran_lhs_data[__lfortran_lhs_offset + __lfortran_i * __lfortran_lhs_stride] = __lfortran__lcompilers_real_i32(i);
             }
@@ -397,7 +397,7 @@ void __lfortran_c_backend_local_allocatable_cleanup_01__fill_from_callee(double 
     }
 }
 
-void __lfortran_c_backend_local_allocatable_cleanup_01__make_holder__StructType(struct c_backend_local_allocatable_cleanup_01__holder* h)
+void __lfortran_c_backend_local_allocatable_cleanup_01__make_holder__StructType(struct c_backend_local_allocatable_cleanup_01__holder* restrict h)
 {
     int32_t __libasr_index_0_;
     memset(h, 0, sizeof(*h));

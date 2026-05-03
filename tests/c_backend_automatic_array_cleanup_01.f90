@@ -6,6 +6,9 @@ real(8) :: value
 call accumulate(6, value)
 if (abs(value - 63.0_8) > 1.0e-12_8) error stop
 
+call accumulate(2000, value)
+if (abs(value - 6003000.0_8) > 1.0e-8_8) error stop
+
 call accumulate(0, value)
 if (value /= -1.0_8) error stop
 
