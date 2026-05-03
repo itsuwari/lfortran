@@ -1248,7 +1248,7 @@ R"(
             if (trimmed.empty()) {
                 continue;
             }
-            if (startswith(trimmed, "#") || startswith(trimmed, "static ")) {
+            if (startswith(trimmed, "#") || startswith(line, "static ")) {
                 return false;
             }
         }

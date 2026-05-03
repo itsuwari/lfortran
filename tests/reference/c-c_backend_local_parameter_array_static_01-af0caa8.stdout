@@ -49,15 +49,15 @@ struct r64___
     bool is_allocated;
 };
 
-void __lfortran__lcompilers_matmul_real_______0_real____1(struct r64_____* matrix_a_m, int32_t __1matrix_a_m, int32_t __2matrix_a_m, struct r64___* matrix_b_m, int32_t __1matrix_b_m, struct r64___* result);
-void __lfortran__lcompilers_matmul(struct r64_____* matrix_a_m, struct r64___* matrix_b_m, struct r64___* result);
-void __lfortran_c_backend_local_parameter_array_static_01__apply_weights(struct r64___* x, struct r64___* y);
+void __lfortran__lcompilers_matmul_real_______0_real____1(struct r64_____* restrict matrix_a_m, int32_t __1matrix_a_m, int32_t __2matrix_a_m, struct r64___* restrict matrix_b_m, int32_t __1matrix_b_m, struct r64___* restrict result);
+void __lfortran__lcompilers_matmul(struct r64_____* restrict matrix_a_m, struct r64___* restrict matrix_b_m, struct r64___* restrict result);
+void __lfortran_c_backend_local_parameter_array_static_01__apply_weights(struct r64___* restrict x, struct r64___* restrict y);
 
 
 
 
 // Implementations
-void __lfortran__lcompilers_matmul_real_______0_real____1(struct r64_____* matrix_a_m, int32_t __1matrix_a_m, int32_t __2matrix_a_m, struct r64___* matrix_b_m, int32_t __1matrix_b_m, struct r64___* result)
+void __lfortran__lcompilers_matmul_real_______0_real____1(struct r64_____* restrict matrix_a_m, int32_t __1matrix_a_m, int32_t __2matrix_a_m, struct r64___* restrict matrix_b_m, int32_t __1matrix_b_m, struct r64___* restrict result)
 {
     int32_t i;
     int32_t j;
@@ -74,12 +74,12 @@ void __lfortran__lcompilers_matmul_real_______0_real____1(struct r64_____* matri
     return;
 }
 
-void __lfortran__lcompilers_matmul(struct r64_____* matrix_a_m, struct r64___* matrix_b_m, struct r64___* result)
+void __lfortran__lcompilers_matmul(struct r64_____* restrict matrix_a_m, struct r64___* restrict matrix_b_m, struct r64___* restrict result)
 {
     __lfortran__lcompilers_matmul_real_______0_real____1(matrix_a_m, ((int32_t)matrix_a_m->dims[0].length + matrix_a_m->dims[0].lower_bound - 1), ((int32_t)matrix_a_m->dims[1].length + matrix_a_m->dims[1].lower_bound - 1), matrix_b_m, ((int32_t)matrix_b_m->dims[0].length + matrix_b_m->dims[0].lower_bound - 1), result);
 }
 
-void __lfortran_c_backend_local_parameter_array_static_01__apply_weights(struct r64___* x, struct r64___* y)
+void __lfortran_c_backend_local_parameter_array_static_01__apply_weights(struct r64___* restrict x, struct r64___* restrict y)
 {
     struct r64_____ weights_value;
     struct r64_____* weights = &weights_value;
@@ -125,11 +125,11 @@ int main(int argc, char* argv[])
     struct r64___ __lfortran_array_view = { .data = __libasr_created__subroutine_call_apply_weights->data, .dims = {{1, __libasr_created__subroutine_call_apply_weights->dims[0].length, __libasr_created__subroutine_call_apply_weights->dims[0].stride}}, .n_dims = 1, .offset = __libasr_created__subroutine_call_apply_weights->offset, .is_allocated = false };
     struct r64___ __lfortran_array_view1 = { .data = y->data, .dims = {{1, y->dims[0].length, y->dims[0].stride}}, .n_dims = 1, .offset = y->offset, .is_allocated = y->is_allocated };
     __lfortran_c_backend_local_parameter_array_static_01__apply_weights(&__lfortran_array_view, &__lfortran_array_view1);
-    if (fabs(y->data[(0 + (1 * (1 - 1)))] -   1.40000000000000000e+01) >   9.99999999999999980e-13) {
+    if (fabs(y_data[(0 + (1 * (1 - 1)))] -   1.40000000000000000e+01) >   9.99999999999999980e-13) {
         fprintf(stderr, "ERROR STOP");
         exit(1);
     }
-    if (fabs(y->data[(0 + (1 * (2 - 1)))] -   1.90000000000000000e+01) >   9.99999999999999980e-13) {
+    if (fabs(y_data[(0 + (1 * (2 - 1)))] -   1.90000000000000000e+01) >   9.99999999999999980e-13) {
         fprintf(stderr, "ERROR STOP");
         exit(1);
     }
