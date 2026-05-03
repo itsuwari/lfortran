@@ -1,0 +1,52 @@
+#include <math.h>
+
+#include <stdlib.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <string.h>
+#include <lfortran_intrinsics.h>
+
+
+#ifndef LFORTRAN_C_BACKEND_CONSTRUCTOR
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_CONSTRUCTOR __attribute__((constructor))
+#else
+#define LFORTRAN_C_BACKEND_CONSTRUCTOR
+#endif
+#endif
+
+
+struct dimension_descriptor
+{
+    int32_t lower_bound, length, stride;
+};
+#ifndef LFORTRAN_C_BACKEND_CONSTRUCTOR
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_CONSTRUCTOR __attribute__((constructor))
+#else
+#define LFORTRAN_C_BACKEND_CONSTRUCTOR
+#endif
+#endif
+
+double __lfortran__lcompilers_erf_f64(double x);
+void __lfortran_c_backend_real_pow_cache_intrinsic_01(double rc, double norm_exp, double kcn, double r, double *count);
+
+
+
+
+// Implementations
+;
+
+
+double __lfortran__lcompilers_erf_f64(double x)
+{
+    double _lcompilers_erf_f64;
+    _lcompilers_erf_f64 = _lfortran_derf(x);
+    return _lcompilers_erf_f64;
+}
+
+void __lfortran_c_backend_real_pow_cache_intrinsic_01(double rc, double norm_exp, double kcn, double r, double *count)
+{
+    (*count) =   5.00000000000000000e-01*(  1.00000000000000000e+00 + __lfortran__lcompilers_erf_f64((-kcn)*(r - rc)/pow(rc, norm_exp)));
+}
+

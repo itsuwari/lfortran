@@ -187,6 +187,7 @@ public:
     std::vector<std::pair<std::string, ASR::Struct_t*>> current_function_local_structs;
     std::map<std::string, CArrayDescriptorCache> current_function_array_descriptor_cache;
     std::map<std::string, CScalarExprCacheEntry> current_function_pow_cache;
+    int c_pow_cache_safe_expr_depth = 0;
     int c_pow_cache_suppression_depth = 0;
     std::map<uint64_t, SymbolInfo> sym_info;
     std::map<uint64_t, std::string> const_var_names;
@@ -523,6 +524,77 @@ public:
         c_pow_cache_suppression_depth++;
         self().visit_expr(expr);
         c_pow_cache_suppression_depth--;
+    }
+
+    bool is_c_pow_cache_safe_expr(ASR::expr_t *expr) {
+        if (expr == nullptr) {
+            return false;
+        }
+        expr = unwrap_c_lvalue_expr(expr);
+        if (expr == nullptr || ASRUtils::is_array(ASRUtils::expr_type(expr))) {
+            return false;
+        }
+        switch (expr->type) {
+            case ASR::exprType::Var:
+            case ASR::exprType::IntegerConstant:
+            case ASR::exprType::UnsignedIntegerConstant:
+            case ASR::exprType::RealConstant:
+            case ASR::exprType::LogicalConstant: {
+                return true;
+            }
+            case ASR::exprType::StructInstanceMember: {
+                return is_c_pow_cache_safe_expr(
+                    ASR::down_cast<ASR::StructInstanceMember_t>(expr)->m_v);
+            }
+            case ASR::exprType::ArrayItem: {
+                ASR::ArrayItem_t *item = ASR::down_cast<ASR::ArrayItem_t>(expr);
+                if (!is_c_pow_cache_safe_expr(item->m_v)) {
+                    return false;
+                }
+                for (size_t i = 0; i < item->n_args; i++) {
+                    ASR::expr_t *idx_expr = get_array_index_expr(item->m_args[i]);
+                    if (idx_expr == nullptr || is_vector_subscript_expr(idx_expr)
+                            || !is_c_pow_cache_safe_expr(idx_expr)) {
+                        return false;
+                    }
+                }
+                return true;
+            }
+            case ASR::exprType::Cast: {
+                return is_c_pow_cache_safe_expr(ASR::down_cast<ASR::Cast_t>(expr)->m_arg);
+            }
+            case ASR::exprType::RealUnaryMinus: {
+                return is_c_pow_cache_safe_expr(
+                    ASR::down_cast<ASR::RealUnaryMinus_t>(expr)->m_arg);
+            }
+            case ASR::exprType::IntegerUnaryMinus: {
+                return is_c_pow_cache_safe_expr(
+                    ASR::down_cast<ASR::IntegerUnaryMinus_t>(expr)->m_arg);
+            }
+            case ASR::exprType::UnsignedIntegerUnaryMinus: {
+                return is_c_pow_cache_safe_expr(
+                    ASR::down_cast<ASR::UnsignedIntegerUnaryMinus_t>(expr)->m_arg);
+            }
+            case ASR::exprType::RealBinOp: {
+                ASR::RealBinOp_t *binop = ASR::down_cast<ASR::RealBinOp_t>(expr);
+                return is_c_pow_cache_safe_expr(binop->m_left)
+                    && is_c_pow_cache_safe_expr(binop->m_right);
+            }
+            case ASR::exprType::IntegerBinOp: {
+                ASR::IntegerBinOp_t *binop = ASR::down_cast<ASR::IntegerBinOp_t>(expr);
+                return is_c_pow_cache_safe_expr(binop->m_left)
+                    && is_c_pow_cache_safe_expr(binop->m_right);
+            }
+            case ASR::exprType::UnsignedIntegerBinOp: {
+                ASR::UnsignedIntegerBinOp_t *binop =
+                    ASR::down_cast<ASR::UnsignedIntegerBinOp_t>(expr);
+                return is_c_pow_cache_safe_expr(binop->m_left)
+                    && is_c_pow_cache_safe_expr(binop->m_right);
+            }
+            default: {
+                return false;
+            }
+        }
     }
 
     bool collect_c_pow_cache_dependencies(ASR::expr_t *expr,
@@ -8975,6 +9047,8 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         }
         std::string value;
         std::string value_view_len, value_view_setup;
+        bool enable_c_pow_cache_for_value = is_c && current_function
+            && is_c_pow_cache_safe_expr(x.m_value);
         ASR::ttype_t *m_target_scalar_type =
             ASRUtils::type_get_past_allocatable_pointer(m_target_type);
         bool target_is_scalar_character = is_c
@@ -8986,7 +9060,13 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         if (value_is_string_view) {
             expr_setup += value_view_setup;
         } else if (!try_emit_scalar_to_char_array_bitcast_expr(x.m_value, value)) {
+            if (enable_c_pow_cache_for_value) {
+                c_pow_cache_safe_expr_depth++;
+            }
             self().visit_expr(*x.m_value);
+            if (enable_c_pow_cache_for_value) {
+                c_pow_cache_safe_expr_depth--;
+            }
             value = src;
         }
         expr_setup += drain_tmp_buffer();
@@ -9156,7 +9236,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         } else {
             src.clear();
         }
-        src = check_tmp_buffer();
+        src = drain_tmp_buffer();
         if (is_c && current_function &&
                 std::string(current_function->m_name).rfind("_lcompilers_move_alloc_", 0) == 0) {
             headers.insert("string.h");
@@ -11283,7 +11363,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
     bool try_emit_cached_c_real_power(ASR::expr_t *left_expr, ASR::expr_t *right_expr,
             ASR::ttype_t *result_type, const std::string &left,
             const std::string &right) {
-        if (!is_c || current_function == nullptr || bracket_open != 0
+        if (!is_c || current_function == nullptr || c_pow_cache_safe_expr_depth == 0
                 || c_pow_cache_suppression_depth > 0) {
             return false;
         }

@@ -1,0 +1,13 @@
+{
+    "basename": "c-c_backend_real_pow_cache_intrinsic_01-df79065",
+    "cmd": "lfortran --no-color --show-c {infile}",
+    "infile": "tests/c_backend_real_pow_cache_intrinsic_01.f90",
+    "infile_hash": "8dcfb479d9593333298f56e991986de5a9f7ad9b2d03c05a19c21314",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": "c-c_backend_real_pow_cache_intrinsic_01-df79065.stdout",
+    "stdout_hash": "65e9c286c45e152f77d3002f7fd4704e6ec346f242e4537f19bda1c9",
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}
