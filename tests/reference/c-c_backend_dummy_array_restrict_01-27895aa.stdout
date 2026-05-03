@@ -48,17 +48,20 @@ void __lfortran_add_arrays(int32_t n, struct r64___* restrict a, struct r64___* 
 void __lfortran_add_arrays(int32_t n, struct r64___* restrict a, struct r64___* restrict b, struct r64___* restrict c)
 {
     int32_t i;
+    double * restrict __lfortran_a_data = a->data;
     const int32_t __lfortran_a_offset = a->offset;
     const int32_t __lfortran_a_dim1_lower_bound = a->dims[0].lower_bound;
     const int32_t __lfortran_a_dim1_stride = a->dims[0].stride;
+    double * restrict __lfortran_b_data = b->data;
     const int32_t __lfortran_b_offset = b->offset;
     const int32_t __lfortran_b_dim1_lower_bound = b->dims[0].lower_bound;
     const int32_t __lfortran_b_dim1_stride = b->dims[0].stride;
+    double * restrict __lfortran_c_data = c->data;
     const int32_t __lfortran_c_offset = c->offset;
     const int32_t __lfortran_c_dim1_lower_bound = c->dims[0].lower_bound;
     const int32_t __lfortran_c_dim1_stride = c->dims[0].stride;
     for (i=1; i<=n; i++) {
-        c->data[((0 + (__lfortran_c_dim1_stride * (i - __lfortran_c_dim1_lower_bound))) + __lfortran_c_offset)] = a->data[((0 + (__lfortran_a_dim1_stride * (i - __lfortran_a_dim1_lower_bound))) + __lfortran_a_offset)] + b->data[((0 + (__lfortran_b_dim1_stride * (i - __lfortran_b_dim1_lower_bound))) + __lfortran_b_offset)];
+        __lfortran_c_data[((0 + (__lfortran_c_dim1_stride * (i - __lfortran_c_dim1_lower_bound))) + __lfortran_c_offset)] = __lfortran_a_data[((0 + (__lfortran_a_dim1_stride * (i - __lfortran_a_dim1_lower_bound))) + __lfortran_a_offset)] + __lfortran_b_data[((0 + (__lfortran_b_dim1_stride * (i - __lfortran_b_dim1_lower_bound))) + __lfortran_b_offset)];
     }
 }
 

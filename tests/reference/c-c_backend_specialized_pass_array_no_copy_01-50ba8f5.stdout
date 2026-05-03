@@ -76,17 +76,19 @@ void __lfortran_c_backend_specialized_pass_array_no_copy_01_b__outer__StructType
 // Implementations
 void __lfortran_c_backend_specialized_pass_array_no_copy_01_a__inner_real_______1_real_______2__StructType(struct c_backend_specialized_pass_array_no_copy_01_a__container* restrict mol, struct r64_____* restrict xyz, int32_t __1xyz, int32_t __2xyz, struct r64_____* restrict trans, int32_t __1trans, int32_t __2trans, double *total)
 {
+    double * restrict __lfortran_xyz_data = xyz->data;
     const int32_t __lfortran_xyz_offset = xyz->offset;
     const int32_t __lfortran_xyz_dim1_lower_bound = xyz->dims[0].lower_bound;
     const int32_t __lfortran_xyz_dim1_stride = xyz->dims[0].stride;
     const int32_t __lfortran_xyz_dim2_lower_bound = xyz->dims[1].lower_bound;
     const int32_t __lfortran_xyz_dim2_stride = xyz->dims[1].stride;
+    double * restrict __lfortran_trans_data = trans->data;
     const int32_t __lfortran_trans_offset = trans->offset;
     const int32_t __lfortran_trans_dim1_lower_bound = trans->dims[0].lower_bound;
     const int32_t __lfortran_trans_dim1_stride = trans->dims[0].stride;
     const int32_t __lfortran_trans_dim2_lower_bound = trans->dims[1].lower_bound;
     const int32_t __lfortran_trans_dim2_stride = trans->dims[1].stride;
-    (*total) = (*total) + mol->bias + xyz->data[(((0 + (__lfortran_xyz_dim1_stride * (2 - __lfortran_xyz_dim1_lower_bound))) + (__lfortran_xyz_dim2_stride * (1 - __lfortran_xyz_dim2_lower_bound))) + __lfortran_xyz_offset)] + trans->data[(((0 + (__lfortran_trans_dim1_stride * (3 - __lfortran_trans_dim1_lower_bound))) + (__lfortran_trans_dim2_stride * (1 - __lfortran_trans_dim2_lower_bound))) + __lfortran_trans_offset)];
+    (*total) = (*total) + mol->bias + __lfortran_xyz_data[(((0 + (__lfortran_xyz_dim1_stride * (2 - __lfortran_xyz_dim1_lower_bound))) + (__lfortran_xyz_dim2_stride * (1 - __lfortran_xyz_dim2_lower_bound))) + __lfortran_xyz_offset)] + __lfortran_trans_data[(((0 + (__lfortran_trans_dim1_stride * (3 - __lfortran_trans_dim1_lower_bound))) + (__lfortran_trans_dim2_stride * (1 - __lfortran_trans_dim2_lower_bound))) + __lfortran_trans_offset)];
 }
 
 void __lfortran_c_backend_specialized_pass_array_no_copy_01_a__inner__StructType(struct c_backend_specialized_pass_array_no_copy_01_a__container* restrict mol, struct r64_____* restrict xyz, struct r64_____* restrict trans, double *total)
@@ -96,11 +98,13 @@ void __lfortran_c_backend_specialized_pass_array_no_copy_01_a__inner__StructType
 
 void __lfortran_c_backend_specialized_pass_array_no_copy_01_b__outer_real_______1_real_______2__StructType(struct c_backend_specialized_pass_array_no_copy_01_a__container* restrict mol, struct r64_____* restrict xyz, int32_t __1xyz, int32_t __2xyz, struct r64_____* restrict trans, int32_t __1trans, int32_t __2trans, double *total)
 {
+    double * restrict __lfortran_xyz_data = xyz->data;
     const int32_t __lfortran_xyz_offset = xyz->offset;
     const int32_t __lfortran_xyz_dim1_lower_bound = xyz->dims[0].lower_bound;
     const int32_t __lfortran_xyz_dim1_stride = xyz->dims[0].stride;
     const int32_t __lfortran_xyz_dim2_lower_bound = xyz->dims[1].lower_bound;
     const int32_t __lfortran_xyz_dim2_stride = xyz->dims[1].stride;
+    double * restrict __lfortran_trans_data = trans->data;
     const int32_t __lfortran_trans_offset = trans->offset;
     const int32_t __lfortran_trans_dim1_lower_bound = trans->dims[0].lower_bound;
     const int32_t __lfortran_trans_dim1_stride = trans->dims[0].stride;

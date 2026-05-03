@@ -142,6 +142,7 @@ struct CLocalScalarStructCleanup {
 };
 
 struct CArrayDescriptorCache {
+    std::string data;
     std::string offset;
     std::vector<std::string> lower_bounds;
     std::vector<std::string> strides;
@@ -434,13 +435,21 @@ public:
         }
         std::string decl;
         auto emit_cache_for_array_expr = [&](const std::string &array_expr,
-                const std::string &cache_name_base, int n_dims) {
+                const std::string &cache_name_base, int n_dims,
+                ASR::ttype_t *array_type) {
             if (n_dims <= 0
                     || current_function_array_descriptor_cache.find(array_expr)
                         != current_function_array_descriptor_cache.end()) {
                 return;
             }
             CArrayDescriptorCache cache;
+            if (is_c_scalarizable_element_type(array_type)) {
+                cache.data = get_unique_local_name(
+                    "__lfortran_" + cache_name_base + "_data");
+                decl += indent + CUtils::get_c_array_element_type_from_ttype_t(array_type)
+                    + " * restrict " + cache.data + " = "
+                    + array_expr + "->data;\n";
+            }
             cache.offset = get_unique_local_name(
                 "__lfortran_" + cache_name_base + "_offset");
             decl += indent + "const int32_t " + cache.offset + " = "
@@ -479,7 +488,7 @@ public:
                 ASR::dimension_t *dims = nullptr;
                 int n_dims = ASRUtils::extract_dimensions_from_ttype(
                     arg_var->m_type, dims);
-                emit_cache_for_array_expr(arg_name, arg_name, n_dims);
+                emit_cache_for_array_expr(arg_name, arg_name, n_dims, arg_var->m_type);
             }
         }
         return decl;
@@ -4360,10 +4369,12 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             if (base_rank != 1) {
                 return false;
             }
+            std::string data = cache && !cache->data.empty()
+                ? cache->data : base + "->data";
             std::string offset = cache ? cache->offset : base + "->offset";
             std::string stride = cache ? cache->strides[0]
                 : base + "->dims[0].stride";
-            out = base + "->data[(" + offset + " + " + index_name
+            out = data + "[(" + offset + " + " + index_name
                 + " * " + stride + ")]";
             return true;
         }
@@ -4444,7 +4455,9 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             offset_expr += offset_terms[i];
         }
         offset_expr += ")";
-        out = base + "->data[" + offset_expr + " + " + index_name
+        std::string data = cache && !cache->data.empty()
+            ? cache->data : base + "->data";
+        out = data + "[" + offset_expr + " + " + index_name
             + " * " + slice_stride + "]";
         return true;
     }
@@ -4591,7 +4604,8 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             ASRUtils::type_get_past_array(
                 ASRUtils::type_get_past_allocatable_pointer(
                     ASRUtils::expr_type(base_expr))));
-        setup += indent + elem_type + " *" + data_name + " = " + base + "->data;\n";
+        setup += indent + elem_type + " *" + data_name + " = "
+            + (cache && !cache->data.empty() ? cache->data : base + "->data") + ";\n";
         setup += indent + "int64_t " + stride_name + " = " + base_stride + " * (" + step + ");\n";
         std::string offset_expr = "(";
         for (size_t i = 0; i < offset_terms.size(); i++) {
@@ -9243,7 +9257,10 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             }
         } else {
             idx = cmo_convertor_single_element(array, m_args, n_args, check_for_bounds);
-            std::string full_array = array + "->data";
+            const CArrayDescriptorCache *cache =
+                get_current_function_array_descriptor_cache(array, n_args);
+            std::string full_array = cache && !cache->data.empty()
+                ? cache->data : array + "->data";
             tmp = full_array + "[" + idx + "]";
         }
         return tmp;

@@ -53,6 +53,7 @@ double __lfortran__lcompilers_Sum_8_2_0_idx4_real_______0(struct r64_____* restr
     int32_t __1_i;
     int32_t __2_i;
     double result;
+    double * restrict __lfortran_array_data = array->data;
     const int32_t __lfortran_array_offset = array->offset;
     const int32_t __lfortran_array_dim1_lower_bound = array->dims[0].lower_bound;
     const int32_t __lfortran_array_dim1_stride = array->dims[0].stride;
@@ -61,7 +62,7 @@ double __lfortran__lcompilers_Sum_8_2_0_idx4_real_______0(struct r64_____* restr
     result =   0.00000000000000000e+00;
     for (__2_i=1; __2_i<=__2array + 1 - 1; __2_i++) {
         for (__1_i=1; __1_i<=__1array + 1 - 1; __1_i++) {
-            result = result + array->data[(((0 + (__lfortran_array_dim1_stride * (__1_i - __lfortran_array_dim1_lower_bound))) + (__lfortran_array_dim2_stride * (__2_i - __lfortran_array_dim2_lower_bound))) + __lfortran_array_offset)];
+            result = result + __lfortran_array_data[(((0 + (__lfortran_array_dim1_stride * (__1_i - __lfortran_array_dim1_lower_bound))) + (__lfortran_array_dim2_stride * (__2_i - __lfortran_array_dim2_lower_bound))) + __lfortran_array_offset)];
         }
     }
     return result;

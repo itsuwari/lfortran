@@ -88,11 +88,13 @@ void __lfortran_c_backend_const_vector_subscript_literal_01_m__kernel_real______
     __libasr_created__array_constant_2->dims[0].lower_bound = 1;
     __libasr_created__array_constant_2->dims[0].length = 3;
     __libasr_created__array_constant_2->dims[0].stride = 1;
+    double * restrict __lfortran_cart_data = cart->data;
     const int32_t __lfortran_cart_offset = cart->offset;
     const int32_t __lfortran_cart_dim1_lower_bound = cart->dims[0].lower_bound;
     const int32_t __lfortran_cart_dim1_stride = cart->dims[0].stride;
     const int32_t __lfortran_cart_dim2_lower_bound = cart->dims[1].lower_bound;
     const int32_t __lfortran_cart_dim2_stride = cart->dims[1].stride;
+    double * restrict __lfortran_sphr_data = sphr->data;
     const int32_t __lfortran_sphr_offset = sphr->offset;
     const int32_t __lfortran_sphr_dim1_lower_bound = sphr->dims[0].lower_bound;
     const int32_t __lfortran_sphr_dim1_stride = sphr->dims[0].stride;

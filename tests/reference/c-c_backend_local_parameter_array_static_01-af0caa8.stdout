@@ -62,23 +62,26 @@ void __lfortran__lcompilers_matmul_real_______0_real____1(struct r64_____* restr
     int32_t i;
     int32_t j;
     int32_t k;
+    double * restrict __lfortran_matrix_a_m_data = matrix_a_m->data;
     const int32_t __lfortran_matrix_a_m_offset = matrix_a_m->offset;
     const int32_t __lfortran_matrix_a_m_dim1_lower_bound = matrix_a_m->dims[0].lower_bound;
     const int32_t __lfortran_matrix_a_m_dim1_stride = matrix_a_m->dims[0].stride;
     const int32_t __lfortran_matrix_a_m_dim2_lower_bound = matrix_a_m->dims[1].lower_bound;
     const int32_t __lfortran_matrix_a_m_dim2_stride = matrix_a_m->dims[1].stride;
+    double * restrict __lfortran_matrix_b_m_data = matrix_b_m->data;
     const int32_t __lfortran_matrix_b_m_offset = matrix_b_m->offset;
     const int32_t __lfortran_matrix_b_m_dim1_lower_bound = matrix_b_m->dims[0].lower_bound;
     const int32_t __lfortran_matrix_b_m_dim1_stride = matrix_b_m->dims[0].stride;
+    double * restrict __lfortran_result_data = result->data;
     const int32_t __lfortran_result_offset = result->offset;
     const int32_t __lfortran_result_dim1_lower_bound = result->dims[0].lower_bound;
     const int32_t __lfortran_result_dim1_stride = result->dims[0].stride;
     ASSERT_MSG(__2matrix_a_m + 1 - 1 == __1matrix_b_m + 1 - 1, "%s", (char*)"'MatMul' intrinsic dimension mismatch: please make sure the dimensions are `matrix_a(i, k)` and `matrix_b(k)`");
     for (i=1; i<=__1matrix_a_m + 1 - 1; i++) {
         for (j=1; j<=1; j++) {
-            result->data[((0 + (__lfortran_result_dim1_stride * (i - __lfortran_result_dim1_lower_bound))) + __lfortran_result_offset)] =   0.00000000000000000e+00;
+            __lfortran_result_data[((0 + (__lfortran_result_dim1_stride * (i - __lfortran_result_dim1_lower_bound))) + __lfortran_result_offset)] =   0.00000000000000000e+00;
             for (k=1; k<=__1matrix_b_m + 1 - 1; k++) {
-                result->data[((0 + (__lfortran_result_dim1_stride * (i - __lfortran_result_dim1_lower_bound))) + __lfortran_result_offset)] = result->data[((0 + (__lfortran_result_dim1_stride * (i - __lfortran_result_dim1_lower_bound))) + __lfortran_result_offset)] + matrix_a_m->data[(((0 + (__lfortran_matrix_a_m_dim1_stride * (i - __lfortran_matrix_a_m_dim1_lower_bound))) + (__lfortran_matrix_a_m_dim2_stride * (k - __lfortran_matrix_a_m_dim2_lower_bound))) + __lfortran_matrix_a_m_offset)]*matrix_b_m->data[((0 + (__lfortran_matrix_b_m_dim1_stride * (k - __lfortran_matrix_b_m_dim1_lower_bound))) + __lfortran_matrix_b_m_offset)];
+                __lfortran_result_data[((0 + (__lfortran_result_dim1_stride * (i - __lfortran_result_dim1_lower_bound))) + __lfortran_result_offset)] = __lfortran_result_data[((0 + (__lfortran_result_dim1_stride * (i - __lfortran_result_dim1_lower_bound))) + __lfortran_result_offset)] + __lfortran_matrix_a_m_data[(((0 + (__lfortran_matrix_a_m_dim1_stride * (i - __lfortran_matrix_a_m_dim1_lower_bound))) + (__lfortran_matrix_a_m_dim2_stride * (k - __lfortran_matrix_a_m_dim2_lower_bound))) + __lfortran_matrix_a_m_offset)]*__lfortran_matrix_b_m_data[((0 + (__lfortran_matrix_b_m_dim1_stride * (k - __lfortran_matrix_b_m_dim1_lower_bound))) + __lfortran_matrix_b_m_offset)];
             }
         }
     }
@@ -105,9 +108,11 @@ void __lfortran_c_backend_local_parameter_array_static_01__apply_weights(struct 
     weights->dims[1].lower_bound = 1;
     weights->dims[1].length = 2;
     weights->dims[1].stride = (1*2);
+    double * restrict __lfortran_x_data = x->data;
     const int32_t __lfortran_x_offset = x->offset;
     const int32_t __lfortran_x_dim1_lower_bound = x->dims[0].lower_bound;
     const int32_t __lfortran_x_dim1_stride = x->dims[0].stride;
+    double * restrict __lfortran_y_data = y->data;
     const int32_t __lfortran_y_offset = y->offset;
     const int32_t __lfortran_y_dim1_lower_bound = y->dims[0].lower_bound;
     const int32_t __lfortran_y_dim1_stride = y->dims[0].stride;
