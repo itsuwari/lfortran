@@ -1,0 +1,13 @@
+{
+    "basename": "c-c_backend_local_parameter_array_static_01-af0caa8",
+    "cmd": "lfortran --no-color --show-c {infile}",
+    "infile": "tests/c_backend_local_parameter_array_static_01.f90",
+    "infile_hash": "ab1678fcb979209cb3a66a940e3df829f04c33d47c17ba53f8106d82",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": "c-c_backend_local_parameter_array_static_01-af0caa8.stdout",
+    "stdout_hash": "9037fc87b09b88cbf4f5f993ecac2301963b6ac0aea7ea4dd08c59e7",
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

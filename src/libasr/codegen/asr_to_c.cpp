@@ -1797,8 +1797,16 @@ R"(
                         sub += " = NULL;\n";
                     }
                 } else {
-                    sub += indent + format_type_c(dims, type_name_copy, std::string(v_m_name) + "_data",
-                                                use_ref, dummy);
+                    bool static_parameter_data = var != nullptr
+                        && var->m_storage == ASR::storage_typeType::Parameter
+                        && !init_brace.empty()
+                        && !element_needs_null_init;
+                    sub += indent;
+                    if (static_parameter_data) {
+                        sub += "static ";
+                    }
+                    sub += format_type_c(dims, type_name_copy, std::string(v_m_name) + "_data",
+                                         use_ref, dummy);
                     if (!init_brace.empty()) {
                         sub += " = " + init_brace;
                     } else if (element_needs_null_init) {

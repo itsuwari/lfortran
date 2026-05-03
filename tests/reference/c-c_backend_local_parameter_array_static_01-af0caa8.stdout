@@ -1,0 +1,137 @@
+#include <inttypes.h>
+#include <math.h>
+
+#include <stdlib.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <string.h>
+#include <lfortran_intrinsics.h>
+
+
+#ifndef LFORTRAN_C_BACKEND_CONSTRUCTOR
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_CONSTRUCTOR __attribute__((constructor))
+#else
+#define LFORTRAN_C_BACKEND_CONSTRUCTOR
+#endif
+#endif
+
+
+struct dimension_descriptor
+{
+    int32_t lower_bound, length, stride;
+};
+#ifndef LFORTRAN_C_BACKEND_CONSTRUCTOR
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_CONSTRUCTOR __attribute__((constructor))
+#else
+#define LFORTRAN_C_BACKEND_CONSTRUCTOR
+#endif
+#endif
+
+
+struct r64_____
+{
+    double *data;
+    struct dimension_descriptor dims[32];
+    int32_t n_dims;
+    int32_t offset;
+    bool is_allocated;
+};
+
+
+struct r64___
+{
+    double *data;
+    struct dimension_descriptor dims[32];
+    int32_t n_dims;
+    int32_t offset;
+    bool is_allocated;
+};
+
+void __lfortran__lcompilers_matmul_real_______0_real____1(struct r64_____* matrix_a_m, int32_t __1matrix_a_m, int32_t __2matrix_a_m, struct r64___* matrix_b_m, int32_t __1matrix_b_m, struct r64___* result);
+void __lfortran__lcompilers_matmul(struct r64_____* matrix_a_m, struct r64___* matrix_b_m, struct r64___* result);
+void __lfortran_c_backend_local_parameter_array_static_01__apply_weights(struct r64___* x, struct r64___* y);
+
+
+
+
+// Implementations
+void __lfortran__lcompilers_matmul_real_______0_real____1(struct r64_____* matrix_a_m, int32_t __1matrix_a_m, int32_t __2matrix_a_m, struct r64___* matrix_b_m, int32_t __1matrix_b_m, struct r64___* result)
+{
+    int32_t i;
+    int32_t j;
+    int32_t k;
+    ASSERT_MSG(__2matrix_a_m + 1 - 1 == __1matrix_b_m + 1 - 1, "%s", (char*)"'MatMul' intrinsic dimension mismatch: please make sure the dimensions are `matrix_a(i, k)` and `matrix_b(k)`");
+    for (i=1; i<=__1matrix_a_m + 1 - 1; i++) {
+        for (j=1; j<=1; j++) {
+            result->data[((0 + (result->dims[0].stride * (i - result->dims[0].lower_bound))) + result->offset)] =   0.00000000000000000e+00;
+            for (k=1; k<=__1matrix_b_m + 1 - 1; k++) {
+                result->data[((0 + (result->dims[0].stride * (i - result->dims[0].lower_bound))) + result->offset)] = result->data[((0 + (result->dims[0].stride * (i - result->dims[0].lower_bound))) + result->offset)] + matrix_a_m->data[(((0 + (matrix_a_m->dims[0].stride * (i - matrix_a_m->dims[0].lower_bound))) + (matrix_a_m->dims[1].stride * (k - matrix_a_m->dims[1].lower_bound))) + matrix_a_m->offset)]*matrix_b_m->data[((0 + (matrix_b_m->dims[0].stride * (k - matrix_b_m->dims[0].lower_bound))) + matrix_b_m->offset)];
+            }
+        }
+    }
+    return;
+}
+
+void __lfortran__lcompilers_matmul(struct r64_____* matrix_a_m, struct r64___* matrix_b_m, struct r64___* result)
+{
+    __lfortran__lcompilers_matmul_real_______0_real____1(matrix_a_m, ((int32_t)matrix_a_m->dims[0].length + matrix_a_m->dims[0].lower_bound - 1), ((int32_t)matrix_a_m->dims[1].length + matrix_a_m->dims[1].lower_bound - 1), matrix_b_m, ((int32_t)matrix_b_m->dims[0].length + matrix_b_m->dims[0].lower_bound - 1), result);
+}
+
+void __lfortran_c_backend_local_parameter_array_static_01__apply_weights(struct r64___* x, struct r64___* y)
+{
+    struct r64_____ weights_value;
+    struct r64_____* weights = &weights_value;
+    static double weights_data[4] = {1.0000000000000000e+00, 2.0000000000000000e+00, 4.0000000000000000e+00, 5.0000000000000000e+00};
+    weights->data = weights_data;
+    weights->n_dims = 2;
+    weights->offset = 0;
+    weights->is_allocated = true;
+    weights->dims[0].lower_bound = 1;
+    weights->dims[0].length = 2;
+    weights->dims[0].stride = 1;
+    weights->dims[1].lower_bound = 1;
+    weights->dims[1].length = 2;
+    weights->dims[1].stride = (1*2);
+    struct r64_____ __lfortran_array_view = { .data = weights->data, .dims = {{1, weights->dims[0].length, weights->dims[0].stride}, {1, weights->dims[1].length, weights->dims[1].stride}}, .n_dims = 2, .offset = weights->offset, .is_allocated = false };
+    struct r64___ __lfortran_array_view1 = { .data = x->data, .dims = {{1, x->dims[0].length, x->dims[0].stride}}, .n_dims = 1, .offset = x->offset, .is_allocated = x->is_allocated };
+    __lfortran__lcompilers_matmul_real_______0_real____1(&__lfortran_array_view, ((int32_t) (&__lfortran_array_view)->dims[0].length), ((int32_t) (&__lfortran_array_view)->dims[1].length), &__lfortran_array_view1, ((int32_t) (&__lfortran_array_view1)->dims[0].length), y);
+}
+
+int main(int argc, char* argv[])
+{
+    _lpython_set_argv(argc, argv);
+    struct r64___ __libasr_created__subroutine_call_apply_weights_value;
+    struct r64___* __libasr_created__subroutine_call_apply_weights = &__libasr_created__subroutine_call_apply_weights_value;
+    static double __libasr_created__subroutine_call_apply_weights_data[2] = {2.0000000000000000e+00, 3.0000000000000000e+00};
+    __libasr_created__subroutine_call_apply_weights->data = __libasr_created__subroutine_call_apply_weights_data;
+    __libasr_created__subroutine_call_apply_weights->n_dims = 1;
+    __libasr_created__subroutine_call_apply_weights->offset = 0;
+    __libasr_created__subroutine_call_apply_weights->is_allocated = true;
+    __libasr_created__subroutine_call_apply_weights->dims[0].lower_bound = 1;
+    __libasr_created__subroutine_call_apply_weights->dims[0].length = 2;
+    __libasr_created__subroutine_call_apply_weights->dims[0].stride = 1;
+    struct r64___ y_value;
+    struct r64___* y = &y_value;
+    double y_data[2];
+    y->data = y_data;
+    y->n_dims = 1;
+    y->offset = 0;
+    y->is_allocated = true;
+    y->dims[0].lower_bound = 1;
+    y->dims[0].length = 2;
+    y->dims[0].stride = 1;
+    struct r64___ __lfortran_array_view = { .data = __libasr_created__subroutine_call_apply_weights->data, .dims = {{1, __libasr_created__subroutine_call_apply_weights->dims[0].length, __libasr_created__subroutine_call_apply_weights->dims[0].stride}}, .n_dims = 1, .offset = __libasr_created__subroutine_call_apply_weights->offset, .is_allocated = false };
+    struct r64___ __lfortran_array_view1 = { .data = y->data, .dims = {{1, y->dims[0].length, y->dims[0].stride}}, .n_dims = 1, .offset = y->offset, .is_allocated = y->is_allocated };
+    __lfortran_c_backend_local_parameter_array_static_01__apply_weights(&__lfortran_array_view, &__lfortran_array_view1);
+    if (fabs(y->data[(0 + (1 * (1 - 1)))] -   1.40000000000000000e+01) >   9.99999999999999980e-13) {
+        fprintf(stderr, "ERROR STOP");
+        exit(1);
+    }
+    if (fabs(y->data[(0 + (1 * (2 - 1)))] -   1.90000000000000000e+01) >   9.99999999999999980e-13) {
+        fprintf(stderr, "ERROR STOP");
+        exit(1);
+    }
+    return 0;
+}

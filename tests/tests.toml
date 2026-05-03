@@ -5132,6 +5132,10 @@ filename = "c_backend_local_fixed_array_wrapper_01.f90"
 c = true
 
 [[test]]
+filename = "c_backend_local_parameter_array_static_01.f90"
+c = true
+
+[[test]]
 filename = "c_backend_small_integer_pow_01.f90"
 c = true
 
