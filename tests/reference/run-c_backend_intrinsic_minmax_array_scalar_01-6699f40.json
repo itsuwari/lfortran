@@ -1,0 +1,13 @@
+{
+    "basename": "run-c_backend_intrinsic_minmax_array_scalar_01-6699f40",
+    "cmd": "lfortran --no-color {infile}",
+    "infile": "tests/c_backend_intrinsic_minmax_array_scalar_01.f90",
+    "infile_hash": "a7bcc5212285cd91398f47fec75cb5e35f97cf81930a3f79e8b3eceb",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

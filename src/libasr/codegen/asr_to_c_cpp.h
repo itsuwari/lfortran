@@ -3436,6 +3436,10 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 return is_c_scalarizable_array_expr(
                     ASR::down_cast<ASR::IntegerUnaryMinus_t>(expr)->m_arg);
             }
+            case ASR::exprType::RealSqrt: {
+                return is_c_scalarizable_array_expr(
+                    ASR::down_cast<ASR::RealSqrt_t>(expr)->m_arg);
+            }
             case ASR::exprType::IntrinsicElementalFunction: {
                 ASR::IntrinsicElementalFunction_t *ief =
                     ASR::down_cast<ASR::IntrinsicElementalFunction_t>(expr);
@@ -3673,6 +3677,31 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         if (expr == nullptr) {
             return false;
         }
+        if (ASR::is_a<ASR::IntrinsicElementalFunction_t>(*expr)) {
+            ASR::IntrinsicElementalFunction_t *ief =
+                ASR::down_cast<ASR::IntrinsicElementalFunction_t>(expr);
+            bool has_array_arg = false;
+            for (size_t i = 0; i < ief->n_args; i++) {
+                if (ASRUtils::is_array(ASRUtils::expr_type(ief->m_args[i]))) {
+                    has_array_arg = true;
+                    break;
+                }
+            }
+            if (has_array_arg) {
+                return get_c_scalarized_intrinsic_expr(*ief, index_name, setup, out);
+            }
+        }
+        if (ASR::is_a<ASR::RealSqrt_t>(*expr)) {
+            std::string arg;
+            if (!get_c_scalarized_array_expr(
+                    ASR::down_cast<ASR::RealSqrt_t>(expr)->m_arg,
+                    index_name, setup, arg)) {
+                return false;
+            }
+            headers.insert("math.h");
+            out = "sqrt(" + arg + ")";
+            return true;
+        }
         if (!ASRUtils::is_array(ASRUtils::expr_type(expr))) {
             self().visit_expr(*expr);
             out = src;
@@ -3716,6 +3745,15 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                         ASR::down_cast<ASR::IntegerUnaryMinus_t>(expr)->m_arg,
                         index_name, setup, arg)) return false;
                 out = "-(" + arg + ")";
+                return true;
+            }
+            case ASR::exprType::RealSqrt: {
+                std::string arg;
+                if (!get_c_scalarized_array_expr(
+                        ASR::down_cast<ASR::RealSqrt_t>(expr)->m_arg,
+                        index_name, setup, arg)) return false;
+                headers.insert("math.h");
+                out = "sqrt(" + arg + ")";
                 return true;
             }
             case ASR::exprType::IntrinsicElementalFunction:
