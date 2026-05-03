@@ -121,6 +121,12 @@ struct CArrayExprLoweringPlan {
     size_t constant_size = 0;
 };
 
+struct CLocalScalarStructCleanup {
+    std::string target;
+    ASR::Struct_t *struct_t;
+    bool is_polymorphic;
+};
+
 template <class StructType>
 class BaseCCPPVisitor : public ASR::BaseVisitor<StructType>
 {
@@ -151,6 +157,7 @@ public:
     std::string current_return_var_name;
     std::vector<std::string> current_function_heap_array_data;
     std::vector<std::string> current_function_local_allocatable_arrays;
+    std::vector<CLocalScalarStructCleanup> current_function_local_allocatable_structs;
     std::vector<std::pair<std::string, ASR::Struct_t*>> current_function_local_structs;
     std::map<uint64_t, SymbolInfo> sym_info;
     std::map<uint64_t, std::string> const_var_names;
@@ -221,11 +228,16 @@ public:
         is_string_concat_present{false} {
         }
 
-    std::string emit_current_function_heap_array_cleanup(const std::string &indent) const {
+    std::string emit_current_function_heap_array_cleanup(const std::string &indent) {
         std::string cleanup;
         for (auto it = current_function_local_structs.rbegin();
                 it != current_function_local_structs.rend(); ++it) {
             cleanup += emit_c_struct_member_cleanup(it->second, indent, it->first);
+        }
+        for (auto it = current_function_local_allocatable_structs.rbegin();
+                it != current_function_local_allocatable_structs.rend(); ++it) {
+            cleanup += emit_c_scalar_allocatable_struct_cleanup(
+                it->struct_t, indent, it->target, it->is_polymorphic);
         }
         for (auto it = current_function_local_allocatable_arrays.rbegin();
                 it != current_function_local_allocatable_arrays.rend(); ++it) {
@@ -255,6 +267,17 @@ public:
             }
         }
         current_function_local_allocatable_arrays.push_back(descriptor);
+    }
+
+    void register_current_function_local_allocatable_struct_cleanup(
+            const std::string &target, ASR::Struct_t *struct_t, bool is_polymorphic) {
+        for (const auto &existing: current_function_local_allocatable_structs) {
+            if (existing.target == target) {
+                return;
+            }
+        }
+        current_function_local_allocatable_structs.push_back(
+            {target, struct_t, is_polymorphic});
     }
 
     std::string emit_c_struct_member_cleanup(ASR::Struct_t *struct_t,
@@ -327,6 +350,46 @@ public:
         return cleanup;
     }
 
+    std::string emit_c_scalar_allocatable_struct_cleanup(ASR::Struct_t *struct_t,
+            const std::string &indent, const std::string &target,
+            bool is_polymorphic) {
+        std::string cleanup;
+        if (struct_t == nullptr) {
+            return cleanup;
+        }
+        cleanup += indent + "if ((" + target + ") != NULL) {\n";
+        std::string inner_indent = indent + "    ";
+        if (is_polymorphic) {
+            ensure_runtime_type_tag_header_decl();
+            std::vector<ASR::Struct_t*> candidate_structs;
+            std::set<uint64_t> seen;
+            candidate_structs.push_back(struct_t);
+            collect_descendant_structs(global_scope, reinterpret_cast<ASR::symbol_t*>(struct_t),
+                candidate_structs, seen);
+            for (ASR::Struct_t *candidate_struct: candidate_structs) {
+                std::string candidate_type = "struct "
+                    + CUtils::get_c_symbol_name(
+                        reinterpret_cast<ASR::symbol_t*>(candidate_struct));
+                cleanup += inner_indent + "if (((struct "
+                    + get_runtime_type_tag_header_struct_name() + "*)(" + target
+                    + "))->" + get_runtime_type_tag_member_name() + " == "
+                    + std::to_string(get_struct_runtime_type_id(
+                        reinterpret_cast<ASR::symbol_t*>(candidate_struct))) + ") {\n";
+                cleanup += emit_c_struct_member_cleanup(candidate_struct,
+                    inner_indent + "    ", "((" + candidate_type + "*)(" + target + "))");
+                cleanup += inner_indent + "}\n";
+            }
+        } else {
+            cleanup += emit_c_struct_member_cleanup(struct_t, inner_indent, target);
+        }
+        cleanup += inner_indent
+            + "_lfortran_free_alloc(_lfortran_get_default_allocator(), (char*) "
+            + target + ");\n";
+        cleanup += inner_indent + target + " = NULL;\n";
+        cleanup += indent + "}\n";
+        return cleanup;
+    }
+
     void register_current_function_local_struct_cleanup(
             const std::string &target, ASR::Struct_t *struct_t) {
         for (const auto &existing: current_function_local_structs) {
@@ -348,6 +411,13 @@ public:
         std::string value_var_name = v.m_parent_symtab->get_unique_name(
             emitted_name + "_value");
         return "(&(" + value_var_name + "))";
+    }
+
+    bool is_c_compiler_generated_temporary_name(const std::string &name) const {
+        return name.rfind("__libasr_created", 0) == 0
+            || name.rfind("__libasr__created", 0) == 0
+            || name.find("__libasr_created") != std::string::npos
+            || name.find("__libasr__created") != std::string::npos;
     }
 
     std::string get_final_combined_src(std::string head, std::string unit_src) {
@@ -2399,6 +2469,7 @@ R"(#include <stdio.h>
         current_body = "";
         current_function_heap_array_data.clear();
         current_function_local_allocatable_arrays.clear();
+        current_function_local_allocatable_structs.clear();
         current_function_local_structs.clear();
         SymbolTable* current_scope_copy = current_scope;
         current_scope = x.m_symtab;
@@ -2525,6 +2596,24 @@ R"(#include <stdio.h>
                             register_current_function_local_allocatable_array_cleanup(
                                 emitted_name);
                         } else if (is_c && v->m_intent == ASRUtils::intent_local
+                                && ASRUtils::is_allocatable(v->m_type)
+                                && !ASRUtils::is_array(v->m_type)
+                                && !is_c_compiler_generated_temporary_name(emitted_name)) {
+                            ASR::ttype_t *v_type_unwrapped =
+                                ASRUtils::type_get_past_allocatable_pointer(v->m_type);
+                            if (ASR::is_a<ASR::StructType_t>(*v_type_unwrapped)
+                                    && v->m_type_declaration != nullptr) {
+                                ASR::symbol_t *struct_sym =
+                                    ASRUtils::symbol_get_past_external(v->m_type_declaration);
+                                if (struct_sym != nullptr
+                                        && ASR::is_a<ASR::Struct_t>(*struct_sym)) {
+                                    register_current_function_local_allocatable_struct_cleanup(
+                                        emitted_name,
+                                        ASR::down_cast<ASR::Struct_t>(struct_sym),
+                                        ASRUtils::is_class_type(v_type_unwrapped));
+                                }
+                            }
+                        } else if (is_c && v->m_intent == ASRUtils::intent_local
                                 && !ASRUtils::is_allocatable(v->m_type)
                                 && !ASRUtils::is_pointer(v->m_type)
                                 && !ASRUtils::is_array(v->m_type)) {
@@ -2614,6 +2703,7 @@ R"(#include <stdio.h>
             current_return_var_name.clear();
             current_function_heap_array_data.clear();
             current_function_local_allocatable_arrays.clear();
+            current_function_local_allocatable_structs.clear();
             current_function_local_structs.clear();
             indentation_level -= 1;
         }

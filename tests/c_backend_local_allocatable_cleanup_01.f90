@@ -5,6 +5,13 @@ type holder
     integer, allocatable :: data(:)
 end type
 
+type, abstract :: parent_holder
+end type
+
+type, extends(parent_holder) :: child_holder
+    real(8), allocatable :: values(:)
+end type
+
 real(8) :: total
 
 call fill(4, total)
@@ -21,6 +28,9 @@ if (abs(total - 9.0_8) > 1.0e-12_8) error stop
 
 call fill_holder_from_callee(total)
 if (abs(total - 8.0_8) > 1.0e-12_8) error stop
+
+call fill_polymorphic(total)
+if (abs(total - 12.0_8) > 1.0e-12_8) error stop
 
 contains
 
@@ -68,6 +78,21 @@ subroutine make_holder(h)
 
     allocate(h%data(4))
     h%data = 2
+end subroutine
+
+subroutine fill_polymorphic(total)
+    real(8), intent(out) :: total
+    class(parent_holder), allocatable :: item
+
+    allocate(child_holder :: item)
+    select type(item)
+    type is(child_holder)
+        allocate(item%values(3))
+        item%values = 4.0_8
+        total = sum(item%values)
+    class default
+        error stop
+    end select
 end subroutine
 
 subroutine fill_then_return(n, total)
