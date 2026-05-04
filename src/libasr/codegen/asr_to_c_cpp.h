@@ -2848,6 +2848,23 @@ R"(#include <stdio.h>
                         call_arg, param_type,
                         param ? param->m_type_declaration : nullptr, arg_src,
                         true);
+                ASR::expr_t *unwrapped_call_arg = unwrap_c_lvalue_expr(call_arg);
+                if (!no_copy_descriptor_view_actual
+                        && unwrapped_call_arg != nullptr
+                        && ASR::is_a<ASR::ArraySection_t>(*unwrapped_call_arg)) {
+                    ASR::ttype_t *param_array_type =
+                        ASRUtils::type_get_past_allocatable_pointer(param_type);
+                    if (param_array_type != nullptr
+                            && ASRUtils::is_array(param_array_type)) {
+                        std::string view_src = build_c_array_no_copy_descriptor_view(
+                            param_array_type, call_arg, arg_src,
+                            param ? param->m_type_declaration : nullptr, true);
+                        if (view_src != arg_src) {
+                            arg_src = view_src;
+                            no_copy_descriptor_view_actual = true;
+                        }
+                    }
+                }
                 call_arg_setup += drain_tmp_buffer();
                 if (!no_copy_descriptor_view_actual) {
                     call_arg_setup += arg_setup;

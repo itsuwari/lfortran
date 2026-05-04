@@ -1,0 +1,13 @@
+{
+    "basename": "run-c_backend_matmul_section_result_01-2951166",
+    "cmd": "lfortran --no-color {infile}",
+    "infile": "tests/c_backend_matmul_section_result_01.f90",
+    "infile_hash": "6e2e14f48b0226138c8367cb81c40b0c8a3abebfad2ab94fbf9ec292",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}
