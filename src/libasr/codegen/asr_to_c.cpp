@@ -5194,8 +5194,36 @@ R"(    // Initialise Numpy
                             this->visit_expr(*str_type->m_len);
                             value_len = src;
                         }
-                        read_code += indent + "_lfortran_read_array_char(" + data_ptr + ", " + value_len + ", "
-                            + array_size + ", " + unit + ", " + iostat_ptr + ");\n";
+                        bool descriptor_char_array =
+                            phys == ASR::array_physical_typeType::DescriptorArray ||
+                            phys == ASR::array_physical_typeType::PointerArray ||
+                            phys == ASR::array_physical_typeType::UnboundedPointerArray;
+                        if (descriptor_char_array) {
+                            std::string tmp_name = get_unique_local_name("__lfortran_read_char_tmp");
+                            std::string idx_name = get_unique_local_name("__lfortran_read_char_i");
+                            std::string elem_name = get_unique_local_name("__lfortran_read_char_elem");
+                            read_code += indent + "char *" + tmp_name
+                                + " = (char*) _lfortran_string_malloc_alloc(_lfortran_get_default_allocator(), "
+                                + "(" + value_len + ") * (" + array_size + ") + 1);\n";
+                            read_code += indent + "_lfortran_read_array_char(" + tmp_name + ", " + value_len + ", "
+                                + array_size + ", " + unit + ", " + iostat_ptr + ");\n";
+                            read_code += indent + "for (int64_t " + idx_name + " = 0; "
+                                + idx_name + " < " + array_size + "; " + idx_name + "++) {\n";
+                            read_code += indent + std::string(indentation_spaces, ' ')
+                                + "char *" + elem_name + " = " + tmp_name + " + "
+                                + idx_name + " * (" + value_len + ");\n";
+                            read_code += indent + std::string(indentation_spaces, ' ')
+                                + "_lfortran_strcpy_alloc(_lfortran_get_default_allocator(), &"
+                                + data_ptr + "[" + value + "->offset + " + idx_name
+                                + " * " + value + "->dims[0].stride], NULL, true, true, "
+                                + elem_name + ", " + value_len + ");\n";
+                            read_code += indent + "}\n";
+                            read_code += indent + "_lfortran_free_alloc(_lfortran_get_default_allocator(), "
+                                + tmp_name + ");\n";
+                        } else {
+                            read_code += indent + "_lfortran_read_array_char(" + data_ptr + ", " + value_len + ", "
+                                + array_size + ", " + unit + ", " + iostat_ptr + ");\n";
+                        }
                     } else {
                         throw CodeGenError("C backend FileRead currently supports only numeric/logical/character arrays for list-directed external reads",
                             value_expr->base.loc);

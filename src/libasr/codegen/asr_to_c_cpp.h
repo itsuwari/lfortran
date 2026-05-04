@@ -6132,10 +6132,22 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             return false;
         }
 
-        std::string value_data, value_length, value_setup;
+        std::string value_data, value_length, value_setup, value_cleanup;
         if (!try_get_unit_step_string_section_view(
                 source, value_data, value_length, value_setup)) {
-            return false;
+            ASR::ttype_t *source_type =
+                ASRUtils::type_get_past_allocatable_pointer(ASRUtils::expr_type(source));
+            if (source_type == nullptr
+                    || ASRUtils::is_array(source_type)
+                    || !ASRUtils::is_character(*source_type)) {
+                return false;
+            }
+            self().visit_expr(*source);
+            value_data = src;
+            value_setup += drain_tmp_buffer();
+            value_setup += extract_stmt_setup_from_expr(value_data);
+            materialize_allocating_string_expr(
+                source, value_data, value_length, value_setup, value_cleanup);
         }
 
         std::string indent(indentation_level * indentation_spaces, ' ');
@@ -6160,6 +6172,144 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             + target_data + "[" + target_offset + " + " + index_name
             + " * " + target_stride + "], NULL, true, true, "
             + source_name + ", 1);\n";
+        indentation_level--;
+        src += inner_indent + "}\n";
+        src += value_cleanup;
+        indentation_level--;
+        src += indent + "}\n";
+        headers.insert("string.h");
+        return true;
+    }
+
+    bool try_emit_c_char_array_bitcast_to_string_assignment(
+            const ASR::Assignment_t &x, const std::string &target,
+            ASR::ttype_t *target_type) {
+        if (!is_c || !ASR::is_a<ASR::BitCast_t>(*x.m_value)) {
+            return false;
+        }
+        ASR::ttype_t *target_scalar_type =
+            ASRUtils::type_get_past_allocatable_pointer(target_type);
+        if (target_scalar_type == nullptr
+                || ASRUtils::is_array(target_scalar_type)
+                || !ASRUtils::is_character(*target_scalar_type)) {
+            return false;
+        }
+        ASR::BitCast_t *bitcast = ASR::down_cast<ASR::BitCast_t>(x.m_value);
+        ASR::expr_t *source = bitcast->m_value ? bitcast->m_value : bitcast->m_source;
+        if (source == nullptr ||
+                !is_len_one_character_array_type(ASRUtils::expr_type(source))) {
+            return false;
+        }
+
+        std::string setup;
+        std::string source_data, source_offset, source_stride, source_length;
+        if (!get_c_rank1_array_access(source, "__lfortran_char_transfer_src",
+                setup, source_data, source_offset, source_stride, source_length)) {
+            return false;
+        }
+
+        std::string indent(indentation_level * indentation_spaces, ' ');
+        std::string len_name = get_unique_local_name("__lfortran_transfer_len");
+        std::string tmp_name = get_unique_local_name("__lfortran_transfer_str");
+        std::string idx_name = get_unique_local_name("__lfortran_transfer_i");
+        std::string elem_name = get_unique_local_name("__lfortran_transfer_elem");
+        src = check_tmp_buffer();
+        src += indent + "{\n";
+        indentation_level++;
+        std::string inner_indent(indentation_level * indentation_spaces, ' ');
+        src += setup;
+        src += inner_indent + "int64_t " + len_name + " = " + source_length + ";\n";
+        src += inner_indent + "char *" + tmp_name
+            + " = (char*) _lfortran_string_malloc_alloc(_lfortran_get_default_allocator(), "
+            + "(" + len_name + " + 1));\n";
+        src += inner_indent + "for (int64_t " + idx_name + " = 0; "
+            + idx_name + " < " + len_name + "; " + idx_name + "++) {\n";
+        indentation_level++;
+        std::string loop_indent(indentation_level * indentation_spaces, ' ');
+        src += loop_indent + "char *" + elem_name + " = " + source_data + "["
+            + source_offset + " + " + idx_name + " * " + source_stride + "];\n";
+        src += loop_indent + tmp_name + "[" + idx_name + "] = ("
+            + elem_name + " != NULL) ? " + elem_name + "[0] : '\\0';\n";
+        indentation_level--;
+        src += inner_indent + "}\n";
+        src += inner_indent + tmp_name + "[" + len_name + "] = '\\0';\n";
+        src += inner_indent + "_lfortran_strcpy_alloc(_lfortran_get_default_allocator(), &"
+            + target + ", NULL, true, true, " + tmp_name + ", " + len_name + ");\n";
+        src += inner_indent + "_lfortran_free_alloc(_lfortran_get_default_allocator(), "
+            + tmp_name + ");\n";
+        indentation_level--;
+        src += indent + "}\n";
+        headers.insert("string.h");
+        return true;
+    }
+
+    bool try_emit_c_char_array_bitcast_to_numeric_array_assignment(
+            const ASR::Assignment_t &x, ASR::expr_t *target_expr) {
+        if (!is_c || target_expr == nullptr ||
+                !ASR::is_a<ASR::BitCast_t>(*x.m_value) ||
+                !ASRUtils::is_array(ASRUtils::expr_type(target_expr)) ||
+                !is_c_rank1_unit_array_expr(target_expr)) {
+            return false;
+        }
+        ASR::ttype_t *target_elem_type = ASRUtils::type_get_past_array(
+            ASRUtils::type_get_past_allocatable_pointer(
+                ASRUtils::expr_type(target_expr)));
+        if (target_elem_type == nullptr
+                || ASRUtils::is_character(*target_elem_type)) {
+            return false;
+        }
+        ASR::BitCast_t *bitcast = ASR::down_cast<ASR::BitCast_t>(x.m_value);
+        ASR::expr_t *source = bitcast->m_value ? bitcast->m_value : bitcast->m_source;
+        if (source == nullptr ||
+                !is_len_one_character_array_type(ASRUtils::expr_type(source))) {
+            return false;
+        }
+
+        std::string setup;
+        std::string target_data, target_offset, target_stride, target_length;
+        if (!get_c_rank1_array_access(target_expr, "__lfortran_transfer_lhs",
+                setup, target_data, target_offset, target_stride, target_length)) {
+            return false;
+        }
+        std::string source_data, source_offset, source_stride, source_length;
+        if (!get_c_rank1_array_access(source, "__lfortran_transfer_src",
+                setup, source_data, source_offset, source_stride, source_length)) {
+            return false;
+        }
+
+        std::string elem_type = CUtils::get_c_type_from_ttype_t(target_elem_type);
+        std::string indent(indentation_level * indentation_spaces, ' ');
+        std::string elem_idx = get_unique_local_name("__lfortran_transfer_elem_i");
+        std::string byte_idx = get_unique_local_name("__lfortran_transfer_byte_i");
+        std::string src_idx = get_unique_local_name("__lfortran_transfer_src_i");
+        std::string dst_bytes = get_unique_local_name("__lfortran_transfer_dst");
+        std::string src_elem = get_unique_local_name("__lfortran_transfer_src_elem");
+        src = check_tmp_buffer();
+        src += indent + "{\n";
+        indentation_level++;
+        std::string inner_indent(indentation_level * indentation_spaces, ' ');
+        src += setup;
+        src += inner_indent + "int64_t " + src_idx + " = 0;\n";
+        src += inner_indent + "for (int64_t " + elem_idx + " = 0; "
+            + elem_idx + " < " + target_length + "; " + elem_idx + "++) {\n";
+        indentation_level++;
+        std::string loop_indent(indentation_level * indentation_spaces, ' ');
+        src += loop_indent + "unsigned char *" + dst_bytes + " = (unsigned char*) &"
+            + target_data + "[" + target_offset + " + " + elem_idx
+            + " * " + target_stride + "];\n";
+        src += loop_indent + "memset(" + dst_bytes + ", 0, sizeof(" + elem_type + "));\n";
+        src += loop_indent + "for (int64_t " + byte_idx + " = 0; "
+            + byte_idx + " < (int64_t) sizeof(" + elem_type + ") && "
+            + src_idx + " < " + source_length + "; " + byte_idx + "++, "
+            + src_idx + "++) {\n";
+        indentation_level++;
+        std::string byte_indent(indentation_level * indentation_spaces, ' ');
+        src += byte_indent + "char *" + src_elem + " = " + source_data + "["
+            + source_offset + " + " + src_idx + " * " + source_stride + "];\n";
+        src += byte_indent + dst_bytes + "[" + byte_idx + "] = (unsigned char)(("
+            + src_elem + " != NULL) ? " + src_elem + "[0] : '\\0');\n";
+        indentation_level--;
+        src += loop_indent + "}\n";
         indentation_level--;
         src += inner_indent + "}\n";
         indentation_level--;
@@ -6972,6 +7122,31 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             return "(" + expr.substr(begin) + ")";
         }
         return expr;
+    }
+
+    std::string build_c_char_array_descriptor_to_raw_arg(
+            const std::string &descriptor_src, std::string &setup) {
+        std::string base = get_c_descriptor_member_base_expr(descriptor_src);
+        std::string len_name = get_unique_local_name("__lfortran_cchar_raw_len");
+        std::string data_name = get_unique_local_name("__lfortran_cchar_raw_data");
+        std::string idx_name = get_unique_local_name("__lfortran_cchar_raw_i");
+        std::string elem_name = get_unique_local_name("__lfortran_cchar_raw_elem");
+        std::string indent(indentation_level * indentation_spaces, ' ');
+        setup += indent + "int64_t " + len_name + " = " + base + "->dims[0].length;\n";
+        setup += indent + "char *" + data_name
+            + " = (char*) _lfortran_string_malloc_alloc(_lfortran_get_default_allocator(), "
+            + "(" + len_name + " + 1));\n";
+        setup += indent + "for (int64_t " + idx_name + " = 0; "
+            + idx_name + " < " + len_name + "; " + idx_name + "++) {\n";
+        setup += indent + std::string(indentation_spaces, ' ')
+            + "char *" + elem_name + " = " + base + "->data[" + base
+            + "->offset + " + idx_name + " * " + base + "->dims[0].stride];\n";
+        setup += indent + std::string(indentation_spaces, ' ')
+            + data_name + "[" + idx_name + "] = (" + elem_name
+            + " != NULL) ? " + elem_name + "[0] : '\\0';\n";
+        setup += indent + "}\n";
+        setup += indent + data_name + "[" + len_name + "] = '\\0';\n";
+        return data_name;
     }
 
     bool try_emit_scalar_to_char_array_bitcast_expr(ASR::expr_t *expr, std::string &out_expr) {
@@ -7854,7 +8029,17 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             std::string arg_setup = drain_tmp_buffer();
             arg_setup += extract_stmt_setup_from_expr(arg_src);
             force_storage_expr_in_call_args = saved_force_storage_expr_in_call_args;
+            if (is_c && raw_call_arg && ASR::is_a<ASR::Var_t>(*raw_call_arg)) {
+                ASR::symbol_t *arg_sym = ASRUtils::symbol_get_past_external(
+                    ASR::down_cast<ASR::Var_t>(raw_call_arg)->m_v);
+                if (ASR::is_a<ASR::Variable_t>(*arg_sym)) {
+                    actual_var = ASR::down_cast<ASR::Variable_t>(arg_sym);
+                }
+            }
+            bool actual_is_raw_c_char_array_before_view =
+                is_raw_c_char_array_dummy(actual_var);
             bool no_copy_descriptor_view_actual = allow_no_copy_descriptor_views
+                && !actual_is_raw_c_char_array_before_view
                 && try_build_c_array_no_copy_descriptor_view_arg(
                         call_arg, param_type,
                         param ? param->m_type_declaration : nullptr, arg_src,
@@ -7996,11 +8181,28 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                     }
                     std::string wrapper_type = get_c_array_wrapper_type_name(
                         param_type, param ? param->m_type_declaration : nullptr);
-                    args += "(&(" + wrapper_type + "){ .data = " + arg_src
-                        + ", .dims = {{1, " + actual_len + ", 1}}, .n_dims = 1, .offset = 0, .is_allocated = false })";
+                    std::string cchar_len = get_unique_local_name("__lfortran_cchar_len");
+                    std::string cchar_data = get_unique_local_name("__lfortran_cchar_data");
+                    std::string cchar_i = get_unique_local_name("__lfortran_cchar_i");
+                    std::string indent(indentation_level * indentation_spaces, ' ');
+                    call_arg_setup += indent + "int64_t " + cchar_len + " = "
+                        + actual_len + ";\n";
+                    call_arg_setup += indent + "char *" + cchar_data + "[("
+                        + cchar_len + " > 0) ? " + cchar_len + " : 1];\n";
+                    call_arg_setup += indent + "for (int64_t " + cchar_i + " = 0; "
+                        + cchar_i + " < " + cchar_len + "; " + cchar_i + "++) {\n";
+                    call_arg_setup += indent + std::string(indentation_spaces, ' ')
+                        + cchar_data + "[" + cchar_i + "] = " + arg_src + " + "
+                        + cchar_i + ";\n";
+                    call_arg_setup += indent + "}\n";
+                    args += "(&(" + wrapper_type + "){ .data = " + cchar_data
+                        + ", .dims = {{1, " + cchar_len + ", 1}}, .n_dims = 1, .offset = 0, .is_allocated = false })";
                 } else if (param_is_raw_c_char_array
                         && (scalar_string_to_cchar || !ASRUtils::is_array(ASRUtils::expr_type(array_like_arg)))) {
                     args += arg_src;
+                } else if (param_is_raw_c_char_array && !is_data_only_array_expr(call_arg)) {
+                    args += build_c_char_array_descriptor_to_raw_arg(
+                        arg_src, call_arg_setup);
                 } else if (param_is_raw_c_char_array && is_data_only_array_expr(call_arg)) {
                     args += arg_src;
                 } else {
@@ -8316,7 +8518,17 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             std::string arg_setup = drain_tmp_buffer();
             arg_setup += extract_stmt_setup_from_expr(arg_src);
             force_storage_expr_in_call_args = saved_force_storage_expr_in_call_args;
+            if (is_c && raw_call_arg && ASR::is_a<ASR::Var_t>(*raw_call_arg)) {
+                ASR::symbol_t *arg_sym = ASRUtils::symbol_get_past_external(
+                    ASR::down_cast<ASR::Var_t>(raw_call_arg)->m_v);
+                if (ASR::is_a<ASR::Variable_t>(*arg_sym)) {
+                    actual_var = ASR::down_cast<ASR::Variable_t>(arg_sym);
+                }
+            }
+            bool actual_is_raw_c_char_array_before_view =
+                is_raw_c_char_array_dummy(actual_var);
             bool no_copy_descriptor_view_actual = allow_no_copy_descriptor_views
+                && !actual_is_raw_c_char_array_before_view
                 && try_build_c_array_no_copy_descriptor_view_arg(
                         call_arg, param_type,
                         param ? param->m_type_declaration : nullptr, arg_src,
@@ -8458,11 +8670,28 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                     }
                     std::string wrapper_type = get_c_array_wrapper_type_name(
                         param_type, param ? param->m_type_declaration : nullptr);
-                    args += "(&(" + wrapper_type + "){ .data = " + arg_src
-                        + ", .dims = {{1, " + actual_len + ", 1}}, .n_dims = 1, .offset = 0, .is_allocated = false })";
+                    std::string cchar_len = get_unique_local_name("__lfortran_cchar_len");
+                    std::string cchar_data = get_unique_local_name("__lfortran_cchar_data");
+                    std::string cchar_i = get_unique_local_name("__lfortran_cchar_i");
+                    std::string indent(indentation_level * indentation_spaces, ' ');
+                    call_arg_setup += indent + "int64_t " + cchar_len + " = "
+                        + actual_len + ";\n";
+                    call_arg_setup += indent + "char *" + cchar_data + "[("
+                        + cchar_len + " > 0) ? " + cchar_len + " : 1];\n";
+                    call_arg_setup += indent + "for (int64_t " + cchar_i + " = 0; "
+                        + cchar_i + " < " + cchar_len + "; " + cchar_i + "++) {\n";
+                    call_arg_setup += indent + std::string(indentation_spaces, ' ')
+                        + cchar_data + "[" + cchar_i + "] = " + arg_src + " + "
+                        + cchar_i + ";\n";
+                    call_arg_setup += indent + "}\n";
+                    args += "(&(" + wrapper_type + "){ .data = " + cchar_data
+                        + ", .dims = {{1, " + cchar_len + ", 1}}, .n_dims = 1, .offset = 0, .is_allocated = false })";
                 } else if (param_is_raw_c_char_array
                         && (scalar_string_to_cchar || !ASRUtils::is_array(ASRUtils::expr_type(array_like_arg)))) {
                     args += arg_src;
+                } else if (param_is_raw_c_char_array && !is_data_only_array_expr(call_arg)) {
+                    args += build_c_char_array_descriptor_to_raw_arg(
+                        arg_src, call_arg_setup);
                 } else if (param_is_raw_c_char_array && is_data_only_array_expr(call_arg)) {
                     args += arg_src;
                 } else {
@@ -9218,6 +9447,10 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         if (try_emit_c_char_array_bitcast_assignment(x, unwrapped_target_expr)) {
             return;
         }
+        if (try_emit_c_char_array_bitcast_to_numeric_array_assignment(
+                x, unwrapped_target_expr)) {
+            return;
+        }
         if (try_emit_c_array_section_reshape_assignment(x, unwrapped_target_expr)) {
             return;
         }
@@ -9644,6 +9877,10 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                     return;
                 }
             }
+        }
+        if (try_emit_c_char_array_bitcast_to_string_assignment(
+                x, target, m_target_type)) {
+            return;
         }
         std::string value;
         std::string value_view_len, value_view_setup;

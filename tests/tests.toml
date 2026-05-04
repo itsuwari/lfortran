@@ -5224,6 +5224,11 @@ run = true
 options = "--backend=c --separate-compilation -O3"
 
 [[test]]
+filename = "c_backend_c_char_assumed_size_01.f90"
+run = true
+options = "--backend=c --separate-compilation -O3"
+
+[[test]]
 filename = "c_backend_print_array_record_01.f90"
 run = true
 options = "--backend=c --separate-compilation -O3"
