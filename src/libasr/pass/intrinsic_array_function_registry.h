@@ -2570,15 +2570,7 @@ namespace Spread {
             Vec<ASR::ttype_t*> &arg_types, ASR::ttype_t *return_type,
             Vec<ASR::call_arg_t> &m_args, int64_t /*overload_id*/,
             int index_kind) {
-        declare_basic_variables("_lcompilers_spread");
-        bool is_struct_type_arg = ASR::is_a<ASR::StructType_t>(*ASRUtils::extract_type(arg_types[0]));
-        if (is_struct_type_arg) {
-            fill_func_arg_struct_type("source", duplicate_type_with_empty_dims(al, arg_types[0]), m_args[0].m_value);
-        } else {
-            fill_func_arg("source", duplicate_type_with_empty_dims(al, arg_types[0]));
-        }
-        fill_func_arg("dim", arg_types[1]);
-        fill_func_arg("ncopies", arg_types[2]);
+        ASR::ttype_t *source_type = duplicate_type_with_empty_dims(al, arg_types[0]);
         int64_t n_dims_return_type = ASRUtils::extract_n_dims_from_ttype(return_type);
         bool is_allocatable = ASRUtils::is_allocatable(return_type);
         Vec<ASR::dimension_t> empty_dims;
@@ -2595,6 +2587,23 @@ namespace Spread {
         if( is_allocatable ) {
             return_type = ASRUtils::TYPE(ASRUtils::make_Allocatable_t_util(al, loc, return_type));
         }
+        std::string new_name = "_lcompilers_spread_"
+            + ASRUtils::get_type_code(source_type, true, true, true, m_args[0].m_value)
+            + "_ret_" + ASRUtils::get_type_code(return_type, true, true, true, m_args[0].m_value)
+            + "_idx" + std::to_string(index_kind);
+        declare_basic_variables(new_name);
+        if (scope->get_symbol(new_name)) {
+            ASR::symbol_t *s = scope->get_symbol(new_name);
+            return b.Call(s, m_args, return_type, nullptr);
+        }
+        bool is_struct_type_arg = ASR::is_a<ASR::StructType_t>(*ASRUtils::extract_type(arg_types[0]));
+        if (is_struct_type_arg) {
+            fill_func_arg_struct_type("source", source_type, m_args[0].m_value);
+        } else {
+            fill_func_arg("source", source_type);
+        }
+        fill_func_arg("dim", arg_types[1]);
+        fill_func_arg("ncopies", arg_types[2]);
 
         diag::Diagnostics diag;
 
