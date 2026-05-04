@@ -84,6 +84,88 @@ bool is_vectorise_able(ASR::expr_t* x) {
 }
 
 static bool conservative_expr_equal(ASR::expr_t* x, ASR::expr_t* y);
+static bool same_array_reference(ASR::expr_t* x, ASR::expr_t* y);
+
+static bool is_unit_step_expr(ASR::expr_t *expr) {
+    if (expr == nullptr) {
+        return true;
+    }
+    ASR::expr_t *value = ASRUtils::expr_value(expr);
+    if (value == nullptr) {
+        value = expr;
+    }
+    return ASR::is_a<ASR::IntegerConstant_t>(*value)
+        && ASR::down_cast<ASR::IntegerConstant_t>(value)->m_n == 1;
+}
+
+static bool is_generated_extent_upper_bound_expr(ASR::expr_t *expr) {
+    expr = ASRUtils::get_past_array_physical_cast(expr);
+    if (expr == nullptr || !ASR::is_a<ASR::IntegerBinOp_t>(*expr)) {
+        return false;
+    }
+    ASR::IntegerBinOp_t *sub = ASR::down_cast<ASR::IntegerBinOp_t>(expr);
+    if (sub->m_op != ASR::binopType::Sub || !is_unit_step_expr(sub->m_right)) {
+        return false;
+    }
+    ASR::expr_t *left = ASRUtils::get_past_array_physical_cast(sub->m_left);
+    if (left == nullptr || !ASR::is_a<ASR::IntegerBinOp_t>(*left)) {
+        return false;
+    }
+    ASR::IntegerBinOp_t *add = ASR::down_cast<ASR::IntegerBinOp_t>(left);
+    return add->m_op == ASR::binopType::Add
+        && (is_unit_step_expr(add->m_left)
+            || is_unit_step_expr(add->m_right));
+}
+
+static bool is_default_unit_array_slice(const ASR::array_index_t &idx) {
+    bool is_slice = idx.m_left || idx.m_step || idx.m_right == nullptr;
+    if (!is_slice || !is_unit_step_expr(idx.m_step)) {
+        return false;
+    }
+    bool left_is_default = idx.m_left == nullptr
+        || ASR::is_a<ASR::ArrayBound_t>(*idx.m_left)
+        || is_unit_step_expr(idx.m_left);
+    bool right_is_default = idx.m_right == nullptr
+        || ASR::is_a<ASR::ArrayBound_t>(*idx.m_right)
+        || is_generated_extent_upper_bound_expr(idx.m_right);
+    return left_is_default && right_is_default;
+}
+
+static bool is_plain_full_array_section(ASR::expr_t* x, ASR::expr_t*& base) {
+    x = ASRUtils::get_past_array_physical_cast(x);
+    if (x == nullptr || !ASR::is_a<ASR::ArraySection_t>(*x)) {
+        return false;
+    }
+    ASR::ArraySection_t* section = ASR::down_cast<ASR::ArraySection_t>(x);
+    ASR::ttype_t *base_type = ASRUtils::expr_type(section->m_v);
+    ASR::ttype_t *section_type = ASRUtils::expr_type(x);
+    if (!ASRUtils::is_array(base_type) || !ASRUtils::is_array(section_type)
+            || ASRUtils::extract_n_dims_from_ttype(base_type) != section->n_args
+            || ASRUtils::extract_n_dims_from_ttype(section_type) != section->n_args) {
+        return false;
+    }
+    for (size_t i = 0; i < section->n_args; i++) {
+        const ASR::array_index_t& idx = section->m_args[i];
+        if (!is_default_unit_array_slice(idx)) {
+            return false;
+        }
+    }
+    base = section->m_v;
+    return true;
+}
+
+static bool same_full_array_section_reference(ASR::expr_t* x, ASR::expr_t* y) {
+    ASR::expr_t* x_base = nullptr;
+    ASR::expr_t* y_base = nullptr;
+    bool x_is_full_section = is_plain_full_array_section(x, x_base);
+    bool y_is_full_section = is_plain_full_array_section(y, y_base);
+    if (x_is_full_section == y_is_full_section) {
+        return false;
+    }
+    return x_is_full_section
+        ? same_array_reference(x_base, y)
+        : same_array_reference(x, y_base);
+}
 
 static bool conservative_array_index_equal(const ASR::array_index_t& x,
         const ASR::array_index_t& y) {
@@ -99,7 +181,7 @@ static bool same_array_reference(ASR::expr_t* x, ASR::expr_t* y) {
     x = ASRUtils::get_past_array_physical_cast(x);
     y = ASRUtils::get_past_array_physical_cast(y);
     if (x->type != y->type) {
-        return false;
+        return same_full_array_section_reference(x, y);
     }
     switch (x->type) {
         case ASR::exprType::Var: {
@@ -174,6 +256,10 @@ static bool conservative_expr_equal(ASR::expr_t* x, ASR::expr_t* y) {
             return bx->m_bound == by->m_bound
                 && conservative_expr_equal(bx->m_dim, by->m_dim)
                 && same_array_reference(bx->m_v, by->m_v);
+        }
+        case ASR::exprType::StructInstanceMember:
+        case ASR::exprType::ArrayItem: {
+            return same_array_reference(x, y);
         }
         default: {
             return x == y;
@@ -1626,51 +1712,6 @@ bool rhs_common_refs_match_lhs_ref(Allocator &al, ASR::expr_t* lhs_ref, ASR::exp
         }
     }
     return saw_common_ref;
-}
-
-static bool is_unit_step_expr(ASR::expr_t *expr) {
-    if (expr == nullptr) {
-        return true;
-    }
-    ASR::expr_t *value = ASRUtils::expr_value(expr);
-    if (value == nullptr) {
-        value = expr;
-    }
-    return ASR::is_a<ASR::IntegerConstant_t>(*value)
-        && ASR::down_cast<ASR::IntegerConstant_t>(value)->m_n == 1;
-}
-
-static bool is_generated_extent_upper_bound_expr(ASR::expr_t *expr) {
-    expr = ASRUtils::get_past_array_physical_cast(expr);
-    if (expr == nullptr || !ASR::is_a<ASR::IntegerBinOp_t>(*expr)) {
-        return false;
-    }
-    ASR::IntegerBinOp_t *sub = ASR::down_cast<ASR::IntegerBinOp_t>(expr);
-    if (sub->m_op != ASR::binopType::Sub || !is_unit_step_expr(sub->m_right)) {
-        return false;
-    }
-    ASR::expr_t *left = ASRUtils::get_past_array_physical_cast(sub->m_left);
-    if (left == nullptr || !ASR::is_a<ASR::IntegerBinOp_t>(*left)) {
-        return false;
-    }
-    ASR::IntegerBinOp_t *add = ASR::down_cast<ASR::IntegerBinOp_t>(left);
-    return add->m_op == ASR::binopType::Add
-        && (is_unit_step_expr(add->m_left)
-            || is_unit_step_expr(add->m_right));
-}
-
-static bool is_default_unit_array_slice(const ASR::array_index_t &idx) {
-    bool is_slice = idx.m_left || idx.m_step || idx.m_right == nullptr;
-    if (!is_slice || !is_unit_step_expr(idx.m_step)) {
-        return false;
-    }
-    bool left_is_default = idx.m_left == nullptr
-        || ASR::is_a<ASR::ArrayBound_t>(*idx.m_left)
-        || is_unit_step_expr(idx.m_left);
-    bool right_is_default = idx.m_right == nullptr
-        || ASR::is_a<ASR::ArrayBound_t>(*idx.m_right)
-        || is_generated_extent_upper_bound_expr(idx.m_right);
-    return left_is_default && right_is_default;
 }
 
 static bool is_c_rank2_full_array_expr(ASR::expr_t *expr) {
