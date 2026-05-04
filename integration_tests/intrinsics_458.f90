@@ -1,19 +1,53 @@
 program intrinsics_458
-implicit none
+    implicit none
 
-real(8) :: dist(5)
-logical :: mask(5)
-integer :: img, pos
+    real :: h, ha, res
+    double precision :: dh, dha, dres
 
-dist = [10.0d0, 1.0d0, -99.0d0, -100.0d0, -101.0d0]
-mask = [.true., .true., .true., .true., .true.]
-img = 2
+    COMMON /c1/  h, ha, res
+    COMMON /c2/  dh, dha, dres
 
-pos = minloc(dist(:img), dim=1)
-if (pos /= 2) error stop 1
+    h = -3.0
+    ha = 5.0
+    res = sign(ha, h)
+    print *, "res: ", res
+    if (abs(res - (-5.0)) > 1e-6) error stop
 
-mask(2) = .false.
-pos = minloc(dist(:img), dim=1, mask=mask(:img))
-if (pos /= 1) error stop 2
+    h = 7.0
+    ha = 5.0
+    res = sign(ha, h)
+    print *, "res: ", res
+    if (abs(res - 5.0) > 1e-6) error stop
 
-end program intrinsics_458
+    h = 4.0
+    ha = -2.0
+    res = sign(h, ha)
+    print *, "res: ", res
+    if (abs(res - (-4.0)) > 1e-6) error stop
+
+    h = -9.0
+    res = sign(h, h)
+    print *, "res: ", res
+    if (abs(res - (-9.0)) > 1e-6) error stop
+
+    h = 6.0
+    ha = -1.0
+    h = sign(ha, h)
+    print *, "h: ", h
+    if (abs(h - 1.0) > 1e-6) error stop
+
+    dh = -3.0d0
+    dha = 5.0d0
+    dres = sign(dha, dh)
+    print *, "dres: ", dres
+    if (abs(dres - (-5.0d0)) > 1d-12) error stop
+
+    dh = 7.0d0
+    dha = 5.0d0
+    dres = sign(dha, dh)
+    print *, "dres: ", dres
+    if (abs(dres - 5.0d0) > 1d-12) error stop
+
+    print *, "All tests passed."
+
+end program
