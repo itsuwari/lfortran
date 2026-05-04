@@ -1,0 +1,13 @@
+{
+    "basename": "run-c_backend_derived_parameter_no_copy_01-27025b3",
+    "cmd": "lfortran --no-color {infile}",
+    "infile": "tests/c_backend_derived_parameter_no_copy_01.f90",
+    "infile_hash": "8a9dd9fccd3bf0481761fa7ae51b7d68805998faa4b5717b300e00ee",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

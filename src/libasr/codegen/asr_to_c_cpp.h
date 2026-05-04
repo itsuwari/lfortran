@@ -2902,6 +2902,18 @@ R"(#include <stdio.h>
                 }
             } else {
                 call_arg_setup += arg_setup;
+                if (ASRUtils::is_aggregate_type(param_type)) {
+                    bool pointer_backed_aggregate_actual =
+                        is_pointer_backed_struct_expr(call_arg);
+                    if (!pointer_backed_aggregate_actual) {
+                        ASR::expr_t *raw_arg = unwrap_c_lvalue_expr(call_arg);
+                        ASR::expr_t *shape_arg = raw_arg ? raw_arg : call_arg;
+                        std::string addressable =
+                            get_addressable_call_arg_src(shape_arg, arg_src);
+                        arg_src = cast_aggregate_pointer_actual_to_param_type(
+                            param, "&" + addressable);
+                    }
+                }
             }
 
             if (!args.empty()) {
