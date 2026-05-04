@@ -260,6 +260,23 @@ public:
             && array_type_has_default_lower_bounds(ASRUtils::symbol_type(sym));
     }
 
+    bool is_whole_dummy_array_variable(ASR::expr_t *expr) {
+        expr = ASRUtils::get_past_array_physical_cast(expr);
+        if (!ASR::is_a<ASR::Var_t>(*expr)) {
+            return false;
+        }
+        ASR::symbol_t *sym = ASRUtils::symbol_get_past_external(
+            ASR::down_cast<ASR::Var_t>(expr)->m_v);
+        if (!ASR::is_a<ASR::Variable_t>(*sym)) {
+            return false;
+        }
+        ASR::Variable_t *var = ASR::down_cast<ASR::Variable_t>(sym);
+        return var->m_intent == ASR::intentType::In ||
+            var->m_intent == ASR::intentType::Out ||
+            var->m_intent == ASR::intentType::InOut ||
+            var->m_intent == ASR::intentType::Unspecified;
+    }
+
     bool is_descriptor_array_casted_to_pointer_to_data( ASR::expr_t* expr ) {
         if ( ASRUtils::is_array(ASRUtils::expr_type(expr) ) &&
              ASR::is_a<ASR::ArrayPhysicalCast_t>(*expr) ) {
@@ -1004,7 +1021,10 @@ public:
     }
 
     void traverse_call_args(Vec<ASR::call_arg_t>& x_m_args_vec, ASR::call_arg_t* x_m_args,
-        size_t x_n_args, const std::string& name_hint, std::vector<bool> is_arg_intent_out = {}, bool is_func_bind_c = false) {
+        size_t x_n_args, const std::string& name_hint,
+        std::vector<bool> is_arg_intent_out = {},
+        std::vector<bool> is_arg_intent_in = {},
+        bool is_func_bind_c = false) {
         /* For other frontends, we might need to traverse the arguments
            in reverse order. */
         for( size_t i = 0; i < x_n_args; i++ ) {
@@ -1054,6 +1074,14 @@ public:
                 
                     Vec<ASR::expr_t*> dealloc_args; dealloc_args.reserve(al, 1);
                     dealloc_args.push_back(al, array_var_temporary);
+                    if (is_arg_intent_in.size() > i && is_arg_intent_in[i] &&
+                            is_whole_dummy_array_variable(arg_expr_past_cast)) {
+                        current_body->push_back(al, ASRUtils::STMT(ASR::make_Associate_t(
+                            al, loc, array_var_temporary, arg_expr_past_cast)));
+                        body_after_curr_stmt->push_back(al, ASRUtils::STMT(ASR::make_Nullify_t(
+                            al, loc, dealloc_args.p, dealloc_args.size())));
+                        continue;
+                    }
                     ASR::dimension_t* array_dims = nullptr;
                     int array_rank = ASRUtils::extract_dimensions_from_ttype(ASRUtils::expr_type(array_var_temporary), array_dims);
                     int integer_kind = pass_options.descriptor_index_64 ? 8 : 4;
@@ -1186,6 +1214,7 @@ public:
     void visit_Call(const T& x, const std::string& name_hint) {
         Vec<ASR::call_arg_t> x_m_args; x_m_args.reserve(al, x.n_args);
         std::vector<bool> is_arg_intent_out;
+        std::vector<bool> is_arg_intent_in;
         if ( ASR::is_a<ASR::Function_t>(*ASRUtils::symbol_get_past_external(x.m_name)) ) {
             ASR::Function_t* func = ASR::down_cast<ASR::Function_t>(ASRUtils::symbol_get_past_external(x.m_name));
             ASR::FunctionType_t* func_type = ASR::down_cast<ASR::FunctionType_t>(func->m_function_signature);
@@ -1200,15 +1229,21 @@ public:
                             var->m_intent == ASR::intentType::InOut ||
                             var->m_intent == ASR::intentType::Unspecified
                         );
+                        is_arg_intent_in.push_back(
+                            var->m_intent == ASR::intentType::In
+                        );
                     } else {
                         is_arg_intent_out.push_back(false);
+                        is_arg_intent_in.push_back(false);
                     }
                 } else {
                     is_arg_intent_out.push_back(false);
+                    is_arg_intent_in.push_back(false);
                 }
             }
             traverse_call_args(x_m_args, x.m_args, x.n_args,
-                name_hint + ASRUtils::symbol_name(x.m_name), is_arg_intent_out, is_func_bind_c);
+                name_hint + ASRUtils::symbol_name(x.m_name), is_arg_intent_out,
+                is_arg_intent_in, is_func_bind_c);
         } else {
             traverse_call_args(x_m_args, x.m_args, x.n_args,
                 name_hint + ASRUtils::symbol_name(x.m_name));
