@@ -4866,7 +4866,7 @@ LFORTRAN_API char* _lfortran_strcat_alloc(
     char* s2, int64_t s2_len)
 {
     int cntr = 0;
-    char* dest_char = (char*)ALLOCATOR_ALLOC(al, s1_len+s2_len);
+    char* dest_char = (char*)ALLOCATOR_ALLOC(al, s1_len+s2_len+1);
     for (int i = 0; i < s1_len; i++) {
         dest_char[cntr] = s1[i];
         cntr++;
@@ -4875,6 +4875,7 @@ LFORTRAN_API char* _lfortran_strcat_alloc(
         dest_char[cntr] = s2[i];
         cntr++;
     }
+    dest_char[cntr] = '\0';
     return dest_char;
 }
 

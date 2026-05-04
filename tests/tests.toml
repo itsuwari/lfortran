@@ -5394,7 +5394,7 @@ c = true
 [[test]]
 filename = "c_backend_string_concat_alloc_01.f90"
 run = true
-backend = "c"
+options = "--backend=c --separate-compilation"
 
 [[test]]
 filename = "c_backend_automatic_array_cleanup_01.f90"
