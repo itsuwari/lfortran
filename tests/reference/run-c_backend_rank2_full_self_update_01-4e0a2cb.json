@@ -1,0 +1,13 @@
+{
+    "basename": "run-c_backend_rank2_full_self_update_01-4e0a2cb",
+    "cmd": "lfortran --no-color {infile}",
+    "infile": "tests/c_backend_rank2_full_self_update_01.f90",
+    "infile_hash": "43951c39dc3fc8f4fd4bd239990bc2bf23066f0d6dca9c04c6b1775d",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

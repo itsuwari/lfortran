@@ -118,6 +118,7 @@ enum class CArrayExprLoweringKind {
     FallbackRuntime,
     NoCopyDescriptorView,
     ScalarizedLoop,
+    Rank2FullSelfUpdateLoop,
     FusedLoop,
     MaterializedTemporary,
     CompactConstantCopy
@@ -4083,6 +4084,40 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             && ASR::down_cast<ASR::IntegerConstant_t>(value)->m_n == 1;
     }
 
+    bool is_c_generated_extent_upper_bound_expr(ASR::expr_t *expr) {
+        while (expr != nullptr && (ASR::is_a<ASR::Cast_t>(*expr)
+                    || ASR::is_a<ASR::ArrayPhysicalCast_t>(*expr))) {
+            if (ASR::is_a<ASR::Cast_t>(*expr)) {
+                expr = ASR::down_cast<ASR::Cast_t>(expr)->m_arg;
+            } else {
+                expr = ASR::down_cast<ASR::ArrayPhysicalCast_t>(expr)->m_arg;
+            }
+        }
+        if (expr == nullptr || !ASR::is_a<ASR::IntegerBinOp_t>(*expr)) {
+            return false;
+        }
+        ASR::IntegerBinOp_t *sub = ASR::down_cast<ASR::IntegerBinOp_t>(expr);
+        if (sub->m_op != ASR::binopType::Sub || !is_c_unit_step_expr(sub->m_right)) {
+            return false;
+        }
+        ASR::expr_t *left = sub->m_left;
+        while (left != nullptr && (ASR::is_a<ASR::Cast_t>(*left)
+                    || ASR::is_a<ASR::ArrayPhysicalCast_t>(*left))) {
+            if (ASR::is_a<ASR::Cast_t>(*left)) {
+                left = ASR::down_cast<ASR::Cast_t>(left)->m_arg;
+            } else {
+                left = ASR::down_cast<ASR::ArrayPhysicalCast_t>(left)->m_arg;
+            }
+        }
+        if (left == nullptr || !ASR::is_a<ASR::IntegerBinOp_t>(*left)) {
+            return false;
+        }
+        ASR::IntegerBinOp_t *add = ASR::down_cast<ASR::IntegerBinOp_t>(left);
+        return add->m_op == ASR::binopType::Add
+            && (is_c_unit_step_expr(add->m_left)
+                || is_c_unit_step_expr(add->m_right));
+    }
+
     ASR::expr_t *unwrap_c_array_expr(ASR::expr_t *expr) {
         while (expr != nullptr) {
             if (ASR::is_a<ASR::ArrayPhysicalCast_t>(*expr)) {
@@ -5366,6 +5401,402 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         }
     }
 
+    bool is_c_default_unit_array_slice(const ASR::array_index_t &idx) {
+        bool is_slice = idx.m_left || idx.m_step || idx.m_right == nullptr;
+        if (!is_slice || !is_c_unit_step_expr(idx.m_step)) {
+            return false;
+        }
+        bool left_is_default = idx.m_left == nullptr
+            || ASR::is_a<ASR::ArrayBound_t>(*idx.m_left)
+            || is_c_unit_step_expr(idx.m_left);
+        bool right_is_default = idx.m_right == nullptr
+            || ASR::is_a<ASR::ArrayBound_t>(*idx.m_right)
+            || is_c_generated_extent_upper_bound_expr(idx.m_right);
+        return left_is_default && right_is_default;
+    }
+
+    bool is_c_rank2_full_array_expr(ASR::expr_t *expr) {
+        expr = unwrap_c_array_expr(expr);
+        if (expr == nullptr || (!ASRUtils::is_array(ASRUtils::expr_type(expr))
+                && !ASRUtils::is_array_t(expr))) {
+            return false;
+        }
+        ASR::ttype_t *type = ASRUtils::type_get_past_allocatable_pointer(
+            ASRUtils::expr_type(expr));
+        if (type == nullptr
+                || ASRUtils::extract_n_dims_from_ttype(
+                    ASRUtils::expr_type(expr)) != 2) {
+            return false;
+        }
+        if (ASR::is_a<ASR::Var_t>(*expr)
+                || ASR::is_a<ASR::StructInstanceMember_t>(*expr)) {
+            return true;
+        }
+        if (!ASR::is_a<ASR::ArraySection_t>(*expr)) {
+            return false;
+        }
+        ASR::ArraySection_t *section = ASR::down_cast<ASR::ArraySection_t>(expr);
+        for (size_t i = 0; i < section->n_args; i++) {
+            if (!is_c_default_unit_array_slice(section->m_args[i])) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    bool c_rank2_full_ref_same_target(ASR::expr_t *target, ASR::expr_t *expr) {
+        target = unwrap_c_array_expr(target);
+        expr = unwrap_c_array_expr(expr);
+        if (target == nullptr || expr == nullptr
+                || !is_c_rank2_full_array_expr(target)
+                || !is_c_rank2_full_array_expr(expr)) {
+            return false;
+        }
+        ASR::symbol_t *target_root = get_c_array_assignment_root_symbol(target);
+        ASR::symbol_t *expr_root = get_c_array_assignment_root_symbol(expr);
+        return target_root != nullptr && target_root == expr_root;
+    }
+
+    bool is_c_rank2_scalarizable_array_expr(ASR::expr_t *expr) {
+        expr = unwrap_c_array_expr(expr);
+        if (expr == nullptr) {
+            return false;
+        }
+        ASR::ttype_t *type = ASRUtils::expr_type(expr);
+        if (!ASRUtils::is_array(type) && !ASRUtils::is_array_t(type)) {
+            return true;
+        }
+        if (!is_c_scalarizable_element_type(type)) {
+            return false;
+        }
+        switch (expr->type) {
+            case ASR::exprType::Var:
+            case ASR::exprType::StructInstanceMember:
+            case ASR::exprType::ArraySection: {
+                return is_c_rank2_full_array_expr(expr);
+            }
+            case ASR::exprType::ArrayBroadcast: {
+                return is_c_rank2_scalarizable_array_expr(
+                    ASR::down_cast<ASR::ArrayBroadcast_t>(expr)->m_array);
+            }
+            case ASR::exprType::RealBinOp: {
+                ASR::RealBinOp_t *binop = ASR::down_cast<ASR::RealBinOp_t>(expr);
+                return binop->m_op != ASR::binopType::Pow
+                    && is_c_rank2_scalarizable_array_expr(binop->m_left)
+                    && is_c_rank2_scalarizable_array_expr(binop->m_right);
+            }
+            case ASR::exprType::IntegerBinOp: {
+                ASR::IntegerBinOp_t *binop = ASR::down_cast<ASR::IntegerBinOp_t>(expr);
+                return binop->m_op != ASR::binopType::Pow
+                    && is_c_rank2_scalarizable_array_expr(binop->m_left)
+                    && is_c_rank2_scalarizable_array_expr(binop->m_right);
+            }
+            case ASR::exprType::UnsignedIntegerBinOp: {
+                ASR::UnsignedIntegerBinOp_t *binop =
+                    ASR::down_cast<ASR::UnsignedIntegerBinOp_t>(expr);
+                return binop->m_op != ASR::binopType::Pow
+                    && is_c_rank2_scalarizable_array_expr(binop->m_left)
+                    && is_c_rank2_scalarizable_array_expr(binop->m_right);
+            }
+            case ASR::exprType::RealUnaryMinus: {
+                return is_c_rank2_scalarizable_array_expr(
+                    ASR::down_cast<ASR::RealUnaryMinus_t>(expr)->m_arg);
+            }
+            case ASR::exprType::IntegerUnaryMinus: {
+                return is_c_rank2_scalarizable_array_expr(
+                    ASR::down_cast<ASR::IntegerUnaryMinus_t>(expr)->m_arg);
+            }
+            default: {
+                return false;
+            }
+        }
+    }
+
+    bool is_c_rank2_nonself_update_expr(ASR::expr_t *expr) {
+        expr = unwrap_c_array_expr(expr);
+        if (expr == nullptr) {
+            return false;
+        }
+        ASR::ttype_t *type = ASRUtils::expr_type(expr);
+        if (!ASRUtils::is_array(type) && !ASRUtils::is_array_t(type)) {
+            return true;
+        }
+        switch (expr->type) {
+            case ASR::exprType::Var:
+            case ASR::exprType::StructInstanceMember: {
+                return true;
+            }
+            case ASR::exprType::ArrayBroadcast: {
+                return is_c_rank2_nonself_update_expr(
+                    ASR::down_cast<ASR::ArrayBroadcast_t>(expr)->m_array);
+            }
+            case ASR::exprType::RealBinOp: {
+                ASR::RealBinOp_t *binop = ASR::down_cast<ASR::RealBinOp_t>(expr);
+                return binop->m_op != ASR::binopType::Pow
+                    && is_c_rank2_nonself_update_expr(binop->m_left)
+                    && is_c_rank2_nonself_update_expr(binop->m_right);
+            }
+            case ASR::exprType::IntegerBinOp: {
+                ASR::IntegerBinOp_t *binop = ASR::down_cast<ASR::IntegerBinOp_t>(expr);
+                return binop->m_op != ASR::binopType::Pow
+                    && is_c_rank2_nonself_update_expr(binop->m_left)
+                    && is_c_rank2_nonself_update_expr(binop->m_right);
+            }
+            case ASR::exprType::UnsignedIntegerBinOp: {
+                ASR::UnsignedIntegerBinOp_t *binop =
+                    ASR::down_cast<ASR::UnsignedIntegerBinOp_t>(expr);
+                return binop->m_op != ASR::binopType::Pow
+                    && is_c_rank2_nonself_update_expr(binop->m_left)
+                    && is_c_rank2_nonself_update_expr(binop->m_right);
+            }
+            case ASR::exprType::RealUnaryMinus: {
+                return is_c_rank2_nonself_update_expr(
+                    ASR::down_cast<ASR::RealUnaryMinus_t>(expr)->m_arg);
+            }
+            case ASR::exprType::IntegerUnaryMinus: {
+                return is_c_rank2_nonself_update_expr(
+                    ASR::down_cast<ASR::IntegerUnaryMinus_t>(expr)->m_arg);
+            }
+            default: {
+                return false;
+            }
+        }
+    }
+
+    template <typename BinOp>
+    bool c_rank2_binop_has_one_full_self_ref(const BinOp *binop,
+            ASR::expr_t *target_expr, ASR::symbol_t *target_root) {
+        bool left_is_self = c_rank2_full_ref_same_target(target_expr, binop->m_left);
+        bool right_is_self = c_rank2_full_ref_same_target(target_expr, binop->m_right);
+        if (left_is_self == right_is_self) {
+            return false;
+        }
+        ASR::expr_t *other = left_is_self ? binop->m_right : binop->m_left;
+        return is_c_rank2_nonself_update_expr(other)
+            && !c_expr_references_root_symbol(other, target_root);
+    }
+
+    bool is_c_rank2_full_self_update_expr(ASR::expr_t *target_expr,
+            ASR::expr_t *value_expr) {
+        target_expr = unwrap_c_array_expr(target_expr);
+        value_expr = unwrap_c_array_expr(value_expr);
+        if (target_expr == nullptr || value_expr == nullptr
+                || !is_c_rank2_full_array_expr(target_expr)
+                || !is_c_rank2_scalarizable_array_expr(value_expr)) {
+            return false;
+        }
+        ASR::symbol_t *target_root = get_c_array_assignment_root_symbol(target_expr);
+        if (target_root == nullptr) {
+            return false;
+        }
+        switch (value_expr->type) {
+            case ASR::exprType::RealBinOp: {
+                return c_rank2_binop_has_one_full_self_ref(
+                    ASR::down_cast<ASR::RealBinOp_t>(value_expr),
+                    target_expr, target_root);
+            }
+            case ASR::exprType::IntegerBinOp: {
+                return c_rank2_binop_has_one_full_self_ref(
+                    ASR::down_cast<ASR::IntegerBinOp_t>(value_expr),
+                    target_expr, target_root);
+            }
+            case ASR::exprType::UnsignedIntegerBinOp: {
+                return c_rank2_binop_has_one_full_self_ref(
+                    ASR::down_cast<ASR::UnsignedIntegerBinOp_t>(value_expr),
+                    target_expr, target_root);
+            }
+            default: {
+                return false;
+            }
+        }
+    }
+
+    bool get_c_rank2_full_array_access(ASR::expr_t *expr, const std::string &prefix,
+            std::string &setup, std::string &data_name, std::string &offset_name,
+            std::string &stride1_name, std::string &stride2_name,
+            std::string &length1_name, std::string &length2_name) {
+        expr = unwrap_c_array_expr(expr);
+        if (expr == nullptr || !is_c_rank2_full_array_expr(expr)) {
+            return false;
+        }
+        ASR::expr_t *base_expr = expr;
+        if (ASR::is_a<ASR::ArraySection_t>(*expr)) {
+            base_expr = ASR::down_cast<ASR::ArraySection_t>(expr)->m_v;
+            base_expr = unwrap_c_array_expr(base_expr);
+        }
+        if (base_expr == nullptr) {
+            return false;
+        }
+        self().visit_expr(*base_expr);
+        std::string base = src;
+        setup += drain_tmp_buffer();
+        setup += extract_stmt_setup_from_expr(base);
+
+        ASR::ttype_t *base_type = ASRUtils::type_get_past_allocatable_pointer(
+            ASRUtils::expr_type(base_expr));
+        ASR::dimension_t *base_dims = nullptr;
+        int base_rank = ASRUtils::extract_dimensions_from_ttype(base_type, base_dims);
+        if (base_rank != 2) {
+            return false;
+        }
+        bool use_static_base_dims = is_c_fixed_size_descriptor_storage_expr(base_expr)
+            && base_dims != nullptr;
+        std::vector<int64_t> static_lengths;
+        std::vector<int64_t> static_strides;
+        if (use_static_base_dims) {
+            int64_t stride = 1;
+            static_lengths.reserve(base_rank);
+            static_strides.reserve(base_rank);
+            for (int i = 0; i < base_rank; i++) {
+                int64_t len = -1;
+                if (base_dims[i].m_length == nullptr
+                        || !get_c_constant_int_expr_value(base_dims[i].m_length, len)
+                        || len <= 0) {
+                    use_static_base_dims = false;
+                    break;
+                }
+                static_lengths.push_back(len);
+                static_strides.push_back(stride);
+                stride *= len;
+            }
+        }
+        const CArrayDescriptorCache *cache = use_static_base_dims ? nullptr :
+            get_current_function_array_descriptor_cache(base, base_rank);
+        std::string indent(indentation_level * indentation_spaces, ' ');
+        std::string elem_type = CUtils::get_c_type_from_ttype_t(
+            ASRUtils::type_get_past_array(base_type));
+        data_name = get_unique_local_name(prefix + "_data");
+        offset_name = get_unique_local_name(prefix + "_offset");
+        stride1_name = get_unique_local_name(prefix + "_stride1");
+        stride2_name = get_unique_local_name(prefix + "_stride2");
+        length1_name = get_unique_local_name(prefix + "_length1");
+        length2_name = get_unique_local_name(prefix + "_length2");
+        std::string base_data = use_static_base_dims ? base + "_data" :
+            (cache && !cache->data.empty() ? cache->data : base + "->data");
+        setup += indent + elem_type + " *" + data_name + " = "
+            + base_data + ";\n";
+        setup += indent + "int64_t " + offset_name + " = "
+            + (use_static_base_dims ? "0" : (cache ? cache->offset : base + "->offset")) + ";\n";
+        setup += indent + "int64_t " + stride1_name + " = "
+            + (use_static_base_dims ? std::to_string(static_strides[0])
+                : (cache ? cache->strides[0] : base + "->dims[0].stride")) + ";\n";
+        setup += indent + "int64_t " + stride2_name + " = "
+            + (use_static_base_dims ? std::to_string(static_strides[1])
+                : (cache ? cache->strides[1] : base + "->dims[1].stride")) + ";\n";
+        setup += indent + "int64_t " + length1_name + " = "
+            + (use_static_base_dims ? std::to_string(static_lengths[0])
+                : base + "->dims[0].length") + ";\n";
+        setup += indent + "int64_t " + length2_name + " = "
+            + (use_static_base_dims ? std::to_string(static_lengths[1])
+                : base + "->dims[1].length") + ";\n";
+        return true;
+    }
+
+    bool get_c_rank2_scalarized_expr(ASR::expr_t *expr,
+            const std::string &index1_name, const std::string &index2_name,
+            std::string &setup, std::string &out) {
+        expr = unwrap_c_array_expr(expr);
+        if (expr == nullptr) {
+            return false;
+        }
+        if (!ASRUtils::is_array(ASRUtils::expr_type(expr))
+                && !ASRUtils::is_array_t(expr)) {
+            self().visit_expr(*expr);
+            out = src;
+            setup += drain_tmp_buffer();
+            setup += extract_stmt_setup_from_expr(out);
+            return true;
+        }
+        switch (expr->type) {
+            case ASR::exprType::Var:
+            case ASR::exprType::StructInstanceMember:
+            case ASR::exprType::ArraySection: {
+                std::string data, offset, stride1, stride2, length1, length2;
+                if (!get_c_rank2_full_array_access(expr, "__lfortran_rhs2",
+                        setup, data, offset, stride1, stride2, length1, length2)) {
+                    return false;
+                }
+                out = data + "[" + offset + " + " + index1_name + " * "
+                    + stride1 + " + " + index2_name + " * " + stride2 + "]";
+                return true;
+            }
+            case ASR::exprType::ArrayBroadcast: {
+                return get_c_rank2_scalarized_expr(
+                    ASR::down_cast<ASR::ArrayBroadcast_t>(expr)->m_array,
+                    index1_name, index2_name, setup, out);
+            }
+            case ASR::exprType::RealBinOp: {
+                ASR::RealBinOp_t *binop = ASR::down_cast<ASR::RealBinOp_t>(expr);
+                if (binop->m_op == ASR::binopType::Pow) {
+                    return false;
+                }
+                std::string left, right;
+                if (!get_c_rank2_scalarized_expr(binop->m_left,
+                        index1_name, index2_name, setup, left)
+                        || !get_c_rank2_scalarized_expr(binop->m_right,
+                            index1_name, index2_name, setup, right)) {
+                    return false;
+                }
+                out = "(" + left + c_binop_to_str(binop->m_op) + right + ")";
+                return true;
+            }
+            case ASR::exprType::IntegerBinOp: {
+                ASR::IntegerBinOp_t *binop = ASR::down_cast<ASR::IntegerBinOp_t>(expr);
+                if (binop->m_op == ASR::binopType::Pow) {
+                    return false;
+                }
+                std::string left, right;
+                if (!get_c_rank2_scalarized_expr(binop->m_left,
+                        index1_name, index2_name, setup, left)
+                        || !get_c_rank2_scalarized_expr(binop->m_right,
+                            index1_name, index2_name, setup, right)) {
+                    return false;
+                }
+                out = "(" + left + c_binop_to_str(binop->m_op) + right + ")";
+                return true;
+            }
+            case ASR::exprType::UnsignedIntegerBinOp: {
+                ASR::UnsignedIntegerBinOp_t *binop =
+                    ASR::down_cast<ASR::UnsignedIntegerBinOp_t>(expr);
+                if (binop->m_op == ASR::binopType::Pow) {
+                    return false;
+                }
+                std::string left, right;
+                if (!get_c_rank2_scalarized_expr(binop->m_left,
+                        index1_name, index2_name, setup, left)
+                        || !get_c_rank2_scalarized_expr(binop->m_right,
+                            index1_name, index2_name, setup, right)) {
+                    return false;
+                }
+                out = "(" + left + c_binop_to_str(binop->m_op) + right + ")";
+                return true;
+            }
+            case ASR::exprType::RealUnaryMinus: {
+                std::string arg;
+                if (!get_c_rank2_scalarized_expr(
+                        ASR::down_cast<ASR::RealUnaryMinus_t>(expr)->m_arg,
+                        index1_name, index2_name, setup, arg)) {
+                    return false;
+                }
+                out = "-(" + arg + ")";
+                return true;
+            }
+            case ASR::exprType::IntegerUnaryMinus: {
+                std::string arg;
+                if (!get_c_rank2_scalarized_expr(
+                        ASR::down_cast<ASR::IntegerUnaryMinus_t>(expr)->m_arg,
+                        index1_name, index2_name, setup, arg)) {
+                    return false;
+                }
+                out = "-(" + arg + ")";
+                return true;
+            }
+            default: {
+                return false;
+            }
+        }
+    }
+
     CArrayExprLoweringPlan plan_c_array_expr_assignment(
             const ASR::Assignment_t &x, ASR::expr_t *unwrapped_target_expr) {
         CArrayExprLoweringPlan plan;
@@ -5377,6 +5808,14 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             return plan;
         }
         plan.target_expr = unwrapped_target_expr;
+        if ((ASRUtils::is_array(ASRUtils::expr_type(x.m_value))
+                    || ASRUtils::is_array_t(x.m_value))
+                && is_c_rank2_full_self_update_expr(
+                    unwrapped_target_expr, x.m_value)) {
+            plan.kind = CArrayExprLoweringKind::Rank2FullSelfUpdateLoop;
+            plan.value_expr = x.m_value;
+            return plan;
+        }
         ASR::expr_t *base_expr = unwrapped_target_expr;
         if (ASR::is_a<ASR::ArraySection_t>(*unwrapped_target_expr)) {
             plan.target_section = ASR::down_cast<ASR::ArraySection_t>(unwrapped_target_expr);
@@ -5515,6 +5954,58 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         return true;
     }
 
+    bool try_emit_c_rank2_full_self_update_assignment(
+            const CArrayExprLoweringPlan &plan) {
+        if (plan.kind != CArrayExprLoweringKind::Rank2FullSelfUpdateLoop
+                || plan.target_expr == nullptr
+                || plan.value_expr == nullptr) {
+            return false;
+        }
+        std::string setup;
+        std::string target_data, target_offset, target_stride1, target_stride2;
+        std::string target_length1, target_length2;
+        if (!get_c_rank2_full_array_access(plan.target_expr, "__lfortran_lhs2",
+                setup, target_data, target_offset, target_stride1, target_stride2,
+                target_length1, target_length2)) {
+            return false;
+        }
+        std::string index1_name = get_unique_local_name("__lfortran_i");
+        std::string index2_name = get_unique_local_name("__lfortran_j");
+        std::string target_element = target_data + "[" + target_offset
+            + " + " + index1_name + " * " + target_stride1
+            + " + " + index2_name + " * " + target_stride2 + "]";
+        std::string value_expr;
+        if (!get_c_rank2_scalarized_expr(plan.value_expr, index1_name,
+                index2_name, setup, value_expr)) {
+            return false;
+        }
+
+        std::string indent(indentation_level * indentation_spaces, ' ');
+        src = check_tmp_buffer();
+        src += indent + "{\n";
+        indentation_level++;
+        std::string inner_indent(indentation_level * indentation_spaces, ' ');
+        src += setup;
+        src += inner_indent + "for (int64_t " + index2_name + " = 0; "
+            + index2_name + " < " + target_length2 + "; "
+            + index2_name + "++) {\n";
+        indentation_level++;
+        std::string loop1_indent(indentation_level * indentation_spaces, ' ');
+        src += loop1_indent + "for (int64_t " + index1_name + " = 0; "
+            + index1_name + " < " + target_length1 + "; "
+            + index1_name + "++) {\n";
+        indentation_level++;
+        std::string loop2_indent(indentation_level * indentation_spaces, ' ');
+        src += loop2_indent + target_element + " = " + value_expr + ";\n";
+        indentation_level--;
+        src += loop1_indent + "}\n";
+        indentation_level--;
+        src += inner_indent + "}\n";
+        indentation_level--;
+        src += indent + "}\n";
+        return true;
+    }
+
     bool try_emit_c_char_array_bitcast_assignment(const ASR::Assignment_t &x,
             ASR::expr_t *target_expr) {
         if (!is_c || target_expr == nullptr ||
@@ -5632,6 +6123,9 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
 
     bool try_emit_c_array_expr_assignment_plan(
             const CArrayExprLoweringPlan &plan) {
+        if (try_emit_c_rank2_full_self_update_assignment(plan)) {
+            return true;
+        }
         if (try_emit_c_scalarized_array_expr_assignment(plan)) {
             return true;
         }

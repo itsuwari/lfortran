@@ -5199,6 +5199,11 @@ run = true
 options = "--backend=c --separate-compilation -O3"
 
 [[test]]
+filename = "c_backend_rank2_full_self_update_01.f90"
+run = true
+options = "--backend=c --separate-compilation -O3"
+
+[[test]]
 filename = "c_backend_vector_subscript_scalarized_01.f90"
 run = true
 options = "--backend=c --separate-compilation -O3"
