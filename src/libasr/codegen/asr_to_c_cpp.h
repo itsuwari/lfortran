@@ -9149,9 +9149,6 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         std::string method_name = escape_c_string_literal(std::string(base_method->m_name));
         std::string method_hash = "UINT64_C("
             + std::to_string(get_stable_string_hash(std::string(base_method->m_name))) + ")";
-        std::string error_stmt = "fprintf(stderr, \"Deferred type-bound dispatch failed for "
-            + CUtils::sanitize_c_identifier(base_method->m_name)
-            + "\\n\");\n" + get_current_indent() + "exit(1);\n";
         std::string force_link_src = emit_c_tbp_force_link_calls(
             ASR::down_cast<ASR::Struct_t>(owner_sym), base_method);
 
@@ -9159,12 +9156,8 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             std::string indent = get_current_indent();
             out = force_link_src
                 + indent + "lfortran_c_tbp_func_ptr " + lookup_var
-                + " = _lfortran_get_c_tbp_impl_by_hash(\"" + method_name + "\", "
-                + method_hash + ", "
-                + runtime_tag_expr + ");\n"
-                + indent + "if (!" + lookup_var + ") {\n"
-                + indent + "    " + error_stmt
-                + indent + "}\n"
+                + " = _lfortran_get_c_tbp_impl_by_hash_or_die(\"" + method_name + "\", "
+                + method_hash + ", " + runtime_tag_expr + ");\n"
                 + tail_setup
                 + indent + call_expr + ";\n";
             return true;
@@ -9178,17 +9171,14 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         if (ASRUtils::is_aggregate_type(ret_type)) {
             return false;
         }
-        ASR::Variable_t *ret_var = ASRUtils::EXPR2VAR(iface_fn->m_return_var);
-        std::string lookup_call = "_lfortran_get_c_tbp_impl_by_hash(\"" + method_name
+        std::string lookup_call = "_lfortran_get_c_tbp_impl_by_hash_or_die(\"" + method_name
             + "\", " + method_hash + ", " + runtime_tag_expr + ")";
-        out = tail_setup + "(" + lookup_call + " ? ((" + wrapper_type + ")" + lookup_call + ")("
+        out = tail_setup + "((" + wrapper_type + ")" + lookup_call + ")("
             + dispatch_self;
         if (!tail_args.empty()) {
             out += ", " + tail_args;
         }
-        out += ") : ((fprintf(stderr, \"Deferred type-bound dispatch failed for "
-            + CUtils::sanitize_c_identifier(base_method->m_name)
-            + "\\n\"), exit(1), (" + get_return_var_type(ret_var) + ")0)))";
+        out += ")";
         return true;
     }
 

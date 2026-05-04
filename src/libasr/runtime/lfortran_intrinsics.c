@@ -190,6 +190,17 @@ LFORTRAN_API lfortran_c_tbp_func_ptr _lfortran_get_c_tbp_impl(const char* method
         method_name, lfortran_hash_c_string(method_name), type_id);
 }
 
+LFORTRAN_API lfortran_c_tbp_func_ptr _lfortran_get_c_tbp_impl_by_hash_or_die(
+        const char* method_name, uint64_t method_hash, int64_t type_id) {
+    lfortran_c_tbp_func_ptr func = _lfortran_get_c_tbp_impl_by_hash(
+        method_name, method_hash, type_id);
+    if (func != NULL) {
+        return func;
+    }
+    fprintf(stderr, "Deferred type-bound dispatch failed for %s\n", method_name);
+    exit(1);
+}
+
 /* ----------------------------------------------------- */
 /* --- Memory debug implementation (Compiler's side) --- */
 /* ----------------------------------------------------- */

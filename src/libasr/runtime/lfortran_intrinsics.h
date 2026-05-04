@@ -94,6 +94,8 @@ LFORTRAN_API void _lfortran_register_c_tbp_impl(const char* method_name, int64_t
         lfortran_c_tbp_func_ptr func);
 LFORTRAN_API lfortran_c_tbp_func_ptr _lfortran_get_c_tbp_impl_by_hash(
         const char* method_name, uint64_t method_hash, int64_t type_id);
+LFORTRAN_API lfortran_c_tbp_func_ptr _lfortran_get_c_tbp_impl_by_hash_or_die(
+        const char* method_name, uint64_t method_hash, int64_t type_id);
 LFORTRAN_API lfortran_c_tbp_func_ptr _lfortran_get_c_tbp_impl(const char* method_name,
         int64_t type_id);
 
