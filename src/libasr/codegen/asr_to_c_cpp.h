@@ -12850,8 +12850,6 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                         + std::to_string(get_struct_runtime_type_id(element_struct_sym)) + ";\n";
                     self().initialize_struct_instance_members(
                         element_struct_t, out, init_indent + "    ", elem_ptr);
-                    self().allocate_array_members_of_struct(
-                        element_struct_t, out, init_indent + "    ", elem_ptr);
                     out += init_indent + "}\n";
                     if (!did_allocate_name.empty()) {
                         out += indent + "}\n";

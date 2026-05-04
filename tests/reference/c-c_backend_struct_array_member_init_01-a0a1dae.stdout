@@ -1,0 +1,134 @@
+#include <math.h>
+
+#include <stdlib.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <string.h>
+#include <lfortran_intrinsics.h>
+
+
+#ifndef LFORTRAN_C_BACKEND_CONSTRUCTOR
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_CONSTRUCTOR __attribute__((constructor))
+#else
+#define LFORTRAN_C_BACKEND_CONSTRUCTOR
+#endif
+#endif
+#ifndef LFORTRAN_C_BACKEND_WEAK
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_WEAK __attribute__((weak))
+#else
+#define LFORTRAN_C_BACKEND_WEAK static
+#endif
+#endif
+
+
+struct dimension_descriptor
+{
+    int32_t lower_bound, length, stride;
+};
+
+struct r32___
+{
+    float *data;
+    struct dimension_descriptor dims[32];
+    int32_t n_dims;
+    int32_t offset;
+    bool is_allocated;
+};
+
+
+struct r32_____
+{
+    float *data;
+    struct dimension_descriptor dims[32];
+    int32_t n_dims;
+    int32_t offset;
+    bool is_allocated;
+};
+
+struct c_backend_struct_array_member_init_01_m__record_type {
+ int64_t __lfortran_type_tag;
+ char * label;
+ struct r32___* values;
+ struct r32_____* matrix;
+};
+
+
+struct xc_backend_struct_array_member_init_01_m__record_type
+{
+    struct c_backend_struct_array_member_init_01_m__record_type *data;
+    struct dimension_descriptor dims[32];
+    int32_t n_dims;
+    int32_t offset;
+    bool is_allocated;
+};
+
+void __lfortran_c_backend_struct_array_member_init_01_m__run();
+
+
+
+
+// Implementations
+void __lfortran_c_backend_struct_array_member_init_01_m__run()
+{
+    lfortran_allocator_t* __lfortran_default_allocator = _lfortran_get_default_allocator();
+    struct xc_backend_struct_array_member_init_01_m__record_type records_value;
+    struct xc_backend_struct_array_member_init_01_m__record_type* records = &records_value;
+    struct c_backend_struct_array_member_init_01_m__record_type *records_data = NULL;
+    records->data = records_data;
+    records->n_dims = 1;
+    records->offset = 0;
+    records->is_allocated = false;
+    records->dims[0].lower_bound = 1;
+    records->dims[0].length = 0;
+    records->dims[0].stride = 1;
+    records->n_dims = 1;
+    records->dims[0].lower_bound = 1;
+    records->dims[0].length = 2;
+    records->dims[0].stride = 1;
+    records->offset = 0;
+    records->data = (struct c_backend_struct_array_member_init_01_m__record_type*) _lfortran_malloc_alloc(__lfortran_default_allocator, 1*records->dims[0].length*sizeof(struct c_backend_struct_array_member_init_01_m__record_type));
+    records->is_allocated = true;
+    memset(records->data, 0, 1*records->dims[0].length*sizeof(struct c_backend_struct_array_member_init_01_m__record_type));
+    for (int64_t __lfortran_struct_array_init_i = 0; __lfortran_struct_array_init_i < 1*records->dims[0].length; __lfortran_struct_array_init_i++) {
+        (&(records->data[__lfortran_struct_array_init_i]))->__lfortran_type_tag = 8958648873426966967;
+        (&(records->data[__lfortran_struct_array_init_i]))->label = NULL;
+        struct r32___* struct_member_values_0;
+        struct_member_values_0 = _lfortran_malloc_alloc(__lfortran_default_allocator, sizeof(*struct_member_values_0));
+        memset(struct_member_values_0, 0, sizeof(*struct_member_values_0));
+        (&(records->data[__lfortran_struct_array_init_i]))->values = struct_member_values_0;
+        struct r32_____* struct_member_matrix_1;
+        struct_member_matrix_1 = _lfortran_malloc_alloc(__lfortran_default_allocator, sizeof(*struct_member_matrix_1));
+        memset(struct_member_matrix_1, 0, sizeof(*struct_member_matrix_1));
+        (&(records->data[__lfortran_struct_array_init_i]))->matrix = struct_member_matrix_1;
+    }
+    records->data[((0 + (records->dims[0].stride * (1 - records->dims[0].lower_bound))) + records->offset)].values->n_dims = 1;
+    records->data[((0 + (records->dims[0].stride * (1 - records->dims[0].lower_bound))) + records->offset)].values->dims[0].lower_bound = 1;
+    records->data[((0 + (records->dims[0].stride * (1 - records->dims[0].lower_bound))) + records->offset)].values->dims[0].length = 2;
+    records->data[((0 + (records->dims[0].stride * (1 - records->dims[0].lower_bound))) + records->offset)].values->dims[0].stride = 1;
+    records->data[((0 + (records->dims[0].stride * (1 - records->dims[0].lower_bound))) + records->offset)].values->offset = 0;
+    records->data[((0 + (records->dims[0].stride * (1 - records->dims[0].lower_bound))) + records->offset)].values->data = (float*) _lfortran_malloc_alloc(__lfortran_default_allocator, 1*records->data[((0 + (records->dims[0].stride * (1 - records->dims[0].lower_bound))) + records->offset)].values->dims[0].length*sizeof(float));
+    records->data[((0 + (records->dims[0].stride * (1 - records->dims[0].lower_bound))) + records->offset)].values->is_allocated = true;
+    records->data[((0 + (records->dims[0].stride * (1 - records->dims[0].lower_bound))) + records->offset)].values->data[((0 + (records->data[((0 + (records->dims[0].stride * (1 - records->dims[0].lower_bound))) + records->offset)].values->dims[0].stride * (1 - records->data[((0 + (records->dims[0].stride * (1 - records->dims[0].lower_bound))) + records->offset)].values->dims[0].lower_bound))) + records->data[((0 + (records->dims[0].stride * (1 - records->dims[0].lower_bound))) + records->offset)].values->offset)] =   1.00000000000000000e+00;
+    records->data[((0 + (records->dims[0].stride * (1 - records->dims[0].lower_bound))) + records->offset)].values->data[((0 + (records->data[((0 + (records->dims[0].stride * (1 - records->dims[0].lower_bound))) + records->offset)].values->dims[0].stride * (2 - records->data[((0 + (records->dims[0].stride * (1 - records->dims[0].lower_bound))) + records->offset)].values->dims[0].lower_bound))) + records->data[((0 + (records->dims[0].stride * (1 - records->dims[0].lower_bound))) + records->offset)].values->offset)] =   2.00000000000000000e+00;
+    if (fabs(records->data[((0 + (records->dims[0].stride * (1 - records->dims[0].lower_bound))) + records->offset)].values->data[((0 + (records->data[((0 + (records->dims[0].stride * (1 - records->dims[0].lower_bound))) + records->offset)].values->dims[0].stride * (2 - records->data[((0 + (records->dims[0].stride * (1 - records->dims[0].lower_bound))) + records->offset)].values->dims[0].lower_bound))) + records->data[((0 + (records->dims[0].stride * (1 - records->dims[0].lower_bound))) + records->offset)].values->offset)] -   2.00000000000000000e+00) >   9.99999997475242708e-07) {
+        fprintf(stderr, "ERROR STOP");
+        exit(1);
+    }
+    if ((records) != NULL && (records)->is_allocated && (records)->data != NULL) {
+        _lfortran_free_alloc(__lfortran_default_allocator, (char*) (records)->data);
+        (records)->data = NULL;
+    }
+    if ((records) != NULL) {
+        (records)->offset = 0;
+        (records)->is_allocated = false;
+    }
+}
+
+int main(int argc, char* argv[])
+{
+    _lpython_set_argv(argc, argv);
+    __lfortran_c_backend_struct_array_member_init_01_m__run();
+    return 0;
+}

@@ -1,0 +1,13 @@
+{
+    "basename": "c-c_backend_struct_array_member_init_01-a0a1dae",
+    "cmd": "lfortran --no-color --show-c {infile}",
+    "infile": "tests/c_backend_struct_array_member_init_01.f90",
+    "infile_hash": "1e2b2e2c7a54ec4953e4d24ea9dda9557a72e0cc87e65677940766a6",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": "c-c_backend_struct_array_member_init_01-a0a1dae.stdout",
+    "stdout_hash": "2127dd051ecde7aca3ee9d659593049a32e569c6d404a4af421f79c4",
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}
