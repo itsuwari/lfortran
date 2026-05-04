@@ -160,7 +160,8 @@ bool c_compiler_supports_lto_by_default(const CompilerOptions &compiler_options,
     std::string name = std::filesystem::path(compiler).filename().string();
     bool looks_like_gnu_gcc = name == "gcc" || LCompilers::startswith(name, "gcc-");
     if (c_is_macos_platform(compiler_options)) {
-        return LCompilers::startswith(name, "gcc-");
+        return looks_like_gnu_gcc || name == "cc" || name == "clang"
+            || LCompilers::startswith(name, "clang-");
     }
     return looks_like_gnu_gcc;
 }
@@ -172,6 +173,20 @@ std::string c_compiler_lto_flags(const CompilerOptions &compiler_options,
         return "";
     }
     return " -flto";
+}
+
+std::string c_compiler_lto_relocatable_link_flags(
+        const CompilerOptions &compiler_options, const std::string &compiler)
+{
+    if (!c_is_macos_platform(compiler_options)) {
+        return "";
+    }
+    std::string name = std::filesystem::path(compiler).filename().string();
+    if (name == "gcc" || name == "cc" || name == "clang"
+            || LCompilers::startswith(name, "clang-")) {
+        return " -Wl,-w";
+    }
+    return "";
 }
 
 std::string c_linker_dead_strip_flags(const CompilerOptions &compiler_options)
@@ -2073,7 +2088,9 @@ int compile_to_object_file_c(const std::string &infile,
         std::string combine_cmd;
         std::string lto_flags = c_compiler_lto_flags(compiler_options, CC);
         if (!optimization_flags.empty() && !lto_flags.empty()) {
-            combine_cmd = CC + lto_flags + " -r -o " + outfile;
+            combine_cmd = CC + lto_flags
+                + c_compiler_lto_relocatable_link_flags(compiler_options, CC)
+                + " -r -o " + outfile;
         } else {
             combine_cmd = "ld -r -o " + outfile;
         }
