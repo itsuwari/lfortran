@@ -1074,7 +1074,8 @@ public:
                 
                     Vec<ASR::expr_t*> dealloc_args; dealloc_args.reserve(al, 1);
                     dealloc_args.push_back(al, array_var_temporary);
-                    if (is_arg_intent_in.size() > i && is_arg_intent_in[i] &&
+                    bool is_read_only_arg = is_arg_intent_in.size() > i && is_arg_intent_in[i];
+                    if ((is_read_only_arg || pass_options.c_backend) &&
                             is_whole_dummy_array_variable(arg_expr_past_cast)) {
                         current_body->push_back(al, ASRUtils::STMT(ASR::make_Associate_t(
                             al, loc, array_var_temporary, arg_expr_past_cast)));
