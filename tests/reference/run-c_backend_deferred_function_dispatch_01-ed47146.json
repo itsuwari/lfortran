@@ -1,0 +1,13 @@
+{
+    "basename": "run-c_backend_deferred_function_dispatch_01-ed47146",
+    "cmd": "lfortran --no-color {infile}",
+    "infile": "tests/c_backend_deferred_function_dispatch_01.f90",
+    "infile_hash": "83760ca85304ae44d0a73c8bed9736a26fd550007d070729d069a837",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": "run-c_backend_deferred_function_dispatch_01-ed47146.stdout",
+    "stdout_hash": "6f0d6b4c988d571268a396171acdb15d07fea4dea07387c3f9763612",
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}
