@@ -5231,6 +5231,96 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         return true;
     }
 
+    bool try_emit_c_inline_dot_product_call(const ASR::FunctionCall_t &x,
+            ASR::Function_t *fn, const std::string &fn_name, std::string &out) {
+        if (!is_c || fn == nullptr || (x.n_args != 2 && x.n_args != 4)
+                || x.m_args[0].m_value == nullptr
+                || x.m_args[x.n_args == 4 ? 2 : 1].m_value == nullptr) {
+            return false;
+        }
+        std::string fn_internal_name = fn->m_name;
+        if (fn_internal_name.find("lcompilers_dot_product") == std::string::npos
+                && fn_name.find("lcompilers_dot_product") == std::string::npos) {
+            return false;
+        }
+
+        size_t rhs_arg_index = x.n_args == 4 ? 2 : 1;
+        ASR::expr_t *lhs = x.m_args[0].m_value;
+        ASR::expr_t *rhs = x.m_args[rhs_arg_index].m_value;
+        ASR::ttype_t *lhs_type = ASRUtils::type_get_past_allocatable_pointer(
+            ASRUtils::expr_type(lhs));
+        ASR::ttype_t *rhs_type = ASRUtils::type_get_past_allocatable_pointer(
+            ASRUtils::expr_type(rhs));
+        if (lhs_type == nullptr || rhs_type == nullptr
+                || !ASRUtils::is_array(lhs_type)
+                || !ASRUtils::is_array(rhs_type)
+                || ASRUtils::extract_n_dims_from_ttype(lhs_type) != 1
+                || ASRUtils::extract_n_dims_from_ttype(rhs_type) != 1) {
+            return false;
+        }
+        ASR::ttype_t *lhs_element_type = ASRUtils::type_get_past_allocatable_pointer(
+            ASRUtils::type_get_past_array(lhs_type));
+        ASR::ttype_t *rhs_element_type = ASRUtils::type_get_past_allocatable_pointer(
+            ASRUtils::type_get_past_array(rhs_type));
+        if (lhs_element_type == nullptr || rhs_element_type == nullptr
+                || !ASRUtils::check_equal_type(lhs_element_type, rhs_element_type,
+                    nullptr, nullptr)
+                || !(ASRUtils::is_real(*x.m_type)
+                    || ASRUtils::is_integer(*x.m_type))) {
+            return false;
+        }
+
+        std::string setup;
+        std::string index_name =
+            get_unique_local_name("__libasr_created__dot_product_i");
+        std::string lhs_item;
+        std::string rhs_item;
+        std::string lhs_length;
+        std::string rhs_length;
+        if (!get_c_rank1_array_element_expr(lhs, "__libasr_created__dot_product_lhs",
+                index_name, setup, lhs_item, lhs_length, true)
+                || lhs_length.empty()
+                || !get_c_rank1_array_element_expr(rhs,
+                    "__libasr_created__dot_product_rhs", index_name, setup,
+                    rhs_item, rhs_length, false)) {
+            return false;
+        }
+
+        std::string indent(indentation_level * indentation_spaces, ' ');
+        std::string inner_indent((indentation_level + 1) * indentation_spaces, ' ');
+        std::string result_type = CUtils::get_c_type_from_ttype_t(x.m_type);
+        std::string result_name =
+            get_unique_local_name("__libasr_created__dot_product");
+        setup += indent + result_type + " " + result_name + " = ("
+            + result_type + ")0;\n";
+        auto unrolled_sum_expr = [&](int64_t length) {
+            std::string expr;
+            for (int64_t i = 0; i < length; i++) {
+                std::string index_literal = std::to_string(i);
+                std::string term = replace_all_substrings(lhs_item, index_name,
+                    index_literal) + " * " + replace_all_substrings(rhs_item,
+                    index_name, index_literal);
+                expr += i == 0 ? term : " + " + term;
+            }
+            return expr;
+        };
+        setup += indent + "if (" + lhs_length + " == 3) {\n";
+        setup += inner_indent + result_name + " = " + unrolled_sum_expr(3) + ";\n";
+        setup += indent + "} else if (" + lhs_length + " == 6) {\n";
+        setup += inner_indent + result_name + " = " + unrolled_sum_expr(6) + ";\n";
+        setup += indent + "} else {\n";
+        setup += inner_indent + "for (int64_t " + index_name + " = 0; "
+            + index_name + " < " + lhs_length + "; " + index_name + "++) {\n";
+        setup += std::string((indentation_level + 2) * indentation_spaces, ' ')
+            + result_name + " += " + lhs_item + " * "
+            + rhs_item + ";\n";
+        setup += inner_indent + "}\n";
+        setup += indent + "}\n";
+        tmp_buffer_src.push_back(setup);
+        out = result_name;
+        return true;
+    }
+
     std::string c_binop_to_str(ASR::binopType op) {
         switch (op) {
             case ASR::binopType::Add: return " + ";
@@ -9275,6 +9365,14 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                         + "' not implemented");
             }
         } else {
+            if (is_c) {
+                std::string inline_call;
+                if (try_emit_c_inline_dot_product_call(x, fn, fn_name, inline_call)) {
+                    src = check_tmp_buffer() + inline_call;
+                    last_expr_precedence = 2;
+                    return;
+                }
+            }
             if (fn_name == "main") {
                 fn_name = "_xx_lcompilers_changed_main_xx";
             }
