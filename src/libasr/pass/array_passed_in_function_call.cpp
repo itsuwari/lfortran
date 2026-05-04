@@ -462,10 +462,14 @@ public:
         bool is_size_only_dependent_on_arguments = ASRUtils::is_dimension_dependent_only_on_arguments(
             value_m_dims, value_n_dims);
         bool is_allocatable = ASRUtils::is_allocatable(value_type);
+        ASR::ttype_t* temporary_value_type = value_type;
+        if (is_allocatable && (is_fixed_sized_array || is_size_only_dependent_on_arguments)) {
+            temporary_value_type = ASRUtils::type_get_past_allocatable(value_type);
+        }
         ASR::ttype_t* var_type = nullptr;
         if( (is_fixed_sized_array || is_size_only_dependent_on_arguments || is_allocatable) &&
             !is_pointer_required ) {
-            var_type = value_type;
+            var_type = temporary_value_type;
         } else {
             var_type = ASRUtils::create_array_type_with_empty_dims(al, value_n_dims, value_type);
             var_type = ASRUtils::TYPE(ASR::make_Pointer_t(al, var_type->base.loc, var_type));

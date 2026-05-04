@@ -394,6 +394,10 @@ ASR::expr_t* create_temporary_variable_for_array(Allocator& al,
     bool is_size_only_dependent_on_arguments = ASRUtils::is_dimension_dependent_only_on_arguments(
         value_m_dims, value_n_dims);
     bool is_allocatable = ASRUtils::is_allocatable(value_type);
+    ASR::ttype_t* temporary_value_type = value_type;
+    if (is_allocatable && (is_fixed_sized_array || is_size_only_dependent_on_arguments)) {
+        temporary_value_type = ASRUtils::type_get_past_allocatable(value_type);
+    }
     // Only preserve pointer type for function calls returning pointers.
     // For Var expressions (e.g., pass-generated _array_section_pointer_),
     // we need an allocatable deep-copy temporary, not a pointer alias.
@@ -404,10 +408,10 @@ ASR::expr_t* create_temporary_variable_for_array(Allocator& al,
     if( (is_fixed_sized_array || is_size_only_dependent_on_arguments || is_allocatable || is_pointer_func) &&
         !is_pointer_required ) {
         if( is_fixed_sized_array && override_physical_type ) {
-            value_type = ASRUtils::duplicate_type(al, value_type, nullptr,
+            temporary_value_type = ASRUtils::duplicate_type(al, temporary_value_type, nullptr,
                 ASR::array_physical_typeType::FixedSizeArray, true);
         }
-        var_type = value_type;
+        var_type = temporary_value_type;
         // DeferredLength string variables must be allocatable or pointer.
         // When the element type is a DeferredLength string, wrap with Allocatable.
         ASR::ttype_t* elem_type = ASRUtils::type_get_past_array(
