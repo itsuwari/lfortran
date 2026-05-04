@@ -432,6 +432,64 @@ public:
         current_function_local_structs.push_back({target, struct_t});
     }
 
+    ASR::Variable_t *get_c_component_cache_root_var(ASR::expr_t *expr) {
+        if (expr == nullptr) {
+            return nullptr;
+        }
+        switch (expr->type) {
+            case ASR::exprType::Var: {
+                ASR::symbol_t *sym = ASRUtils::symbol_get_past_external(
+                    ASR::down_cast<ASR::Var_t>(expr)->m_v);
+                if (sym != nullptr && ASR::is_a<ASR::Variable_t>(*sym)) {
+                    return ASR::down_cast<ASR::Variable_t>(sym);
+                }
+                return nullptr;
+            }
+            case ASR::exprType::StructInstanceMember:
+                return get_c_component_cache_root_var(
+                    ASR::down_cast<ASR::StructInstanceMember_t>(expr)->m_v);
+            case ASR::exprType::ArrayPhysicalCast:
+                return get_c_component_cache_root_var(
+                    ASR::down_cast<ASR::ArrayPhysicalCast_t>(expr)->m_arg);
+            case ASR::exprType::GetPointer:
+                return get_c_component_cache_root_var(
+                    ASR::down_cast<ASR::GetPointer_t>(expr)->m_arg);
+            case ASR::exprType::Cast:
+                return get_c_component_cache_root_var(
+                    ASR::down_cast<ASR::Cast_t>(expr)->m_arg);
+            default:
+                return nullptr;
+        }
+    }
+
+    bool is_c_intent_in_component_array_cache_candidate(
+            const ASR::StructInstanceMember_t &x) {
+        if (!is_c || !ASRUtils::is_array(x.m_type)) {
+            return false;
+        }
+        ASR::symbol_t *member_sym = ASRUtils::symbol_get_past_external(x.m_m);
+        if (member_sym == nullptr || !ASR::is_a<ASR::Variable_t>(*member_sym)) {
+            return false;
+        }
+        ASR::Variable_t *member_var = ASR::down_cast<ASR::Variable_t>(member_sym);
+        if (!ASRUtils::is_array(member_var->m_type)
+                || ASRUtils::is_pointer(member_var->m_type)
+                || !is_c_scalarizable_element_type(member_var->m_type)) {
+            return false;
+        }
+        ASR::ttype_t *array_type = ASRUtils::type_get_past_allocatable_pointer(
+            member_var->m_type);
+        if (array_type == nullptr || !ASR::is_a<ASR::Array_t>(*array_type)) {
+            return false;
+        }
+        ASR::Array_t *array = ASR::down_cast<ASR::Array_t>(array_type);
+        if (array->m_physical_type == ASR::array_physical_typeType::FixedSizeArray) {
+            return false;
+        }
+        ASR::Variable_t *root_var = get_c_component_cache_root_var(x.m_v);
+        return root_var != nullptr && root_var->m_intent == ASRUtils::intent_in;
+    }
+
     std::string emit_current_function_array_descriptor_cache_decls(
             const ASR::Function_t &x, const std::string &indent) {
         current_function_array_descriptor_cache.clear();
@@ -445,7 +503,7 @@ public:
         std::string decl;
         auto emit_cache_for_array_expr = [&](const std::string &array_expr,
                 const std::string &cache_name_base, int n_dims,
-                ASR::ttype_t *array_type) {
+                ASR::ttype_t *array_type, bool use_restrict=true) {
             if (n_dims <= 0
                     || current_function_array_descriptor_cache.find(array_expr)
                         != current_function_array_descriptor_cache.end()) {
@@ -456,7 +514,7 @@ public:
                 cache.data = get_unique_local_name(
                     "__lfortran_" + cache_name_base + "_data");
                 decl += indent + CUtils::get_c_array_element_type_from_ttype_t(array_type)
-                    + " * restrict " + cache.data + " = "
+                    + " *" + (use_restrict ? " restrict " : " ") + cache.data + " = "
                     + array_expr + "->data;\n";
             }
             cache.offset = get_unique_local_name(
@@ -500,6 +558,37 @@ public:
                 emit_cache_for_array_expr(arg_name, arg_name, n_dims, arg_var->m_type);
             }
         }
+        struct IntentInComponentArrayCollector:
+                public ASR::BaseWalkVisitor<IntentInComponentArrayCollector> {
+            BaseCCPPVisitor<StructType> &parent;
+            std::vector<ASR::StructInstanceMember_t*> members;
+            std::set<ASR::StructInstanceMember_t*> seen;
+            IntentInComponentArrayCollector(BaseCCPPVisitor<StructType> &parent):
+                parent(parent) {}
+            void visit_StructInstanceMember(const ASR::StructInstanceMember_t &x) {
+                if (parent.is_c_intent_in_component_array_cache_candidate(x)
+                        && seen.insert(const_cast<ASR::StructInstanceMember_t*>(&x)).second) {
+                    members.push_back(const_cast<ASR::StructInstanceMember_t*>(&x));
+                }
+                ASR::BaseWalkVisitor<IntentInComponentArrayCollector>::
+                    visit_StructInstanceMember(x);
+            }
+        };
+        IntentInComponentArrayCollector collector(*this);
+        for (size_t i = 0; i < x.n_body; i++) {
+            collector.visit_stmt(*x.m_body[i]);
+        }
+        std::string saved_src = src;
+        for (ASR::StructInstanceMember_t *member: collector.members) {
+            src.clear();
+            std::string array_expr = get_struct_instance_member_expr(*member, true);
+            std::string cache_name_base = "component_array_"
+                + std::to_string(current_function_array_descriptor_cache.size());
+            ASR::dimension_t *dims = nullptr;
+            int n_dims = ASRUtils::extract_dimensions_from_ttype(member->m_type, dims);
+            emit_cache_for_array_expr(array_expr, cache_name_base, n_dims, member->m_type, false);
+        }
+        src = saved_src;
         return decl;
     }
 

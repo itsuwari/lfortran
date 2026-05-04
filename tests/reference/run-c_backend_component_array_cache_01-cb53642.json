@@ -1,0 +1,13 @@
+{
+    "basename": "run-c_backend_component_array_cache_01-cb53642",
+    "cmd": "lfortran --no-color {infile}",
+    "infile": "tests/c_backend_component_array_cache_01.f90",
+    "infile_hash": "f8536cc31cc793dff55fbc55c6f21f58fe172b5a3e0436538d9c194f",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": "run-c_backend_component_array_cache_01-cb53642.stdout",
+    "stdout_hash": "d4bba2893223bd409d5b0c11c1fa24a040ce5a8e85a47ba8ccc5310c",
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}
