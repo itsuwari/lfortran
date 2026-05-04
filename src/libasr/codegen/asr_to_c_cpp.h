@@ -13036,6 +13036,48 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 + indent + "    " + target + " = NULL;\n"
                 + indent + "}\n";
         }
+        if (target_value_type != nullptr
+                && ASRUtils::is_allocatable(ASRUtils::expr_type(expr))
+                && !ASRUtils::is_array(ASRUtils::expr_type(expr))
+                && ASR::is_a<ASR::StructType_t>(*target_value_type)) {
+            if (current_function != nullptr
+                    && std::string(current_function->m_name).rfind(
+                        "_lcompilers_move_alloc_", 0) == 0) {
+                return indent + "if ((" + target + ") != NULL) {\n"
+                    + indent + "    " + target + " = NULL;\n"
+                    + indent + "}\n";
+            }
+            ASR::symbol_t *struct_sym = nullptr;
+            ASR::expr_t *unwrapped_expr = unwrap_c_lvalue_expr(expr);
+            if (unwrapped_expr && ASR::is_a<ASR::Var_t>(*unwrapped_expr)) {
+                ASR::symbol_t *sym = ASRUtils::symbol_get_past_external(
+                    ASR::down_cast<ASR::Var_t>(unwrapped_expr)->m_v);
+                if (ASR::is_a<ASR::Variable_t>(*sym)) {
+                    struct_sym = ASR::down_cast<ASR::Variable_t>(sym)->m_type_declaration;
+                }
+            } else if (unwrapped_expr
+                    && ASR::is_a<ASR::StructInstanceMember_t>(*unwrapped_expr)) {
+                ASR::StructInstanceMember_t *member_expr =
+                    ASR::down_cast<ASR::StructInstanceMember_t>(unwrapped_expr);
+                ASR::symbol_t *member_sym =
+                    ASRUtils::symbol_get_past_external(member_expr->m_m);
+                if (ASR::is_a<ASR::Variable_t>(*member_sym)) {
+                    struct_sym = ASR::down_cast<ASR::Variable_t>(
+                        member_sym)->m_type_declaration;
+                }
+            }
+            if (struct_sym == nullptr) {
+                struct_sym = ASRUtils::get_struct_sym_from_struct_expr(expr);
+            }
+            if (struct_sym != nullptr) {
+                struct_sym = ASRUtils::symbol_get_past_external(struct_sym);
+            }
+            if (struct_sym != nullptr && ASR::is_a<ASR::Struct_t>(*struct_sym)) {
+                return emit_c_scalar_allocatable_struct_cleanup(
+                    ASR::down_cast<ASR::Struct_t>(struct_sym), indent, target,
+                    ASRUtils::is_class_type(target_value_type));
+            }
+        }
         return indent + "if ((" + target + ") != NULL) {\n"
             + indent + "    " + target + " = NULL;\n"
             + indent + "}\n";

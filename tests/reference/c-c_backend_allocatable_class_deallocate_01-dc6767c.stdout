@@ -1,0 +1,119 @@
+#include <inttypes.h>
+
+#include <stdlib.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <string.h>
+#include <lfortran_intrinsics.h>
+
+
+#ifndef LFORTRAN_C_BACKEND_CONSTRUCTOR
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_CONSTRUCTOR __attribute__((constructor))
+#else
+#define LFORTRAN_C_BACKEND_CONSTRUCTOR
+#endif
+#endif
+#ifndef LFORTRAN_C_BACKEND_WEAK
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_WEAK __attribute__((weak))
+#else
+#define LFORTRAN_C_BACKEND_WEAK static
+#endif
+#endif
+
+
+struct dimension_descriptor
+{
+    int32_t lower_bound, length, stride;
+};
+struct __lfortran_runtime_type_header
+{
+    int64_t __lfortran_type_tag;
+};
+
+struct i32___
+{
+    int32_t *data;
+    struct dimension_descriptor dims[32];
+    int32_t n_dims;
+    int32_t offset;
+    bool is_allocated;
+};
+
+struct c_backend_allocatable_class_deallocate_01_m__record_type {
+ int64_t __lfortran_type_tag;
+ struct i32___* values;
+};
+
+void __lfortran_c_backend_allocatable_class_deallocate_01_m__run();
+
+
+
+
+// Implementations
+void __lfortran_c_backend_allocatable_class_deallocate_01_m__run()
+{
+    lfortran_allocator_t* __lfortran_default_allocator = _lfortran_get_default_allocator();
+    struct c_backend_allocatable_class_deallocate_01_m__record_type* item = NULL;
+    item = (struct c_backend_allocatable_class_deallocate_01_m__record_type*) _lfortran_malloc_alloc(__lfortran_default_allocator, sizeof(struct c_backend_allocatable_class_deallocate_01_m__record_type));
+    memset(item, 0, sizeof(struct c_backend_allocatable_class_deallocate_01_m__record_type));
+    struct i32___* struct_member_values_0;
+    struct_member_values_0 = _lfortran_malloc_alloc(__lfortran_default_allocator, sizeof(*struct_member_values_0));
+    memset(struct_member_values_0, 0, sizeof(*struct_member_values_0));
+    ((struct c_backend_allocatable_class_deallocate_01_m__record_type*)(item))->values = struct_member_values_0;
+    item->__lfortran_type_tag = 2276338243294138762;
+    item->values->n_dims = 1;
+    item->values->dims[0].lower_bound = 1;
+    item->values->dims[0].length = 3;
+    item->values->dims[0].stride = 1;
+    item->values->offset = 0;
+    item->values->data = (int32_t*) _lfortran_malloc_alloc(__lfortran_default_allocator, 1*item->values->dims[0].length*sizeof(int32_t));
+    item->values->is_allocated = true;
+    item->values->data[((0 + (item->values->dims[0].stride * (1 - item->values->dims[0].lower_bound))) + item->values->offset)] = 1;
+    item->values->data[((0 + (item->values->dims[0].stride * (2 - item->values->dims[0].lower_bound))) + item->values->offset)] = 2;
+    item->values->data[((0 + (item->values->dims[0].stride * (3 - item->values->dims[0].lower_bound))) + item->values->offset)] = 3;
+    if (item->values->data[((0 + (item->values->dims[0].stride * (3 - item->values->dims[0].lower_bound))) + item->values->offset)] != 3) {
+        fprintf(stderr, "ERROR STOP");
+        exit(1);
+    }
+    if ((item) != NULL) {
+        if (((struct __lfortran_runtime_type_header*)(item))->__lfortran_type_tag == 2276338243294138762) {
+            if ((((struct c_backend_allocatable_class_deallocate_01_m__record_type*)(item))->values) != NULL && (((struct c_backend_allocatable_class_deallocate_01_m__record_type*)(item))->values)->is_allocated && (((struct c_backend_allocatable_class_deallocate_01_m__record_type*)(item))->values)->data != NULL) {
+                _lfortran_free_alloc(__lfortran_default_allocator, (char*) (((struct c_backend_allocatable_class_deallocate_01_m__record_type*)(item))->values)->data);
+                (((struct c_backend_allocatable_class_deallocate_01_m__record_type*)(item))->values)->data = NULL;
+            }
+            if ((((struct c_backend_allocatable_class_deallocate_01_m__record_type*)(item))->values) != NULL) {
+                (((struct c_backend_allocatable_class_deallocate_01_m__record_type*)(item))->values)->offset = 0;
+                (((struct c_backend_allocatable_class_deallocate_01_m__record_type*)(item))->values)->is_allocated = false;
+                _lfortran_free_alloc(__lfortran_default_allocator, (char*) ((struct c_backend_allocatable_class_deallocate_01_m__record_type*)(item))->values);
+                ((struct c_backend_allocatable_class_deallocate_01_m__record_type*)(item))->values = NULL;
+            }
+        }
+        _lfortran_free_alloc(__lfortran_default_allocator, (char*) item);
+        item = NULL;
+    }
+    if ((item) != NULL) {
+        if (((struct __lfortran_runtime_type_header*)(item))->__lfortran_type_tag == 2276338243294138762) {
+            if ((((struct c_backend_allocatable_class_deallocate_01_m__record_type*)(item))->values) != NULL && (((struct c_backend_allocatable_class_deallocate_01_m__record_type*)(item))->values)->is_allocated && (((struct c_backend_allocatable_class_deallocate_01_m__record_type*)(item))->values)->data != NULL) {
+                _lfortran_free_alloc(__lfortran_default_allocator, (char*) (((struct c_backend_allocatable_class_deallocate_01_m__record_type*)(item))->values)->data);
+                (((struct c_backend_allocatable_class_deallocate_01_m__record_type*)(item))->values)->data = NULL;
+            }
+            if ((((struct c_backend_allocatable_class_deallocate_01_m__record_type*)(item))->values) != NULL) {
+                (((struct c_backend_allocatable_class_deallocate_01_m__record_type*)(item))->values)->offset = 0;
+                (((struct c_backend_allocatable_class_deallocate_01_m__record_type*)(item))->values)->is_allocated = false;
+                _lfortran_free_alloc(__lfortran_default_allocator, (char*) ((struct c_backend_allocatable_class_deallocate_01_m__record_type*)(item))->values);
+                ((struct c_backend_allocatable_class_deallocate_01_m__record_type*)(item))->values = NULL;
+            }
+        }
+        _lfortran_free_alloc(__lfortran_default_allocator, (char*) item);
+        item = NULL;
+    }
+}
+
+int main(int argc, char* argv[])
+{
+    _lpython_set_argv(argc, argv);
+    __lfortran_c_backend_allocatable_class_deallocate_01_m__run();
+    return 0;
+}
