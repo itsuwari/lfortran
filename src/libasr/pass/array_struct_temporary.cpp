@@ -1725,7 +1725,7 @@ static bool is_c_projected_array_section_expr(ASR::expr_t *expr) {
     int result_rank = expr == nullptr ? 0 :
         ASRUtils::extract_n_dims_from_ttype(ASRUtils::expr_type(expr));
     if (expr == nullptr || !ASRUtils::is_array(ASRUtils::expr_type(expr))
-            || result_rank < 2 || result_rank > 3
+            || result_rank < 1 || result_rank > 3
             || !ASR::is_a<ASR::ArraySection_t>(*expr)) {
         return false;
     }
