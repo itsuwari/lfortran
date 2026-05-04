@@ -1720,11 +1720,12 @@ bool rhs_common_refs_match_lhs_ref(Allocator &al, ASR::expr_t* lhs_ref, ASR::exp
     return saw_common_ref;
 }
 
-static bool is_c_rank2_projected_array_section_expr(ASR::expr_t *expr) {
+static bool is_c_projected_array_section_expr(ASR::expr_t *expr) {
     expr = ASRUtils::get_past_array_physical_cast(expr);
+    int result_rank = expr == nullptr ? 0 :
+        ASRUtils::extract_n_dims_from_ttype(ASRUtils::expr_type(expr));
     if (expr == nullptr || !ASRUtils::is_array(ASRUtils::expr_type(expr))
-            || ASRUtils::extract_n_dims_from_ttype(
-                ASRUtils::expr_type(expr)) != 2
+            || result_rank < 2 || result_rank > 3
             || !ASR::is_a<ASR::ArraySection_t>(*expr)) {
         return false;
     }
@@ -1740,16 +1741,16 @@ static bool is_c_rank2_projected_array_section_expr(ASR::expr_t *expr) {
             return false;
         }
     }
-    return slice_dims == 2 && scalar_dims > 0;
+    return slice_dims == static_cast<size_t>(result_rank) && scalar_dims > 0;
 }
 
-static bool c_rank2_projected_ref_has_same_base_and_shape(
+static bool c_projected_ref_has_same_base_and_shape(
         ASR::expr_t *target, ASR::expr_t *expr) {
     target = ASRUtils::get_past_array_physical_cast(target);
     expr = ASRUtils::get_past_array_physical_cast(expr);
     if (target == nullptr || expr == nullptr
-            || !is_c_rank2_projected_array_section_expr(target)
-            || !is_c_rank2_projected_array_section_expr(expr)) {
+            || !is_c_projected_array_section_expr(target)
+            || !is_c_projected_array_section_expr(expr)) {
         return false;
     }
     ASR::ArraySection_t *target_section = ASR::down_cast<ASR::ArraySection_t>(target);
@@ -1771,9 +1772,9 @@ static bool c_rank2_projected_ref_has_same_base_and_shape(
     return true;
 }
 
-static bool rhs_refs_are_c_rank2_projected_same_base(Allocator &al,
+static bool rhs_refs_are_c_projected_same_base(Allocator &al,
         ASR::expr_t* lhs_ref, ASR::expr_t* rhs) {
-    if (!is_c_rank2_projected_array_section_expr(lhs_ref)) {
+    if (!is_c_projected_array_section_expr(lhs_ref)) {
         return false;
     }
     ASR::symbol_t* lhs_sym = extract_symbol(lhs_ref);
@@ -1790,7 +1791,7 @@ static bool rhs_refs_are_c_rank2_projected_same_base(Allocator &al,
             continue;
         }
         if (extract_symbol(rhs_vars[i]) != lhs_sym
-                || !c_rank2_projected_ref_has_same_base_and_shape(lhs_ref, rhs_vars[i])) {
+                || !c_projected_ref_has_same_base_and_shape(lhs_ref, rhs_vars[i])) {
             return false;
         }
         saw_common_ref = true;
@@ -2362,7 +2363,7 @@ class ArgSimplifier: public ASR::CallReplacerOnExpressionsVisitor<ArgSimplifier>
             && lhs_array_var != nullptr
             && ASRUtils::is_array(ASRUtils::expr_type(x.m_value))
             && is_c_elementwise_array_expr(x.m_value)
-            && rhs_refs_are_c_rank2_projected_same_base(al, x.m_target, x.m_value);
+            && rhs_refs_are_c_projected_same_base(al, x.m_target, x.m_value);
         lhs_var = lhs_array_var;
         ASR::CallReplacerOnExpressionsVisitor<ArgSimplifier>::visit_Assignment(x);
         lhs_var = nullptr;
@@ -2479,7 +2480,7 @@ class ArgSimplifier: public ASR::CallReplacerOnExpressionsVisitor<ArgSimplifier>
         }
         if (c_backend
                 && c_elementwise_projected_self_assignment
-                && is_c_rank2_projected_array_section_expr(expr)) {
+                && is_c_projected_array_section_expr(expr)) {
             return expr;
         }
         if (ASRUtils::is_array(ASRUtils::expr_type(expr)) &&
@@ -3188,7 +3189,7 @@ class ReplaceExprWithTemporary: public ASR::BaseExprReplacer<ReplaceExprWithTemp
             && same_array_reference(lhs_expr, *current_expr);
         if (c_backend
                 && c_elementwise_projected_self_assignment
-                && is_c_rank2_projected_array_section_expr(*current_expr)
+                && is_c_projected_array_section_expr(*current_expr)
                 && exprs_with_target.find(*current_expr) == exprs_with_target.end()) {
             generate_associate_for_array_section(current_expr, al, loc, current_scope, current_body);
             return;
@@ -3683,7 +3684,7 @@ class ReplaceExprWithTemporaryVisitor:
             && lhs_array_var != nullptr
             && ASRUtils::is_array(ASRUtils::expr_type(x.m_value))
             && is_c_elementwise_array_expr(x.m_value)
-            && rhs_refs_are_c_rank2_projected_same_base(al, original_lhs_expr, x.m_value);
+            && rhs_refs_are_c_projected_same_base(al, original_lhs_expr, x.m_value);
         bool target_has_array_indices =
             ASRUtils::is_array_indexed_with_array_indices(m_args, n_args);
         bool c_elementwise_nonalias_vector_target = c_backend
