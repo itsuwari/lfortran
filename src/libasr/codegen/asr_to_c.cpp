@@ -1839,6 +1839,23 @@ R"(
                     sub += " = {0}";
                 }
             }
+            if (!is_pointer
+                    && var != nullptr
+                    && is_c_compiler_generated_temporary_name(std::string(var->m_name))
+                    && !is_fixed_size
+                    && dims.empty()
+                    && dynamic_stack_size_expr.empty()
+                    && get_variable_init_expr_raw(*var) == nullptr) {
+                sub += ";\n";
+                sub += indent + format_type_c("", type_name, v_m_name, use_ref, dummy);
+                sub += " = &" + variable_name + ";\n";
+                sub += indent + std::string(v_m_name) + "->data = NULL;\n";
+                sub += indent + std::string(v_m_name) + "->n_dims = "
+                    + std::to_string(n_dims) + ";\n";
+                sub += indent + std::string(v_m_name) + "->offset = 0;\n";
+                sub += indent + std::string(v_m_name) + "->is_allocated = false";
+                return;
+            }
             sub += ";\n";
             sub += indent + format_type_c("", type_name, v_m_name, use_ref, dummy);
             sub += " = &" + variable_name;

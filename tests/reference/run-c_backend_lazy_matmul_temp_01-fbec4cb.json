@@ -1,0 +1,13 @@
+{
+    "basename": "run-c_backend_lazy_matmul_temp_01-fbec4cb",
+    "cmd": "lfortran --no-color {infile}",
+    "infile": "tests/c_backend_lazy_matmul_temp_01.f90",
+    "infile_hash": "67fef92a8af5d1cbe0b97424981416736d770b63758ec56583b72a46",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}
