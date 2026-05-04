@@ -1,0 +1,120 @@
+#include <math.h>
+#include <string.h>
+
+#include <stdlib.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <string.h>
+#include <lfortran_intrinsics.h>
+
+
+#ifndef LFORTRAN_C_BACKEND_CONSTRUCTOR
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_CONSTRUCTOR __attribute__((constructor))
+#else
+#define LFORTRAN_C_BACKEND_CONSTRUCTOR
+#endif
+#endif
+#ifndef LFORTRAN_C_BACKEND_WEAK
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_WEAK __attribute__((weak))
+#else
+#define LFORTRAN_C_BACKEND_WEAK static
+#endif
+#endif
+
+
+struct dimension_descriptor
+{
+    int32_t lower_bound, length, stride;
+};
+
+struct r32___
+{
+    float *data;
+    struct dimension_descriptor dims[32];
+    int32_t n_dims;
+    int32_t offset;
+    bool is_allocated;
+};
+
+
+struct r32_____
+{
+    float *data;
+    struct dimension_descriptor dims[32];
+    int32_t n_dims;
+    int32_t offset;
+    bool is_allocated;
+};
+
+struct c_backend_struct_scalar_member_init_01_m__record_type {
+ int64_t __lfortran_type_tag;
+ char * label;
+ struct r32___* values;
+ struct r32_____* matrix;
+};
+
+void __lfortran_c_backend_struct_scalar_member_init_01_m__run();
+
+
+
+
+// Implementations
+void __lfortran_c_backend_struct_scalar_member_init_01_m__run()
+{
+    lfortran_allocator_t* __lfortran_default_allocator = _lfortran_get_default_allocator();
+    struct c_backend_struct_scalar_member_init_01_m__record_type record_value;
+    memset(&record_value, 0, sizeof(record_value));
+    record_value.__lfortran_type_tag = 3734091061174572910;
+    (&(record_value))->label = NULL;
+    struct r32___* struct_member_values_0;
+    struct_member_values_0 = _lfortran_malloc_alloc(__lfortran_default_allocator, sizeof(*struct_member_values_0));
+    memset(struct_member_values_0, 0, sizeof(*struct_member_values_0));
+    (&(record_value))->values = struct_member_values_0;
+    struct r32_____* struct_member_matrix_1;
+    struct_member_matrix_1 = _lfortran_malloc_alloc(__lfortran_default_allocator, sizeof(*struct_member_matrix_1));
+    memset(struct_member_matrix_1, 0, sizeof(*struct_member_matrix_1));
+    (&(record_value))->matrix = struct_member_matrix_1;
+    struct c_backend_struct_scalar_member_init_01_m__record_type* record = &record_value;
+    record->values->n_dims = 1;
+    record->values->dims[0].lower_bound = 1;
+    record->values->dims[0].length = 2;
+    record->values->dims[0].stride = 1;
+    record->values->offset = 0;
+    record->values->data = (float*) _lfortran_malloc_alloc(__lfortran_default_allocator, 1*record->values->dims[0].length*sizeof(float));
+    record->values->is_allocated = true;
+    record->values->data[((0 + (record->values->dims[0].stride * (1 - record->values->dims[0].lower_bound))) + record->values->offset)] =   1.00000000000000000e+00;
+    record->values->data[((0 + (record->values->dims[0].stride * (2 - record->values->dims[0].lower_bound))) + record->values->offset)] =   2.00000000000000000e+00;
+    if (fabs(record->values->data[((0 + (record->values->dims[0].stride * (2 - record->values->dims[0].lower_bound))) + record->values->offset)] -   2.00000000000000000e+00) >   9.99999997475242708e-07) {
+        fprintf(stderr, "ERROR STOP");
+        exit(1);
+    }
+    if (((&(record_value))->values) != NULL && ((&(record_value))->values)->is_allocated && ((&(record_value))->values)->data != NULL) {
+        _lfortran_free_alloc(__lfortran_default_allocator, (char*) ((&(record_value))->values)->data);
+        ((&(record_value))->values)->data = NULL;
+    }
+    if (((&(record_value))->values) != NULL) {
+        ((&(record_value))->values)->offset = 0;
+        ((&(record_value))->values)->is_allocated = false;
+        _lfortran_free_alloc(__lfortran_default_allocator, (char*) (&(record_value))->values);
+        (&(record_value))->values = NULL;
+    }
+    if (((&(record_value))->matrix) != NULL && ((&(record_value))->matrix)->is_allocated && ((&(record_value))->matrix)->data != NULL) {
+        _lfortran_free_alloc(__lfortran_default_allocator, (char*) ((&(record_value))->matrix)->data);
+        ((&(record_value))->matrix)->data = NULL;
+    }
+    if (((&(record_value))->matrix) != NULL) {
+        ((&(record_value))->matrix)->offset = 0;
+        ((&(record_value))->matrix)->is_allocated = false;
+        _lfortran_free_alloc(__lfortran_default_allocator, (char*) (&(record_value))->matrix);
+        (&(record_value))->matrix = NULL;
+    }
+}
+
+int main(int argc, char* argv[])
+{
+    _lpython_set_argv(argc, argv);
+    __lfortran_c_backend_struct_scalar_member_init_01_m__run();
+    return 0;
+}

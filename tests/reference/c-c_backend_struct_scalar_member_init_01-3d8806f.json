@@ -1,0 +1,13 @@
+{
+    "basename": "c-c_backend_struct_scalar_member_init_01-3d8806f",
+    "cmd": "lfortran --no-color --show-c {infile}",
+    "infile": "tests/c_backend_struct_scalar_member_init_01.f90",
+    "infile_hash": "f1d34fc6a40e7a6f7f23fbabe5f85bac7325876aeef37d65bbf9e2ca",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": "c-c_backend_struct_scalar_member_init_01-3d8806f.stdout",
+    "stdout_hash": "8edf23c8e2401663de27744ffadfaafce98f3e17a8d9b641d5c1236e",
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

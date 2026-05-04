@@ -3328,10 +3328,13 @@ R"(
                         sub += " = " + value_var_name;
                     } else {
                         emitted_pointer_backed_struct_names.insert(decl_name);
-                        sub += " = &" + value_var_name + ";\n";
-                        allocate_array_members_of_struct(der_type_t, sub, indent, decl_name);
-                        sub.pop_back();
-                        sub.pop_back();
+                        sub += " = &" + value_var_name;
+                        if (has_decl_init) {
+                            sub += ";\n";
+                            allocate_array_members_of_struct(der_type_t, sub, indent, decl_name);
+                            sub.pop_back();
+                            sub.pop_back();
+                        }
                     }
                     return sub;
                 } else {
