@@ -92,6 +92,8 @@ LFORTRAN_API lfortran_allocator_t* _lfortran_get_compiler_mem_dbg_allocator(void
 LFORTRAN_API void _lfortran_register_c_type_parent(int64_t type_id, int64_t parent_type_id);
 LFORTRAN_API void _lfortran_register_c_tbp_impl(const char* method_name, int64_t type_id,
         lfortran_c_tbp_func_ptr func);
+LFORTRAN_API lfortran_c_tbp_func_ptr _lfortran_get_c_tbp_impl_by_hash(
+        const char* method_name, uint64_t method_hash, int64_t type_id);
 LFORTRAN_API lfortran_c_tbp_func_ptr _lfortran_get_c_tbp_impl(const char* method_name,
         int64_t type_id);
 

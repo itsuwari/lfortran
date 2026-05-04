@@ -167,9 +167,8 @@ LFORTRAN_API void _lfortran_register_c_tbp_impl(const char* method_name, int64_t
     lfortran_c_tbp_registry[bucket] = entry;
 }
 
-LFORTRAN_API lfortran_c_tbp_func_ptr _lfortran_get_c_tbp_impl(const char* method_name,
-        int64_t type_id) {
-    uint64_t method_hash = lfortran_hash_c_string(method_name);
+LFORTRAN_API lfortran_c_tbp_func_ptr _lfortran_get_c_tbp_impl_by_hash(
+        const char* method_name, uint64_t method_hash, int64_t type_id) {
     while (type_id != 0) {
         LFortranCTbpEntry *entry = lfortran_find_c_tbp_entry(
             method_name, method_hash, type_id);
@@ -183,6 +182,12 @@ LFORTRAN_API lfortran_c_tbp_func_ptr _lfortran_get_c_tbp_impl(const char* method
         type_id = parent_entry->parent_type_id;
     }
     return NULL;
+}
+
+LFORTRAN_API lfortran_c_tbp_func_ptr _lfortran_get_c_tbp_impl(const char* method_name,
+        int64_t type_id) {
+    return _lfortran_get_c_tbp_impl_by_hash(
+        method_name, lfortran_hash_c_string(method_name), type_id);
 }
 
 /* ----------------------------------------------------- */

@@ -9147,6 +9147,8 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         }
         call_expr += ")";
         std::string method_name = escape_c_string_literal(std::string(base_method->m_name));
+        std::string method_hash = "UINT64_C("
+            + std::to_string(get_stable_string_hash(std::string(base_method->m_name))) + ")";
         std::string error_stmt = "fprintf(stderr, \"Deferred type-bound dispatch failed for "
             + CUtils::sanitize_c_identifier(base_method->m_name)
             + "\\n\");\n" + get_current_indent() + "exit(1);\n";
@@ -9157,7 +9159,8 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             std::string indent = get_current_indent();
             out = force_link_src
                 + indent + "lfortran_c_tbp_func_ptr " + lookup_var
-                + " = _lfortran_get_c_tbp_impl(\"" + method_name + "\", "
+                + " = _lfortran_get_c_tbp_impl_by_hash(\"" + method_name + "\", "
+                + method_hash + ", "
                 + runtime_tag_expr + ");\n"
                 + indent + "if (!" + lookup_var + ") {\n"
                 + indent + "    " + error_stmt
@@ -9176,8 +9179,8 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             return false;
         }
         ASR::Variable_t *ret_var = ASRUtils::EXPR2VAR(iface_fn->m_return_var);
-        std::string lookup_call = "_lfortran_get_c_tbp_impl(\"" + method_name + "\", "
-            + runtime_tag_expr + ")";
+        std::string lookup_call = "_lfortran_get_c_tbp_impl_by_hash(\"" + method_name
+            + "\", " + method_hash + ", " + runtime_tag_expr + ")";
         out = tail_setup + "(" + lookup_call + " ? ((" + wrapper_type + ")" + lookup_call + ")("
             + dispatch_self;
         if (!tail_args.empty()) {
