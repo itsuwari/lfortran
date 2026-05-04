@@ -136,6 +136,27 @@ std::string c_compiler_optimization_flags(const std::vector<std::string> &O_flag
     return flags;
 }
 
+std::string c_compiler_section_flags(const CompilerOptions &compiler_options)
+{
+    if (compiler_options.platform == LCompilers::Platform::Windows) {
+        return "";
+    }
+    return " -ffunction-sections -fdata-sections";
+}
+
+std::string c_linker_dead_strip_flags(const CompilerOptions &compiler_options)
+{
+    if (compiler_options.platform == LCompilers::Platform::macOS_Intel
+            || compiler_options.platform == LCompilers::Platform::macOS_ARM
+            || compiler_options.platform == LCompilers::Platform::macOS_PowerPC) {
+        return " -Wl,-dead_strip";
+    }
+    if (compiler_options.platform == LCompilers::Platform::Windows) {
+        return "";
+    }
+    return " -Wl,--gc-sections";
+}
+
 bool write_file_atomically(const std::filesystem::path &fullpath,
         const std::string &contents, bool binary=false)
 {
@@ -1958,6 +1979,7 @@ int compile_to_object_file_c(const std::string &infile,
             // Fortran math intrinsics do not expose C errno semantics; allowing
             // the C compiler to ignore errno matches gfortran's lowering better.
             optimization_flags += " -fno-math-errno";
+            optimization_flags += c_compiler_section_flags(compiler_options);
         }
         std::vector<std::string> object_files;
         object_files.reserve(split_result.result.source_files.size());
@@ -2413,7 +2435,8 @@ int link_executable(const std::vector<std::string> &infiles,
         }
 #endif
     } else if (backend == Backend::c) {
-        std::string CXX = "gcc";
+        const char *cc_env = std::getenv("CC");
+        std::string CXX = (cc_env != nullptr && cc_env[0] != '\0') ? cc_env : "gcc";
         std::string cmd = CXX + " -o " + outfile + " ";
         std::string base_path = "\"" + runtime_library_dir + "\"";
         std::string raw_base_path = runtime_library_dir;
@@ -2440,6 +2463,7 @@ int link_executable(const std::vector<std::string> &infiles,
         if (!c_backend_linker_flags.empty()) {
             cmd += c_backend_linker_flags;
         }
+        cmd += c_linker_dead_strip_flags(compiler_options);
         cmd += " -l" + runtime_lib + " -lm";
         if (verbose) {
             std::cerr << cmd << std::endl;
@@ -2455,6 +2479,7 @@ int link_executable(const std::vector<std::string> &infiles,
             if (!c_backend_linker_flags.empty()) {
                 ld_trace += c_backend_linker_flags;
             }
+            ld_trace += c_linker_dead_strip_flags(compiler_options);
             ld_trace += " -l" + runtime_lib + " -lm";
             std::cerr << ld_trace << std::endl;
         }
