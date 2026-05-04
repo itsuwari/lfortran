@@ -1,0 +1,219 @@
+#include <inttypes.h>
+#include <string.h>
+
+#include <stdlib.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <string.h>
+#include <lfortran_intrinsics.h>
+
+
+#ifndef LFORTRAN_C_BACKEND_CONSTRUCTOR
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_CONSTRUCTOR __attribute__((constructor))
+#else
+#define LFORTRAN_C_BACKEND_CONSTRUCTOR
+#endif
+#endif
+#ifndef LFORTRAN_C_BACKEND_WEAK
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_WEAK __attribute__((weak))
+#else
+#define LFORTRAN_C_BACKEND_WEAK static
+#endif
+#endif
+
+
+struct dimension_descriptor
+{
+    int32_t lower_bound, length, stride;
+};
+#ifndef LFORTRAN_C_BACKEND_CONSTRUCTOR
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_CONSTRUCTOR __attribute__((constructor))
+#else
+#define LFORTRAN_C_BACKEND_CONSTRUCTOR
+#endif
+#endif
+#ifndef LFORTRAN_C_BACKEND_WEAK
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_WEAK __attribute__((weak))
+#else
+#define LFORTRAN_C_BACKEND_WEAK static
+#endif
+#endif
+
+struct c_backend_struct_call_temp_cleanup_01_m__base_type {
+ int64_t __lfortran_type_tag;
+};
+
+
+struct i32___
+{
+    int32_t *data;
+    struct dimension_descriptor dims[32];
+    int32_t n_dims;
+    int32_t offset;
+    bool is_allocated;
+};
+
+struct c_backend_struct_call_temp_cleanup_01_m__child_type {
+ int64_t __lfortran_type_tag;
+ struct i32___* values;
+};
+
+extern void __lfortran_force_link_tbp_c_backend_struct_call_temp_cleanup_01_m__base_type__update(void);
+LFORTRAN_C_BACKEND_CONSTRUCTOR LFORTRAN_C_BACKEND_WEAK void __lfortran_register_type_parent_child_type_x6114456258983693553(void)
+{
+    _lfortran_register_c_type_parent(6114456258983693553, 798866411978659196);
+    __lfortran_force_link_tbp_c_backend_struct_call_temp_cleanup_01_m__base_type__update();
+}
+
+struct c_backend_struct_call_temp_cleanup_01_m__holder_type {
+ int64_t __lfortran_type_tag;
+ struct c_backend_struct_call_temp_cleanup_01_m__child_type* item;
+};
+
+
+void struct_deepcopy_c_backend_struct_call_temp_cleanup_01_m__child_type(void* src_void, void* dest_void);
+
+void __lfortran_c_backend_struct_call_temp_cleanup_01_m__base_update__StructType_Class(struct c_backend_struct_call_temp_cleanup_01_m__base_type* restrict self);
+void __lfortran_c_backend_struct_call_temp_cleanup_01_m__child_update__StructType_Class(struct c_backend_struct_call_temp_cleanup_01_m__child_type* restrict self);
+void __lfortran_c_backend_struct_call_temp_cleanup_01_m__holder_update__StructType_Class(struct c_backend_struct_call_temp_cleanup_01_m__holder_type* restrict self);
+void __lfortran_c_backend_struct_call_temp_cleanup_01_m__run();
+
+
+
+
+// Implementations
+void __lfortran_c_backend_struct_call_temp_cleanup_01_m__base_update__StructType_Class(struct c_backend_struct_call_temp_cleanup_01_m__base_type* restrict self)
+{
+}
+
+static void __lfortran_tbp_wrapper_base_update(void* __lfortran_self)
+{
+    __lfortran_c_backend_struct_call_temp_cleanup_01_m__base_update__StructType_Class(((struct c_backend_struct_call_temp_cleanup_01_m__base_type*)(__lfortran_self)));
+}
+
+LFORTRAN_C_BACKEND_CONSTRUCTOR static void __lfortran_register_tbp_base_update(void)
+{
+    _lfortran_register_c_tbp_impl("update", 798866411978659196, (lfortran_c_tbp_func_ptr)__lfortran_tbp_wrapper_base_update);
+}
+
+void __lfortran_force_link_tbp_c_backend_struct_call_temp_cleanup_01_m__base_type__update(void)
+{
+    __lfortran_register_tbp_base_update();
+}
+
+void __lfortran_c_backend_struct_call_temp_cleanup_01_m__child_update__StructType_Class(struct c_backend_struct_call_temp_cleanup_01_m__child_type* restrict self)
+{
+    int32_t * __lfortran_component_array_0_data = self->values->data;
+    const int32_t __lfortran_component_array_0_offset = self->values->offset;
+    const int32_t __lfortran_component_array_0_dim1_lower_bound = self->values->dims[0].lower_bound;
+    const int32_t __lfortran_component_array_0_dim1_stride = self->values->dims[0].stride;
+    if (!((self->values) != NULL && (self->values)->data != NULL)) {
+        fprintf(stderr, "ERROR STOP");
+        exit(1);
+    }
+    if (__lfortran_component_array_0_data[((0 + (__lfortran_component_array_0_dim1_stride * (1 - __lfortran_component_array_0_dim1_lower_bound))) + __lfortran_component_array_0_offset)] != 7) {
+        fprintf(stderr, "ERROR STOP");
+        exit(1);
+    }
+}
+
+static void __lfortran_tbp_wrapper_child_update(void* __lfortran_self)
+{
+    __lfortran_c_backend_struct_call_temp_cleanup_01_m__child_update__StructType_Class(((struct c_backend_struct_call_temp_cleanup_01_m__child_type*)(__lfortran_self)));
+}
+
+LFORTRAN_C_BACKEND_CONSTRUCTOR static void __lfortran_register_tbp_child_update(void)
+{
+    _lfortran_register_c_tbp_impl("update", 6114456258983693553, (lfortran_c_tbp_func_ptr)__lfortran_tbp_wrapper_child_update);
+}
+
+void __lfortran_force_link_tbp_c_backend_struct_call_temp_cleanup_01_m__child_type__update(void)
+{
+    __lfortran_register_tbp_child_update();
+}
+
+void __lfortran_c_backend_struct_call_temp_cleanup_01_m__holder_update__StructType_Class(struct c_backend_struct_call_temp_cleanup_01_m__holder_type* restrict self)
+{
+    lfortran_allocator_t* __lfortran_default_allocator = _lfortran_get_default_allocator();
+    struct c_backend_struct_call_temp_cleanup_01_m__child_type* __libasr_created__subroutine_call_1_child_type_child_update = NULL;
+    if (((self->item) != NULL)) {
+        if (__libasr_created__subroutine_call_1_child_type_child_update == NULL) {
+            __libasr_created__subroutine_call_1_child_type_child_update = (struct c_backend_struct_call_temp_cleanup_01_m__child_type*) _lfortran_malloc_alloc(__lfortran_default_allocator, sizeof(struct c_backend_struct_call_temp_cleanup_01_m__child_type));
+            memset(__libasr_created__subroutine_call_1_child_type_child_update, 0, sizeof(struct c_backend_struct_call_temp_cleanup_01_m__child_type));
+        }
+        struct_deepcopy_c_backend_struct_call_temp_cleanup_01_m__child_type(self->item, __libasr_created__subroutine_call_1_child_type_child_update);
+        __lfortran_c_backend_struct_call_temp_cleanup_01_m__child_update__StructType_Class(((struct c_backend_struct_call_temp_cleanup_01_m__child_type*)(__libasr_created__subroutine_call_1_child_type_child_update)));
+        if ((__libasr_created__subroutine_call_1_child_type_child_update) != NULL) {
+            _lfortran_free_alloc(__lfortran_default_allocator, (char*) __libasr_created__subroutine_call_1_child_type_child_update);
+            __libasr_created__subroutine_call_1_child_type_child_update = NULL;
+        }
+    }
+}
+
+static void __lfortran_tbp_wrapper_holder_update(void* __lfortran_self)
+{
+    __lfortran_c_backend_struct_call_temp_cleanup_01_m__holder_update__StructType_Class(((struct c_backend_struct_call_temp_cleanup_01_m__holder_type*)(__lfortran_self)));
+}
+
+LFORTRAN_C_BACKEND_CONSTRUCTOR static void __lfortran_register_tbp_holder_update(void)
+{
+    _lfortran_register_c_tbp_impl("update", 5229136268630827289, (lfortran_c_tbp_func_ptr)__lfortran_tbp_wrapper_holder_update);
+}
+
+void __lfortran_force_link_tbp_c_backend_struct_call_temp_cleanup_01_m__holder_type__update(void)
+{
+    __lfortran_register_tbp_holder_update();
+}
+
+void __lfortran_c_backend_struct_call_temp_cleanup_01_m__run()
+{
+    lfortran_allocator_t* __lfortran_default_allocator = _lfortran_get_default_allocator();
+    int32_t __libasr_index_0_;
+    struct c_backend_struct_call_temp_cleanup_01_m__holder_type holder_value;
+    memset(&holder_value, 0, sizeof(holder_value));
+    holder_value.__lfortran_type_tag = 5229136268630827289;
+    struct c_backend_struct_call_temp_cleanup_01_m__holder_type* holder = &holder_value;
+    holder->item = (struct c_backend_struct_call_temp_cleanup_01_m__child_type*) _lfortran_malloc_alloc(__lfortran_default_allocator, sizeof(struct c_backend_struct_call_temp_cleanup_01_m__child_type));
+    memset(holder->item, 0, sizeof(struct c_backend_struct_call_temp_cleanup_01_m__child_type));
+    struct i32___* struct_member_values_0;
+    struct_member_values_0 = _lfortran_malloc_alloc(__lfortran_default_allocator, sizeof(*struct_member_values_0));
+    memset(struct_member_values_0, 0, sizeof(*struct_member_values_0));
+    ((struct c_backend_struct_call_temp_cleanup_01_m__child_type*)(holder->item))->values = struct_member_values_0;
+    holder->item->__lfortran_type_tag = 6114456258983693553;
+    holder->item->values->n_dims = 1;
+    holder->item->values->dims[0].lower_bound = 1;
+    holder->item->values->dims[0].length = 1;
+    holder->item->values->dims[0].stride = 1;
+    holder->item->values->offset = 0;
+    holder->item->values->data = (int32_t*) _lfortran_malloc_alloc(__lfortran_default_allocator, 1*holder->item->values->dims[0].length*sizeof(int32_t));
+    holder->item->values->is_allocated = true;
+    for (__libasr_index_0_=((int32_t)holder->item->values->dims[1-1].lower_bound); __libasr_index_0_<=((int32_t) holder->item->values->dims[1-1].length + holder->item->values->dims[1-1].lower_bound - 1); __libasr_index_0_++) {
+        holder->item->values->data[((0 + (holder->item->values->dims[0].stride * (__libasr_index_0_ - holder->item->values->dims[0].lower_bound))) + holder->item->values->offset)] = 7;
+    }
+    __lfortran_c_backend_struct_call_temp_cleanup_01_m__holder_update__StructType_Class(((struct c_backend_struct_call_temp_cleanup_01_m__holder_type*)(holder)));
+    if (!((holder->item->values) != NULL && (holder->item->values)->data != NULL)) {
+        fprintf(stderr, "ERROR STOP");
+        exit(1);
+    }
+    if (holder->item->values->data[((0 + (holder->item->values->dims[0].stride * (1 - holder->item->values->dims[0].lower_bound))) + holder->item->values->offset)] != 7) {
+        fprintf(stderr, "ERROR STOP");
+        exit(1);
+    }
+}
+
+int main(int argc, char* argv[])
+{
+    _lpython_set_argv(argc, argv);
+    __lfortran_c_backend_struct_call_temp_cleanup_01_m__run();
+    return 0;
+}
+
+void struct_deepcopy_c_backend_struct_call_temp_cleanup_01_m__child_type(void* src_void, void* dest_void) {
+    struct c_backend_struct_call_temp_cleanup_01_m__child_type* src = (struct c_backend_struct_call_temp_cleanup_01_m__child_type*) src_void;
+    struct c_backend_struct_call_temp_cleanup_01_m__child_type* dest = (struct c_backend_struct_call_temp_cleanup_01_m__child_type*) dest_void;
+    dest->values = src->values;;
+}

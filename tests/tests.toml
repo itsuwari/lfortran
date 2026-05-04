@@ -5155,6 +5155,10 @@ filename = "c_backend_allocatable_class_deallocate_01.f90"
 c = true
 
 [[test]]
+filename = "c_backend_struct_call_temp_cleanup_01.f90"
+c = true
+
+[[test]]
 filename = "c_backend_deferred_function_dispatch_01.f90"
 run = true
 options = "--backend=c --separate-compilation"

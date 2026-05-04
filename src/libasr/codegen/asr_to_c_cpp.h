@@ -13842,6 +13842,51 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         last_expr_precedence = 16;
     }
 
+    std::string emit_c_subroutine_call_struct_temp_root_cleanup(
+            const ASR::SubroutineCall_t &x, const std::string &indent) {
+        std::string cleanup;
+        std::set<std::string> cleaned;
+        for (size_t i = 0; i < x.n_args; i++) {
+            ASR::expr_t *arg = x.m_args[i].m_value;
+            if (arg == nullptr) {
+                continue;
+            }
+            arg = unwrap_c_lvalue_expr(arg);
+            if (arg == nullptr || !ASR::is_a<ASR::Var_t>(*arg)) {
+                continue;
+            }
+            ASR::symbol_t *sym = ASRUtils::symbol_get_past_external(
+                ASR::down_cast<ASR::Var_t>(arg)->m_v);
+            if (!ASR::is_a<ASR::Variable_t>(*sym)) {
+                continue;
+            }
+            ASR::Variable_t *var = ASR::down_cast<ASR::Variable_t>(sym);
+            std::string var_name(var->m_name);
+            if (var_name.rfind("__libasr_created__subroutine_call_", 0) != 0) {
+                continue;
+            }
+            ASR::ttype_t *var_type = var->m_type;
+            ASR::ttype_t *var_type_unwrapped =
+                ASRUtils::type_get_past_allocatable_pointer(var_type);
+            if (!ASRUtils::is_allocatable(var_type)
+                    || ASRUtils::is_array(var_type)
+                    || var_type_unwrapped == nullptr
+                    || !ASR::is_a<ASR::StructType_t>(*var_type_unwrapped)) {
+                continue;
+            }
+            std::string target = CUtils::get_c_variable_name(*var);
+            if (!cleaned.insert(target).second) {
+                continue;
+            }
+            cleanup += indent + "if ((" + target + ") != NULL) {\n"
+                + indent + "    _lfortran_free_alloc(_lfortran_get_default_allocator(), "
+                + "(char*) " + target + ");\n"
+                + indent + "    " + target + " = NULL;\n"
+                + indent + "}\n";
+        }
+        return cleanup;
+    }
+
     void visit_SubroutineCall(const ASR::SubroutineCall_t &x) {
         clear_c_pow_cache();
         std::string indent(indentation_level*indentation_spaces, ' ');
@@ -13894,6 +13939,9 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         if (is_c && x.n_args > 0
                 && std::string(s->m_name).rfind("_lcompilers_move_alloc_", 0) == 0) {
             src += emit_move_alloc_source_reset(x.m_args[0].m_value, indent);
+        }
+        if (is_c) {
+            src += emit_c_subroutine_call_struct_temp_root_cleanup(x, indent);
         }
     }
 
