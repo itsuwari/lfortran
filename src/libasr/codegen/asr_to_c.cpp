@@ -38,6 +38,9 @@ public:
     std::set<std::string> emitted_aggregate_names;
     std::unordered_map<const ASR::symbol_t*, std::string> enum_name_map;
     std::string string_concat_helper_name;
+    bool defer_c_tbp_parent_registration_defs = false;
+    std::set<int64_t> deferred_c_tbp_parent_registration_type_ids;
+    std::string deferred_c_tbp_parent_registration_defs;
 
     bool target_offload_enabled;
     std::vector<std::string> kernel_func_names;
@@ -1750,6 +1753,23 @@ R"(
     bool should_emit_union_definition(const ASR::Union_t &x) {
         std::string aggregate_name = get_aggregate_c_name(x);
         return emitted_aggregate_names.insert("union " + aggregate_name).second;
+    }
+
+    void append_c_tbp_parent_registration(const ASR::Struct_t &x,
+            std::string &src_dest) {
+        std::string registration = emit_c_tbp_parent_registration(x);
+        if (registration.empty()) {
+            return;
+        }
+        if (!defer_c_tbp_parent_registration_defs) {
+            src_dest += registration;
+            return;
+        }
+        int64_t type_id = get_struct_runtime_type_id(
+            reinterpret_cast<ASR::symbol_t*>(const_cast<ASR::Struct_t*>(&x)));
+        if (deferred_c_tbp_parent_registration_type_ids.insert(type_id).second) {
+            deferred_c_tbp_parent_registration_defs += registration;
+        }
     }
 
     std::string get_variable_c_name(const ASR::Variable_t &v) {
@@ -3563,6 +3583,9 @@ R"(
         compact_constant_data_count = 0;
         compact_constant_data_body.clear();
         compact_constant_data_decls.clear();
+        defer_c_tbp_parent_registration_defs = true;
+        deferred_c_tbp_parent_registration_type_ids.clear();
+        deferred_c_tbp_parent_registration_defs.clear();
         global_scope = x.m_symtab;
         LCOMPILERS_ASSERT(x.n_items == 0);
         indentation_level = 0;
@@ -3782,6 +3805,9 @@ R"(
         if (!split_owned_defs.empty()) {
             shared_body += split_owned_defs + "\n";
         }
+        if (!deferred_c_tbp_parent_registration_defs.empty()) {
+            shared_body += deferred_c_tbp_parent_registration_defs + "\n";
+        }
         if (!global_var_defs.empty()) {
             shared_body += global_var_defs + "\n";
         }
@@ -3824,6 +3850,7 @@ R"(
             }
         }
 
+        defer_c_tbp_parent_registration_defs = false;
         return {source_files, header_name, has_main_program};
     }
 
@@ -4096,7 +4123,7 @@ R"(    // Initialise Numpy
         std::string end_struct = "};\n\n";
         src_dest += open_struct + body + end_struct;
         if constexpr (std::is_same_v<std::decay_t<T>, ASR::Struct_t>) {
-            src_dest += emit_c_tbp_parent_registration(x);
+            append_c_tbp_parent_registration(x, src_dest);
         }
     }
 

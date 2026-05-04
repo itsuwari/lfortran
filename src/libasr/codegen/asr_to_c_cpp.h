@@ -868,6 +868,13 @@ public:
                 "#else\n"
                 "#define LFORTRAN_C_BACKEND_CONSTRUCTOR\n"
                 "#endif\n"
+                "#endif\n"
+                "#ifndef LFORTRAN_C_BACKEND_WEAK\n"
+                "#if defined(__GNUC__) || defined(__clang__)\n"
+                "#define LFORTRAN_C_BACKEND_WEAK __attribute__((weak))\n"
+                "#else\n"
+                "#define LFORTRAN_C_BACKEND_WEAK static\n"
+                "#endif\n"
                 "#endif\n\n";
         }
         if( is_string_concat_present ) {
@@ -915,6 +922,13 @@ public:
             "#define LFORTRAN_C_BACKEND_CONSTRUCTOR __attribute__((constructor))\n"
             "#else\n"
             "#define LFORTRAN_C_BACKEND_CONSTRUCTOR\n"
+            "#endif\n"
+            "#endif\n"
+            "#ifndef LFORTRAN_C_BACKEND_WEAK\n"
+            "#if defined(__GNUC__) || defined(__clang__)\n"
+            "#define LFORTRAN_C_BACKEND_WEAK __attribute__((weak))\n"
+            "#else\n"
+            "#define LFORTRAN_C_BACKEND_WEAK static\n"
             "#endif\n"
             "#endif\n\n";
         if (array_types_decls.find("#ifndef LFORTRAN_C_BACKEND_CONSTRUCTOR\n")
@@ -8972,13 +8986,17 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             force_link_decls += "extern void " + anchor_name + "(void);\n";
             force_link_calls += "    " + anchor_name + "();\n";
         }
+        int64_t child_type_id = get_struct_runtime_type_id(
+            reinterpret_cast<ASR::symbol_t*>(const_cast<ASR::Struct_t*>(&x)));
         std::string registrar_name = get_unique_local_name(
-            "__lfortran_register_type_parent_" + CUtils::sanitize_c_identifier(x.m_name), false);
+            "__lfortran_register_type_parent_"
+            + CUtils::sanitize_c_identifier(x.m_name)
+            + "_x" + std::to_string(static_cast<uint64_t>(child_type_id)), false);
         return force_link_decls
-            + "LFORTRAN_C_BACKEND_CONSTRUCTOR static void " + registrar_name + "(void)\n{\n"
+            + "LFORTRAN_C_BACKEND_CONSTRUCTOR LFORTRAN_C_BACKEND_WEAK void "
+            + registrar_name + "(void)\n{\n"
             "    _lfortran_register_c_type_parent("
-            + std::to_string(get_struct_runtime_type_id(
-                reinterpret_cast<ASR::symbol_t*>(const_cast<ASR::Struct_t*>(&x))))
+            + std::to_string(child_type_id)
             + ", "
             + std::to_string(get_struct_runtime_type_id(parent_sym))
             + ");\n"
