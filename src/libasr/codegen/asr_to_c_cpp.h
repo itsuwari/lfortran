@@ -813,6 +813,23 @@ public:
             || name.find("__libasr__created") != std::string::npos;
     }
 
+    void cache_c_default_allocator(std::string &decl, std::string &body,
+            const std::string &indent) {
+        if (!is_c) {
+            return;
+        }
+        const std::string allocator_call = "_lfortran_get_default_allocator()";
+        if (decl.find(allocator_call) == std::string::npos
+                && body.find(allocator_call) == std::string::npos) {
+            return;
+        }
+        const std::string allocator_name = "__lfortran_default_allocator";
+        decl = indent + "lfortran_allocator_t* " + allocator_name
+            + " = " + allocator_call + ";\n"
+            + replace_all_substrings(decl, allocator_call, allocator_name);
+        body = replace_all_substrings(body, allocator_call, allocator_name);
+    }
+
     std::string get_final_combined_src(std::string head, std::string unit_src) {
         std::string to_include = "";
         for (auto &s: user_defines) {
@@ -3342,6 +3359,8 @@ R"(#include <stdio.h>
                     pos += to_pat.size();
                 }
             }
+
+            cache_c_default_allocator(decl, current_body, indent);
 
             if (decl.size() > 0 || current_body.size() > 0) {
                 sub += "{\n" + decl + current_body + "}\n";
