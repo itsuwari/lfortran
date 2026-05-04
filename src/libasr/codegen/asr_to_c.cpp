@@ -6020,20 +6020,18 @@ R"(    // Initialise Numpy
         if (ASR::is_a<ASR::StringFormat_t>(*x.m_values[0])) {
             ASR::StringFormat_t *str_fmt = ASR::down_cast<ASR::StringFormat_t>(x.m_values[0]);
             bool has_non_character_arg = false;
-            bool has_array_arg = false;
             for (size_t i=0; i<str_fmt->n_args; i++) {
                 ASR::ttype_t *arg_type = ASRUtils::type_get_past_allocatable_pointer(
                     ASRUtils::expr_type(str_fmt->m_args[i]));
                 if (ASRUtils::is_array(arg_type)) {
-                    has_array_arg = true;
-                    break;
+                    arg_type = ASRUtils::extract_type(arg_type);
                 }
                 if (!ASRUtils::is_character(*ASRUtils::extract_type(arg_type))) {
                     has_non_character_arg = true;
                 }
             }
             if (str_fmt->m_kind == ASR::string_format_kindType::FormatFortran
-                    && has_non_character_arg && !has_array_arg) {
+                    && has_non_character_arg) {
                 std::string format_value = "NULL";
                 std::string format_len = "0";
                 if (str_fmt->m_fmt) {
@@ -6042,30 +6040,201 @@ R"(    // Initialise Numpy
                     format_len = fmt_arg.second;
                 }
 
-                std::string serialization = serialize_fortran_format_args(str_fmt->m_args, str_fmt->n_args);
+                std::string serialization;
                 std::vector<std::string> arg_ptrs;
+                std::vector<std::string> array_sizes;
                 std::vector<std::string> string_lengths;
+                std::vector<std::string> array_temp_cleanups;
+                std::string format_arg_setup;
                 for (size_t i=0; i<str_fmt->n_args; i++) {
+                    if (i != 0) {
+                        serialization += ",";
+                    }
                     ASR::expr_t *arg_expr = str_fmt->m_args[i];
                     ASR::ttype_t *arg_type = ASRUtils::expr_type(arg_expr);
                     ASR::ttype_t *past_type = ASRUtils::type_get_past_allocatable_pointer(arg_type);
                     if (ASRUtils::is_array(past_type)) {
-                        throw CodeGenError("C backend FileWrite does not support Fortran formatted array writes yet",
-                            arg_expr->base.loc);
+                        ASR::ttype_t *element_type = ASRUtils::extract_type(past_type);
+                        if (ASRUtils::is_character(*element_type)) {
+                            throw CodeGenError("C backend FileWrite does not support Fortran formatted character array writes yet",
+                                arg_expr->base.loc);
+                        }
+                        serialization += "[" + serialize_fortran_format_type(arg_expr, element_type) + "]";
+
+                        ASR::expr_t *unwrapped_arg = unwrap_c_array_expr(arg_expr);
+                        if (unwrapped_arg != nullptr && ASR::is_a<ASR::ArraySection_t>(*unwrapped_arg)) {
+                            ASR::ArraySection_t *section = ASR::down_cast<ASR::ArraySection_t>(unwrapped_arg);
+                            ASR::dimension_t *section_dims = nullptr;
+                            int section_rank = ASRUtils::extract_dimensions_from_ttype(section->m_type, section_dims);
+                            if (section_rank != 1) {
+                                throw CodeGenError("C backend FileWrite currently supports only rank-1 array sections in Fortran formatted writes",
+                                    arg_expr->base.loc);
+                            }
+
+                            this->visit_expr(*section->m_v);
+                            std::string base_src = src;
+                            std::string setup = drain_tmp_buffer();
+                            setup += extract_stmt_setup_from_expr(base_src);
+
+                            ASR::ttype_t *base_type = ASRUtils::expr_type(section->m_v);
+                            ASR::ttype_t *base_array_type = ASRUtils::type_get_past_allocatable_pointer(base_type);
+                            ASR::dimension_t *base_dims = nullptr;
+                            int base_n_dims = ASRUtils::extract_dimensions_from_ttype(base_array_type, base_dims);
+
+                            std::string base_data_expr = get_c_array_data_expr(section->m_v, base_src);
+                            std::string base_offset_expr = get_c_array_offset_expr(section->m_v, base_src);
+                            bool base_descriptor_backed = base_data_expr != base_src;
+                            std::vector<std::string> base_lower_bounds(base_n_dims);
+                            std::vector<std::string> base_lengths(base_n_dims);
+                            std::vector<std::string> base_strides(base_n_dims);
+                            if (base_descriptor_backed) {
+                                for (int j = 0; j < base_n_dims; j++) {
+                                    base_lower_bounds[j] = base_src + "->dims[" + std::to_string(j) + "].lower_bound";
+                                    base_lengths[j] = base_src + "->dims[" + std::to_string(j) + "].length";
+                                    base_strides[j] = base_src + "->dims[" + std::to_string(j) + "].stride";
+                                }
+                            } else {
+                                std::string stride = "1";
+                                for (int j = 0; j < base_n_dims; j++) {
+                                    base_lower_bounds[j] = get_static_dim_expr(base_dims[j].m_start, "1");
+                                    base_lengths[j] = get_static_dim_expr(base_dims[j].m_length, "1");
+                                    base_strides[j] = stride;
+                                    stride += " * " + base_lengths[j];
+                                }
+                            }
+
+                            auto get_section_expr = [&](ASR::expr_t *expr,
+                                    const std::string &fallback) -> std::string {
+                                if (expr == nullptr) {
+                                    return fallback;
+                                }
+                                this->visit_expr(*expr);
+                                std::string expr_src = src;
+                                setup += drain_tmp_buffer();
+                                setup += extract_stmt_setup_from_expr(expr_src);
+                                return expr_src;
+                            };
+
+                            std::string section_len = "1";
+                            std::string elem_index = base_offset_expr;
+                            std::string loop_index = get_unique_local_name("__lfortran_fmt_i");
+                            for (int j = 0; j < base_n_dims; j++) {
+                                ASR::array_index_t idx = section->m_args[j];
+                                bool is_slice = idx.m_left != nullptr || idx.m_step != nullptr
+                                    || idx.m_right == nullptr;
+                                std::string actual_index;
+                                if (is_slice) {
+                                    bool base_is_descriptor_array =
+                                        !is_data_only_array_expr(section->m_v)
+                                        && !is_fixed_size_array_storage_expr(section->m_v);
+                                    bool unit_section_step = idx.m_step == nullptr;
+                                    if (idx.m_step != nullptr) {
+                                        ASR::expr_t *step_value = ASRUtils::expr_value(idx.m_step);
+                                        int64_t step_int = 0;
+                                        unit_section_step = step_value != nullptr
+                                            && ASRUtils::extract_value(step_value, step_int)
+                                            && step_int == 1;
+                                    }
+                                    bool full_descriptor_slice = base_is_descriptor_array
+                                        && unit_section_step;
+                                    std::string full_slice_length = base_lengths[j];
+                                    if (j + 1 < base_n_dims) {
+                                        full_slice_length = "((" + base_lengths[j] + ") > 0 ? "
+                                            + base_lengths[j] + " : (" + base_strides[j + 1]
+                                            + ") / (" + base_strides[j] + "))";
+                                    }
+                                    std::string left = full_descriptor_slice
+                                        ? base_lower_bounds[j]
+                                        : get_section_expr(idx.m_left, base_lower_bounds[j]);
+                                    std::string right = full_descriptor_slice
+                                        ? "(" + base_lower_bounds[j] + " + " + full_slice_length + " - 1)"
+                                        : get_section_expr(idx.m_right,
+                                            "(" + base_lower_bounds[j] + " + " + base_lengths[j] + " - 1)");
+                                    std::string step = full_descriptor_slice
+                                        ? "1"
+                                        : get_section_expr(idx.m_step, "1");
+                                    section_len = "((((" + right + ") - (" + left + ")) / (" + step + ")) + 1)";
+                                    actual_index = "(" + left + " + " + loop_index + " * (" + step + "))";
+                                } else {
+                                    actual_index = get_section_expr(idx.m_right, base_lower_bounds[j]);
+                                }
+                                elem_index += " + ((" + actual_index + ") - (" + base_lower_bounds[j]
+                                    + ")) * " + base_strides[j];
+                            }
+
+                            std::string c_type = CUtils::get_c_type_from_ttype_t(element_type);
+                            std::string temp_name = get_unique_local_name("__lfortran_fmt_array");
+                            setup += indent + "int64_t " + temp_name + "_size = (int64_t)(" + section_len + ");\n";
+                            setup += indent + c_type + " *" + temp_name + " = (" + c_type
+                                + "*) _lfortran_malloc_alloc(_lfortran_get_default_allocator(), "
+                                + "(size_t)" + temp_name + "_size * sizeof(" + c_type + "));\n";
+                            setup += indent + "for (int64_t " + loop_index + " = 0; "
+                                + loop_index + " < " + temp_name + "_size; " + loop_index + "++) {\n";
+                            setup += indent + std::string(indentation_spaces, ' ') + temp_name + "["
+                                + loop_index + "] = " + base_data_expr + "[" + elem_index + "];\n";
+                            setup += indent + "}\n";
+                            format_arg_setup += setup;
+                            array_sizes.push_back(temp_name + "_size");
+                            arg_ptrs.push_back(temp_name);
+                            array_temp_cleanups.push_back(indent
+                                + "_lfortran_free_alloc(_lfortran_get_default_allocator(), (char*) "
+                                + temp_name + ");\n");
+                            continue;
+                        }
+
+                        this->visit_expr(*arg_expr);
+                        std::string arg_value = src;
+                        format_arg_setup += drain_tmp_buffer();
+                        format_arg_setup += extract_stmt_setup_from_expr(arg_value);
+
+                        ASR::dimension_t *arg_dims = nullptr;
+                        int arg_n_dims = ASRUtils::extract_dimensions_from_ttype(past_type, arg_dims);
+                        int64_t fixed_size = ASRUtils::get_fixed_size_of_array(past_type);
+                        if (fixed_size > 0) {
+                            array_sizes.push_back("(int64_t)" + std::to_string(fixed_size));
+                        } else {
+                            std::string size_expr = "1";
+                            for (int j = 0; j < arg_n_dims; j++) {
+                                size_expr += " * " + arg_value + "->dims["
+                                    + std::to_string(j) + "].length";
+                            }
+                            array_sizes.push_back("(int64_t)(" + size_expr + ")");
+                        }
+                        arg_ptrs.push_back(get_c_array_data_pointer_expr(arg_expr, arg_value));
+                        continue;
                     }
 
+                    serialization += serialize_fortran_format_type(arg_expr, past_type);
                     this->visit_expr(*arg_expr);
                     std::string arg_value = src;
                     if (ASRUtils::is_character(*past_type)) {
                         ASR::String_t *str_type = ASRUtils::get_string_type(arg_expr);
+                        int64_t fixed_len = 0;
                         if (!str_type || !str_type->m_len) {
                             string_lengths.push_back("(int64_t)strlen(" + arg_value + ")");
                         } else {
-                            int64_t fixed_len = 0;
                             if (!ASRUtils::extract_value(str_type->m_len, fixed_len)) {
                                 this->visit_expr(*str_type->m_len);
                                 string_lengths.push_back("(int64_t)(" + src + ")");
                             }
+                        }
+                        if (fixed_len > 0) {
+                            std::string string_tmp = get_unique_local_name("__lfortran_fmt_str");
+                            std::string string_len_tmp = get_unique_local_name("__lfortran_fmt_str_len");
+                            format_arg_setup += indent + "int64_t " + string_len_tmp
+                                + " = (int64_t)strlen(" + arg_value + ");\n";
+                            format_arg_setup += indent + "if (" + string_len_tmp + " > "
+                                + std::to_string(fixed_len) + ") " + string_len_tmp
+                                + " = " + std::to_string(fixed_len) + ";\n";
+                            format_arg_setup += indent + "char " + string_tmp + "["
+                                + std::to_string(fixed_len + 1) + "];\n";
+                            format_arg_setup += indent + "memset(" + string_tmp + ", ' ', "
+                                + std::to_string(fixed_len) + ");\n";
+                            format_arg_setup += indent + "memcpy(" + string_tmp + ", "
+                                + arg_value + ", (size_t)" + string_len_tmp + ");\n";
+                            format_arg_setup += indent + string_tmp + "["
+                                + std::to_string(fixed_len) + "] = '\\0';\n";
+                            arg_value = string_tmp;
                         }
                         arg_ptrs.push_back("&((char*){" + arg_value + "})");
                     } else {
@@ -6079,13 +6248,17 @@ R"(    // Initialise Numpy
                 std::string size_name = "__lfortran_write_size_" + unique_suffix;
                 std::string buffer_name = "__lfortran_write_buffer_" + unique_suffix;
 
-                src = indent + "int64_t " + size_name + " = 0;\n";
+                src = format_arg_setup + indent + "int64_t " + size_name + " = 0;\n";
                 src += indent + "char *" + buffer_name
                     + " = _lcompilers_string_format_fortran(_lfortran_get_default_allocator(), "
                     + format_value + ", (int64_t)(" + format_len + "), \""
                     + CUtils::escape_c_string_literal(serialization) + "\", &"
-                    + size_name + ", 0, " + std::to_string(string_lengths.size())
+                    + size_name + ", " + std::to_string(array_sizes.size()) + ", "
+                    + std::to_string(string_lengths.size())
                     + ", 0, 0, 0";
+                for (auto &array_size: array_sizes) {
+                    src += ", " + array_size;
+                }
                 for (auto &length: string_lengths) {
                     src += ", " + length;
                 }
@@ -6093,6 +6266,9 @@ R"(    // Initialise Numpy
                     src += ", " + arg;
                 }
                 src += ");\n";
+                for (auto &cleanup: array_temp_cleanups) {
+                    src += cleanup;
+                }
                 if (is_string_unit) {
                     src += unit_setup;
                     src += indent + "_lfortran_string_write(_lfortran_get_default_allocator(), &(" + unit + "), "

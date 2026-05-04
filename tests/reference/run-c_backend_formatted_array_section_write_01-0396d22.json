@@ -1,0 +1,13 @@
+{
+    "basename": "run-c_backend_formatted_array_section_write_01-0396d22",
+    "cmd": "lfortran --no-color {infile}",
+    "infile": "tests/c_backend_formatted_array_section_write_01.f90",
+    "infile_hash": "4de6225a136c826367d3afe8cb5034bedcfca70ef0aea2070f84ff61",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

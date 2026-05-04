@@ -5234,6 +5234,11 @@ run = true
 options = "--backend=c --separate-compilation -O3"
 
 [[test]]
+filename = "c_backend_formatted_array_section_write_01.f90"
+run = true
+options = "--backend=c --separate-compilation -O3"
+
+[[test]]
 filename = "c_backend_component_array_cache_01.f90"
 run = true
 options = "--backend=c --separate-compilation -O3"
