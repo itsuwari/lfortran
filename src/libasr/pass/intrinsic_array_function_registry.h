@@ -4959,6 +4959,7 @@ namespace MatMul {
         ASR::expr_t *i = declare("i", int32, Local);
         ASR::expr_t *j = declare("j", int32, Local);
         ASR::expr_t *k = declare("k", int32, Local);
+        ASR::expr_t *acc = declare("acc", ASRUtils::type_get_past_array(return_type), Local);
         ASR::dimension_t* matrix_a_dims = nullptr;
         ASR::dimension_t* matrix_b_dims = nullptr;
         extract_dimensions_from_ttype(arg_types[0], matrix_a_dims);
@@ -5024,10 +5025,11 @@ namespace MatMul {
         }
         body.push_back(al, b.DoLoop(i, a_lbound, a_ubound, {
             b.DoLoop(j, b_lbound, b_ubound, {
-                b.Assign_Constant(res_ref, 0),
+                b.Assign_Constant(acc, 0),
                 b.DoLoop(k, b.GetLBound(args[1], 1), b.GetUBound(args[1], 1), {
-                    b.Assignment(res_ref, b.Add(res_ref, mul_value))
+                    b.Assignment(acc, b.Add(acc, mul_value))
                 }),
+                b.Assignment(res_ref, acc)
             })
         }));
         body.push_back(al, b.Return());

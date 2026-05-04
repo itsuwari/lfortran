@@ -15,6 +15,13 @@
 #define LFORTRAN_C_BACKEND_CONSTRUCTOR
 #endif
 #endif
+#ifndef LFORTRAN_C_BACKEND_WEAK
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_WEAK __attribute__((weak))
+#else
+#define LFORTRAN_C_BACKEND_WEAK static
+#endif
+#endif
 
 
 struct dimension_descriptor
@@ -26,6 +33,13 @@ struct dimension_descriptor
 #define LFORTRAN_C_BACKEND_CONSTRUCTOR __attribute__((constructor))
 #else
 #define LFORTRAN_C_BACKEND_CONSTRUCTOR
+#endif
+#endif
+#ifndef LFORTRAN_C_BACKEND_WEAK
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_WEAK __attribute__((weak))
+#else
+#define LFORTRAN_C_BACKEND_WEAK static
 #endif
 #endif
 
@@ -49,16 +63,17 @@ struct r64___
     bool is_allocated;
 };
 
-void __lfortran__lcompilers_matmul_real_______0_real____1(struct r64_____* restrict matrix_a_m, int32_t __1matrix_a_m, int32_t __2matrix_a_m, struct r64___* restrict matrix_b_m, int32_t __1matrix_b_m, struct r64___* restrict result);
-void __lfortran__lcompilers_matmul(struct r64_____* restrict matrix_a_m, struct r64___* restrict matrix_b_m, struct r64___* restrict result);
+void __lfortran__lcompilers_matmul_r64______r64____ret_r64____ov2_real_______0_real____1(struct r64_____* restrict matrix_a_m, int32_t __1matrix_a_m, int32_t __2matrix_a_m, struct r64___* restrict matrix_b_m, int32_t __1matrix_b_m, struct r64___* restrict result);
+void __lfortran__lcompilers_matmul_r64______r64____ret_r64____ov2(struct r64_____* restrict matrix_a_m, struct r64___* restrict matrix_b_m, struct r64___* restrict result);
 void __lfortran_c_backend_local_parameter_array_static_01__apply_weights(struct r64___* restrict x, struct r64___* restrict y);
 
 
 
 
 // Implementations
-void __lfortran__lcompilers_matmul_real_______0_real____1(struct r64_____* restrict matrix_a_m, int32_t __1matrix_a_m, int32_t __2matrix_a_m, struct r64___* restrict matrix_b_m, int32_t __1matrix_b_m, struct r64___* restrict result)
+void __lfortran__lcompilers_matmul_r64______r64____ret_r64____ov2_real_______0_real____1(struct r64_____* restrict matrix_a_m, int32_t __1matrix_a_m, int32_t __2matrix_a_m, struct r64___* restrict matrix_b_m, int32_t __1matrix_b_m, struct r64___* restrict result)
 {
+    double acc;
     int32_t i;
     int32_t j;
     int32_t k;
@@ -79,18 +94,19 @@ void __lfortran__lcompilers_matmul_real_______0_real____1(struct r64_____* restr
     ASSERT_MSG(__2matrix_a_m + 1 - 1 == __1matrix_b_m + 1 - 1, "%s", (char*)"'MatMul' intrinsic dimension mismatch: please make sure the dimensions are `matrix_a(i, k)` and `matrix_b(k)`");
     for (i=1; i<=__1matrix_a_m + 1 - 1; i++) {
         for (j=1; j<=1; j++) {
-            __lfortran_result_data[((0 + (__lfortran_result_dim1_stride * (i - __lfortran_result_dim1_lower_bound))) + __lfortran_result_offset)] =   0.00000000000000000e+00;
+            acc =   0.00000000000000000e+00;
             for (k=1; k<=__1matrix_b_m + 1 - 1; k++) {
-                __lfortran_result_data[((0 + (__lfortran_result_dim1_stride * (i - __lfortran_result_dim1_lower_bound))) + __lfortran_result_offset)] = __lfortran_result_data[((0 + (__lfortran_result_dim1_stride * (i - __lfortran_result_dim1_lower_bound))) + __lfortran_result_offset)] + __lfortran_matrix_a_m_data[(((0 + (__lfortran_matrix_a_m_dim1_stride * (i - __lfortran_matrix_a_m_dim1_lower_bound))) + (__lfortran_matrix_a_m_dim2_stride * (k - __lfortran_matrix_a_m_dim2_lower_bound))) + __lfortran_matrix_a_m_offset)]*__lfortran_matrix_b_m_data[((0 + (__lfortran_matrix_b_m_dim1_stride * (k - __lfortran_matrix_b_m_dim1_lower_bound))) + __lfortran_matrix_b_m_offset)];
+                acc = acc + __lfortran_matrix_a_m_data[(((0 + (__lfortran_matrix_a_m_dim1_stride * (i - __lfortran_matrix_a_m_dim1_lower_bound))) + (__lfortran_matrix_a_m_dim2_stride * (k - __lfortran_matrix_a_m_dim2_lower_bound))) + __lfortran_matrix_a_m_offset)]*__lfortran_matrix_b_m_data[((0 + (__lfortran_matrix_b_m_dim1_stride * (k - __lfortran_matrix_b_m_dim1_lower_bound))) + __lfortran_matrix_b_m_offset)];
             }
+            __lfortran_result_data[((0 + (__lfortran_result_dim1_stride * (i - __lfortran_result_dim1_lower_bound))) + __lfortran_result_offset)] = acc;
         }
     }
     return;
 }
 
-void __lfortran__lcompilers_matmul(struct r64_____* restrict matrix_a_m, struct r64___* restrict matrix_b_m, struct r64___* restrict result)
+void __lfortran__lcompilers_matmul_r64______r64____ret_r64____ov2(struct r64_____* restrict matrix_a_m, struct r64___* restrict matrix_b_m, struct r64___* restrict result)
 {
-    __lfortran__lcompilers_matmul_real_______0_real____1(matrix_a_m, ((int32_t)matrix_a_m->dims[0].length + matrix_a_m->dims[0].lower_bound - 1), ((int32_t)matrix_a_m->dims[1].length + matrix_a_m->dims[1].lower_bound - 1), matrix_b_m, ((int32_t)matrix_b_m->dims[0].length + matrix_b_m->dims[0].lower_bound - 1), result);
+    __lfortran__lcompilers_matmul_r64______r64____ret_r64____ov2_real_______0_real____1(matrix_a_m, ((int32_t)matrix_a_m->dims[0].length + matrix_a_m->dims[0].lower_bound - 1), ((int32_t)matrix_a_m->dims[1].length + matrix_a_m->dims[1].lower_bound - 1), matrix_b_m, ((int32_t)matrix_b_m->dims[0].length + matrix_b_m->dims[0].lower_bound - 1), result);
 }
 
 void __lfortran_c_backend_local_parameter_array_static_01__apply_weights(struct r64___* restrict x, struct r64___* restrict y)
@@ -108,7 +124,7 @@ void __lfortran_c_backend_local_parameter_array_static_01__apply_weights(struct 
     const int32_t __lfortran_y_dim1_stride = y->dims[0].stride;
     struct r64_____ __lfortran_array_view = { .data = weights->data, .dims = {{1, weights->dims[0].length, weights->dims[0].stride}, {1, weights->dims[1].length, weights->dims[1].stride}}, .n_dims = 2, .offset = weights->offset, .is_allocated = false };
     struct r64___ __lfortran_array_view1 = { .data = x->data, .dims = {{1, x->dims[0].length, x->dims[0].stride}}, .n_dims = 1, .offset = x->offset, .is_allocated = x->is_allocated };
-    __lfortran__lcompilers_matmul_real_______0_real____1(&__lfortran_array_view, 2, 2, &__lfortran_array_view1, 2, y);
+    __lfortran__lcompilers_matmul_r64______r64____ret_r64____ov2_real_______0_real____1(&__lfortran_array_view, 2, 2, &__lfortran_array_view1, 2, y);
 }
 
 int main(int argc, char* argv[])
