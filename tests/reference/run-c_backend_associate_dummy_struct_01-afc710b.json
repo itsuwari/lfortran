@@ -1,0 +1,13 @@
+{
+    "basename": "run-c_backend_associate_dummy_struct_01-afc710b",
+    "cmd": "lfortran --no-color {infile}",
+    "infile": "tests/c_backend_associate_dummy_struct_01.f90",
+    "infile_hash": "c4547cdb089cd8ae251da998f7b80aa0ca8874a2e1dd25211156bbfa",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

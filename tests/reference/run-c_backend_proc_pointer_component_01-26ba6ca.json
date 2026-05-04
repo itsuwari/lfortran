@@ -1,0 +1,13 @@
+{
+    "basename": "run-c_backend_proc_pointer_component_01-26ba6ca",
+    "cmd": "lfortran --no-color {infile}",
+    "infile": "tests/c_backend_proc_pointer_component_01.f90",
+    "infile_hash": "80eb6ccece9ebfbac06edfec7c68e6065558fb25fa0794ca399080ed",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

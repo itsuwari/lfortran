@@ -1951,7 +1951,8 @@ int compile_to_object_file_c(const std::string &infile,
             return 5;
         }
 
-        std::string CC = "gcc";
+        const char *cc_env = std::getenv("CC");
+        std::string CC = (cc_env != nullptr && cc_env[0] != '\0') ? cc_env : "gcc";
         std::string optimization_flags = c_compiler_optimization_flags(O_flags);
         if (!optimization_flags.empty()) {
             // Fortran math intrinsics do not expose C errno semantics; allowing

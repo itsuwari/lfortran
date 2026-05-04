@@ -5148,6 +5148,16 @@ filename = "c_backend_derived_dummy_restrict_01.f90"
 c = true
 
 [[test]]
+filename = "c_backend_associate_dummy_struct_01.f90"
+run = true
+options = "--backend=c --separate-compilation"
+
+[[test]]
+filename = "c_backend_proc_pointer_component_01.f90"
+run = true
+options = "--backend=c --separate-compilation"
+
+[[test]]
 filename = "c_backend_submodule_proc_name_01.f90"
 run = true
 options = "--backend=c --separate-compilation"

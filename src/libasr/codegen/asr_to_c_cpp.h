@@ -10410,6 +10410,17 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                         const_cast<ASR::symbol_t*>(value_sym)));
                 }
             }
+            ASR::ttype_t *target_proc_pointee_type = nullptr;
+            if (ASR::is_a<ASR::Pointer_t>(*target_type)) {
+                target_proc_pointee_type = ASR::down_cast<ASR::Pointer_t>(target_type)->m_type;
+            } else if (ASR::is_a<ASR::FunctionType_t>(*target_type)) {
+                target_proc_pointee_type = target_type;
+            }
+            if (is_c && target_proc_pointee_type != nullptr
+                    && ASR::is_a<ASR::FunctionType_t>(*target_proc_pointee_type)) {
+                src = setup + indent + target + " = " + value + ";\n";
+                return;
+            }
             if (ASRUtils::is_pointer(target_type)
                     && !ASRUtils::is_array(target_type)
                     && !ASRUtils::is_pointer(value_type)) {
@@ -10422,13 +10433,16 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                         || ASR::is_a<ASR::StructInstanceMember_t>(*value_expr)
                         || ASR::is_a<ASR::UnionInstanceMember_t>(*value_expr));
                 bool target_pointee_is_character = ASRUtils::is_character(*target_pointee_type);
+                ASR::ttype_t *target_pointer_type = ASRUtils::type_get_past_pointer(target_type);
+                bool target_pointee_is_function = target_pointer_type != nullptr
+                    && ASR::is_a<ASR::FunctionType_t>(*target_pointer_type);
                 bool target_pointee_is_aggregate =
                     ASRUtils::is_aggregate_type(target_pointee_type);
-                if ((!target_pointee_is_character && !target_pointee_is_aggregate)
+                if ((!target_pointee_is_character && !target_pointee_is_function
+                            && !target_pointee_is_aggregate)
                         || (target_pointee_is_aggregate
                             && value_is_addressable_lvalue
-                            && (!is_pointer_backed_struct_expr(x.m_value)
-                                || emits_plain_aggregate_dummy_pointee_value(x.m_value)))) {
+                            && !is_pointer_backed_struct_expr(x.m_value))) {
                     value = "&(" + value + ")";
                 }
             }
