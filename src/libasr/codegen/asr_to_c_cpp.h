@@ -192,6 +192,8 @@ public:
     std::vector<std::string> current_function_heap_array_data;
     std::vector<std::pair<std::string, std::string>> current_function_conditional_heap_array_data;
     std::vector<std::string> current_function_local_allocatable_arrays;
+    std::vector<std::string> current_function_local_allocatable_strings;
+    std::vector<std::string> current_function_local_character_strings;
     std::vector<CLocalScalarStructCleanup> current_function_local_allocatable_structs;
     std::vector<std::pair<std::string, ASR::Struct_t*>> current_function_local_structs;
     std::map<std::string, CArrayDescriptorCache> current_function_array_descriptor_cache;
@@ -294,6 +296,22 @@ public:
                 + indent + "    (" + *it + ")->is_allocated = false;\n"
                 + indent + "}\n";
         }
+        for (auto it = current_function_local_allocatable_strings.rbegin();
+                it != current_function_local_allocatable_strings.rend(); ++it) {
+            cleanup += indent + "if (" + *it + " != NULL) {\n"
+                + indent + "    _lfortran_free_alloc(_lfortran_get_default_allocator(), "
+                + *it + ");\n"
+                + indent + "    " + *it + " = NULL;\n"
+                + indent + "}\n";
+        }
+        for (auto it = current_function_local_character_strings.rbegin();
+                it != current_function_local_character_strings.rend(); ++it) {
+            cleanup += indent + "if (" + *it + " != NULL) {\n"
+                + indent + "    _lfortran_free_alloc(_lfortran_get_default_allocator(), "
+                + *it + ");\n"
+                + indent + "    " + *it + " = NULL;\n"
+                + indent + "}\n";
+        }
         for (auto it = current_function_heap_array_data.rbegin();
                 it != current_function_heap_array_data.rend(); ++it) {
             cleanup += indent + "free(" + *it + ");\n";
@@ -320,6 +338,26 @@ public:
             }
         }
         current_function_local_allocatable_arrays.push_back(descriptor);
+    }
+
+    void register_current_function_local_allocatable_string_cleanup(
+            const std::string &target) {
+        for (const std::string &existing: current_function_local_allocatable_strings) {
+            if (existing == target) {
+                return;
+            }
+        }
+        current_function_local_allocatable_strings.push_back(target);
+    }
+
+    void register_current_function_local_character_string_cleanup(
+            const std::string &target) {
+        for (const std::string &existing: current_function_local_character_strings) {
+            if (existing == target) {
+                return;
+            }
+        }
+        current_function_local_character_strings.push_back(target);
     }
 
     void register_current_function_local_allocatable_struct_cleanup(
@@ -3217,6 +3255,8 @@ R"(#include <stdio.h>
         current_function_heap_array_data.clear();
         current_function_conditional_heap_array_data.clear();
         current_function_local_allocatable_arrays.clear();
+        current_function_local_allocatable_strings.clear();
+        current_function_local_character_strings.clear();
         current_function_local_allocatable_structs.clear();
         current_function_local_structs.clear();
         current_function_array_descriptor_cache.clear();
@@ -3349,6 +3389,16 @@ R"(#include <stdio.h>
                         } else if (is_c && v->m_intent == ASRUtils::intent_local
                                 && ASRUtils::is_allocatable(v->m_type)
                                 && !ASRUtils::is_array(v->m_type)
+                                && is_c_compiler_created_return_slot_name(emitted_name)) {
+                            ASR::ttype_t *v_type_unwrapped =
+                                ASRUtils::type_get_past_allocatable_pointer(v->m_type);
+                            if (ASRUtils::is_character(*v_type_unwrapped)) {
+                                register_current_function_local_allocatable_string_cleanup(
+                                    emitted_name);
+                            }
+                        } else if (is_c && v->m_intent == ASRUtils::intent_local
+                                && ASRUtils::is_allocatable(v->m_type)
+                                && !ASRUtils::is_array(v->m_type)
                                 && !is_c_compiler_generated_temporary_name(emitted_name)) {
                             ASR::ttype_t *v_type_unwrapped =
                                 ASRUtils::type_get_past_allocatable_pointer(v->m_type);
@@ -3367,10 +3417,15 @@ R"(#include <stdio.h>
                         } else if (is_c && v->m_intent == ASRUtils::intent_local
                                 && !ASRUtils::is_allocatable(v->m_type)
                                 && !ASRUtils::is_pointer(v->m_type)
-                                && !ASRUtils::is_array(v->m_type)) {
+                                && !ASRUtils::is_array(v->m_type)
+                                && v->m_storage != ASR::storage_typeType::Parameter
+                                && v->m_symbolic_value == nullptr) {
                             ASR::ttype_t *v_type_unwrapped =
                                 ASRUtils::type_get_past_allocatable_pointer(v->m_type);
-                            if (ASR::is_a<ASR::StructType_t>(*v_type_unwrapped)
+                            if (ASRUtils::is_character(*v_type_unwrapped)) {
+                                register_current_function_local_character_string_cleanup(
+                                    emitted_name);
+                            } else if (ASR::is_a<ASR::StructType_t>(*v_type_unwrapped)
                                     && !ASRUtils::is_class_type(v_type_unwrapped)
                                     && v->m_type_declaration != nullptr) {
                                 ASR::symbol_t *struct_sym =
@@ -3458,6 +3513,8 @@ R"(#include <stdio.h>
             current_function_heap_array_data.clear();
             current_function_conditional_heap_array_data.clear();
             current_function_local_allocatable_arrays.clear();
+            current_function_local_allocatable_strings.clear();
+            current_function_local_character_strings.clear();
             current_function_local_allocatable_structs.clear();
             current_function_local_structs.clear();
             current_function_array_descriptor_cache.clear();
@@ -10409,6 +10466,10 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                     from_std_vector_helper.clear();
                     return;
                 }
+                bool cleanup_c_return_slot_after_scalar_string_copy =
+                    !ASRUtils::is_array(m_target_type_unwrapped)
+                    && ASRUtils::is_character(*m_target_type_unwrapped)
+                    && is_c_compiler_created_return_slot_name(value);
                 if( ASRUtils::is_array(m_target_type_unwrapped)
                         && ASRUtils::is_array(m_value_type_unwrapped) ) {
                     ASR::dimension_t* m_target_dims = nullptr;
@@ -10447,6 +10508,13 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                     }
                 } else {
                     src += alloc + indent + c_ds_api->get_deepcopy(m_target_type, value, target) + "\n";
+                    if (cleanup_c_return_slot_after_scalar_string_copy) {
+                        src += indent + "if (" + value + " != NULL) {\n";
+                        src += indent + "    _lfortran_free_alloc(_lfortran_get_default_allocator(), "
+                            + value + ");\n";
+                        src += indent + "    " + value + " = NULL;\n";
+                        src += indent + "}\n";
+                    }
                 }
             } else {
                 src += indent + c_ds_api->get_deepcopy(m_target_type, value, target) + "\n";
@@ -12796,6 +12864,14 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 ASR::symbol_t *alloc_struct_sym = x.m_args[i].m_sym_subclass ?
                     ASRUtils::symbol_get_past_external(x.m_args[i].m_sym_subclass) : nullptr;
                 if (ASRUtils::is_character(*past_alloc_type)) {
+                    if (is_c && is_c_compiler_created_return_slot_expr(tmp_expr)) {
+                        out += indent + "if (" + sym + " != NULL) {\n";
+                        out += indent + "    _lfortran_free_alloc(_lfortran_get_default_allocator(), "
+                            + sym + ");\n";
+                        out += indent + "    " + sym + " = NULL;\n";
+                        out += indent + "}\n";
+                        continue;
+                    }
                     std::string len_str = "1";
                     if (x.m_args[i].m_len_expr) {
                         self().visit_expr(*x.m_args[i].m_len_expr);
@@ -12923,6 +12999,11 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             return false;
         }
         std::string name = CUtils::get_c_variable_name(*ASR::down_cast<ASR::Variable_t>(sym));
+        return name.find("__libasr__created__var__") != std::string::npos
+            && name.find("return_slot") != std::string::npos;
+    }
+
+    bool is_c_compiler_created_return_slot_name(const std::string &name) const {
         return name.find("__libasr__created__var__") != std::string::npos
             && name.find("return_slot") != std::string::npos;
     }

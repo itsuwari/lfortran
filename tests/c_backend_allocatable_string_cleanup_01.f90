@@ -1,13 +1,25 @@
 program c_backend_allocatable_string_cleanup_01
 implicit none
 
+call check_cleanup()
+
+contains
+
+subroutine check_cleanup()
 integer :: i
+character(len=8) :: buffer
+character(len=:), allocatable :: label
+
+buffer = "ab"
+if (trim(buffer) /= "ab") error stop
 
 do i = 1, 4
+    label = make_label(i)
+    if (label /= "ab") error stop
     if (make_label(i) /= "ab") error stop
 end do
 
-contains
+end subroutine
 
 function make_label(i) result(label)
     integer, intent(in) :: i
