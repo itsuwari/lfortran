@@ -12912,6 +12912,21 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         return !ASRUtils::is_unlimited_polymorphic_type(type);
     }
 
+    bool is_c_compiler_created_return_slot_expr(ASR::expr_t *expr) {
+        expr = unwrap_c_lvalue_expr(expr);
+        if (expr == nullptr || !ASR::is_a<ASR::Var_t>(*expr)) {
+            return false;
+        }
+        ASR::symbol_t *sym = ASRUtils::symbol_get_past_external(
+            ASR::down_cast<ASR::Var_t>(expr)->m_v);
+        if (!ASR::is_a<ASR::Variable_t>(*sym)) {
+            return false;
+        }
+        std::string name = CUtils::get_c_variable_name(*ASR::down_cast<ASR::Variable_t>(sym));
+        return name.find("__libasr__created__var__") != std::string::npos
+            && name.find("return_slot") != std::string::npos;
+    }
+
     std::string emit_c_deallocate(ASR::expr_t *expr, const std::string &indent,
             const std::string &) {
         if (ASRUtils::is_array(ASRUtils::expr_type(expr))
@@ -12929,6 +12944,19 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 + indent + "}\n";
         }
         std::string target = get_c_deallocation_target_expr(expr);
+        ASR::ttype_t *target_value_type = ASRUtils::type_get_past_allocatable_pointer(
+            ASRUtils::expr_type(expr));
+        if (target_value_type != nullptr
+                && ASRUtils::is_allocatable(ASRUtils::expr_type(expr))
+                && !ASRUtils::is_array(ASRUtils::expr_type(expr))
+                && ASRUtils::is_character(*target_value_type)
+                && is_c_compiler_created_return_slot_expr(expr)) {
+            return indent + "if (" + target + " != NULL) {\n"
+                + indent + "    _lfortran_free_alloc(_lfortran_get_default_allocator(), "
+                + target + ");\n"
+                + indent + "    " + target + " = NULL;\n"
+                + indent + "}\n";
+        }
         return indent + "if ((" + target + ") != NULL) {\n"
             + indent + "    " + target + " = NULL;\n"
             + indent + "}\n";
@@ -13014,6 +13042,21 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 ASR::symbol_t *sym = ASRUtils::symbol_get_past_external(
                     ASR::down_cast<ASR::Var_t>(x.m_vars[i])->m_v);
                 ASR::Variable_t *var = ASR::down_cast<ASR::Variable_t>(sym);
+                ASR::ttype_t *var_value_type =
+                    ASRUtils::type_get_past_allocatable_pointer(var->m_type);
+                if (ASRUtils::is_allocatable(var->m_type)
+                        && !ASRUtils::is_array(var->m_type)
+                        && var_value_type != nullptr
+                        && ASRUtils::is_character(*var_value_type)
+                        && is_c_compiler_created_return_slot_expr(x.m_vars[i])) {
+                    std::string target = get_c_deallocation_target_expr(x.m_vars[i]);
+                    out += indent + "if (" + target + " != NULL) {\n"
+                        + indent + "    _lfortran_free_alloc(_lfortran_get_default_allocator(), "
+                        + target + ");\n"
+                        + indent + "    " + target + " = NULL;\n"
+                        + indent + "}\n";
+                    continue;
+                }
                 bool use_raw_name = ASRUtils::is_pointer(var->m_type)
                     && !ASRUtils::is_array(var->m_type)
                     && current_function
