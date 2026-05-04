@@ -423,15 +423,20 @@ R"(
         std::string data_name = emitted_name + "_data";
         std::string value_name = emitted_name + "_value";
 
-        std::string sub;
-        sub += "static " + format_type_c("[" + std::to_string(total_size) + "]",
-            type_name, data_name, false, false);
         ASR::expr_t *init_expr = get_variable_init_value_expr(v);
         std::string init_brace = init_expr != nullptr
             ? emit_c_array_constant_brace_init(init_expr, v.m_type) : "";
+        bool element_needs_null_init = type_name == "char *" || type_name == "char*";
+        bool readonly_parameter_data = v.m_storage == ASR::storage_typeType::Parameter
+            && !init_brace.empty() && !element_needs_null_init;
+
+        std::string sub;
+        sub += "static " + format_type_c("[" + std::to_string(total_size) + "]",
+            readonly_parameter_data ? "const " + type_name : type_name,
+            data_name, false, false);
         if (!init_brace.empty()) {
             sub += " = " + init_brace;
-        } else if (type_name == "char *" || type_name == "char*") {
+        } else if (element_needs_null_init) {
             sub += " = {0}";
         }
         sub += ";\n";
@@ -448,7 +453,11 @@ R"(
         }
 
         sub += "static " + wrapper_type + " " + value_name + " = { ";
-        sub += ".data = " + data_name + ", .dims = {";
+        sub += ".data = ";
+        if (readonly_parameter_data) {
+            sub += "(" + type_name + "*) ";
+        }
+        sub += data_name + ", .dims = {";
         for (size_t i = 0; i < n_dims; i++) {
             sub += "{" + lower_bounds[i] + ", " + lengths[i] + ", "
                 + strides[i] + "}";
@@ -1879,11 +1888,11 @@ R"(
                     std::string data_name = std::string(v_m_name) + "_data";
                     std::string variable_name = std::string(v_m_name) + "_value";
                     sub = "static "
-                        + format_type_c(dims, type_name_copy, data_name, use_ref, dummy)
+                        + format_type_c(dims, "const " + type_name_copy, data_name, use_ref, dummy)
                         + " = " + init_brace + ";\n";
                     sub += indent + "static "
                         + format_type_c("", type_name_without_ptr, variable_name, use_ref, dummy)
-                        + " = { .data = " + data_name
+                        + " = { .data = (" + type_name_copy + "*) " + data_name
                         + ", .n_dims = " + std::to_string(n_dims)
                         + ", .offset = 0, .is_allocated = true, .dims = {";
                     std::string stride = "1";

@@ -95,8 +95,8 @@ void __lfortran__lcompilers_matmul(struct r64_____* restrict matrix_a_m, struct 
 
 void __lfortran_c_backend_local_parameter_array_static_01__apply_weights(struct r64___* restrict x, struct r64___* restrict y)
 {
-    static double weights_data[4] = {1.0000000000000000e+00, 2.0000000000000000e+00, 4.0000000000000000e+00, 5.0000000000000000e+00};
-    static struct r64_____ weights_value = { .data = weights_data, .n_dims = 2, .offset = 0, .is_allocated = true, .dims = {{1, 2, 1}, {1, 2, (1*2)}} };
+    static const double weights_data[4] = {1.0000000000000000e+00, 2.0000000000000000e+00, 4.0000000000000000e+00, 5.0000000000000000e+00};
+    static struct r64_____ weights_value = { .data = (double*) weights_data, .n_dims = 2, .offset = 0, .is_allocated = true, .dims = {{1, 2, 1}, {1, 2, (1*2)}} };
     struct r64_____* weights = &weights_value;
     double * restrict __lfortran_x_data = x->data;
     const int32_t __lfortran_x_offset = x->offset;
@@ -114,8 +114,8 @@ void __lfortran_c_backend_local_parameter_array_static_01__apply_weights(struct 
 int main(int argc, char* argv[])
 {
     _lpython_set_argv(argc, argv);
-    static double __libasr_created__subroutine_call_apply_weights_data[2] = {2.0000000000000000e+00, 3.0000000000000000e+00};
-    static struct r64___ __libasr_created__subroutine_call_apply_weights_value = { .data = __libasr_created__subroutine_call_apply_weights_data, .n_dims = 1, .offset = 0, .is_allocated = true, .dims = {{1, 2, 1}} };
+    static const double __libasr_created__subroutine_call_apply_weights_data[2] = {2.0000000000000000e+00, 3.0000000000000000e+00};
+    static struct r64___ __libasr_created__subroutine_call_apply_weights_value = { .data = (double*) __libasr_created__subroutine_call_apply_weights_data, .n_dims = 1, .offset = 0, .is_allocated = true, .dims = {{1, 2, 1}} };
     struct r64___* __libasr_created__subroutine_call_apply_weights = &__libasr_created__subroutine_call_apply_weights_value;
     struct r64___ y_value;
     struct r64___* y = &y_value;
