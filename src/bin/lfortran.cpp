@@ -1953,6 +1953,11 @@ int compile_to_object_file_c(const std::string &infile,
 
         std::string CC = "gcc";
         std::string optimization_flags = c_compiler_optimization_flags(O_flags);
+        if (!optimization_flags.empty()) {
+            // Fortran math intrinsics do not expose C errno semantics; allowing
+            // the C compiler to ignore errno matches gfortran's lowering better.
+            optimization_flags += " -fno-math-errno";
+        }
         std::vector<std::string> object_files;
         object_files.reserve(split_result.result.source_files.size());
         for (const auto &src_file : split_result.result.source_files) {
