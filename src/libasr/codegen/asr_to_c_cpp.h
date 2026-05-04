@@ -9023,17 +9023,19 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             wrapper_src += "    " + get_emitted_function_name(x) + "(" + call_args + ");\n";
         }
         wrapper_src += "}\n\n";
-        wrapper_src += "void " + get_c_tbp_force_link_anchor_name(owner_struct, method)
-            + "(void)\n{\n}\n\n";
+        std::string registration_call = "_lfortran_register_c_tbp_impl(\""
+            + escape_c_string_literal(std::string(method->m_name)) + "\", "
+            + std::to_string(get_struct_runtime_type_id(
+                reinterpret_cast<ASR::symbol_t*>(owner_struct)))
+            + ", (lfortran_c_tbp_func_ptr)" + wrapper_name + ");";
+        std::string anchor_name = get_c_tbp_force_link_anchor_name(owner_struct, method);
         std::string registrar_name = get_unique_local_name(
             "__lfortran_register_tbp_" + CUtils::sanitize_c_identifier(x.m_name), false);
         wrapper_src += "LFORTRAN_C_BACKEND_CONSTRUCTOR static void " + registrar_name
             + "(void)\n{\n"
-            + "    _lfortran_register_c_tbp_impl(\""
-            + escape_c_string_literal(std::string(method->m_name)) + "\", "
-            + std::to_string(get_struct_runtime_type_id(
-                reinterpret_cast<ASR::symbol_t*>(owner_struct)))
-            + ", (lfortran_c_tbp_func_ptr)" + wrapper_name + ");\n}\n";
+            + "    " + registration_call + "\n}\n\n";
+        wrapper_src += "void " + anchor_name + "(void)\n{\n"
+            + "    " + registrar_name + "();\n}\n";
         return wrapper_src;
     }
 
