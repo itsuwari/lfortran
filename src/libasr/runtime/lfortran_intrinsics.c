@@ -12703,28 +12703,51 @@ LFORTRAN_API int32_t _lfortran_iachar(char *c) {
     return (int32_t) (uint8_t)(c[0]);
 }
 
-// Command line arguments (fixed static storage, no allocation needed)
-enum { ARGV_MAX_ARGS = 256, ARGV_MAX_LEN = 4096 };
-static char _argv_buf[ARGV_MAX_ARGS][ARGV_MAX_LEN];
-static char *_argv_ptrs[ARGV_MAX_ARGS];
+// Command line arguments
 int32_t _argc;
 char **_argv;
+static int32_t _argv_owned_count;
 
 LFORTRAN_API void _lpython_set_argv(int32_t argc_1, char *argv_1[]) {
-    if (argc_1 > ARGV_MAX_ARGS) argc_1 = ARGV_MAX_ARGS;
+    _lpython_free_argv();
+    if (argc_1 <= 0 || argv_1 == NULL) {
+        _argc = 0;
+        _argv = NULL;
+        return;
+    }
+    _argv = (char**)internal_malloc((size_t)argc_1 * sizeof(char*));
+    if (_argv == NULL) {
+        _argc = 0;
+        _argv_owned_count = 0;
+        return;
+    }
+    memset(_argv, 0, (size_t)argc_1 * sizeof(char*));
     for (int32_t i = 0; i < argc_1; i++) {
-        size_t len = strlen(argv_1[i]);
-        if (len >= ARGV_MAX_LEN) len = ARGV_MAX_LEN - 1;
-        memcpy(_argv_buf[i], argv_1[i], len);
-        _argv_buf[i][len] = '\0';
-        _argv_ptrs[i] = _argv_buf[i];
+        const char *arg = argv_1[i] == NULL ? "" : argv_1[i];
+        size_t len = strlen(arg);
+        _argv[i] = (char*)internal_malloc(len + 1);
+        if (_argv[i] == NULL) {
+            _argc = i;
+            _argv_owned_count = i;
+            _lpython_free_argv();
+            return;
+        }
+        memcpy(_argv[i], arg, len + 1);
     }
     _argc = argc_1;
-    _argv = _argv_ptrs;
+    _argv_owned_count = argc_1;
 }
 
 LFORTRAN_API void _lpython_free_argv() {
-    // No-op: argv uses fixed static storage
+    if (_argv != NULL) {
+        for (int32_t i = 0; i < _argv_owned_count; i++) {
+            internal_free(_argv[i]);
+        }
+        internal_free(_argv);
+    }
+    _argc = 0;
+    _argv = NULL;
+    _argv_owned_count = 0;
 }
 
 LFORTRAN_API void _lfortran_set_use_runtime_colors(int use_colors) {
