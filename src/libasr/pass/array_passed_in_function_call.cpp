@@ -122,6 +122,7 @@ public:
     // - FixedSizeArray: sequence association requires the callee to index the
     //   original contiguous memory with its own leading dimension
     std::set<ASR::symbol_t*> vars_from_assumed_size_sections;
+    std::set<ASR::symbol_t*> one_based_contiguous_allocs;
 
     CallVisitor(Allocator &al_, const LCompilers::PassOptions& pass_options_) : al(al_), pass_options(pass_options_) {}
 
@@ -139,6 +140,88 @@ public:
 
     ASR::expr_t* get_index_constant(const Location& loc, int64_t value) {
         return ASRUtils::EXPR(ASR::make_IntegerConstant_t(al, loc, value, get_index_type(loc)));
+    }
+
+    bool is_integer_constant_one(ASR::expr_t *expr) {
+        if (!expr) {
+            return true;
+        }
+        expr = ASRUtils::expr_value(expr);
+        return expr && ASR::is_a<ASR::IntegerConstant_t>(*expr)
+            && ASR::down_cast<ASR::IntegerConstant_t>(expr)->m_n == 1;
+    }
+
+    ASR::symbol_t* get_whole_array_var_symbol(ASR::expr_t *expr) {
+        expr = ASRUtils::get_past_array_physical_cast(expr);
+        if (ASR::is_a<ASR::Var_t>(*expr)) {
+            return ASRUtils::symbol_get_past_external(
+                ASR::down_cast<ASR::Var_t>(expr)->m_v);
+        }
+        return nullptr;
+    }
+
+    bool allocation_has_default_lower_bounds(const ASR::alloc_arg_t &arg) {
+        for (size_t i = 0; i < arg.n_dims; i++) {
+            if (!is_integer_constant_one(arg.m_dims[i].m_start)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    void track_allocate_arg(const ASR::alloc_arg_t &arg) {
+        ASR::symbol_t *sym = get_whole_array_var_symbol(arg.m_a);
+        if (!sym) {
+            return;
+        }
+        if (allocation_has_default_lower_bounds(arg)) {
+            one_based_contiguous_allocs.insert(sym);
+        } else {
+            one_based_contiguous_allocs.erase(sym);
+        }
+    }
+
+    bool is_array_bound_kind(ASR::expr_t *expr, ASR::arrayboundType bound) {
+        expr = ASRUtils::get_past_array_physical_cast(expr);
+        return expr && ASR::is_a<ASR::ArrayBound_t>(*expr)
+            && ASR::down_cast<ASR::ArrayBound_t>(expr)->m_bound == bound;
+    }
+
+    bool is_full_unit_slice(const ASR::array_index_t &idx) {
+        return is_array_bound_kind(idx.m_left, ASR::arrayboundType::LBound)
+            && is_array_bound_kind(idx.m_right, ASR::arrayboundType::UBound)
+            && is_integer_constant_one(idx.m_step);
+    }
+
+    bool is_scalar_section_index(const ASR::array_index_t &idx) {
+        return idx.m_left == nullptr && idx.m_right != nullptr && idx.m_step == nullptr;
+    }
+
+    bool is_known_one_based_contiguous_section(ASR::ArraySection_t *section) {
+        ASR::symbol_t *base_sym = get_whole_array_var_symbol(section->m_v);
+        if (!base_sym || one_based_contiguous_allocs.count(base_sym) == 0) {
+            return false;
+        }
+        bool seen_scalar_index = false;
+        for (size_t i = 0; i < section->n_args; i++) {
+            if (is_scalar_section_index(section->m_args[i])) {
+                seen_scalar_index = true;
+                continue;
+            }
+            if (seen_scalar_index || !is_full_unit_slice(section->m_args[i])) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    bool is_known_one_based_contiguous_whole_array(ASR::expr_t *expr) {
+        expr = ASRUtils::get_past_array_physical_cast(expr);
+        if (ASR::is_a<ASR::ArraySection_t>(*expr)) {
+            return is_known_one_based_contiguous_section(ASR::down_cast<ASR::ArraySection_t>(expr));
+        }
+        ASR::symbol_t *sym = get_whole_array_var_symbol(expr);
+        return sym && one_based_contiguous_allocs.count(sym) > 0;
     }
 
     bool is_descriptor_array_casted_to_pointer_to_data( ASR::expr_t* expr ) {
@@ -931,18 +1014,24 @@ public:
                 
                     Vec<ASR::expr_t*> dealloc_args; dealloc_args.reserve(al, 1);
                     dealloc_args.push_back(al, array_var_temporary);
-                    ASR::expr_t* is_contiguous = ASRUtils::EXPR(ASR::make_ArrayIsContiguous_t(al, loc,
-                        arg_expr_past_cast, ASRUtils::TYPE(ASR::make_Logical_t(al, loc, 4)), nullptr));
                     ASR::dimension_t* array_dims = nullptr;
                     int array_rank = ASRUtils::extract_dimensions_from_ttype(ASRUtils::expr_type(array_var_temporary), array_dims);
                     int integer_kind = pass_options.descriptor_index_64 ? 8 : 4;
-                    ASR::expr_t* can_alias_actual = is_contiguous;
-                    for (int dim = 0; dim < array_rank; dim++) {
-                        ASR::expr_t* lbound_is_one = b.Eq(
-                            PassUtils::get_bound(arg_expr_past_cast, dim + 1,
-                                "lbound", al, integer_kind),
-                            get_index_one(loc));
-                        can_alias_actual = b.And(can_alias_actual, lbound_is_one);
+                    ASR::expr_t* can_alias_actual = nullptr;
+                    if (is_known_one_based_contiguous_whole_array(arg_expr_past_cast)) {
+                        can_alias_actual = ASRUtils::EXPR(ASR::make_LogicalConstant_t(
+                            al, loc, true, ASRUtils::TYPE(ASR::make_Logical_t(al, loc, 4))));
+                    } else {
+                        ASR::expr_t* is_contiguous = ASRUtils::EXPR(ASR::make_ArrayIsContiguous_t(al, loc,
+                            arg_expr_past_cast, ASRUtils::TYPE(ASR::make_Logical_t(al, loc, 4)), nullptr));
+                        can_alias_actual = is_contiguous;
+                        for (int dim = 0; dim < array_rank; dim++) {
+                            ASR::expr_t* lbound_is_one = b.Eq(
+                                PassUtils::get_bound(arg_expr_past_cast, dim + 1,
+                                    "lbound", al, integer_kind),
+                                get_index_one(loc));
+                            can_alias_actual = b.And(can_alias_actual, lbound_is_one);
+                        }
                     }
                     ASR::expr_t* must_copy_actual = ASRUtils::EXPR(ASR::make_LogicalNot_t(al, loc, can_alias_actual,
                         ASRUtils::expr_type(can_alias_actual), nullptr));
@@ -1105,7 +1194,32 @@ public:
 
     void visit_Function(const ASR::Function_t& x) {
         vars_from_assumed_size_sections.clear();
+        one_based_contiguous_allocs.clear();
         ASR::CallReplacerOnExpressionsVisitor<CallVisitor>::visit_Function(x);
+    }
+
+    void visit_Allocate(const ASR::Allocate_t& x) {
+        ASR::CallReplacerOnExpressionsVisitor<CallVisitor>::visit_Allocate(x);
+        for (size_t i = 0; i < x.n_args; i++) {
+            track_allocate_arg(x.m_args[i]);
+        }
+    }
+
+    void visit_ReAlloc(const ASR::ReAlloc_t& x) {
+        ASR::CallReplacerOnExpressionsVisitor<CallVisitor>::visit_ReAlloc(x);
+        for (size_t i = 0; i < x.n_args; i++) {
+            track_allocate_arg(x.m_args[i]);
+        }
+    }
+
+    void visit_ExplicitDeallocate(const ASR::ExplicitDeallocate_t& x) {
+        ASR::CallReplacerOnExpressionsVisitor<CallVisitor>::visit_ExplicitDeallocate(x);
+        for (size_t i = 0; i < x.n_vars; i++) {
+            ASR::symbol_t *sym = get_whole_array_var_symbol(x.m_vars[i]);
+            if (sym) {
+                one_based_contiguous_allocs.erase(sym);
+            }
+        }
     }
 
     // Track Associate statements created by pass_array_by_data where the
