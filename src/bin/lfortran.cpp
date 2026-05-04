@@ -144,6 +144,36 @@ std::string c_compiler_section_flags(const CompilerOptions &compiler_options)
     return " -ffunction-sections -fdata-sections";
 }
 
+bool c_is_macos_platform(const CompilerOptions &compiler_options)
+{
+    return compiler_options.platform == LCompilers::Platform::macOS_Intel
+        || compiler_options.platform == LCompilers::Platform::macOS_ARM
+        || compiler_options.platform == LCompilers::Platform::macOS_PowerPC;
+}
+
+bool c_compiler_supports_lto_by_default(const CompilerOptions &compiler_options,
+        const std::string &compiler)
+{
+    if (compiler_options.platform == LCompilers::Platform::Windows) {
+        return false;
+    }
+    std::string name = std::filesystem::path(compiler).filename().string();
+    bool looks_like_gnu_gcc = name == "gcc" || LCompilers::startswith(name, "gcc-");
+    if (c_is_macos_platform(compiler_options)) {
+        return LCompilers::startswith(name, "gcc-");
+    }
+    return looks_like_gnu_gcc;
+}
+
+std::string c_compiler_lto_flags(const CompilerOptions &compiler_options,
+        const std::string &compiler)
+{
+    if (!c_compiler_supports_lto_by_default(compiler_options, compiler)) {
+        return "";
+    }
+    return " -flto";
+}
+
 std::string c_linker_dead_strip_flags(const CompilerOptions &compiler_options)
 {
     if (compiler_options.platform == LCompilers::Platform::macOS_Intel
@@ -1980,6 +2010,7 @@ int compile_to_object_file_c(const std::string &infile,
             // the C compiler to ignore errno matches gfortran's lowering better.
             optimization_flags += " -fno-math-errno";
             optimization_flags += c_compiler_section_flags(compiler_options);
+            optimization_flags += c_compiler_lto_flags(compiler_options, CC);
         }
         std::vector<std::string> object_files;
         object_files.reserve(split_result.result.source_files.size());
@@ -2039,7 +2070,13 @@ int compile_to_object_file_c(const std::string &infile,
             return 0;
         }
 
-        std::string combine_cmd = "ld -r -o " + outfile;
+        std::string combine_cmd;
+        std::string lto_flags = c_compiler_lto_flags(compiler_options, CC);
+        if (!optimization_flags.empty() && !lto_flags.empty()) {
+            combine_cmd = CC + lto_flags + " -r -o " + outfile;
+        } else {
+            combine_cmd = "ld -r -o " + outfile;
+        }
         for (const auto &obj_file : object_files) {
             combine_cmd += " " + obj_file;
         }
@@ -2103,7 +2140,8 @@ int link_executable(const std::vector<std::string> &infiles,
     bool verbose, const std::vector<std::string> &lib_dirs,
     const std::vector<std::string> &libraries,
     const std::vector<std::string> &linker_flags,
-    CompilerOptions &compiler_options)
+    CompilerOptions &compiler_options,
+    const std::vector<std::string> &O_flags)
 {
     /*
     The `gcc` line for dynamic linking that is constructed below:
@@ -2437,6 +2475,7 @@ int link_executable(const std::vector<std::string> &infiles,
     } else if (backend == Backend::c) {
         const char *cc_env = std::getenv("CC");
         std::string CXX = (cc_env != nullptr && cc_env[0] != '\0') ? cc_env : "gcc";
+        std::string lto_flags = c_compiler_lto_flags(compiler_options, CXX);
         std::string cmd = CXX + " -o " + outfile + " ";
         std::string base_path = "\"" + runtime_library_dir + "\"";
         std::string raw_base_path = runtime_library_dir;
@@ -2463,6 +2502,9 @@ int link_executable(const std::vector<std::string> &infiles,
         if (!c_backend_linker_flags.empty()) {
             cmd += c_backend_linker_flags;
         }
+        if (!c_compiler_optimization_flags(O_flags).empty()) {
+            cmd += lto_flags;
+        }
         cmd += c_linker_dead_strip_flags(compiler_options);
         cmd += " -l" + runtime_lib + " -lm";
         if (verbose) {
@@ -2478,6 +2520,9 @@ int link_executable(const std::vector<std::string> &infiles,
                 + " -Wl,-rpath," + raw_base_path;
             if (!c_backend_linker_flags.empty()) {
                 ld_trace += c_backend_linker_flags;
+            }
+            if (!c_compiler_optimization_flags(O_flags).empty()) {
+                ld_trace += lto_flags;
             }
             ld_trace += c_linker_dead_strip_flags(compiler_options);
             ld_trace += " -l" + runtime_lib + " -lm";
@@ -3184,7 +3229,8 @@ int main_app(int argc, char *argv[]) {
     } else {
         int status_code = err_ + link_executable(object_files, outfile, compiler_options.time_report, runtime_library_dir,
                 backend, opts.static_link, opts.shared_link, opts.linker, opts.linker_path, true,
-                opts.arg_v, opts.arg_L, opts.arg_l, opts.linker_flags, compiler_options);
+                opts.arg_v, opts.arg_L, opts.arg_l, opts.linker_flags, compiler_options,
+                opts.O_flags);
         auto end_time = std::chrono::high_resolution_clock::now();
         
         for (const std::string &filename : temp_object_files) {
