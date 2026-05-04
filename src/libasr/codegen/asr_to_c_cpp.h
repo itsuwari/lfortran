@@ -183,6 +183,7 @@ public:
     const ASR::Function_t *current_function = nullptr;
     std::string current_return_var_name;
     std::vector<std::string> current_function_heap_array_data;
+    std::vector<std::pair<std::string, std::string>> current_function_conditional_heap_array_data;
     std::vector<std::string> current_function_local_allocatable_arrays;
     std::vector<CLocalScalarStructCleanup> current_function_local_allocatable_structs;
     std::vector<std::pair<std::string, ASR::Struct_t*>> current_function_local_structs;
@@ -287,6 +288,12 @@ public:
         for (auto it = current_function_heap_array_data.rbegin();
                 it != current_function_heap_array_data.rend(); ++it) {
             cleanup += indent + "free(" + *it + ");\n";
+        }
+        for (auto it = current_function_conditional_heap_array_data.rbegin();
+                it != current_function_conditional_heap_array_data.rend(); ++it) {
+            cleanup += indent + "if (" + it->first + ") {\n";
+            cleanup += indent + "    free(" + it->second + ");\n";
+            cleanup += indent + "}\n";
         }
         return cleanup;
     }
@@ -3160,6 +3167,7 @@ R"(#include <stdio.h>
 
         current_body = "";
         current_function_heap_array_data.clear();
+        current_function_conditional_heap_array_data.clear();
         current_function_local_allocatable_arrays.clear();
         current_function_local_allocatable_structs.clear();
         current_function_local_structs.clear();
@@ -3399,6 +3407,7 @@ R"(#include <stdio.h>
             }
             current_return_var_name.clear();
             current_function_heap_array_data.clear();
+            current_function_conditional_heap_array_data.clear();
             current_function_local_allocatable_arrays.clear();
             current_function_local_allocatable_structs.clear();
             current_function_local_structs.clear();

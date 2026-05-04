@@ -15,6 +15,13 @@
 #define LFORTRAN_C_BACKEND_CONSTRUCTOR
 #endif
 #endif
+#ifndef LFORTRAN_C_BACKEND_WEAK
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_WEAK __attribute__((weak))
+#else
+#define LFORTRAN_C_BACKEND_WEAK static
+#endif
+#endif
 
 
 struct dimension_descriptor
@@ -26,6 +33,13 @@ struct dimension_descriptor
 #define LFORTRAN_C_BACKEND_CONSTRUCTOR __attribute__((constructor))
 #else
 #define LFORTRAN_C_BACKEND_CONSTRUCTOR
+#endif
+#endif
+#ifndef LFORTRAN_C_BACKEND_WEAK
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_WEAK __attribute__((weak))
+#else
+#define LFORTRAN_C_BACKEND_WEAK static
 #endif
 #endif
 
@@ -103,7 +117,9 @@ void __lfortran_c_backend_automatic_array_cleanup_01__accumulate(int32_t n, doub
     work->dims[1].stride = (1*n);
     (*total) = -  1.00000000000000000e+00;
     if (n <= 0) {
-        free((work_data_size > 4096 ? work_data : NULL));
+        if (work_data_size > 4096) {
+            free(work_data);
+        }
         return;
     }
     for (i=1; i<=n; i++) {
@@ -114,7 +130,9 @@ void __lfortran_c_backend_automatic_array_cleanup_01__accumulate(int32_t n, doub
         }
     }
     (*total) = __lfortran__lcompilers_Sum_8_2_0_idx4_real_______0((&(struct r64_____){ .data = work->data, .dims = {{1, work->dims[0].length, work->dims[0].stride}, {1, work->dims[1].length, work->dims[1].stride}}, .n_dims = 2, .offset = work->offset, .is_allocated = work->is_allocated }), ((int32_t) (&(struct r64_____){ .data = work->data, .dims = {{1, work->dims[0].length, work->dims[0].stride}, {1, work->dims[1].length, work->dims[1].stride}}, .n_dims = 2, .offset = work->offset, .is_allocated = work->is_allocated })->dims[0].length), ((int32_t) (&(struct r64_____){ .data = work->data, .dims = {{1, work->dims[0].length, work->dims[0].stride}, {1, work->dims[1].length, work->dims[1].stride}}, .n_dims = 2, .offset = work->offset, .is_allocated = work->is_allocated })->dims[1].length));
-    free((work_data_size > 4096 ? work_data : NULL));
+    if (work_data_size > 4096) {
+        free(work_data);
+    }
 }
 
 int main(int argc, char* argv[])

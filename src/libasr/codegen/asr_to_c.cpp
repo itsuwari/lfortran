@@ -1958,8 +1958,8 @@ R"(
                             + "*) malloc(sizeof(" + type_name_copy + ")*" + size_name
                             + ");\n";
                         sub += indent + "}\n";
-                        current_function_heap_array_data.push_back("(" + size_name
-                            + " > 4096 ? " + data_name + " : NULL)");
+                        current_function_conditional_heap_array_data.push_back(
+                            {size_name + " > 4096", data_name});
                     } else {
                         sub += indent + format_type_c("*", type_name_copy, data_name,
                                                     use_ref, dummy);
