@@ -4918,9 +4918,8 @@ namespace MatMul {
          * [ 2, 3, 4 ]     │ 2, 3 │ │     [ 20, 29 ]
          *                 [ 3, 4 ] ▼
          */
-        declare_basic_variables("_lcompilers_matmul");
-        fill_func_arg("matrix_a_m", duplicate_type_with_empty_dims(al, arg_types[0]));
-        fill_func_arg("matrix_b_m", duplicate_type_with_empty_dims(al, arg_types[1]));
+        ASR::ttype_t *matrix_a_type = duplicate_type_with_empty_dims(al, arg_types[0]);
+        ASR::ttype_t *matrix_b_type = duplicate_type_with_empty_dims(al, arg_types[1]);
         ASR::ttype_t* return_type_ = return_type;
         if( !ASRUtils::is_fixed_size_array(return_type) ) {
             bool is_allocatable = ASRUtils::is_allocatable(return_type);
@@ -4943,6 +4942,18 @@ namespace MatMul {
                 return_type_ = ASRUtils::TYPE(ASRUtils::make_Allocatable_t_util(al, loc, return_type_));
             }
         }
+        std::string new_name = "_lcompilers_matmul_"
+            + ASRUtils::get_type_code(matrix_a_type, true, true, true, m_args[0].m_value)
+            + "_" + ASRUtils::get_type_code(matrix_b_type, true, true, true, m_args[1].m_value)
+            + "_ret_" + ASRUtils::get_type_code(return_type_, true, true, true)
+            + "_ov" + std::to_string(overload_id);
+        declare_basic_variables(new_name);
+        if (scope->get_symbol(new_name)) {
+            ASR::symbol_t *s = scope->get_symbol(new_name);
+            return b.Call(s, m_args, return_type, nullptr);
+        }
+        fill_func_arg("matrix_a_m", matrix_a_type);
+        fill_func_arg("matrix_b_m", matrix_b_type);
         ASR::expr_t *result = declare("result", return_type_, Out);
         args.push_back(al, result);
         ASR::expr_t *i = declare("i", int32, Local);
