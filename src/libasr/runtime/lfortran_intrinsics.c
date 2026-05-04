@@ -57,16 +57,42 @@ typedef struct LFortranCTypeParentEntry {
 
 typedef struct LFortranCTbpEntry {
     const char *method_name;
+    uint64_t method_hash;
     int64_t type_id;
     lfortran_c_tbp_func_ptr func;
     struct LFortranCTbpEntry *next;
 } LFortranCTbpEntry;
 
-static LFortranCTypeParentEntry *lfortran_c_type_parent_registry = NULL;
-static LFortranCTbpEntry *lfortran_c_tbp_registry = NULL;
+#define LFORTRAN_C_TBP_BUCKET_COUNT 4096
+#define LFORTRAN_C_TYPE_PARENT_BUCKET_COUNT 1024
+
+static LFortranCTypeParentEntry *lfortran_c_type_parent_registry[LFORTRAN_C_TYPE_PARENT_BUCKET_COUNT] = {NULL};
+static LFortranCTbpEntry *lfortran_c_tbp_registry[LFORTRAN_C_TBP_BUCKET_COUNT] = {NULL};
+
+static uint64_t lfortran_hash_c_string(const char *str) {
+    uint64_t hash = UINT64_C(1469598103934665603);
+    while (*str != '\0') {
+        hash ^= (unsigned char)(*str);
+        hash *= UINT64_C(1099511628211);
+        str++;
+    }
+    return hash;
+}
+
+static uint64_t lfortran_mix_i64_hash(int64_t value) {
+    uint64_t x = (uint64_t)value;
+    x ^= x >> 33;
+    x *= UINT64_C(0xff51afd7ed558ccd);
+    x ^= x >> 33;
+    x *= UINT64_C(0xc4ceb9fe1a85ec53);
+    x ^= x >> 33;
+    return x;
+}
 
 static LFortranCTypeParentEntry *lfortran_find_c_type_parent_entry(int64_t type_id) {
-    LFortranCTypeParentEntry *entry = lfortran_c_type_parent_registry;
+    size_t bucket = (size_t)(lfortran_mix_i64_hash(type_id)
+        & (LFORTRAN_C_TYPE_PARENT_BUCKET_COUNT - 1));
+    LFortranCTypeParentEntry *entry = lfortran_c_type_parent_registry[bucket];
     while (entry != NULL) {
         if (entry->type_id == type_id) {
             return entry;
@@ -76,11 +102,16 @@ static LFortranCTypeParentEntry *lfortran_find_c_type_parent_entry(int64_t type_
     return NULL;
 }
 
-static LFortranCTbpEntry *lfortran_find_c_tbp_entry(const char *method_name, int64_t type_id) {
-    LFortranCTbpEntry *entry = lfortran_c_tbp_registry;
+static LFortranCTbpEntry *lfortran_find_c_tbp_entry(const char *method_name,
+        uint64_t method_hash, int64_t type_id) {
+    size_t bucket = (size_t)((method_hash ^ lfortran_mix_i64_hash(type_id))
+        & (LFORTRAN_C_TBP_BUCKET_COUNT - 1));
+    LFortranCTbpEntry *entry = lfortran_c_tbp_registry[bucket];
     while (entry != NULL) {
         if (entry->type_id == type_id
-                && strcmp(entry->method_name, method_name) == 0) {
+                && entry->method_hash == method_hash
+                && (entry->method_name == method_name
+                    || strcmp(entry->method_name, method_name) == 0)) {
             return entry;
         }
         entry = entry->next;
@@ -102,10 +133,12 @@ LFORTRAN_API void _lfortran_register_c_type_parent(int64_t type_id, int64_t pare
         fprintf(stderr, "ERROR: unable to register C type parent\n");
         exit(1);
     }
+    size_t bucket = (size_t)(lfortran_mix_i64_hash(type_id)
+        & (LFORTRAN_C_TYPE_PARENT_BUCKET_COUNT - 1));
     entry->type_id = type_id;
     entry->parent_type_id = parent_type_id;
-    entry->next = lfortran_c_type_parent_registry;
-    lfortran_c_type_parent_registry = entry;
+    entry->next = lfortran_c_type_parent_registry[bucket];
+    lfortran_c_type_parent_registry[bucket] = entry;
 }
 
 LFORTRAN_API void _lfortran_register_c_tbp_impl(const char* method_name, int64_t type_id,
@@ -113,7 +146,8 @@ LFORTRAN_API void _lfortran_register_c_tbp_impl(const char* method_name, int64_t
     if (method_name == NULL || type_id == 0 || func == NULL) {
         return;
     }
-    LFortranCTbpEntry *entry = lfortran_find_c_tbp_entry(method_name, type_id);
+    uint64_t method_hash = lfortran_hash_c_string(method_name);
+    LFortranCTbpEntry *entry = lfortran_find_c_tbp_entry(method_name, method_hash, type_id);
     if (entry != NULL) {
         entry->func = func;
         return;
@@ -123,17 +157,22 @@ LFORTRAN_API void _lfortran_register_c_tbp_impl(const char* method_name, int64_t
         fprintf(stderr, "ERROR: unable to register C type-bound procedure\n");
         exit(1);
     }
+    size_t bucket = (size_t)((method_hash ^ lfortran_mix_i64_hash(type_id))
+        & (LFORTRAN_C_TBP_BUCKET_COUNT - 1));
     entry->method_name = method_name;
+    entry->method_hash = method_hash;
     entry->type_id = type_id;
     entry->func = func;
-    entry->next = lfortran_c_tbp_registry;
-    lfortran_c_tbp_registry = entry;
+    entry->next = lfortran_c_tbp_registry[bucket];
+    lfortran_c_tbp_registry[bucket] = entry;
 }
 
 LFORTRAN_API lfortran_c_tbp_func_ptr _lfortran_get_c_tbp_impl(const char* method_name,
         int64_t type_id) {
+    uint64_t method_hash = lfortran_hash_c_string(method_name);
     while (type_id != 0) {
-        LFortranCTbpEntry *entry = lfortran_find_c_tbp_entry(method_name, type_id);
+        LFortranCTbpEntry *entry = lfortran_find_c_tbp_entry(
+            method_name, method_hash, type_id);
         if (entry != NULL) {
             return entry->func;
         }
