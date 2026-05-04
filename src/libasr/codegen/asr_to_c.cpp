@@ -2054,16 +2054,17 @@ R"(
                         ASRUtils::type_get_past_allocatable_pointer(var->m_type));
                     if (element_type != nullptr && ASRUtils::is_character(*element_type)) {
                         std::string init_elem = init_data + "[" + init_index + "]";
-                        sub += inner_indent + v_m_name + "_data[" + loop_var + "] = NULL;\n";
-                        sub += inner_indent
-                            + "_lfortran_strcpy_alloc(_lfortran_get_default_allocator(), &"
-                            + v_m_name + "_data[" + loop_var + "], NULL, true, true, "
-                            + init_elem + ", strlen(" + init_elem + "));\n";
+                        sub += inner_indent + v_m_name + "_data[" + loop_var + "] = "
+                            + init_elem + ";\n";
                     } else {
                         sub += inner_indent + v_m_name + "_data[" + loop_var + "] = "
                             + init_data + "[" + init_index + "];\n";
                     }
                     sub += indent + "}\n";
+                    if (element_type != nullptr && ASRUtils::is_character(*element_type)) {
+                        sub += indent + "free(" + init_name + "->data);\n";
+                        sub += indent + "free(" + init_name + ");\n";
+                    }
                 }
                 if (sub.size() >= 2 && sub.substr(sub.size() - 2) == ";\n") {
                     sub.pop_back();
