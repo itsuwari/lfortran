@@ -197,9 +197,38 @@ public:
         return idx.m_left == nullptr && idx.m_right != nullptr && idx.m_step == nullptr;
     }
 
+    bool is_variable_declared_contiguous(ASR::symbol_t *sym) {
+        if (!sym) {
+            return false;
+        }
+        sym = ASRUtils::symbol_get_past_external(sym);
+        return ASR::is_a<ASR::Variable_t>(*sym)
+            && ASR::down_cast<ASR::Variable_t>(sym)->m_contiguous_attr;
+    }
+
+    bool array_type_has_default_lower_bounds(ASR::ttype_t *type) {
+        type = ASRUtils::type_get_past_allocatable_pointer(type);
+        if (!type || !ASRUtils::is_array(type)) {
+            return false;
+        }
+        ASR::dimension_t *dims = nullptr;
+        int rank = ASRUtils::extract_dimensions_from_ttype(type, dims);
+        for (int i = 0; i < rank; i++) {
+            if (!is_integer_constant_one(dims[i].m_start)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    bool is_known_contiguous_section_base(ASR::symbol_t *base_sym) {
+        return base_sym && (one_based_contiguous_allocs.count(base_sym) > 0 ||
+            is_variable_declared_contiguous(base_sym));
+    }
+
     bool is_known_one_based_contiguous_section(ASR::ArraySection_t *section) {
         ASR::symbol_t *base_sym = get_whole_array_var_symbol(section->m_v);
-        if (!base_sym || one_based_contiguous_allocs.count(base_sym) == 0) {
+        if (!is_known_contiguous_section_base(base_sym)) {
             return false;
         }
         bool seen_scalar_index = false;
@@ -221,7 +250,14 @@ public:
             return is_known_one_based_contiguous_section(ASR::down_cast<ASR::ArraySection_t>(expr));
         }
         ASR::symbol_t *sym = get_whole_array_var_symbol(expr);
-        return sym && one_based_contiguous_allocs.count(sym) > 0;
+        if (!sym) {
+            return false;
+        }
+        if (one_based_contiguous_allocs.count(sym) > 0) {
+            return true;
+        }
+        return is_variable_declared_contiguous(sym)
+            && array_type_has_default_lower_bounds(ASRUtils::symbol_type(sym));
     }
 
     bool is_descriptor_array_casted_to_pointer_to_data( ASR::expr_t* expr ) {
