@@ -1,0 +1,13 @@
+{
+    "basename": "run-c_backend_alloc_section_self_assign_01-37218c6",
+    "cmd": "lfortran --no-color {infile}",
+    "infile": "tests/c_backend_alloc_section_self_assign_01.f90",
+    "infile_hash": "ebc6fb7eb2fee5966ccec6dd1ed557779ebb16b95355acaacea5d833",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}
