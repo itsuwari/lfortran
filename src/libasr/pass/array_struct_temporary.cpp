@@ -1752,8 +1752,7 @@ static bool c_rank2_full_ref_same_target(ASR::expr_t *target, ASR::expr_t *expr)
     expr = ASRUtils::get_past_array_physical_cast(expr);
     return is_c_rank2_full_array_expr(target)
         && is_c_rank2_full_array_expr(expr)
-        && extract_symbol(target) != nullptr
-        && extract_symbol(target) == extract_symbol(expr);
+        && same_array_reference(target, expr);
 }
 
 static bool is_c_rank2_nonself_update_expr(ASR::expr_t *expr) {
