@@ -5580,6 +5580,145 @@ R"(    // Initialise Numpy
         src = indent + "_lfortran_backspace(" + unit + ");\n";
     }
 
+    std::string emit_list_directed_array_print(ASR::expr_t *expr,
+            ASR::ttype_t *value_type, const std::string &array_src,
+            const std::string &base_indent) {
+        ASR::ttype_t *array_type = ASRUtils::type_get_past_allocatable_pointer(value_type);
+        int n_dims = ASRUtils::extract_n_dims_from_ttype(array_type);
+        if (n_dims <= 0) {
+            throw CodeGenError("C backend expected array argument in print statement",
+                expr->base.loc);
+        }
+        ASR::ttype_t *element_type = ASRUtils::type_get_past_allocatable_pointer(
+            ASRUtils::extract_type(array_type));
+        ASR::dimension_t *m_dims = nullptr;
+        int extracted_n_dims = ASRUtils::extract_dimensions_from_ttype(array_type, m_dims);
+        LCOMPILERS_ASSERT(extracted_n_dims == n_dims);
+
+        std::string data_expr = get_c_array_data_expr(expr, array_src);
+        std::string offset_expr = get_c_array_offset_expr(expr, array_src);
+        bool descriptor_backed = data_expr != array_src;
+        std::vector<std::string> lengths(n_dims);
+        std::vector<std::string> strides(n_dims);
+        if (descriptor_backed) {
+            for (int i = 0; i < n_dims; i++) {
+                lengths[i] = array_src + "->dims[" + std::to_string(i) + "].length";
+                strides[i] = array_src + "->dims[" + std::to_string(i) + "].stride";
+            }
+        } else {
+            std::string stride = "1";
+            for (int i = 0; i < n_dims; i++) {
+                lengths[i] = get_static_dim_expr(m_dims[i].m_length, "1");
+                strides[i] = stride;
+                stride += " * " + lengths[i];
+            }
+        }
+
+        std::string print_first = get_unique_local_name("__lfortran_print_first");
+        std::vector<std::string> loop_indices;
+        loop_indices.reserve(n_dims);
+        for (int i = 0; i < n_dims; i++) {
+            loop_indices.push_back(get_unique_local_name("__lfortran_print_i"));
+        }
+
+        std::string tab(indentation_spaces, ' ');
+        std::string out = base_indent + "bool " + print_first + " = true;\n";
+        for (int i = n_dims - 1; i >= 0; i--) {
+            std::string indent = base_indent + std::string((n_dims - 1 - i) * indentation_spaces, ' ');
+            out += indent + "for (int64_t " + loop_indices[i] + " = 0; "
+                + loop_indices[i] + " < (int64_t)" + lengths[i] + "; "
+                + loop_indices[i] + "++) {\n";
+        }
+
+        std::string inner_indent = base_indent + std::string(n_dims * indentation_spaces, ' ');
+        out += inner_indent + "if (!" + print_first + ") {\n";
+        out += inner_indent + tab + "printf(\" \");\n";
+        out += inner_indent + "}\n";
+        out += inner_indent + print_first + " = false;\n";
+
+        std::string elem_value;
+        ASR::expr_t *unwrapped_expr = unwrap_c_array_expr(expr);
+        if (unwrapped_expr != nullptr && ASR::is_a<ASR::ArraySection_t>(*unwrapped_expr)) {
+            ASR::ArraySection_t *section = ASR::down_cast<ASR::ArraySection_t>(unwrapped_expr);
+            this->visit_expr(*section->m_v);
+            std::string base_src = src;
+            ASR::ttype_t *base_type = ASRUtils::expr_type(section->m_v);
+            ASR::ttype_t *base_array_type = ASRUtils::type_get_past_allocatable_pointer(base_type);
+            ASR::dimension_t *base_dims = nullptr;
+            int base_n_dims = ASRUtils::extract_dimensions_from_ttype(base_array_type, base_dims);
+
+            std::string base_data_expr = get_c_array_data_expr(section->m_v, base_src);
+            std::string base_offset_expr = get_c_array_offset_expr(section->m_v, base_src);
+            bool base_descriptor_backed = base_data_expr != base_src;
+            std::vector<std::string> base_lower_bounds(base_n_dims);
+            std::vector<std::string> base_strides(base_n_dims);
+            if (base_descriptor_backed) {
+                for (int i = 0; i < base_n_dims; i++) {
+                    base_lower_bounds[i] = base_src + "->dims[" + std::to_string(i) + "].lower_bound";
+                    base_strides[i] = base_src + "->dims[" + std::to_string(i) + "].stride";
+                }
+            } else {
+                std::string stride = "1";
+                for (int i = 0; i < base_n_dims; i++) {
+                    base_lower_bounds[i] = get_static_dim_expr(base_dims[i].m_start, "1");
+                    std::string length = get_static_dim_expr(base_dims[i].m_length, "1");
+                    base_strides[i] = stride;
+                    stride += " * " + length;
+                }
+            }
+
+            std::string elem_index = base_offset_expr;
+            int section_dim = 0;
+            for (int i = 0; i < base_n_dims; i++) {
+                ASR::array_index_t idx = section->m_args[i];
+                bool is_slice = idx.m_left != nullptr || idx.m_step != nullptr
+                    || idx.m_right == nullptr;
+                std::string actual_index;
+                if (is_slice) {
+                    std::string left = base_lower_bounds[i];
+                    if (idx.m_left != nullptr) {
+                        this->visit_expr(*idx.m_left);
+                        left = src;
+                    }
+                    std::string step = "1";
+                    if (idx.m_step != nullptr) {
+                        this->visit_expr(*idx.m_step);
+                        step = src;
+                    }
+                    actual_index = "(" + left + " + " + loop_indices[section_dim]
+                        + " * " + step + ")";
+                    section_dim++;
+                } else {
+                    this->visit_expr(*idx.m_right);
+                    actual_index = src;
+                }
+                elem_index += " + ((" + actual_index + ") - (" + base_lower_bounds[i]
+                    + ")) * " + base_strides[i];
+            }
+            elem_value = base_data_expr + "[" + elem_index + "]";
+        } else {
+            std::string elem_index = offset_expr;
+            for (int i = 0; i < n_dims; i++) {
+                elem_index += " + " + loop_indices[i] + " * " + strides[i];
+            }
+            elem_value = data_expr + "[" + elem_index + "]";
+        }
+        std::string print_type = c_ds_api->get_print_type(element_type, false);
+        if (ASR::is_a<ASR::Complex_t>(*element_type)) {
+            out += inner_indent + "printf(\"" + print_type + "\", creal("
+                + elem_value + "), cimag(" + elem_value + "));\n";
+        } else {
+            out += inner_indent + "printf(\"" + print_type + "\", "
+                + elem_value + ");\n";
+        }
+
+        for (int i = 0; i < n_dims; i++) {
+            std::string indent = base_indent + std::string((n_dims - 1 - i) * indentation_spaces, ' ');
+            out += indent + "}\n";
+        }
+        return out;
+    }
+
     void visit_Print(const ASR::Print_t &x) {
         std::string indent(indentation_level*indentation_spaces, ' ');
         std::string tmp_gen = indent + "printf(\"", out = "";
@@ -5617,15 +5756,14 @@ R"(    // Initialise Numpy
                     v.clear();
                 }
                 tmp_gen = indent + "printf(\"";
-                if (i != 0) {
-                    out += indent + "printf(\" \");\n";
-                }
-                std::string p_func = c_ds_api->get_print_func(value_type);
-                out += indent + p_func + "(" + src + ");\n";
+                out += emit_list_directed_array_print(
+                    str_fmt->m_args[i], value_type, src, indent);
                 if (i + 1 != n_values) {
                     out += indent + "printf(\" \");\n";
+                    tmp_gen = indent + "printf(\"";
                 } else {
                     out += indent + "printf(\"\\n\");\n";
+                    tmp_gen.clear();
                 }
                 continue;
             }
@@ -5660,13 +5798,15 @@ R"(    // Initialise Numpy
                 v.push_back(separator);
             }
         }
-        tmp_gen += "\\n\"";
-        if (!v.empty()) {
-            for (auto &s: v) {
-                tmp_gen += ", " + s;
+        if (!tmp_gen.empty()) {
+            tmp_gen += "\\n\"";
+            if (!v.empty()) {
+                for (auto &s: v) {
+                    tmp_gen += ", " + s;
+                }
             }
+            tmp_gen += ");\n";
         }
-        tmp_gen += ");\n";
         bracket_open--;
         out += tmp_gen;
         src = this->check_tmp_buffer() + out;

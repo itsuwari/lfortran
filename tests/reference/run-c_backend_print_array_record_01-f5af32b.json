@@ -1,0 +1,13 @@
+{
+    "basename": "run-c_backend_print_array_record_01-f5af32b",
+    "cmd": "lfortran --no-color {infile}",
+    "infile": "tests/c_backend_print_array_record_01.f90",
+    "infile_hash": "70126b90c53ac61a32b2d1fd7410acc6cc2b665915c2e58e486e86bd",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": "run-c_backend_print_array_record_01-f5af32b.stdout",
+    "stdout_hash": "7edee93a6249abcea861edd9540d7091433933e52f22f921b1ff36e8",
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

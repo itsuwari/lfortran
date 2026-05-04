@@ -268,6 +268,10 @@ public:
     }
 
     void visit_Print(const ASR::Print_t& x) {
+        if (pass_options.c_backend) {
+            remove_original_stmt = false;
+            return;
+        }
         LCOMPILERS_ASSERT(ASR::is_a<ASR::String_t>(*ASRUtils::extract_type(ASRUtils::expr_type(x.m_text))));
         if (ASR::is_a<ASR::StringFormat_t>(*x.m_text)) {
             std::vector<ASR::expr_t*> print_body;
