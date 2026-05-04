@@ -1,0 +1,13 @@
+{
+    "basename": "run-c_backend_nested_matmul_auto_temp_01-a34f2bb",
+    "cmd": "lfortran --no-color {infile}",
+    "infile": "tests/c_backend_nested_matmul_auto_temp_01.f90",
+    "infile_hash": "486df29acbd619c9554350d44183b0625b04fcfe3efb45fa0a5052fa",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

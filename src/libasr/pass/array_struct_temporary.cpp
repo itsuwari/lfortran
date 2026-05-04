@@ -428,6 +428,85 @@ ASR::expr_t* create_temporary_variable_for_scalar(Allocator& al,
     return ASRUtils::EXPR(ASR::make_Var_t(al, temporary_variable->base.loc, temporary_variable));
 }
 
+static inline bool is_c_automatic_temp_size_source(ASR::expr_t* expr) {
+    expr = ASRUtils::get_past_array_physical_cast(expr);
+    if (!ASR::is_a<ASR::Var_t>(*expr)) {
+        return false;
+    }
+    ASR::symbol_t* sym = ASRUtils::symbol_get_past_external(
+        ASR::down_cast<ASR::Var_t>(expr)->m_v);
+    if (!ASR::is_a<ASR::Variable_t>(*sym)) {
+        return false;
+    }
+    ASR::Variable_t* var = ASR::down_cast<ASR::Variable_t>(sym);
+    return ASRUtils::is_arg_dummy(var->m_intent) ||
+        var->m_storage == ASR::storage_typeType::Parameter ||
+        ASRUtils::is_fixed_size_array(var->m_type);
+}
+
+static inline bool is_c_automatic_temp_size_expr(ASR::expr_t* expr) {
+    if (expr == nullptr) {
+        return false;
+    }
+    switch (expr->type) {
+        case ASR::exprType::IntegerConstant:
+            return true;
+        case ASR::exprType::ArraySize: {
+            ASR::ArraySize_t* size = ASR::down_cast<ASR::ArraySize_t>(expr);
+            return is_c_automatic_temp_size_source(size->m_v);
+        }
+        default:
+            return false;
+    }
+}
+
+static inline bool derive_matmul_result_dims_for_temp(Allocator& al,
+        ASR::expr_t* value, Vec<ASR::dimension_t>& dims) {
+    value = ASRUtils::get_past_array_physical_cast(value);
+    if (!ASR::is_a<ASR::IntrinsicArrayFunction_t>(*value)) {
+        return false;
+    }
+    ASR::IntrinsicArrayFunction_t* matmul =
+        ASR::down_cast<ASR::IntrinsicArrayFunction_t>(value);
+    if (static_cast<ASRUtils::IntrinsicArrayFunctions>(
+            matmul->m_arr_intrinsic_id) != ASRUtils::IntrinsicArrayFunctions::MatMul ||
+            matmul->n_args != 2) {
+        return false;
+    }
+    ASRUtils::ASRBuilder b(al, matmul->base.base.loc);
+    ASR::expr_t* int32_one = b.i32(1);
+    size_t n_dims_a = ASRUtils::extract_n_dims_from_ttype(
+        ASRUtils::expr_type(matmul->m_args[0]));
+    size_t n_dims_b = ASRUtils::extract_n_dims_from_ttype(
+        ASRUtils::expr_type(matmul->m_args[1]));
+    dims.reserve(al, n_dims_a == 1 || n_dims_b == 1 ? 1 : 2);
+    auto push_dim = [&](ASR::expr_t* array, int dim) {
+        ASR::dimension_t result_dim;
+        result_dim.loc = matmul->base.base.loc;
+        result_dim.m_start = int32_one;
+        result_dim.m_length = b.ArraySize(array, b.i32(dim),
+            ASRUtils::expr_type(int32_one));
+        dims.push_back(al, result_dim);
+    };
+    if (n_dims_a == 2 && n_dims_b == 1) {
+        push_dim(matmul->m_args[0], 1);
+    } else if (n_dims_a == 1 && n_dims_b == 2) {
+        push_dim(matmul->m_args[1], 2);
+    } else if (n_dims_a == 2 && n_dims_b == 2) {
+        push_dim(matmul->m_args[0], 1);
+        push_dim(matmul->m_args[1], 2);
+    } else {
+        return false;
+    }
+    for (size_t i = 0; i < dims.size(); i++) {
+        if (!is_c_automatic_temp_size_expr(dims[i].m_length)) {
+            dims.n = 0;
+            return false;
+        }
+    }
+    return true;
+}
+
 ASR::expr_t* create_temporary_variable_for_array(Allocator& al,
     ASR::expr_t* value, SymbolTable* scope, std::string name_hint,
     bool is_pointer_required, bool override_physical_type) {
@@ -437,6 +516,15 @@ ASR::expr_t* create_temporary_variable_for_array(Allocator& al,
     /* Figure out the type of the temporary array variable */
     ASR::dimension_t* value_m_dims = nullptr;
     size_t value_n_dims = ASRUtils::extract_dimensions_from_ttype(value_type, value_m_dims);
+    Vec<ASR::dimension_t> derived_matmul_dims;
+    derived_matmul_dims.reserve(al, 2);
+    if (!is_pointer_required &&
+            derive_matmul_result_dims_for_temp(al, value, derived_matmul_dims)) {
+        value_type = ASRUtils::duplicate_type(al, value_type,
+            &derived_matmul_dims);
+        value_n_dims = ASRUtils::extract_dimensions_from_ttype(
+            value_type, value_m_dims);
+    }
 
     if (ASR::is_a<ASR::IntegerCompare_t>(*value)) {
         ASR::IntegerCompare_t* integer_compare = ASR::down_cast<ASR::IntegerCompare_t>(value);
