@@ -1938,28 +1938,45 @@ R"(
                     return;
                 }
                 sub += ";\n";
+                bool lazy_dynamic_stack_storage = false;
                 if( !is_fixed_size ) {
                     std::string data_name = std::string(v_m_name) + "_data";
                     if (!dynamic_stack_size_expr.empty()) {
-                        std::string size_name = get_unique_local_name(
-                            std::string(v_m_name) + "_data_size");
-                        std::string stack_data_name = data_name + "_stack";
-                        sub += indent + "int64_t " + size_name + " = "
-                            + dynamic_stack_size_expr + ";\n";
-                        sub += indent + format_type_c(
-                            "[(" + size_name + " > 0 && " + size_name + " <= 4096 ? "
-                                + size_name + " : 1)]",
-                            type_name_copy, stack_data_name, use_ref, dummy) + ";\n";
-                        sub += indent + format_type_c("*", type_name_copy, data_name,
-                                                    use_ref, dummy)
-                            + " = " + stack_data_name + ";\n";
-                        sub += indent + "if (" + size_name + " > 4096) {\n";
-                        sub += indent + "    " + data_name + " = (" + type_name_copy
-                            + "*) malloc(sizeof(" + type_name_copy + ")*" + size_name
-                            + ");\n";
-                        sub += indent + "}\n";
-                        current_function_conditional_heap_array_data.push_back(
-                            {size_name + " > 4096", data_name});
+                        lazy_dynamic_stack_storage = var != nullptr
+                            && is_c_compiler_generated_temporary_name(
+                                std::string(var->m_name))
+                            && get_variable_init_expr_raw(*var) == nullptr;
+                        if (lazy_dynamic_stack_storage) {
+                            std::string heap_flag_name = get_unique_local_name(
+                                std::string(v_m_name) + "_data_heap_allocated");
+                            sub += indent + "bool " + heap_flag_name + " = false;\n";
+                            current_function_lazy_automatic_array_storage[v_m_name] = {
+                                var, type_name_copy, heap_flag_name, dynamic_stack_size_expr};
+                            current_function_conditional_heap_array_data.push_back(
+                                {heap_flag_name + " && " + std::string(v_m_name)
+                                    + "->data != NULL",
+                                 std::string(v_m_name) + "->data"});
+                        } else {
+                            std::string size_name = get_unique_local_name(
+                                std::string(v_m_name) + "_data_size");
+                            std::string stack_data_name = data_name + "_stack";
+                            sub += indent + "int64_t " + size_name + " = "
+                                + dynamic_stack_size_expr + ";\n";
+                            sub += indent + format_type_c(
+                                "[(" + size_name + " > 0 && " + size_name + " <= 4096 ? "
+                                    + size_name + " : 1)]",
+                                type_name_copy, stack_data_name, use_ref, dummy) + ";\n";
+                            sub += indent + format_type_c("*", type_name_copy, data_name,
+                                                        use_ref, dummy)
+                                + " = " + stack_data_name + ";\n";
+                            sub += indent + "if (" + size_name + " > 4096) {\n";
+                            sub += indent + "    " + data_name + " = (" + type_name_copy
+                                + "*) malloc(sizeof(" + type_name_copy + ")*" + size_name
+                                + ");\n";
+                            sub += indent + "}\n";
+                            current_function_conditional_heap_array_data.push_back(
+                                {size_name + " > 4096", data_name});
+                        }
                     } else {
                         sub += indent + format_type_c("*", type_name_copy, data_name,
                                                     use_ref, dummy);
@@ -1986,11 +2003,19 @@ R"(
                     }
                     sub += ";\n";
                 }
-                sub += indent + std::string(v_m_name) + "->data = " + std::string(v_m_name) + "_data;\n";
+                sub += indent + std::string(v_m_name) + "->data = "
+                    + (lazy_dynamic_stack_storage ? "NULL"
+                                                  : std::string(v_m_name) + "_data")
+                    + ";\n";
                 sub += indent + std::string(v_m_name) + "->n_dims = " + std::to_string(n_dims) + ";\n";
                 sub += indent + std::string(v_m_name) + "->offset = " + std::to_string(0) + ";\n";
-                sub += indent + std::string(v_m_name) + "->is_allocated = "
-                    + std::string((is_fixed_size || !dims.empty()) ? "true" : "false") + ";\n";
+                sub += indent + std::string(v_m_name) + "->is_allocated = ";
+                if (lazy_dynamic_stack_storage) {
+                    sub += "false";
+                } else {
+                    sub += std::string((is_fixed_size || !dims.empty()) ? "true" : "false");
+                }
+                sub += ";\n";
                 std::string stride = "1";
                 for (int i = 0; i < n_dims; i++) {
                     std::string start = "1", length = "0";
@@ -2052,6 +2077,87 @@ R"(
                 sub = format_type_c("", type_name, v_m_name, use_ref, dummy);
             }
         }
+    }
+
+    std::string emit_c_lazy_automatic_array_temp_allocation(
+            ASR::expr_t *target_expr, const std::string &target_src) {
+        if (!is_c || target_expr == nullptr) {
+            return "";
+        }
+        ASR::expr_t *unwrapped_target = unwrap_c_lvalue_expr(target_expr);
+        if (unwrapped_target == nullptr
+                || !ASR::is_a<ASR::Var_t>(*unwrapped_target)) {
+            return "";
+        }
+        ASR::symbol_t *target_sym = ASRUtils::symbol_get_past_external(
+            ASR::down_cast<ASR::Var_t>(unwrapped_target)->m_v);
+        if (target_sym == nullptr || !ASR::is_a<ASR::Variable_t>(*target_sym)) {
+            return "";
+        }
+        ASR::Variable_t *target_var = ASR::down_cast<ASR::Variable_t>(target_sym);
+        std::string target_name = CUtils::get_c_variable_name(*target_var);
+        auto storage_it = current_function_lazy_automatic_array_storage.find(target_name);
+        if (storage_it == current_function_lazy_automatic_array_storage.end()) {
+            return "";
+        }
+        const CLazyAutomaticArrayStorage &storage = storage_it->second;
+        std::string indent(indentation_level * indentation_spaces, ' ');
+        std::string out;
+        headers.insert("stdlib.h");
+        out += indent + "if (" + storage.heap_flag + " && " + target_src
+            + "->data != NULL) {\n";
+        out += indent + "    free(" + target_src + "->data);\n";
+        out += indent + "    " + target_src + "->data = NULL;\n";
+        out += indent + "    " + storage.heap_flag + " = false;\n";
+        out += indent + "}\n";
+
+        std::string size_name = get_unique_local_name(target_name + "_data_size");
+        std::string stack_data_name = get_unique_local_name(target_name + "_data_stack");
+        std::string data_name = get_unique_local_name(target_name + "_data");
+        out += indent + "int64_t " + size_name + " = "
+            + storage.size_expr + ";\n";
+        out += indent + format_type_c(
+            "[(" + size_name + " > 0 && " + size_name + " <= 4096 ? "
+                + size_name + " : 1)]",
+            storage.element_type, stack_data_name, false, false) + ";\n";
+        out += indent + format_type_c("*", storage.element_type, data_name,
+                                      false, false)
+            + " = " + stack_data_name + ";\n";
+        out += indent + "if (" + size_name + " > 4096) {\n";
+        out += indent + "    " + data_name + " = (" + storage.element_type
+            + "*) malloc(sizeof(" + storage.element_type + ")*" + size_name
+            + ");\n";
+        out += indent + "    " + storage.heap_flag + " = true;\n";
+        out += indent + "}\n";
+        out += indent + target_src + "->data = " + data_name + ";\n";
+        out += indent + target_src + "->n_dims = "
+            + std::to_string(ASRUtils::extract_n_dims_from_ttype(storage.var->m_type))
+            + ";\n";
+        out += indent + target_src + "->offset = 0;\n";
+        out += indent + target_src + "->is_allocated = true;\n";
+        ASR::dimension_t *m_dims = nullptr;
+        size_t n_dims = ASRUtils::extract_dimensions_from_ttype(
+            storage.var->m_type, m_dims);
+        std::string stride = "1";
+        for (size_t i = 0; i < n_dims; i++) {
+            std::string start = "1", length = "0";
+            if (m_dims[i].m_start) {
+                this->visit_expr(*m_dims[i].m_start);
+                start = src;
+            }
+            if (m_dims[i].m_length) {
+                this->visit_expr(*m_dims[i].m_length);
+                length = src;
+            }
+            out += indent + target_src + "->dims[" + std::to_string(i)
+                + "].lower_bound = " + start + ";\n";
+            out += indent + target_src + "->dims[" + std::to_string(i)
+                + "].length = " + length + ";\n";
+            out += indent + target_src + "->dims[" + std::to_string(i)
+                + "].stride = " + stride + ";\n";
+            stride = "(" + stride + "*" + length + ")";
+        }
+        return out;
     }
 
     ASR::expr_t* get_variable_init_expr_raw(const ASR::Variable_t &v) {

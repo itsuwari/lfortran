@@ -1,0 +1,13 @@
+{
+    "basename": "c-c_backend_branch_matmul_temp_01-e49343a",
+    "cmd": "lfortran --no-color --show-c {infile}",
+    "infile": "tests/c_backend_branch_matmul_temp_01.f90",
+    "infile_hash": "c60bdd77580db352a0221f7a9e7fe08bd747556b7f30e20a00c16862",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": "c-c_backend_branch_matmul_temp_01-e49343a.stdout",
+    "stdout_hash": "bfe6859ad6f8e050e66ce8d5b3b01ce6783255ea2ff2c72374a504d4",
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

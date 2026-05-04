@@ -154,6 +154,13 @@ struct CScalarExprCacheEntry {
     std::set<ASR::symbol_t*> deps;
 };
 
+struct CLazyAutomaticArrayStorage {
+    const ASR::Variable_t *var;
+    std::string element_type;
+    std::string heap_flag;
+    std::string size_expr;
+};
+
 template <class StructType>
 class BaseCCPPVisitor : public ASR::BaseVisitor<StructType>
 {
@@ -189,6 +196,8 @@ public:
     std::vector<std::pair<std::string, ASR::Struct_t*>> current_function_local_structs;
     std::map<std::string, CArrayDescriptorCache> current_function_array_descriptor_cache;
     std::map<std::string, CScalarExprCacheEntry> current_function_pow_cache;
+    std::map<std::string, CLazyAutomaticArrayStorage>
+        current_function_lazy_automatic_array_storage;
     int c_pow_cache_safe_expr_depth = 0;
     int c_pow_cache_suppression_depth = 0;
     std::map<uint64_t, SymbolInfo> sym_info;
@@ -296,6 +305,11 @@ public:
             cleanup += indent + "}\n";
         }
         return cleanup;
+    }
+
+    std::string emit_c_lazy_automatic_array_temp_allocation(
+            ASR::expr_t*, const std::string&) {
+        return "";
     }
 
     void register_current_function_local_allocatable_array_cleanup(
@@ -2881,6 +2895,23 @@ R"(#include <stdio.h>
             arg_setup += extract_stmt_setup_from_expr(arg_src);
 
             if (param_is_array) {
+                bool param_defines_actual = param
+                    && (param->m_intent == ASRUtils::intent_out
+                        || param->m_intent == ASRUtils::intent_inout
+                        || (std::string(param->m_name) == "result"
+                            && f != nullptr
+                            && std::string(f->m_name).find("lcompilers_matmul")
+                                != std::string::npos));
+                if (is_c && param_defines_actual) {
+                    std::string lazy_setup =
+                        self().emit_c_lazy_automatic_array_temp_allocation(
+                            call_arg, arg_src);
+                    if (!lazy_setup.empty()) {
+                        call_arg_setup += arg_setup;
+                        arg_setup.clear();
+                        call_arg_setup += lazy_setup;
+                    }
+                }
                 bool no_copy_descriptor_view_actual =
                     try_build_c_array_no_copy_descriptor_view_arg(
                         call_arg, param_type,
@@ -2976,6 +3007,23 @@ R"(#include <stdio.h>
             arg_setup += extract_stmt_setup_from_expr(arg_src);
 
             if (param_is_array) {
+                bool param_defines_actual = param
+                    && (param->m_intent == ASRUtils::intent_out
+                        || param->m_intent == ASRUtils::intent_inout
+                        || (std::string(param->m_name) == "result"
+                            && f != nullptr
+                            && std::string(f->m_name).find("lcompilers_matmul")
+                                != std::string::npos));
+                if (is_c && param_defines_actual) {
+                    std::string lazy_setup =
+                        self().emit_c_lazy_automatic_array_temp_allocation(
+                            call_arg, arg_src);
+                    if (!lazy_setup.empty()) {
+                        call_arg_setup += arg_setup;
+                        arg_setup.clear();
+                        call_arg_setup += lazy_setup;
+                    }
+                }
                 bool no_copy_descriptor_view_actual =
                     try_build_c_array_no_copy_descriptor_view_arg(
                         call_arg, param_type,
@@ -3173,6 +3221,7 @@ R"(#include <stdio.h>
         current_function_local_structs.clear();
         current_function_array_descriptor_cache.clear();
         current_function_pow_cache.clear();
+        current_function_lazy_automatic_array_storage.clear();
         SymbolTable* current_scope_copy = current_scope;
         current_scope = x.m_symtab;
         if (std::string(x.m_name) == "size" && intrinsic_module ) {
@@ -3413,6 +3462,7 @@ R"(#include <stdio.h>
             current_function_local_structs.clear();
             current_function_array_descriptor_cache.clear();
             current_function_pow_cache.clear();
+            current_function_lazy_automatic_array_storage.clear();
             indentation_level -= 1;
         }
         sub += "\n";
@@ -8180,6 +8230,23 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                     actual_var = ASR::down_cast<ASR::Variable_t>(arg_sym);
                 }
             }
+            bool param_defines_actual = param
+                && (param->m_intent == ASRUtils::intent_out
+                    || param->m_intent == ASRUtils::intent_inout
+                    || (std::string(param->m_name) == "result"
+                        && f != nullptr
+                        && std::string(f->m_name).find("lcompilers_matmul")
+                            != std::string::npos));
+            if (is_c && param_defines_actual) {
+                std::string lazy_setup =
+                    self().emit_c_lazy_automatic_array_temp_allocation(
+                        call_arg, arg_src);
+                if (!lazy_setup.empty()) {
+                    call_arg_setup += arg_setup;
+                    arg_setup.clear();
+                    call_arg_setup += lazy_setup;
+                }
+            }
             bool actual_is_raw_c_char_array_before_view =
                 is_raw_c_char_array_dummy(actual_var);
             bool no_copy_descriptor_view_actual = allow_no_copy_descriptor_views
@@ -8667,6 +8734,23 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                     ASR::down_cast<ASR::Var_t>(raw_call_arg)->m_v);
                 if (ASR::is_a<ASR::Variable_t>(*arg_sym)) {
                     actual_var = ASR::down_cast<ASR::Variable_t>(arg_sym);
+                }
+            }
+            bool param_defines_actual = param
+                && (param->m_intent == ASRUtils::intent_out
+                    || param->m_intent == ASRUtils::intent_inout
+                    || (std::string(param->m_name) == "result"
+                        && f != nullptr
+                        && std::string(f->m_name).find("lcompilers_matmul")
+                            != std::string::npos));
+            if (is_c && param_defines_actual) {
+                std::string lazy_setup =
+                    self().emit_c_lazy_automatic_array_temp_allocation(
+                        call_arg, arg_src);
+                if (!lazy_setup.empty()) {
+                    call_arg_setup += arg_setup;
+                    arg_setup.clear();
+                    call_arg_setup += lazy_setup;
                 }
             }
             bool actual_is_raw_c_char_array_before_view =
@@ -9966,6 +10050,10 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         }
         expr_setup += drain_tmp_buffer();
         expr_setup += extract_stmt_setup_from_expr(target);
+        if (is_c) {
+            expr_setup += self().emit_c_lazy_automatic_array_temp_allocation(
+                x.m_target, target);
+        }
         from_std_vector_helper.clear();
         if( ASR::is_a<ASR::UnionConstructor_t>(*x.m_value) ) {
             src = "";
