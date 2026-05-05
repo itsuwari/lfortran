@@ -1,0 +1,13 @@
+{
+    "basename": "c-c_backend_select_case_substring_cleanup_01-ef4e2fd",
+    "cmd": "lfortran --no-color --show-c {infile}",
+    "infile": "tests/c_backend_select_case_substring_cleanup_01.f90",
+    "infile_hash": "7ad13ab1e234f6b431ebcec7338a23b1be1cfc22b3750c386c4aef3e",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": "c-c_backend_select_case_substring_cleanup_01-ef4e2fd.stdout",
+    "stdout_hash": "ff702079465a3e50f2bb9826f01a449374b900e1cc079f0ed285e3aa",
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

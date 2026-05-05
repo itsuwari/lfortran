@@ -13745,20 +13745,35 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         };
         auto emit_select_compare = [&](ASR::expr_t *left_expr, std::string left_src,
                                        ASR::expr_t *right_expr, std::string right_src,
-                                       ASR::cmpopType op) -> std::string {
+                                       ASR::cmpopType op,
+                                       const std::string &left_len_override = "",
+                                       const std::string &right_len_override = "") -> std::string {
             std::string op_str = ASRUtils::cmpop_to_str(op);
             if (is_c && is_character_expr(left_expr) && is_character_expr(right_expr)) {
-                std::string left_len = get_string_length(left_expr, left_src);
-                std::string right_len = get_string_length(right_expr, right_src);
+                std::string left_len = left_len_override.empty()
+                    ? get_string_length(left_expr, left_src) : left_len_override;
+                std::string right_len = right_len_override.empty()
+                    ? get_string_length(right_expr, right_src) : right_len_override;
                 return "str_compare(" + left_src + ", " + left_len + ", "
                     + right_src + ", " + right_len + ") " + op_str + " 0";
             }
             return "(" + left_src + ") " + op_str + " (" + right_src + ")";
         };
         std::string indent(indentation_level * indentation_spaces, ' ');
-        this->visit_expr(*x.m_test);
-        std::string var = std::move(src);
-        std::string out = indent + "if (";
+        std::string var, var_len, select_setup;
+        bool use_string_view = is_c && is_character_expr(x.m_test)
+            && try_get_unit_step_string_section_view(
+                x.m_test, var, var_len, select_setup);
+        if (!use_string_view) {
+            this->visit_expr(*x.m_test);
+            var = std::move(src);
+            select_setup += drain_tmp_buffer();
+            select_setup += extract_stmt_setup_from_expr(var);
+            if (is_c && is_character_expr(x.m_test)) {
+                var_len = get_string_length(x.m_test, var);
+            }
+        }
+        std::string out = select_setup + indent + "if (";
 
         for (size_t i = 0; i < x.n_body; i++) {
             if (i > 0)
@@ -13772,7 +13787,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                         out += " || ";
                     this->visit_expr(*case_stmt->m_test[j]);
                     out += emit_select_compare(x.m_test, var, case_stmt->m_test[j], src,
-                                               ASR::cmpopType::Eq);
+                                               ASR::cmpopType::Eq, var_len);
                 }
                 out += ") {\n";
                 bracket_open--;
@@ -13802,15 +13817,15 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 }
                 if (left.empty()) {
                     out += emit_select_compare(x.m_test, var, case_stmt_range->m_end, right,
-                                               ASR::cmpopType::LtE);
+                                               ASR::cmpopType::LtE, var_len);
                 } else if (right.empty()) {
                     out += emit_select_compare(x.m_test, var, case_stmt_range->m_start, left,
-                                               ASR::cmpopType::GtE);
+                                               ASR::cmpopType::GtE, var_len);
                 } else {
                     out += "(" + emit_select_compare(case_stmt_range->m_start, left, x.m_test, var,
-                                                     ASR::cmpopType::LtE) + ") && ("
+                                                     ASR::cmpopType::LtE, "", var_len) + ") && ("
                         + emit_select_compare(x.m_test, var, case_stmt_range->m_end, right,
-                                              ASR::cmpopType::LtE) + ")";
+                                              ASR::cmpopType::LtE, var_len) + ")";
                 }
                 out += ") {\n";
                 bracket_open--;
