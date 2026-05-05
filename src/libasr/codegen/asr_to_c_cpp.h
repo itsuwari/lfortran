@@ -1403,10 +1403,11 @@ public:
 
     bool should_free_c_local_struct_member_array_descriptors(
             const ASR::Variable_t &v, const std::string &emitted_name) const {
-        if (is_c_compiler_generated_temporary_name(emitted_name)) {
-            return false;
-        }
         std::string variable_name = v.m_name;
+        if (is_c_compiler_generated_temporary_name(emitted_name)) {
+            return variable_name.rfind("__libasr_created_dummy_variable", 0) == 0
+                || variable_name.rfind("__libasr_created_variable", 0) == 0;
+        }
         return variable_name.rfind("temp_struct_var__", 0) == 0
             || variable_name == "calc";
     }
