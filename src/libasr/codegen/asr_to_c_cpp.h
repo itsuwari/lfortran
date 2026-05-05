@@ -2575,7 +2575,8 @@ R"(#include <stdio.h>
             self().visit_stmt(*block->m_body[i]);
             body += src;
         }
-        cleanup = emit_c_scope_compiler_return_slot_cleanup(block->m_symtab, indent);
+        cleanup = emit_c_scope_compiler_return_slot_cleanup(block->m_symtab, indent)
+            + emit_c_scope_allocatable_array_cleanup(block->m_symtab, indent);
         decl += check_tmp_buffer();
         src = open_paranthesis + decl + body + cleanup + close_paranthesis;
         indentation_level -= 1;
@@ -2606,7 +2607,10 @@ R"(#include <stdio.h>
             self().visit_stmt(*associate_block->m_body[i]);
             body += src;
         }
-        cleanup = emit_c_scope_compiler_return_slot_cleanup(associate_block->m_symtab, indent);
+        cleanup = emit_c_scope_compiler_return_slot_cleanup(
+            associate_block->m_symtab, indent)
+            + emit_c_scope_allocatable_array_cleanup(associate_block->m_symtab,
+                indent);
         decl += check_tmp_buffer();
         src = open_paranthesis + decl + body + cleanup + close_paranthesis;
         indentation_level -= 1;
@@ -13713,6 +13717,70 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 + indent + "    _lfortran_free_alloc(_lfortran_get_default_allocator(), "
                 + target + ");\n"
                 + indent + "    " + target + " = NULL;\n"
+                + indent + "}\n";
+        }
+        return cleanup;
+    }
+
+    std::string emit_c_scope_allocatable_array_cleanup(SymbolTable *symtab,
+            const std::string &indent) {
+        if (!is_c || symtab == nullptr) {
+            return "";
+        }
+        std::string cleanup;
+        std::vector<std::string> var_order =
+            ASRUtils::determine_variable_declaration_order(symtab);
+        for (auto it = var_order.rbegin(); it != var_order.rend(); ++it) {
+            ASR::symbol_t *var_sym = symtab->get_symbol(*it);
+            if (!ASR::is_a<ASR::Variable_t>(*var_sym)) {
+                continue;
+            }
+            ASR::Variable_t *var = ASR::down_cast<ASR::Variable_t>(var_sym);
+            if (var->m_intent != ASRUtils::intent_local
+                    || !ASRUtils::is_allocatable(var->m_type)
+                    || !ASRUtils::is_array(var->m_type)) {
+                continue;
+            }
+            std::string target = CUtils::get_c_variable_name(*var);
+            ASR::ttype_t *target_value_type =
+                ASRUtils::type_get_past_allocatable_pointer(var->m_type);
+            ASR::ttype_t *element_type =
+                ASRUtils::extract_type(target_value_type);
+            if (element_type != nullptr && ASRUtils::is_character(*element_type)) {
+                cleanup += emit_c_character_array_element_cleanup(target, indent);
+            } else if (element_type != nullptr
+                    && ASR::is_a<ASR::StructType_t>(*element_type)
+                    && var->m_type_declaration != nullptr) {
+                ASR::symbol_t *struct_sym =
+                    ASRUtils::symbol_get_past_external(var->m_type_declaration);
+                if (struct_sym != nullptr && ASR::is_a<ASR::Struct_t>(*struct_sym)
+                        && c_struct_has_member_cleanup(
+                            ASR::down_cast<ASR::Struct_t>(struct_sym))) {
+                    std::string idx = "__lfortran_cleanup_i_"
+                        + CUtils::sanitize_c_identifier(target);
+                    cleanup += indent + "if ((" + target + ") != NULL && ("
+                        + target + ")->is_allocated && (" + target
+                        + ")->data != NULL) {\n"
+                        + indent + "    for (int64_t " + idx + " = 0; "
+                        + idx + " < (" + target + ")->dims[0].length; "
+                        + idx + "++) {\n";
+                    cleanup += emit_c_struct_member_cleanup(
+                        ASR::down_cast<ASR::Struct_t>(struct_sym),
+                        indent + "        ", "(&((" + target + ")->data["
+                        + idx + "]))", true, true, true, false);
+                    cleanup += indent + "    }\n"
+                        + indent + "}\n";
+                }
+            }
+            cleanup += indent + "if ((" + target + ") != NULL && (" + target
+                + ")->is_allocated && (" + target + ")->data != NULL) {\n"
+                + indent + "    _lfortran_free_alloc(_lfortran_get_default_allocator(), "
+                + "(char*) (" + target + ")->data);\n"
+                + indent + "    (" + target + ")->data = NULL;\n"
+                + indent + "}\n"
+                + indent + "if ((" + target + ") != NULL) {\n"
+                + indent + "    (" + target + ")->offset = 0;\n"
+                + indent + "    (" + target + ")->is_allocated = false;\n"
                 + indent + "}\n";
         }
         return cleanup;

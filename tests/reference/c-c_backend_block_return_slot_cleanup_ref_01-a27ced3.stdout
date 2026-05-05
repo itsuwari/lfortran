@@ -107,21 +107,22 @@ void __lfortran_c_backend_block_return_slot_cleanup_ref_01__take_associate(char 
 int main(int argc, char* argv[])
 {
     _lpython_set_argv(argc, argv);
+    lfortran_allocator_t* __lfortran_default_allocator = _lfortran_get_default_allocator();
     char * base = NULL;
     do {
         char * __libasr__created__var__3_return_slot = NULL;
         if (__libasr__created__var__3_return_slot != NULL) {
-            _lfortran_free_alloc(_lfortran_get_default_allocator(), __libasr__created__var__3_return_slot);
+            _lfortran_free_alloc(__lfortran_default_allocator, __libasr__created__var__3_return_slot);
             __libasr__created__var__3_return_slot = NULL;
         }
         __lfortran_c_backend_block_return_slot_cleanup_ref_01__make_string(&__libasr__created__var__3_return_slot);
         __lfortran_c_backend_block_return_slot_cleanup_ref_01__take(__libasr__created__var__3_return_slot);
         if (__libasr__created__var__3_return_slot != NULL) {
-            _lfortran_free_alloc(_lfortran_get_default_allocator(), __libasr__created__var__3_return_slot);
+            _lfortran_free_alloc(__lfortran_default_allocator, __libasr__created__var__3_return_slot);
             __libasr__created__var__3_return_slot = NULL;
         }
     } while (0);
-    _lfortran_strcpy_alloc(_lfortran_get_default_allocator(), &base, NULL, true, true, (char*)"associate-temp", strlen((char*)"associate-temp"));
+    _lfortran_strcpy_alloc(__lfortran_default_allocator, &base, NULL, true, true, (char*)"associate-temp", strlen((char*)"associate-temp"));
     do {
         char * c_backend_block_return_slot_cleanup_ref_01__associate_block____libasr__created__var__0_return_slot = NULL;
         char * c_backend_block_return_slot_cleanup_ref_01__associate_block____libasr__created__var__1_return_slot = NULL;
@@ -129,36 +130,40 @@ int main(int argc, char* argv[])
         char * c_backend_block_return_slot_cleanup_ref_01__associate_block__view;
         c_backend_block_return_slot_cleanup_ref_01__associate_block__view = base;
         if (c_backend_block_return_slot_cleanup_ref_01__associate_block____libasr__created__var__0_return_slot != NULL) {
-            _lfortran_free_alloc(_lfortran_get_default_allocator(), c_backend_block_return_slot_cleanup_ref_01__associate_block____libasr__created__var__0_return_slot);
+            _lfortran_free_alloc(__lfortran_default_allocator, c_backend_block_return_slot_cleanup_ref_01__associate_block____libasr__created__var__0_return_slot);
             c_backend_block_return_slot_cleanup_ref_01__associate_block____libasr__created__var__0_return_slot = NULL;
         }
         __lfortran_c_backend_block_return_slot_cleanup_ref_01__make_suffix(&c_backend_block_return_slot_cleanup_ref_01__associate_block____libasr__created__var__0_return_slot);
         if (c_backend_block_return_slot_cleanup_ref_01__associate_block____libasr__created__var__1_return_slot != NULL) {
-            _lfortran_free_alloc(_lfortran_get_default_allocator(), c_backend_block_return_slot_cleanup_ref_01__associate_block____libasr__created__var__1_return_slot);
+            _lfortran_free_alloc(__lfortran_default_allocator, c_backend_block_return_slot_cleanup_ref_01__associate_block____libasr__created__var__1_return_slot);
             c_backend_block_return_slot_cleanup_ref_01__associate_block____libasr__created__var__1_return_slot = NULL;
         }
         __lfortran_c_backend_block_return_slot_cleanup_ref_01__make_suffix(&c_backend_block_return_slot_cleanup_ref_01__associate_block____libasr__created__var__1_return_slot);
         if (c_backend_block_return_slot_cleanup_ref_01__associate_block____libasr__created__var__2_return_slot != NULL) {
-            _lfortran_free_alloc(_lfortran_get_default_allocator(), c_backend_block_return_slot_cleanup_ref_01__associate_block____libasr__created__var__2_return_slot);
+            _lfortran_free_alloc(__lfortran_default_allocator, c_backend_block_return_slot_cleanup_ref_01__associate_block____libasr__created__var__2_return_slot);
             c_backend_block_return_slot_cleanup_ref_01__associate_block____libasr__created__var__2_return_slot = NULL;
         }
         __lfortran__lcompilers_stringconcat(c_backend_block_return_slot_cleanup_ref_01__associate_block__view, c_backend_block_return_slot_cleanup_ref_01__associate_block____libasr__created__var__0_return_slot, ((c_backend_block_return_slot_cleanup_ref_01__associate_block__view) != NULL ? strlen(c_backend_block_return_slot_cleanup_ref_01__associate_block__view) : 0), ((c_backend_block_return_slot_cleanup_ref_01__associate_block____libasr__created__var__1_return_slot) != NULL ? strlen(c_backend_block_return_slot_cleanup_ref_01__associate_block____libasr__created__var__1_return_slot) : 0), &c_backend_block_return_slot_cleanup_ref_01__associate_block____libasr__created__var__2_return_slot);
         __lfortran_c_backend_block_return_slot_cleanup_ref_01__take_associate(c_backend_block_return_slot_cleanup_ref_01__associate_block____libasr__created__var__2_return_slot);
         if (c_backend_block_return_slot_cleanup_ref_01__associate_block____libasr__created__var__2_return_slot != NULL) {
-            _lfortran_free_alloc(_lfortran_get_default_allocator(), c_backend_block_return_slot_cleanup_ref_01__associate_block____libasr__created__var__2_return_slot);
+            _lfortran_free_alloc(__lfortran_default_allocator, c_backend_block_return_slot_cleanup_ref_01__associate_block____libasr__created__var__2_return_slot);
             c_backend_block_return_slot_cleanup_ref_01__associate_block____libasr__created__var__2_return_slot = NULL;
         }
         if (c_backend_block_return_slot_cleanup_ref_01__associate_block____libasr__created__var__1_return_slot != NULL) {
-            _lfortran_free_alloc(_lfortran_get_default_allocator(), c_backend_block_return_slot_cleanup_ref_01__associate_block____libasr__created__var__1_return_slot);
+            _lfortran_free_alloc(__lfortran_default_allocator, c_backend_block_return_slot_cleanup_ref_01__associate_block____libasr__created__var__1_return_slot);
             c_backend_block_return_slot_cleanup_ref_01__associate_block____libasr__created__var__1_return_slot = NULL;
         }
         if (c_backend_block_return_slot_cleanup_ref_01__associate_block____libasr__created__var__0_return_slot != NULL) {
-            _lfortran_free_alloc(_lfortran_get_default_allocator(), c_backend_block_return_slot_cleanup_ref_01__associate_block____libasr__created__var__0_return_slot);
+            _lfortran_free_alloc(__lfortran_default_allocator, c_backend_block_return_slot_cleanup_ref_01__associate_block____libasr__created__var__0_return_slot);
             c_backend_block_return_slot_cleanup_ref_01__associate_block____libasr__created__var__0_return_slot = NULL;
         }
     } while (0);
     if (base != NULL) {
-        _lfortran_free_alloc(_lfortran_get_default_allocator(), base);
+        _lfortran_free_alloc(__lfortran_default_allocator, base);
+        base = NULL;
+    }
+    if (base != NULL) {
+        _lfortran_free_alloc(__lfortran_default_allocator, base);
         base = NULL;
     }
     return 0;
