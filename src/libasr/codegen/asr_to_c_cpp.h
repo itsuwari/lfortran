@@ -13466,8 +13466,15 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         if (target_value_type != nullptr
                 && ASRUtils::is_allocatable(ASRUtils::expr_type(expr))
                 && !ASRUtils::is_array(ASRUtils::expr_type(expr))
-                && ASRUtils::is_character(*target_value_type)
-                && is_c_compiler_created_return_slot_expr(expr)) {
+                && ASRUtils::is_character(*target_value_type)) {
+            if (current_function != nullptr
+                    && std::string(current_function->m_name).rfind(
+                        "_lcompilers_move_alloc_", 0) == 0
+                    && target == "from") {
+                return indent + "if (" + target + " != NULL) {\n"
+                    + indent + "    " + target + " = NULL;\n"
+                    + indent + "}\n";
+            }
             return indent + "if (" + target + " != NULL) {\n"
                 + indent + "    _lfortran_free_alloc(_lfortran_get_default_allocator(), "
                 + target + ");\n"

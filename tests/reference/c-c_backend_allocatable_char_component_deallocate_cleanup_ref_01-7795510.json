@@ -1,0 +1,13 @@
+{
+    "basename": "c-c_backend_allocatable_char_component_deallocate_cleanup_ref_01-7795510",
+    "cmd": "lfortran --no-color --show-c {infile}",
+    "infile": "tests/c_backend_allocatable_char_component_deallocate_cleanup_ref_01.f90",
+    "infile_hash": "a74bdb39df781f3e26e776c266fa2f2c77526466f442d1ec3c3f5688",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": "c-c_backend_allocatable_char_component_deallocate_cleanup_ref_01-7795510.stdout",
+    "stdout_hash": "52f8cc0ccc4cf333724c1b128a9c026235a9d2ec4fad9f2a0fd47d79",
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

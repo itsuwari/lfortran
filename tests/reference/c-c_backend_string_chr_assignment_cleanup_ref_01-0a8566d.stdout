@@ -73,7 +73,8 @@ int main(int argc, char* argv[])
         fprintf(stderr, "ERROR STOP");
         exit(1);
     }
-    if ((s) != NULL) {
+    if (s != NULL) {
+        _lfortran_free_alloc(_lfortran_get_default_allocator(), s);
         s = NULL;
     }
     return 0;
