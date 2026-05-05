@@ -1933,6 +1933,26 @@ R"(
                 && !ASRUtils::is_pointer(var->m_type)) {
             type_name += " restrict";
         }
+        if (!declare_value && !is_pointer && !dummy && indentation_level == 0
+                && var != nullptr && ASRUtils::is_allocatable(var->m_type)
+                && !is_fixed_size && dims.empty()) {
+            std::string variable_name = std::string(v_m_name) + "_value";
+            std::string dims_init;
+            for (int i = 0; i < n_dims; i++) {
+                if (!dims_init.empty()) {
+                    dims_init += ", ";
+                }
+                dims_init += "{1, 0, 1}";
+            }
+            sub = "static " + format_type_c("", type_name_without_ptr,
+                variable_name, use_ref, dummy)
+                + " = { .data = NULL, .dims = {" + dims_init
+                + "}, .n_dims = " + std::to_string(n_dims)
+                + ", .offset = 0, .is_allocated = false };\n";
+            sub += indent + format_type_c("", type_name, v_m_name, use_ref, dummy)
+                + " = &" + variable_name;
+            return;
+        }
         if( declare_value ) {
             std::string variable_name = std::string(v_m_name) + "_value";
             sub = format_type_c("", type_name_without_ptr, variable_name, use_ref, dummy);

@@ -148,9 +148,9 @@ namespace LCompilers::CommandLineInterface {
     static void extract_framework_flags(const char *const *argv, int argc,
                                         const std::vector<std::string> &args,
                                         std::vector<std::string> &filtered_args,
-                                        std::vector<std::string> &linker_flags) {
+                                        std::vector<std::string> &framework_flags) {
         auto push_framework = [&](const std::string &framework_name) {
-            linker_flags.push_back("l,-framework," + framework_name);
+            framework_flags.push_back("l,-framework," + framework_name);
         };
 
         if (argv != nullptr) {
@@ -431,7 +431,8 @@ namespace LCompilers::CommandLineInterface {
         }
 
         std::vector<std::string> filtered_args;
-        extract_framework_flags(argv, argc, args, filtered_args, opts.linker_flags);
+        std::vector<std::string> framework_linker_flags;
+        extract_framework_flags(argv, argc, args, filtered_args, framework_linker_flags);
 
         if (argv != nullptr) {
             std::vector<const char*> filtered_argv;
@@ -443,6 +444,8 @@ namespace LCompilers::CommandLineInterface {
         } else {
             app.parse(filtered_args);
         }
+        opts.linker_flags.insert(opts.linker_flags.end(),
+            framework_linker_flags.begin(), framework_linker_flags.end());
 
         if (opts.disable_style_suggestions) {
             compiler_options.show_style_suggestions = false;
