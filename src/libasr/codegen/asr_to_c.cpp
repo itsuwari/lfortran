@@ -911,6 +911,7 @@ R"(
         indentation_level = 1;
         std::string indent1(indentation_level * indentation_spaces, ' ');
         std::string decl;
+        clear_current_function_cleanup_state();
         std::vector<std::string> var_order =
             ASRUtils::determine_variable_declaration_order(x.m_symtab);
         for (const auto &item : var_order) {
@@ -919,9 +920,11 @@ R"(
                 continue;
             }
             ASR::Variable_t *v = ASR::down_cast<ASR::Variable_t>(var_sym);
+            std::string emitted_name = CUtils::get_c_variable_name(*v);
             std::string decl_tmp = convert_variable_decl(*v);
             if (!decl_tmp.empty()) {
                 decl += indent1 + decl_tmp + ";\n";
+                register_c_local_variable_cleanup(*v, emitted_name, false);
             }
         }
 
@@ -932,6 +935,16 @@ R"(
                 body_stmts.push_back(src);
             }
         }
+        std::string cleanup = emit_current_function_heap_array_cleanup(indent1);
+        if (!cleanup.empty()) {
+            body_stmts.push_back(cleanup);
+        }
+        std::string body_for_allocator_cache;
+        for (const auto &stmt : body_stmts) {
+            body_for_allocator_cache += stmt;
+        }
+        cache_c_default_allocator(decl, body_for_allocator_cache, indent1);
+        body_stmts = split_top_level_statements(body_for_allocator_cache);
         indentation_level = 0;
 
         auto main_units = maybe_split_large_program_unit(
@@ -941,6 +954,7 @@ R"(
                 units.push_back(std::move(unit));
             }
         }
+        clear_current_function_cleanup_state();
         current_scope = current_scope_copy;
         return units;
     }
@@ -4168,6 +4182,7 @@ R"(
         indentation_level += 1;
         std::string indent1(indentation_level*indentation_spaces, ' ');
         std::string decl;
+        clear_current_function_cleanup_state();
         // Topologically sort all program functions
         // and then define them in the right order
         std::vector<std::string> var_order = ASRUtils::determine_variable_declaration_order(x.m_symtab);
@@ -4176,11 +4191,13 @@ R"(
             ASR::symbol_t* var_sym = x.m_symtab->get_symbol(item);
             if (ASR::is_a<ASR::Variable_t>(*var_sym)) {
                 ASR::Variable_t *v = ASR::down_cast<ASR::Variable_t>(var_sym);
+                std::string emitted_name = CUtils::get_c_variable_name(*v);
                 decl += indent1;
                 decl_tmp = convert_variable_decl(*v);
                 decl += decl_tmp;
                 if(decl_tmp.size() > 0) {
                     decl += ";\n";
+                    register_c_local_variable_cleanup(*v, emitted_name, false);
                 }
             }
         }
@@ -4246,11 +4263,15 @@ R"(    // Initialise Numpy
             contains += dispatch_code;
         }
 
+        body += emit_current_function_heap_array_cleanup(indent1);
+        cache_c_default_allocator(decl, body, indent1);
+
         src = contains
                 + "int main(int argc, char* argv[])\n{\n"
                 + indent1 + "_lpython_set_argv(argc, argv);\n"
                 + decl + body
                 + indent1 + "return 0;\n}\n";
+        clear_current_function_cleanup_state();
         indentation_level -= 2;
         current_scope = current_scope_copy;
     }

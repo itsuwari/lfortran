@@ -401,6 +401,18 @@ public:
         return cleanup;
     }
 
+    void clear_current_function_cleanup_state() {
+        current_function_heap_array_data.clear();
+        current_function_conditional_heap_array_data.clear();
+        current_function_local_allocatable_arrays.clear();
+        current_function_local_allocatable_array_structs.clear();
+        current_function_local_allocatable_array_strings.clear();
+        current_function_local_allocatable_strings.clear();
+        current_function_local_character_strings.clear();
+        current_function_local_allocatable_structs.clear();
+        current_function_local_structs.clear();
+    }
+
     std::string emit_c_lazy_automatic_array_temp_allocation(
             ASR::expr_t*, const std::string&) {
         return "";
@@ -864,6 +876,86 @@ public:
             }
         }
         current_function_local_structs.push_back({target, struct_t});
+    }
+
+    void register_c_local_variable_cleanup(const ASR::Variable_t &v,
+            const std::string &emitted_name, bool require_local_intent=true) {
+        if (!is_c || (require_local_intent
+                && v.m_intent != ASRUtils::intent_local)) {
+            return;
+        }
+        if (ASRUtils::is_allocatable(v.m_type)
+                && ASRUtils::is_array(v.m_type)) {
+            register_current_function_local_allocatable_array_cleanup(
+                emitted_name);
+            ASR::ttype_t *v_type_unwrapped =
+                ASRUtils::type_get_past_allocatable_pointer(v.m_type);
+            ASR::ttype_t *element_type =
+                ASRUtils::extract_type(v_type_unwrapped);
+            if (element_type != nullptr
+                    && ASRUtils::is_character(*element_type)) {
+                register_current_function_local_allocatable_array_string_cleanup(
+                    emitted_name);
+            } else if (element_type != nullptr
+                    && ASR::is_a<ASR::StructType_t>(*element_type)
+                    && v.m_type_declaration != nullptr) {
+                ASR::symbol_t *struct_sym =
+                    ASRUtils::symbol_get_past_external(v.m_type_declaration);
+                if (struct_sym != nullptr
+                        && ASR::is_a<ASR::Struct_t>(*struct_sym)
+                        && c_struct_has_member_cleanup(
+                            ASR::down_cast<ASR::Struct_t>(struct_sym))) {
+                    register_current_function_local_allocatable_array_struct_cleanup(
+                        emitted_name,
+                        ASR::down_cast<ASR::Struct_t>(struct_sym));
+                }
+            }
+        } else if (ASRUtils::is_allocatable(v.m_type)
+                && !ASRUtils::is_array(v.m_type)) {
+            ASR::ttype_t *v_type_unwrapped =
+                ASRUtils::type_get_past_allocatable_pointer(v.m_type);
+            if (ASRUtils::is_character(*v_type_unwrapped)) {
+                register_current_function_local_allocatable_string_cleanup(
+                    emitted_name);
+            } else if ((!is_c_compiler_generated_temporary_name(emitted_name)
+                        || is_c_owned_function_call_struct_temp_name(emitted_name))
+                    && ASR::is_a<ASR::StructType_t>(*v_type_unwrapped)
+                    && v.m_type_declaration != nullptr) {
+                ASR::symbol_t *struct_sym =
+                    ASRUtils::symbol_get_past_external(v.m_type_declaration);
+                if (struct_sym != nullptr
+                        && ASR::is_a<ASR::Struct_t>(*struct_sym)) {
+                    register_current_function_local_allocatable_struct_cleanup(
+                        emitted_name,
+                        ASR::down_cast<ASR::Struct_t>(struct_sym),
+                        ASRUtils::is_class_type(v_type_unwrapped),
+                        is_c_owned_function_call_struct_temp_name(
+                            emitted_name));
+                }
+            }
+        } else if (!ASRUtils::is_allocatable(v.m_type)
+                && !ASRUtils::is_pointer(v.m_type)
+                && !ASRUtils::is_array(v.m_type)
+                && v.m_storage != ASR::storage_typeType::Parameter
+                && v.m_symbolic_value == nullptr) {
+            ASR::ttype_t *v_type_unwrapped =
+                ASRUtils::type_get_past_allocatable_pointer(v.m_type);
+            if (ASRUtils::is_character(*v_type_unwrapped)) {
+                register_current_function_local_character_string_cleanup(
+                    emitted_name);
+            } else if (ASR::is_a<ASR::StructType_t>(*v_type_unwrapped)
+                    && !ASRUtils::is_class_type(v_type_unwrapped)
+                    && v.m_type_declaration != nullptr) {
+                ASR::symbol_t *struct_sym =
+                    ASRUtils::symbol_get_past_external(v.m_type_declaration);
+                if (struct_sym != nullptr
+                        && ASR::is_a<ASR::Struct_t>(*struct_sym)) {
+                    register_current_function_local_struct_cleanup(
+                        get_c_local_struct_cleanup_target(v, emitted_name),
+                        ASR::down_cast<ASR::Struct_t>(struct_sym));
+                }
+            }
+        }
     }
 
     ASR::Variable_t *get_c_component_cache_root_var(ASR::expr_t *expr) {
@@ -2315,13 +2407,19 @@ R"(#include <stdio.h>
         indentation_level += 1;
         std::string indent(indentation_level*indentation_spaces, ' ');
         std::string decl;
+        clear_current_function_cleanup_state();
         std::vector<std::string> var_order = ASRUtils::determine_variable_declaration_order(x.m_symtab);
         for (auto &item : var_order) {
             ASR::symbol_t* var_sym = x.m_symtab->get_symbol(item);
             if (ASR::is_a<ASR::Variable_t>(*var_sym)) {
                 ASR::Variable_t *v = ASR::down_cast<ASR::Variable_t>(var_sym);
-                std::string d = self().convert_variable_decl(*v) + ";\n";
+                std::string emitted_name = CUtils::get_c_variable_name(*v);
+                std::string decl_tmp = self().convert_variable_decl(*v);
+                std::string d = decl_tmp + ";\n";
                 decl += check_tmp_buffer() + d;
+                if (!decl_tmp.empty()) {
+                    register_c_local_variable_cleanup(*v, emitted_name, false);
+                }
             }
         }
 
@@ -2331,10 +2429,14 @@ R"(#include <stdio.h>
             body += src;
         }
 
+        body += emit_current_function_heap_array_cleanup(indent1);
+        cache_c_default_allocator(decl, body, indent1);
+
         src = contains
                 + "int main(int argc, char* argv[])\n{\n"
                 + decl + body
                 + indent1 + "return 0;\n}\n";
+        clear_current_function_cleanup_state();
         indentation_level -= 2;
         current_scope = current_scope_copy;
     }

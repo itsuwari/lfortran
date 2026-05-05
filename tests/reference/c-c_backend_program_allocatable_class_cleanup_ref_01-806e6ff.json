@@ -1,0 +1,13 @@
+{
+    "basename": "c-c_backend_program_allocatable_class_cleanup_ref_01-806e6ff",
+    "cmd": "lfortran --no-color --show-c {infile}",
+    "infile": "tests/c_backend_program_allocatable_class_cleanup_ref_01.f90",
+    "infile_hash": "0859e0b0ed55e8baf5074e71da09d3fdc8177d70fa4557545294488a",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": "c-c_backend_program_allocatable_class_cleanup_ref_01-806e6ff.stdout",
+    "stdout_hash": "e587ad9191bb91a32efcbe3e620e579d931c9b5dd4a06769e763698e",
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}
