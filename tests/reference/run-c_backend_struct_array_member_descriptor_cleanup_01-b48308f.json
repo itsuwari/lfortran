@@ -1,0 +1,13 @@
+{
+    "basename": "run-c_backend_struct_array_member_descriptor_cleanup_01-b48308f",
+    "cmd": "lfortran --no-color {infile}",
+    "infile": "tests/c_backend_struct_array_member_descriptor_cleanup_01.f90",
+    "infile_hash": "62a3d501688a08e6ed2614fc2bae21129c355939c4f1033443b1327b",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

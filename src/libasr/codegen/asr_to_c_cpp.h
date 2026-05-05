@@ -380,7 +380,7 @@ public:
                     + " < (" + *it + ")->dims[0].length; " + idx + "++) {\n";
                 cleanup += emit_c_struct_member_cleanup(struct_it->struct_t,
                     indent + "        ", "(&((" + *it + ")->data[" + idx + "]))",
-                    true, true, false, false);
+                    true, true, true, false);
                 cleanup += indent + "    }\n"
                     + indent + "}\n";
                 break;
@@ -606,7 +606,7 @@ public:
                             ASR::down_cast<ASR::Struct_t>(member_struct_sym),
                             indent + "        ", "(&((" + member + ")->data[" + idx + "]))",
                             clean_polymorphic_scalars, clean_scalar_allocatable_structs,
-                            false, false);
+                            true, false);
                         cleanup += indent + "    }\n"
                             + indent + "}\n";
                     }
@@ -896,8 +896,14 @@ public:
             const std::string &target, ASR::Struct_t *struct_t,
             bool free_allocatable_array_descriptors=true,
             bool free_scalar_member_array_descriptors=true) {
-        for (const auto &existing: current_function_local_structs) {
+        for (auto &existing: current_function_local_structs) {
             if (existing.target == target) {
+                existing.free_allocatable_array_descriptors =
+                    existing.free_allocatable_array_descriptors
+                    || free_allocatable_array_descriptors;
+                existing.free_scalar_member_array_descriptors =
+                    existing.free_scalar_member_array_descriptors
+                    || free_scalar_member_array_descriptors;
                 return;
             }
         }
@@ -1403,6 +1409,38 @@ public:
         std::string variable_name = v.m_name;
         return variable_name.rfind("temp_struct_var__", 0) == 0
             || variable_name == "calc";
+    }
+
+    void register_c_intent_out_local_struct_descriptor_cleanup(
+            const ASR::Variable_t &actual_var) {
+        if (!is_c || actual_var.m_intent != ASRUtils::intent_local
+                || ASRUtils::is_allocatable(actual_var.m_type)
+                || ASRUtils::is_pointer(actual_var.m_type)
+                || ASRUtils::is_array(actual_var.m_type)
+                || actual_var.m_storage == ASR::storage_typeType::Parameter
+                || actual_var.m_symbolic_value != nullptr
+                || actual_var.m_type_declaration == nullptr) {
+            return;
+        }
+        ASR::ttype_t *actual_type_unwrapped =
+            ASRUtils::type_get_past_allocatable_pointer(actual_var.m_type);
+        if (!ASR::is_a<ASR::StructType_t>(*actual_type_unwrapped)
+                || ASRUtils::is_class_type(actual_type_unwrapped)) {
+            return;
+        }
+        std::string emitted_name = CUtils::get_c_variable_name(actual_var);
+        if (!should_register_c_local_struct_descriptor_cleanup(
+                    actual_var, emitted_name)) {
+            return;
+        }
+        ASR::symbol_t *struct_sym =
+            ASRUtils::symbol_get_past_external(actual_var.m_type_declaration);
+        if (struct_sym == nullptr || !ASR::is_a<ASR::Struct_t>(*struct_sym)) {
+            return;
+        }
+        register_current_function_local_struct_cleanup(
+            get_c_local_struct_cleanup_target(actual_var, emitted_name),
+            ASR::down_cast<ASR::Struct_t>(struct_sym), true, false);
     }
 
     void cache_c_default_allocator(std::string &decl, std::string &body,
@@ -9018,6 +9056,11 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             bool plain_pointer_backed_local_aggregate_actual =
                 is_plain_pointer_backed_local_aggregate_actual(
                     actual_var, pointer_backed_aggregate_actual);
+            if (is_c && param != nullptr
+                    && param->m_intent == ASRUtils::intent_out
+                    && actual_var != nullptr) {
+                register_c_intent_out_local_struct_descriptor_cleanup(*actual_var);
+            }
             if (!raw_pointer_actual
                     && param_is_optional_alloc_scalar_ref
                     && ASRUtils::is_pointer(type)
