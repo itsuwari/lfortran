@@ -1,0 +1,13 @@
+{
+    "basename": "c-c_backend_local_struct_nested_alloc_array_cleanup_ref_01-2ba2578",
+    "cmd": "lfortran --no-color --show-c {infile}",
+    "infile": "tests/c_backend_local_struct_nested_alloc_array_cleanup_ref_01.f90",
+    "infile_hash": "c6f74ba206f51eaba9a58773cddab581fe26d960632263ae2590a989",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": "c-c_backend_local_struct_nested_alloc_array_cleanup_ref_01-2ba2578.stdout",
+    "stdout_hash": "1b0d2316d75342a0271ecff952b7773863ddc4ecedffa36b3c231611",
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

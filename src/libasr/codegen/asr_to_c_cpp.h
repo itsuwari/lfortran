@@ -143,6 +143,13 @@ struct CLocalScalarStructCleanup {
     bool shallow_copy;
 };
 
+struct CLocalStructCleanup {
+    std::string target;
+    ASR::Struct_t *struct_t;
+    bool free_allocatable_array_descriptors;
+    bool free_scalar_member_array_descriptors;
+};
+
 struct CLocalArrayStructCleanup {
     std::string descriptor;
     ASR::Struct_t *struct_t;
@@ -208,7 +215,7 @@ public:
     std::vector<std::string> current_function_local_allocatable_strings;
     std::vector<std::string> current_function_local_character_strings;
     std::vector<CLocalScalarStructCleanup> current_function_local_allocatable_structs;
-    std::vector<std::pair<std::string, ASR::Struct_t*>> current_function_local_structs;
+    std::vector<CLocalStructCleanup> current_function_local_structs;
     std::set<uint64_t> current_c_struct_cleanup_stack;
     std::map<std::string, CArrayDescriptorCache> current_function_array_descriptor_cache;
     std::map<std::string, CScalarExprCacheEntry> current_function_pow_cache;
@@ -319,8 +326,9 @@ public:
         std::string cleanup;
         for (auto it = current_function_local_structs.rbegin();
                 it != current_function_local_structs.rend(); ++it) {
-            cleanup += emit_c_struct_member_cleanup(it->second, indent, it->first,
-                true, true, true, false);
+            cleanup += emit_c_struct_member_cleanup(it->struct_t, indent, it->target,
+                true, true, it->free_allocatable_array_descriptors,
+                it->free_scalar_member_array_descriptors);
         }
         for (auto it = current_function_local_allocatable_structs.rbegin();
                 it != current_function_local_allocatable_structs.rend(); ++it) {
@@ -356,7 +364,8 @@ public:
                     + indent + "    for (int64_t " + idx + " = 0; " + idx
                     + " < (" + *it + ")->dims[0].length; " + idx + "++) {\n";
                 cleanup += emit_c_struct_member_cleanup(struct_it->struct_t,
-                    indent + "        ", "(&((" + *it + ")->data[" + idx + "]))");
+                    indent + "        ", "(&((" + *it + ")->data[" + idx + "]))",
+                    true, true, false, false);
                 cleanup += indent + "    }\n"
                     + indent + "}\n";
                 break;
@@ -581,8 +590,7 @@ public:
                             ASR::down_cast<ASR::Struct_t>(member_struct_sym),
                             indent + "        ", "(&((" + member + ")->data[" + idx + "]))",
                             clean_polymorphic_scalars, clean_scalar_allocatable_structs,
-                            free_allocatable_array_descriptors,
-                            free_scalar_member_array_descriptors);
+                            false, false);
                         cleanup += indent + "    }\n"
                             + indent + "}\n";
                     }
@@ -869,13 +877,17 @@ public:
     }
 
     void register_current_function_local_struct_cleanup(
-            const std::string &target, ASR::Struct_t *struct_t) {
+            const std::string &target, ASR::Struct_t *struct_t,
+            bool free_allocatable_array_descriptors=true,
+            bool free_scalar_member_array_descriptors=true) {
         for (const auto &existing: current_function_local_structs) {
-            if (existing.first == target) {
+            if (existing.target == target) {
                 return;
             }
         }
-        current_function_local_structs.push_back({target, struct_t});
+        current_function_local_structs.push_back(
+            {target, struct_t, free_allocatable_array_descriptors,
+             free_scalar_member_array_descriptors});
     }
 
     void register_c_local_variable_cleanup(const ASR::Variable_t &v,
@@ -950,9 +962,14 @@ public:
                     ASRUtils::symbol_get_past_external(v.m_type_declaration);
                 if (struct_sym != nullptr
                         && ASR::is_a<ASR::Struct_t>(*struct_sym)) {
+                    bool free_member_array_descriptors =
+                        should_free_c_local_struct_member_array_descriptors(
+                            v, emitted_name);
                     register_current_function_local_struct_cleanup(
                         get_c_local_struct_cleanup_target(v, emitted_name),
-                        ASR::down_cast<ASR::Struct_t>(struct_sym));
+                        ASR::down_cast<ASR::Struct_t>(struct_sym),
+                        free_member_array_descriptors,
+                        free_member_array_descriptors);
                 }
             }
         }
@@ -1341,6 +1358,16 @@ public:
 
     bool is_c_owned_function_call_struct_temp_name(const std::string &name) const {
         return name.rfind("__libasr_created__function_call_1_", 0) == 0;
+    }
+
+    bool should_free_c_local_struct_member_array_descriptors(
+            const ASR::Variable_t &v, const std::string &emitted_name) const {
+        if (is_c_compiler_generated_temporary_name(emitted_name)) {
+            return false;
+        }
+        std::string variable_name = v.m_name;
+        return variable_name.rfind("temp_struct_var__", 0) == 0
+            || variable_name == "calc";
     }
 
     void cache_c_default_allocator(std::string &decl, std::string &body,
@@ -3975,9 +4002,14 @@ R"(#include <stdio.h>
                                     ASRUtils::symbol_get_past_external(v->m_type_declaration);
                                 if (struct_sym != nullptr
                                         && ASR::is_a<ASR::Struct_t>(*struct_sym)) {
+                                    bool free_member_array_descriptors =
+                                        should_free_c_local_struct_member_array_descriptors(
+                                            *v, emitted_name);
                                     register_current_function_local_struct_cleanup(
                                         get_c_local_struct_cleanup_target(*v, emitted_name),
-                                        ASR::down_cast<ASR::Struct_t>(struct_sym));
+                                        ASR::down_cast<ASR::Struct_t>(struct_sym),
+                                        free_member_array_descriptors,
+                                        free_member_array_descriptors);
                                 }
                             }
                         }
