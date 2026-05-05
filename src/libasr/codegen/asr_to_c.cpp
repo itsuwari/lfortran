@@ -2494,6 +2494,20 @@ R"(
                 continue;
             }
             if (ASRUtils::is_allocatable(arg_var->m_type)
+                    && !ASRUtils::is_array(arg_var->m_type)) {
+                ASR::ttype_t *arg_type =
+                    ASRUtils::type_get_past_allocatable_pointer(arg_var->m_type);
+                if (ASRUtils::is_character(*arg_type)) {
+                    std::string arg_name = CUtils::get_c_variable_name(*arg_var);
+                    sub += indent + "if (" + arg_name + " != NULL && (*"
+                        + arg_name + ") != NULL) {\n";
+                    sub += indent + "    _lfortran_free_alloc("
+                        "_lfortran_get_default_allocator(), *" + arg_name + ");\n";
+                    sub += indent + "    *" + arg_name + " = NULL;\n";
+                    sub += indent + "}\n";
+                }
+            }
+            if (ASRUtils::is_allocatable(arg_var->m_type)
                     || ASRUtils::is_pointer(arg_var->m_type)) {
                 continue;
             }

@@ -3713,21 +3713,14 @@ R"(#include <stdio.h>
                             }
                         } else if (is_c && v->m_intent == ASRUtils::intent_local
                                 && ASRUtils::is_allocatable(v->m_type)
-                                && !ASRUtils::is_array(v->m_type)
-                                && is_c_compiler_created_return_slot_name(emitted_name)) {
+                                && !ASRUtils::is_array(v->m_type)) {
                             ASR::ttype_t *v_type_unwrapped =
                                 ASRUtils::type_get_past_allocatable_pointer(v->m_type);
                             if (ASRUtils::is_character(*v_type_unwrapped)) {
                                 register_current_function_local_allocatable_string_cleanup(
                                     emitted_name);
-                            }
-                        } else if (is_c && v->m_intent == ASRUtils::intent_local
-                                && ASRUtils::is_allocatable(v->m_type)
-                                && !ASRUtils::is_array(v->m_type)
-                                && !is_c_compiler_generated_temporary_name(emitted_name)) {
-                            ASR::ttype_t *v_type_unwrapped =
-                                ASRUtils::type_get_past_allocatable_pointer(v->m_type);
-                            if (ASR::is_a<ASR::StructType_t>(*v_type_unwrapped)
+                            } else if (!is_c_compiler_generated_temporary_name(emitted_name)
+                                    && ASR::is_a<ASR::StructType_t>(*v_type_unwrapped)
                                     && v->m_type_declaration != nullptr) {
                                 ASR::symbol_t *struct_sym =
                                     ASRUtils::symbol_get_past_external(v->m_type_declaration);
