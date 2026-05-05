@@ -1,0 +1,160 @@
+
+#include <stdlib.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <string.h>
+#include <lfortran_intrinsics.h>
+
+
+#ifndef LFORTRAN_C_BACKEND_CONSTRUCTOR
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_CONSTRUCTOR __attribute__((constructor))
+#else
+#define LFORTRAN_C_BACKEND_CONSTRUCTOR
+#endif
+#endif
+#ifndef LFORTRAN_C_BACKEND_WEAK
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_WEAK __attribute__((weak))
+#else
+#define LFORTRAN_C_BACKEND_WEAK static
+#endif
+#endif
+
+
+struct dimension_descriptor
+{
+    int32_t lower_bound, length, stride;
+};
+struct __lfortran_runtime_type_header
+{
+    int64_t __lfortran_type_tag;
+};
+#ifndef LFORTRAN_C_BACKEND_CONSTRUCTOR
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_CONSTRUCTOR __attribute__((constructor))
+#else
+#define LFORTRAN_C_BACKEND_CONSTRUCTOR
+#endif
+#endif
+#ifndef LFORTRAN_C_BACKEND_WEAK
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_WEAK __attribute__((weak))
+#else
+#define LFORTRAN_C_BACKEND_WEAK static
+#endif
+#endif
+
+struct c_backend_select_type_class_cast_temp_ref_01_m__base_type {
+ int64_t __lfortran_type_tag;
+ bool enabled;
+};
+
+
+struct r32___
+{
+    float *data;
+    struct dimension_descriptor dims[32];
+    int32_t n_dims;
+    int32_t offset;
+    bool is_allocated;
+};
+
+struct c_backend_select_type_class_cast_temp_ref_01_m__child_type {
+ int64_t __lfortran_type_tag;
+ bool enabled;
+ struct r32___* values;
+};
+
+LFORTRAN_C_BACKEND_CONSTRUCTOR LFORTRAN_C_BACKEND_WEAK void __lfortran_register_type_parent_child_type_x5484845707121349312(void)
+{
+    _lfortran_register_c_type_parent(5484845707121349312, 7178003525484214919);
+}
+
+static void __lfortran_cleanup_struct_c_backend_select_type_class_cast_temp_ref_01_m__child_type_x5484845707121349312(void *__lfortran_value)
+{
+    struct c_backend_select_type_class_cast_temp_ref_01_m__child_type *__lfortran_self = (struct c_backend_select_type_class_cast_temp_ref_01_m__child_type*)__lfortran_value;
+    if (__lfortran_self == NULL) {
+        return;
+    }
+    if ((__lfortran_self->values) != NULL && (__lfortran_self->values)->is_allocated && (__lfortran_self->values)->data != NULL) {
+        _lfortran_free_alloc(_lfortran_get_default_allocator(), (char*) (__lfortran_self->values)->data);
+        (__lfortran_self->values)->data = NULL;
+    }
+    if ((__lfortran_self->values) != NULL) {
+        (__lfortran_self->values)->offset = 0;
+        (__lfortran_self->values)->is_allocated = false;
+        _lfortran_free_alloc(_lfortran_get_default_allocator(), (char*) __lfortran_self->values);
+        __lfortran_self->values = NULL;
+    }
+}
+
+LFORTRAN_C_BACKEND_CONSTRUCTOR static void __lfortran_register_struct_cleanup_c_backend_select_type_class_cast_temp_ref_01_m__child_type_x5484845707121349312(void)
+{
+    _lfortran_register_c_struct_cleanup(5484845707121349312, __lfortran_cleanup_struct_c_backend_select_type_class_cast_temp_ref_01_m__child_type_x5484845707121349312);
+}
+
+void __lfortran_c_backend_select_type_class_cast_temp_ref_01_m__consume__StructType(struct c_backend_select_type_class_cast_temp_ref_01_m__child_type* restrict item);
+void __lfortran_c_backend_select_type_class_cast_temp_ref_01_m__fill__Allocatable_StructType_Class_(struct c_backend_select_type_class_cast_temp_ref_01_m__base_type* *item);
+
+
+
+
+// Implementations
+void __lfortran_c_backend_select_type_class_cast_temp_ref_01_m__consume__StructType(struct c_backend_select_type_class_cast_temp_ref_01_m__child_type* restrict item)
+{
+    if (item->enabled) {
+        fprintf(stderr, "ERROR STOP");
+        exit(1);
+    }
+}
+
+void __lfortran_c_backend_select_type_class_cast_temp_ref_01_m__fill__Allocatable_StructType_Class_(struct c_backend_select_type_class_cast_temp_ref_01_m__base_type* *item)
+{
+    lfortran_allocator_t* __lfortran_default_allocator = _lfortran_get_default_allocator();
+    if ((((*item)) != NULL)) {
+        if (((*item)) != NULL) {
+            _lfortran_cleanup_c_struct(((struct __lfortran_runtime_type_header*)((*item)))->__lfortran_type_tag, (void*) (*item));
+            _lfortran_free_alloc(__lfortran_default_allocator, (char*) (*item));
+            (*item) = NULL;
+        }
+    }
+    (*item) = (struct c_backend_select_type_class_cast_temp_ref_01_m__base_type*) _lfortran_malloc_alloc(__lfortran_default_allocator, sizeof(struct c_backend_select_type_class_cast_temp_ref_01_m__child_type));
+    memset((*item), 0, sizeof(struct c_backend_select_type_class_cast_temp_ref_01_m__child_type));
+    ((struct c_backend_select_type_class_cast_temp_ref_01_m__child_type*)((*item)))->enabled = false;
+    struct r32___* struct_member_values_0;
+    struct_member_values_0 = _lfortran_malloc_alloc(__lfortran_default_allocator, sizeof(*struct_member_values_0));
+    memset(struct_member_values_0, 0, sizeof(*struct_member_values_0));
+    ((struct c_backend_select_type_class_cast_temp_ref_01_m__child_type*)((*item)))->values = struct_member_values_0;
+    (*item)->__lfortran_type_tag = 5484845707121349312;
+    if ((((*item)) != NULL) && (((struct __lfortran_runtime_type_header*)((*item)))->__lfortran_type_tag == 5484845707121349312)) {
+        do {
+            (*item)->values->n_dims = 1;
+            (*item)->values->dims[0].lower_bound = 1;
+            (*item)->values->dims[0].length = 3;
+            (*item)->values->dims[0].stride = 1;
+            (*item)->values->offset = 0;
+            (*item)->values->data = (float*) _lfortran_malloc_alloc(__lfortran_default_allocator, 1*(*item)->values->dims[0].length*sizeof(float));
+            (*item)->values->is_allocated = true;
+        } while (0);
+    }
+}
+
+int main(int argc, char* argv[])
+{
+    _lpython_set_argv(argc, argv);
+    lfortran_allocator_t* __lfortran_default_allocator = _lfortran_get_default_allocator();
+    struct c_backend_select_type_class_cast_temp_ref_01_m__base_type* item = NULL;
+    __lfortran_c_backend_select_type_class_cast_temp_ref_01_m__fill__Allocatable_StructType_Class_(&item);
+    if (((item) != NULL) && (((struct __lfortran_runtime_type_header*)(item))->__lfortran_type_tag == 5484845707121349312)) {
+        do {
+            __lfortran_c_backend_select_type_class_cast_temp_ref_01_m__consume__StructType(((struct c_backend_select_type_class_cast_temp_ref_01_m__child_type*)(((struct c_backend_select_type_class_cast_temp_ref_01_m__child_type*)(item)))));
+        } while (0);
+    }
+    if ((item) != NULL) {
+        _lfortran_cleanup_c_struct(((struct __lfortran_runtime_type_header*)(item))->__lfortran_type_tag, (void*) item);
+        _lfortran_free_alloc(__lfortran_default_allocator, (char*) item);
+        item = NULL;
+    }
+    return 0;
+}

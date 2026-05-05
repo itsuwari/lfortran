@@ -2142,6 +2142,22 @@ class ArgSimplifier: public ASR::CallReplacerOnExpressionsVisitor<ArgSimplifier>
             || ASRUtils::is_pointer(actual_type);
     }
 
+    bool is_c_direct_class_cast_actual(ASR::expr_t *actual) {
+        if (!c_backend || actual == nullptr || !ASR::is_a<ASR::Cast_t>(*actual)) {
+            return false;
+        }
+        ASR::Cast_t *cast = ASR::down_cast<ASR::Cast_t>(actual);
+        if (cast->m_kind != ASR::cast_kindType::ClassToStruct
+                && cast->m_kind != ASR::cast_kindType::ClassToClass) {
+            return false;
+        }
+        ASR::expr_t *arg = ASRUtils::get_past_array_physical_cast(cast->m_arg);
+        return arg != nullptr
+            && (ASR::is_a<ASR::Var_t>(*arg)
+                || ASR::is_a<ASR::StructInstanceMember_t>(*arg)
+                || ASR::is_a<ASR::UnionInstanceMember_t>(*arg));
+    }
+
     ASR::expr_t* call_create_and_allocate_temporary_variable(ASR::expr_t*& expr, Allocator &al, Vec<ASR::stmt_t*>*& current_body,
         const std::string& name_hint, SymbolTable* current_scope, ExprsWithTargetType& exprs_with_target) {
         ASR::expr_t* x_m_args_i = ASRUtils::get_past_array_physical_cast(expr);
@@ -2281,6 +2297,7 @@ class ArgSimplifier: public ASR::CallReplacerOnExpressionsVisitor<ArgSimplifier>
             } else if( x_m_args[i].m_value &&
                        !ASRUtils::is_array(ASRUtils::expr_type(x_m_args[i].m_value)) &&
                        ASRUtils::is_struct(*ASRUtils::expr_type(x_m_args[i].m_value)) &&
+                       !is_c_direct_class_cast_actual(x_m_args[i].m_value) &&
                        !ASR::is_a<ASR::Var_t>(
                             *ASRUtils::get_past_array_physical_cast(x_m_args[i].m_value)) &&
                        !(ASR::is_a<ASR::StructInstanceMember_t>(

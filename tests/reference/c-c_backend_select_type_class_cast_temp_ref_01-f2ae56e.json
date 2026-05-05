@@ -1,0 +1,13 @@
+{
+    "basename": "c-c_backend_select_type_class_cast_temp_ref_01-f2ae56e",
+    "cmd": "lfortran --no-color --show-c {infile}",
+    "infile": "tests/c_backend_select_type_class_cast_temp_ref_01.f90",
+    "infile_hash": "9384b60b55c47cd85cdefe672e5056d87d25e42ea5359be45d0cfb01",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": "c-c_backend_select_type_class_cast_temp_ref_01-f2ae56e.stdout",
+    "stdout_hash": "6a7239e19506af1522928f05bec1708f0976f239fcd6f0d22f727159",
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}
