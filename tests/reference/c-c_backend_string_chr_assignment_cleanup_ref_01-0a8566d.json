@@ -1,0 +1,13 @@
+{
+    "basename": "c-c_backend_string_chr_assignment_cleanup_ref_01-0a8566d",
+    "cmd": "lfortran --no-color --show-c {infile}",
+    "infile": "tests/c_backend_string_chr_assignment_cleanup_ref_01.f90",
+    "infile_hash": "8652fbd7c3f07f2baaabcc030c5e01d55a15766397a70097b7814f49",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": "c-c_backend_string_chr_assignment_cleanup_ref_01-0a8566d.stdout",
+    "stdout_hash": "5a3792af96a86bdb0f68aab76e633f751ae42920515d71471d4f4048",
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

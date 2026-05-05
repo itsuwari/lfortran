@@ -1,0 +1,80 @@
+#include <inttypes.h>
+
+#include <stdlib.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <string.h>
+#include <lfortran_intrinsics.h>
+
+
+#ifndef LFORTRAN_C_BACKEND_CONSTRUCTOR
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_CONSTRUCTOR __attribute__((constructor))
+#else
+#define LFORTRAN_C_BACKEND_CONSTRUCTOR
+#endif
+#endif
+#ifndef LFORTRAN_C_BACKEND_WEAK
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_WEAK __attribute__((weak))
+#else
+#define LFORTRAN_C_BACKEND_WEAK static
+#endif
+#endif
+
+
+struct dimension_descriptor
+{
+    int32_t lower_bound, length, stride;
+};
+#ifndef LFORTRAN_C_BACKEND_CONSTRUCTOR
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_CONSTRUCTOR __attribute__((constructor))
+#else
+#define LFORTRAN_C_BACKEND_CONSTRUCTOR
+#endif
+#endif
+#ifndef LFORTRAN_C_BACKEND_WEAK
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_WEAK __attribute__((weak))
+#else
+#define LFORTRAN_C_BACKEND_WEAK static
+#endif
+#endif
+
+void __lfortran__lcompilers_char_i32(int32_t i, char * *result);
+
+
+
+
+// Implementations
+void __lfortran__lcompilers_char_i32(int32_t i, char * *result)
+{
+    lfortran_allocator_t* __lfortran_default_allocator = _lfortran_get_default_allocator();
+    char* __lfortran_string_tmp = _lfortran_str_chr_alloc(__lfortran_default_allocator, i);
+    _lfortran_strcpy_alloc(__lfortran_default_allocator, &(*result), NULL, true, true, __lfortran_string_tmp, strlen(__lfortran_string_tmp));
+    _lfortran_free_alloc(__lfortran_default_allocator, __lfortran_string_tmp);
+}
+
+int main(int argc, char* argv[])
+{
+    _lpython_set_argv(argc, argv);
+    char * __libasr__created__var__0_return_slot = NULL;
+    int32_t code;
+    char * s = NULL;
+    code = 65;
+    __lfortran__lcompilers_char_i32(code, &__libasr__created__var__0_return_slot);
+    _lfortran_strcpy_alloc(_lfortran_get_default_allocator(), &s, NULL, true, true, __libasr__created__var__0_return_slot, strlen(__libasr__created__var__0_return_slot));
+    if (__libasr__created__var__0_return_slot != NULL) {
+        _lfortran_free_alloc(_lfortran_get_default_allocator(), __libasr__created__var__0_return_slot);
+        __libasr__created__var__0_return_slot = NULL;
+    }
+    if (str_compare(s, ((s) != NULL ? strlen(s) : 0), (char*)"A", 1)  !=  0) {
+        fprintf(stderr, "ERROR STOP");
+        exit(1);
+    }
+    if ((s) != NULL) {
+        s = NULL;
+    }
+    return 0;
+}

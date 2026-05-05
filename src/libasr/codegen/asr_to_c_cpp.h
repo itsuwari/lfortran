@@ -1910,6 +1910,23 @@ R"(#include <stdio.h>
     }
 
     bool is_allocating_string_expr(ASR::expr_t *expr) {
+        if (expr && ASR::is_a<ASR::BitCast_t>(*expr)) {
+            ASR::BitCast_t *bitcast = ASR::down_cast<ASR::BitCast_t>(expr);
+            ASR::expr_t *source = bitcast->m_value ? bitcast->m_value : bitcast->m_source;
+            ASR::ttype_t *target_type = bitcast->m_type;
+            ASR::ttype_t *source_type = source ? ASRUtils::expr_type(source) : nullptr;
+            if (source && ASR::is_a<ASR::ArrayItem_t>(*source)) {
+                ASR::ArrayItem_t *array_item = ASR::down_cast<ASR::ArrayItem_t>(source);
+                source_type = ASRUtils::type_get_past_array(
+                    ASRUtils::expr_type(array_item->m_v));
+            }
+            if (target_type && source_type
+                    && ASRUtils::is_character(*target_type)
+                    && (ASRUtils::is_integer(*source_type)
+                        || ASRUtils::is_unsigned_integer(*source_type))) {
+                return true;
+            }
+        }
         expr = unwrap_c_lvalue_expr(expr);
         if (expr == nullptr) {
             return false;
@@ -1920,6 +1937,7 @@ R"(#include <stdio.h>
             case ASR::exprType::StringRepeat:
             case ASR::exprType::StringConcat:
             case ASR::exprType::StringFormat:
+            case ASR::exprType::StringChr:
                 return true;
             case ASR::exprType::StringPhysicalCast:
                 return is_allocating_string_expr(
