@@ -1,0 +1,165 @@
+#include <inttypes.h>
+#include <string.h>
+
+#include <stdlib.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <string.h>
+#include <lfortran_intrinsics.h>
+
+
+#ifndef LFORTRAN_C_BACKEND_CONSTRUCTOR
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_CONSTRUCTOR __attribute__((constructor))
+#else
+#define LFORTRAN_C_BACKEND_CONSTRUCTOR
+#endif
+#endif
+#ifndef LFORTRAN_C_BACKEND_WEAK
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_WEAK __attribute__((weak))
+#else
+#define LFORTRAN_C_BACKEND_WEAK static
+#endif
+#endif
+
+
+struct dimension_descriptor
+{
+    int32_t lower_bound, length, stride;
+};
+#ifndef LFORTRAN_C_BACKEND_CONSTRUCTOR
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_CONSTRUCTOR __attribute__((constructor))
+#else
+#define LFORTRAN_C_BACKEND_CONSTRUCTOR
+#endif
+#endif
+#ifndef LFORTRAN_C_BACKEND_WEAK
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_WEAK __attribute__((weak))
+#else
+#define LFORTRAN_C_BACKEND_WEAK static
+#endif
+#endif
+
+
+struct i32___
+{
+    int32_t *data;
+    struct dimension_descriptor dims[32];
+    int32_t n_dims;
+    int32_t offset;
+    bool is_allocated;
+};
+
+struct c_backend_intent_out_nested_member_init_ref_01_m__inner {
+ int64_t __lfortran_type_tag;
+ struct i32___* values;
+};
+
+static void __lfortran_cleanup_struct_c_backend_intent_out_nested_member_init_ref_01_m__inner_x8048563252114387205(void *__lfortran_value)
+{
+    struct c_backend_intent_out_nested_member_init_ref_01_m__inner *__lfortran_self = (struct c_backend_intent_out_nested_member_init_ref_01_m__inner*)__lfortran_value;
+    if (__lfortran_self == NULL) {
+        return;
+    }
+    if ((__lfortran_self->values) != NULL && (__lfortran_self->values)->is_allocated && (__lfortran_self->values)->data != NULL) {
+        _lfortran_free_alloc(_lfortran_get_default_allocator(), (char*) (__lfortran_self->values)->data);
+        (__lfortran_self->values)->data = NULL;
+    }
+    if ((__lfortran_self->values) != NULL) {
+        (__lfortran_self->values)->offset = 0;
+        (__lfortran_self->values)->is_allocated = false;
+        _lfortran_free_alloc(_lfortran_get_default_allocator(), (char*) __lfortran_self->values);
+        __lfortran_self->values = NULL;
+    }
+}
+
+LFORTRAN_C_BACKEND_CONSTRUCTOR static void __lfortran_register_struct_cleanup_c_backend_intent_out_nested_member_init_ref_01_m__inner_x8048563252114387205(void)
+{
+    _lfortran_register_c_struct_cleanup(8048563252114387205, __lfortran_cleanup_struct_c_backend_intent_out_nested_member_init_ref_01_m__inner_x8048563252114387205);
+}
+
+struct c_backend_intent_out_nested_member_init_ref_01_m__outer {
+ int64_t __lfortran_type_tag;
+ struct c_backend_intent_out_nested_member_init_ref_01_m__inner left;
+ struct c_backend_intent_out_nested_member_init_ref_01_m__inner right;
+};
+
+static void __lfortran_cleanup_struct_c_backend_intent_out_nested_member_init_ref_01_m__outer_x5895492698243736574(void *__lfortran_value)
+{
+    struct c_backend_intent_out_nested_member_init_ref_01_m__outer *__lfortran_self = (struct c_backend_intent_out_nested_member_init_ref_01_m__outer*)__lfortran_value;
+    if (__lfortran_self == NULL) {
+        return;
+    }
+    if (((&(__lfortran_self->left))->values) != NULL && ((&(__lfortran_self->left))->values)->is_allocated && ((&(__lfortran_self->left))->values)->data != NULL) {
+        _lfortran_free_alloc(_lfortran_get_default_allocator(), (char*) ((&(__lfortran_self->left))->values)->data);
+        ((&(__lfortran_self->left))->values)->data = NULL;
+    }
+    if (((&(__lfortran_self->left))->values) != NULL) {
+        ((&(__lfortran_self->left))->values)->offset = 0;
+        ((&(__lfortran_self->left))->values)->is_allocated = false;
+        _lfortran_free_alloc(_lfortran_get_default_allocator(), (char*) (&(__lfortran_self->left))->values);
+        (&(__lfortran_self->left))->values = NULL;
+    }
+    if (((&(__lfortran_self->right))->values) != NULL && ((&(__lfortran_self->right))->values)->is_allocated && ((&(__lfortran_self->right))->values)->data != NULL) {
+        _lfortran_free_alloc(_lfortran_get_default_allocator(), (char*) ((&(__lfortran_self->right))->values)->data);
+        ((&(__lfortran_self->right))->values)->data = NULL;
+    }
+    if (((&(__lfortran_self->right))->values) != NULL) {
+        ((&(__lfortran_self->right))->values)->offset = 0;
+        ((&(__lfortran_self->right))->values)->is_allocated = false;
+        _lfortran_free_alloc(_lfortran_get_default_allocator(), (char*) (&(__lfortran_self->right))->values);
+        (&(__lfortran_self->right))->values = NULL;
+    }
+}
+
+LFORTRAN_C_BACKEND_CONSTRUCTOR static void __lfortran_register_struct_cleanup_c_backend_intent_out_nested_member_init_ref_01_m__outer_x5895492698243736574(void)
+{
+    _lfortran_register_c_struct_cleanup(5895492698243736574, __lfortran_cleanup_struct_c_backend_intent_out_nested_member_init_ref_01_m__outer_x5895492698243736574);
+}
+
+void __lfortran_c_backend_intent_out_nested_member_init_ref_01_m__init__StructType(struct c_backend_intent_out_nested_member_init_ref_01_m__outer* restrict value);
+
+
+
+
+// Implementations
+void __lfortran_c_backend_intent_out_nested_member_init_ref_01_m__init__StructType(struct c_backend_intent_out_nested_member_init_ref_01_m__outer* restrict value)
+{
+    lfortran_allocator_t* __lfortran_default_allocator = _lfortran_get_default_allocator();
+    memset(value, 0, sizeof(*value));
+    value->__lfortran_type_tag = 5895492698243736574;
+    value->left.__lfortran_type_tag = 8048563252114387205;
+    struct i32___* struct_member_values_0;
+    struct_member_values_0 = _lfortran_malloc_alloc(__lfortran_default_allocator, sizeof(*struct_member_values_0));
+    memset(struct_member_values_0, 0, sizeof(*struct_member_values_0));
+    (&(value->left))->values = struct_member_values_0;
+    value->right.__lfortran_type_tag = 8048563252114387205;
+    struct i32___* struct_member_values_1;
+    struct_member_values_1 = _lfortran_malloc_alloc(__lfortran_default_allocator, sizeof(*struct_member_values_1));
+    memset(struct_member_values_1, 0, sizeof(*struct_member_values_1));
+    (&(value->right))->values = struct_member_values_1;
+}
+
+int main(int argc, char* argv[])
+{
+    _lpython_set_argv(argc, argv);
+    struct c_backend_intent_out_nested_member_init_ref_01_m__outer value_value;
+    memset(&value_value, 0, sizeof(value_value));
+    value_value.__lfortran_type_tag = 5895492698243736574;
+    (&(value_value))->left.__lfortran_type_tag = 8048563252114387205;
+    struct i32___* struct_member_values_2;
+    struct_member_values_2 = _lfortran_malloc_alloc(_lfortran_get_default_allocator(), sizeof(*struct_member_values_2));
+    memset(struct_member_values_2, 0, sizeof(*struct_member_values_2));
+    (&((&(value_value))->left))->values = struct_member_values_2;
+    (&(value_value))->right.__lfortran_type_tag = 8048563252114387205;
+    struct i32___* struct_member_values_3;
+    struct_member_values_3 = _lfortran_malloc_alloc(_lfortran_get_default_allocator(), sizeof(*struct_member_values_3));
+    memset(struct_member_values_3, 0, sizeof(*struct_member_values_3));
+    (&((&(value_value))->right))->values = struct_member_values_3;
+    struct c_backend_intent_out_nested_member_init_ref_01_m__outer* value = &value_value;
+    __lfortran_c_backend_intent_out_nested_member_init_ref_01_m__init__StructType(((struct c_backend_intent_out_nested_member_init_ref_01_m__outer*)(value)));
+    return 0;
+}

@@ -1,0 +1,13 @@
+{
+    "basename": "c-c_backend_intent_out_nested_member_init_ref_01-f7fe37c",
+    "cmd": "lfortran --no-color --show-c {infile}",
+    "infile": "tests/c_backend_intent_out_nested_member_init_ref_01.f90",
+    "infile_hash": "d387c7066b7604a82682c69d445c290616dd5fc50b1d7106aa6b9ac4",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": "c-c_backend_intent_out_nested_member_init_ref_01-f7fe37c.stdout",
+    "stdout_hash": "4921737672e992bc724df0b759a31c638787f0d203db49a3512775f8",
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

@@ -2351,7 +2351,7 @@ R"(
     }
 
     void allocate_array_members_of_struct(ASR::Struct_t* der_type_t, std::string& sub,
-        std::string indent, std::string name) {
+        std::string indent, std::string name, bool recurse_plain_struct_members=true) {
         // File scope in C only permits declarations. Skip member-level runtime
         // initialization there; static objects are already zero-initialized.
         if (indentation_level == 0) {
@@ -2396,7 +2396,8 @@ R"(
                 }
             } else if( ASRUtils::is_character(*mem_type) ) {
                 sub += indent + name + "->" + emitted_member_name + " = NULL;\n";
-            } else if( ASR::is_a<ASR::StructType_t>(*mem_type) ) {
+            } else if( recurse_plain_struct_members
+                    && ASR::is_a<ASR::StructType_t>(*mem_type) ) {
                 ASR::Variable_t* mem_var = ASR::down_cast<ASR::Variable_t>(sym);
                 if (mem_var->m_type_declaration != nullptr) {
                     ASR::symbol_t *struct_sym =
@@ -2473,7 +2474,7 @@ R"(
             sub += indent + name + "->" + CUtils::get_c_member_name(member_sym)
                 + " = " + src + ";\n";
         }
-        allocate_array_members_of_struct(der_type_t, sub, indent, name);
+        allocate_array_members_of_struct(der_type_t, sub, indent, name, false);
     }
 
     void emit_function_arg_initialization(const ASR::Function_t &x,
