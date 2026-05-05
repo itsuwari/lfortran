@@ -5073,6 +5073,15 @@ run = true
 options = "--backend=c --separate-compilation"
 
 [[test]]
+filename = "c_backend_allocatable_char_array_cleanup_01.f90"
+run = true
+options = "--backend=c --separate-compilation"
+
+[[test]]
+filename = "c_backend_allocatable_char_array_cleanup_ref_01.f90"
+c = true
+
+[[test]]
 filename = "allocatable_aggregate_dummy_slot_01.f90"
 run = true
 options = "--backend=c --separate-compilation"

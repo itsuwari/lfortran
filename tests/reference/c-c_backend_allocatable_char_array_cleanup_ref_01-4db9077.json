@@ -1,0 +1,13 @@
+{
+    "basename": "c-c_backend_allocatable_char_array_cleanup_ref_01-4db9077",
+    "cmd": "lfortran --no-color --show-c {infile}",
+    "infile": "tests/c_backend_allocatable_char_array_cleanup_ref_01.f90",
+    "infile_hash": "964d9751ed37183633f23c3ab6867a9d3c7a69f50a99eb1416a26ca5",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": "c-c_backend_allocatable_char_array_cleanup_ref_01-4db9077.stdout",
+    "stdout_hash": "ec03248fa4d6d5ccc001552a3d61142db43797f14fcf2639a0d1a245",
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

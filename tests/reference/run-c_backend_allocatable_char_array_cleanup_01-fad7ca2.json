@@ -1,0 +1,13 @@
+{
+    "basename": "run-c_backend_allocatable_char_array_cleanup_01-fad7ca2",
+    "cmd": "lfortran --no-color {infile}",
+    "infile": "tests/c_backend_allocatable_char_array_cleanup_01.f90",
+    "infile_hash": "c2d55cb86dfff234621b4b29355e94f4394fc81218266223d9c87ce2",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

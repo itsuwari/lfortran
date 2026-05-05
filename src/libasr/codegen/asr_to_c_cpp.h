@@ -147,6 +147,10 @@ struct CLocalArrayStructCleanup {
     ASR::Struct_t *struct_t;
 };
 
+struct CLocalArrayStringCleanup {
+    std::string descriptor;
+};
+
 struct CArrayDescriptorCache {
     std::string data;
     std::string offset;
@@ -199,6 +203,7 @@ public:
     std::vector<std::pair<std::string, std::string>> current_function_conditional_heap_array_data;
     std::vector<std::string> current_function_local_allocatable_arrays;
     std::vector<CLocalArrayStructCleanup> current_function_local_allocatable_array_structs;
+    std::vector<CLocalArrayStringCleanup> current_function_local_allocatable_array_strings;
     std::vector<std::string> current_function_local_allocatable_strings;
     std::vector<std::string> current_function_local_character_strings;
     std::vector<CLocalScalarStructCleanup> current_function_local_allocatable_structs;
@@ -280,6 +285,35 @@ public:
         is_string_concat_present{false} {
         }
 
+    std::string emit_c_character_array_element_cleanup(
+            const std::string &descriptor, const std::string &indent) {
+        std::string idx = "__lfortran_cleanup_i_"
+            + CUtils::sanitize_c_identifier(descriptor);
+        std::string size = "__lfortran_cleanup_size_"
+            + CUtils::sanitize_c_identifier(descriptor);
+        std::string dim = "__lfortran_cleanup_dim_"
+            + CUtils::sanitize_c_identifier(descriptor);
+        return indent + "if ((" + descriptor + ") != NULL && (" + descriptor
+            + ")->is_allocated && (" + descriptor + ")->data != NULL) {\n"
+            + indent + "    int64_t " + size + " = 1;\n"
+            + indent + "    for (int32_t " + dim + " = 0; "
+            + dim + " < (" + descriptor + ")->n_dims; " + dim + "++) {\n"
+            + indent + "        " + size + " *= (" + descriptor
+            + ")->dims[" + dim + "].length;\n"
+            + indent + "    }\n"
+            + indent + "    for (int64_t " + idx + " = 0; " + idx
+            + " < " + size + "; " + idx + "++) {\n"
+            + indent + "        if ((" + descriptor + ")->data[" + idx
+            + "] != NULL) {\n"
+            + indent + "            _lfortran_free_alloc(_lfortran_get_default_allocator(), "
+            + "(" + descriptor + ")->data[" + idx + "]);\n"
+            + indent + "            (" + descriptor + ")->data[" + idx
+            + "] = NULL;\n"
+            + indent + "        }\n"
+            + indent + "    }\n"
+            + indent + "}\n";
+    }
+
     std::string emit_current_function_heap_array_cleanup(const std::string &indent) {
         std::string cleanup;
         for (auto it = current_function_local_structs.rbegin();
@@ -294,6 +328,15 @@ public:
         }
         for (auto it = current_function_local_allocatable_arrays.rbegin();
                 it != current_function_local_allocatable_arrays.rend(); ++it) {
+            for (auto string_it = current_function_local_allocatable_array_strings.rbegin();
+                    string_it != current_function_local_allocatable_array_strings.rend();
+                    ++string_it) {
+                if (string_it->descriptor != *it) {
+                    continue;
+                }
+                cleanup += emit_c_character_array_element_cleanup(*it, indent);
+                break;
+            }
             for (auto struct_it = current_function_local_allocatable_array_structs.rbegin();
                     struct_it != current_function_local_allocatable_array_structs.rend();
                     ++struct_it) {
@@ -375,6 +418,16 @@ public:
             }
         }
         current_function_local_allocatable_array_structs.push_back({descriptor, struct_t});
+    }
+
+    void register_current_function_local_allocatable_array_string_cleanup(
+            const std::string &descriptor) {
+        for (const auto &existing: current_function_local_allocatable_array_strings) {
+            if (existing.descriptor == descriptor) {
+                return;
+            }
+        }
+        current_function_local_allocatable_array_strings.push_back({descriptor});
     }
 
     void register_current_function_local_allocatable_string_cleanup(
@@ -472,7 +525,10 @@ public:
                     && !(ASR::is_a<ASR::StructType_t>(*member_element_type)
                         && ASR::down_cast<ASR::StructType_t>(
                             member_element_type)->m_is_unlimited_polymorphic)) {
-                if (ASR::is_a<ASR::StructType_t>(*member_element_type)
+                if (member_element_type != nullptr
+                        && ASRUtils::is_character(*member_element_type)) {
+                    cleanup += emit_c_character_array_element_cleanup(member, indent);
+                } else if (ASR::is_a<ASR::StructType_t>(*member_element_type)
                         && member_var->m_type_declaration != nullptr) {
                     ASR::symbol_t *member_struct_sym =
                         ASRUtils::symbol_get_past_external(member_var->m_type_declaration);
@@ -3481,6 +3537,7 @@ R"(#include <stdio.h>
         current_function_conditional_heap_array_data.clear();
         current_function_local_allocatable_arrays.clear();
         current_function_local_allocatable_array_structs.clear();
+        current_function_local_allocatable_array_strings.clear();
         current_function_local_allocatable_strings.clear();
         current_function_local_character_strings.clear();
         current_function_local_allocatable_structs.clear();
@@ -3617,6 +3674,10 @@ R"(#include <stdio.h>
                             ASR::ttype_t *element_type =
                                 ASRUtils::extract_type(v_type_unwrapped);
                             if (element_type != nullptr
+                                    && ASRUtils::is_character(*element_type)) {
+                                register_current_function_local_allocatable_array_string_cleanup(
+                                    emitted_name);
+                            } else if (element_type != nullptr
                                     && ASR::is_a<ASR::StructType_t>(*element_type)
                                     && v->m_type_declaration != nullptr) {
                                 ASR::symbol_t *struct_sym =
@@ -3769,6 +3830,7 @@ R"(#include <stdio.h>
             current_function_conditional_heap_array_data.clear();
             current_function_local_allocatable_arrays.clear();
             current_function_local_allocatable_array_structs.clear();
+            current_function_local_allocatable_array_strings.clear();
             current_function_local_allocatable_strings.clear();
             current_function_local_character_strings.clear();
             current_function_local_allocatable_structs.clear();
@@ -13300,7 +13362,9 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                         member_sym)->m_type_declaration;
                 }
             }
-            if (element_type != nullptr && ASR::is_a<ASR::StructType_t>(*element_type)
+            if (element_type != nullptr && ASRUtils::is_character(*element_type)) {
+                cleanup += emit_c_character_array_element_cleanup(target, indent);
+            } else if (element_type != nullptr && ASR::is_a<ASR::StructType_t>(*element_type)
                     && struct_sym != nullptr) {
                 struct_sym = ASRUtils::symbol_get_past_external(struct_sym);
                 if (struct_sym != nullptr && ASR::is_a<ASR::Struct_t>(*struct_sym)
