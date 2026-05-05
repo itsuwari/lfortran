@@ -1,0 +1,13 @@
+{
+    "basename": "c-c_backend_intent_out_struct_reinit_cleanup_ref_01-6a4e546",
+    "cmd": "lfortran --no-color --show-c {infile}",
+    "infile": "tests/c_backend_intent_out_struct_reinit_cleanup_ref_01.f90",
+    "infile_hash": "a16ceffad63241869243fd17f8819615506e795462e7e426fae3016c",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": "c-c_backend_intent_out_struct_reinit_cleanup_ref_01-6a4e546.stdout",
+    "stdout_hash": "7b3378602eb7dcb77ebecc84de1382cb13da596ef6abfc0240860ffc",
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

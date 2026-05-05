@@ -2530,6 +2530,10 @@ R"(
             }
             headers.insert("string.h");
             std::string arg_name = CUtils::get_c_variable_name(*arg_var);
+            if (c_struct_has_member_cleanup(ASR::down_cast<ASR::Struct_t>(derived_type))) {
+                sub += emit_c_struct_member_cleanup(
+                    ASR::down_cast<ASR::Struct_t>(derived_type), indent, arg_name);
+            }
             // A Fortran `intent(out)` derived dummy becomes undefined on entry
             // except for default-initialized components. Zero the pointee first
             // so generated allocatable/pointer component checks start from the

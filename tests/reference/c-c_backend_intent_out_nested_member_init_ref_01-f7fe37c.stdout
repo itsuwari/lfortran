@@ -129,6 +129,26 @@ void __lfortran_c_backend_intent_out_nested_member_init_ref_01_m__init__StructTy
 void __lfortran_c_backend_intent_out_nested_member_init_ref_01_m__init__StructType(struct c_backend_intent_out_nested_member_init_ref_01_m__outer* restrict value)
 {
     lfortran_allocator_t* __lfortran_default_allocator = _lfortran_get_default_allocator();
+    if (((&(value->left))->values) != NULL && ((&(value->left))->values)->is_allocated && ((&(value->left))->values)->data != NULL) {
+        _lfortran_free_alloc(__lfortran_default_allocator, (char*) ((&(value->left))->values)->data);
+        ((&(value->left))->values)->data = NULL;
+    }
+    if (((&(value->left))->values) != NULL) {
+        ((&(value->left))->values)->offset = 0;
+        ((&(value->left))->values)->is_allocated = false;
+        _lfortran_free_alloc(__lfortran_default_allocator, (char*) (&(value->left))->values);
+        (&(value->left))->values = NULL;
+    }
+    if (((&(value->right))->values) != NULL && ((&(value->right))->values)->is_allocated && ((&(value->right))->values)->data != NULL) {
+        _lfortran_free_alloc(__lfortran_default_allocator, (char*) ((&(value->right))->values)->data);
+        ((&(value->right))->values)->data = NULL;
+    }
+    if (((&(value->right))->values) != NULL) {
+        ((&(value->right))->values)->offset = 0;
+        ((&(value->right))->values)->is_allocated = false;
+        _lfortran_free_alloc(__lfortran_default_allocator, (char*) (&(value->right))->values);
+        (&(value->right))->values = NULL;
+    }
     memset(value, 0, sizeof(*value));
     value->__lfortran_type_tag = 5895492698243736574;
     value->left.__lfortran_type_tag = 8048563252114387205;
