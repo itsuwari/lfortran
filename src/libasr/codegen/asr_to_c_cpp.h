@@ -333,9 +333,16 @@ public:
         std::string cleanup;
         for (auto it = current_function_local_structs.rbegin();
                 it != current_function_local_structs.rend(); ++it) {
-            cleanup += emit_c_struct_member_cleanup(it->struct_t, indent, it->target,
-                true, true, it->free_allocatable_array_descriptors,
-                it->free_scalar_member_array_descriptors);
+            if (it->free_allocatable_array_descriptors
+                    && it->free_scalar_member_array_descriptors
+                    && c_struct_has_member_cleanup(it->struct_t)) {
+                cleanup += emit_c_registered_struct_cleanup(
+                    it->struct_t, indent, it->target);
+            } else {
+                cleanup += emit_c_struct_member_cleanup(it->struct_t, indent, it->target,
+                    true, true, it->free_allocatable_array_descriptors,
+                    it->free_scalar_member_array_descriptors);
+            }
         }
         for (auto it = current_function_local_descriptors.rbegin();
                 it != current_function_local_descriptors.rend(); ++it) {
@@ -541,6 +548,18 @@ public:
         cleanup += inner_indent + target + " = NULL;\n";
         cleanup += indent + "}\n";
         return cleanup;
+    }
+
+    std::string emit_c_registered_struct_cleanup(
+            ASR::Struct_t *struct_t, const std::string &indent,
+            const std::string &target) {
+        if (struct_t == nullptr) {
+            return "";
+        }
+        ASR::symbol_t *struct_sym = reinterpret_cast<ASR::symbol_t*>(struct_t);
+        int64_t type_id = get_struct_runtime_type_id(struct_sym);
+        return indent + "_lfortran_cleanup_c_struct("
+            + std::to_string(type_id) + ", (void*) " + target + ");\n";
     }
 
     std::string emit_c_struct_member_cleanup(ASR::Struct_t *struct_t,

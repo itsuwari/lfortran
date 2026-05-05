@@ -103,7 +103,6 @@ static void __lfortran_cleanup_struct_c_backend_struct_deepcopy_empty_member_des
         __lfortran_self->record = NULL;
     }
 }
-
 LFORTRAN_C_BACKEND_CONSTRUCTOR static void __lfortran_register_struct_cleanup_c_backend_struct_deepcopy_empty_member_descriptor_cleanup_ref_01_m__dict_type_x2193034868446780642(void)
 {
     _lfortran_register_c_struct_cleanup(2193034868446780642, __lfortran_cleanup_struct_c_backend_struct_deepcopy_empty_member_descriptor_cleanup_ref_01_m__dict_type_x2193034868446780642);

@@ -174,7 +174,6 @@ void __lfortran_c_backend_local_struct_nested_alloc_array_cleanup_ref_01_m__fill
 
 void __lfortran_c_backend_local_struct_nested_alloc_array_cleanup_ref_01_m__exercise()
 {
-    lfortran_allocator_t* __lfortran_default_allocator = _lfortran_get_default_allocator();
     struct c_backend_local_struct_nested_alloc_array_cleanup_ref_01_m__owner_type temp_struct_var__owner;
     temp_struct_var__owner.__lfortran_type_tag = 8247926051833999556;
     __lfortran_c_backend_local_struct_nested_alloc_array_cleanup_ref_01_m__fill__StructType(((struct c_backend_local_struct_nested_alloc_array_cleanup_ref_01_m__owner_type*)(&temp_struct_var__owner)));
@@ -182,20 +181,7 @@ void __lfortran_c_backend_local_struct_nested_alloc_array_cleanup_ref_01_m__exer
         fprintf(stderr, "ERROR STOP");
         exit(1);
     }
-    if (((&(temp_struct_var__owner))->child) != NULL) {
-        if (((&(temp_struct_var__owner))->child->values) != NULL && ((&(temp_struct_var__owner))->child->values)->is_allocated && ((&(temp_struct_var__owner))->child->values)->data != NULL) {
-            _lfortran_free_alloc(__lfortran_default_allocator, (char*) ((&(temp_struct_var__owner))->child->values)->data);
-            ((&(temp_struct_var__owner))->child->values)->data = NULL;
-        }
-        if (((&(temp_struct_var__owner))->child->values) != NULL) {
-            ((&(temp_struct_var__owner))->child->values)->offset = 0;
-            ((&(temp_struct_var__owner))->child->values)->is_allocated = false;
-            _lfortran_free_alloc(__lfortran_default_allocator, (char*) (&(temp_struct_var__owner))->child->values);
-            (&(temp_struct_var__owner))->child->values = NULL;
-        }
-        _lfortran_free_alloc(__lfortran_default_allocator, (char*) (&(temp_struct_var__owner))->child);
-        (&(temp_struct_var__owner))->child = NULL;
-    }
+    _lfortran_cleanup_c_struct(8247926051833999556, (void*) (&(temp_struct_var__owner)));
 }
 
 int main(int argc, char* argv[])

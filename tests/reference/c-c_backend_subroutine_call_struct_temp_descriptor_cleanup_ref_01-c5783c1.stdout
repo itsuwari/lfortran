@@ -340,16 +340,7 @@ void __lfortran_c_backend_subroutine_call_struct_temp_descriptor_cleanup_ref_01_
         ((&(holder_value))->copied)->offset = 0;
         ((&(holder_value))->copied)->is_allocated = false;
     }
-    if (((&(__libasr_created__subroutine_call_take_spec_value))->kpair) != NULL && ((&(__libasr_created__subroutine_call_take_spec_value))->kpair)->is_allocated && ((&(__libasr_created__subroutine_call_take_spec_value))->kpair)->data != NULL) {
-        _lfortran_free_alloc(__lfortran_default_allocator, (char*) ((&(__libasr_created__subroutine_call_take_spec_value))->kpair)->data);
-        ((&(__libasr_created__subroutine_call_take_spec_value))->kpair)->data = NULL;
-    }
-    if (((&(__libasr_created__subroutine_call_take_spec_value))->kpair) != NULL) {
-        ((&(__libasr_created__subroutine_call_take_spec_value))->kpair)->offset = 0;
-        ((&(__libasr_created__subroutine_call_take_spec_value))->kpair)->is_allocated = false;
-        _lfortran_free_alloc(__lfortran_default_allocator, (char*) (&(__libasr_created__subroutine_call_take_spec_value))->kpair);
-        (&(__libasr_created__subroutine_call_take_spec_value))->kpair = NULL;
-    }
+    _lfortran_cleanup_c_struct(6344758760921848117, (void*) (&(__libasr_created__subroutine_call_take_spec_value)));
     if (((&(holder_value))->copied) == struct_member_copied_2) {
         _lfortran_free_alloc(__lfortran_default_allocator, (char*) struct_member_copied_2);
         (&(holder_value))->copied = NULL;
