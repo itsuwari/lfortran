@@ -1,0 +1,13 @@
+{
+    "basename": "c-c_backend_class_alloc_struct_member_cleanup_01-3ed0ffa",
+    "cmd": "lfortran --no-color --show-c {infile}",
+    "infile": "tests/c_backend_class_alloc_struct_member_cleanup_01.f90",
+    "infile_hash": "e115066c23081d0a86b106c704a9ccf9dac83100bf0b65fc495990e0",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": "c-c_backend_class_alloc_struct_member_cleanup_01-3ed0ffa.stdout",
+    "stdout_hash": "31dac2954442586756b4d46ee873993a4673c5b6130e545948717177",
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

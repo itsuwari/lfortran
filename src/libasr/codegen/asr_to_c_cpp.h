@@ -601,7 +601,9 @@ public:
                     && ASR::is_a<ASR::StructType_t>(*member_type)) {
                 ASR::StructType_t *struct_member_type =
                     ASR::down_cast<ASR::StructType_t>(member_type);
-                bool is_polymorphic = struct_member_type->m_is_unlimited_polymorphic;
+                bool is_polymorphic = struct_member_type->m_is_unlimited_polymorphic
+                    || ASRUtils::is_class_type(member_var->m_type)
+                    || ASRUtils::is_class_type(member_type);
                 ASR::Struct_t *member_struct = nullptr;
                 if (!is_polymorphic && member_var->m_type_declaration != nullptr) {
                     ASR::symbol_t *member_struct_sym =
