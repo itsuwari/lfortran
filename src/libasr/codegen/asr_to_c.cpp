@@ -4795,6 +4795,26 @@ R"(    // Initialise Numpy
             std::string format_arg = x.m_fmt ? fmt_arg.first : "NULL";
             std::string offset_name = get_unique_local_name("__lfortran_read_offset");
             std::string internal_read_code;
+            std::string internal_read_cleanup;
+            auto is_owned_string_expr = [](const std::string &expr) {
+                return expr.find("_lfortran_str_slice_alloc(") != std::string::npos
+                    || expr.find("_lfortran_str_chr_alloc(") != std::string::npos
+                    || expr.find("_lfortran_strcat_alloc(") != std::string::npos;
+            };
+            if (is_owned_string_expr(unit_arg.first)) {
+                std::string original_unit = unit_arg.first;
+                std::string unit_tmp = get_unique_local_name("__lfortran_internal_read_unit");
+                internal_read_code += indent + "char *" + unit_tmp + " = "
+                    + original_unit + ";\n";
+                unit_arg.first = unit_tmp;
+                unit_arg.second = replace_all_substrings(
+                    unit_arg.second, original_unit, unit_tmp);
+                internal_read_cleanup += indent + "if (" + unit_tmp + " != NULL) {\n"
+                    + indent + "    _lfortran_free_alloc(_lfortran_get_default_allocator(), "
+                    + unit_tmp + ");\n"
+                    + indent + "    " + unit_tmp + " = NULL;\n"
+                    + indent + "}\n";
+            }
             if (x.m_iomsg) {
                 internal_read_code += indent + "if (" + iomsg_arg.first + " == NULL) " + iomsg_arg.first
                     + " = (char*) _lfortran_string_malloc_alloc(_lfortran_get_default_allocator(), "
@@ -5078,6 +5098,7 @@ R"(    // Initialise Numpy
                     internal_read_code += indent + "_lfortran_set_read_iomsg(" + iostat_val + ", "
                         + iomsg_arg.first + ", " + iomsg_arg.second + ");\n";
                 }
+                internal_read_code += internal_read_cleanup;
                 src = std::move(internal_read_code);
                 return;
             }
@@ -5345,6 +5366,7 @@ R"(    // Initialise Numpy
                 internal_read_code += indent + "_lfortran_set_read_iomsg(" + iostat_val + ", "
                     + iomsg_arg.first + ", " + iomsg_arg.second + ");\n";
             }
+            internal_read_code += internal_read_cleanup;
             src = std::move(internal_read_code);
             return;
         }

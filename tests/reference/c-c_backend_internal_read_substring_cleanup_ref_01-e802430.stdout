@@ -1,0 +1,54 @@
+#include <inttypes.h>
+#include <math.h>
+#include <string.h>
+
+#include <stdlib.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <string.h>
+#include <lfortran_intrinsics.h>
+
+
+#ifndef LFORTRAN_C_BACKEND_CONSTRUCTOR
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_CONSTRUCTOR __attribute__((constructor))
+#else
+#define LFORTRAN_C_BACKEND_CONSTRUCTOR
+#endif
+#endif
+#ifndef LFORTRAN_C_BACKEND_WEAK
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_WEAK __attribute__((weak))
+#else
+#define LFORTRAN_C_BACKEND_WEAK static
+#endif
+#endif
+
+
+
+
+// Implementations
+int main(int argc, char* argv[])
+{
+    _lpython_set_argv(argc, argv);
+    char * line = NULL;
+    int32_t stat;
+    double value;
+    _lfortran_strcpy_alloc(_lfortran_get_default_allocator(), &line, NULL, true, true, (char*)"abc 1.25 xyz", strlen((char*)"abc 1.25 xyz"));
+    char *__lfortran_internal_read_unit = _lfortran_str_slice_alloc(_lfortran_get_default_allocator(), line, strlen(line), ((5) - 1), ((1) > 0 ? (8) : ((8) - 2)), 1, true, true);
+    int64_t __lfortran_read_offset = 0;
+    _lfortran_string_read_f64(__lfortran_internal_read_unit, 4, NULL, &(value), &(stat), &__lfortran_read_offset);
+    if (__lfortran_internal_read_unit != NULL) {
+        _lfortran_free_alloc(_lfortran_get_default_allocator(), __lfortran_internal_read_unit);
+        __lfortran_internal_read_unit = NULL;
+    }
+    if (stat != 0) {
+        fprintf(stderr, "ERROR STOP");
+        exit(1);
+    }
+    if (fabs(value -   1.25000000000000000e+00) >   9.99999999999999980e-13) {
+        fprintf(stderr, "ERROR STOP");
+        exit(1);
+    }
+    return 0;
+}

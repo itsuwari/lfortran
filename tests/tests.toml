@@ -5094,6 +5094,10 @@ filename = "c_backend_intent_out_struct_reinit_cleanup_ref_01.f90"
 c = true
 
 [[test]]
+filename = "c_backend_internal_read_substring_cleanup_ref_01.f90"
+c = true
+
+[[test]]
 filename = "allocatable_aggregate_dummy_slot_01.f90"
 run = true
 options = "--backend=c --separate-compilation"

@@ -1,0 +1,13 @@
+{
+    "basename": "c-c_backend_internal_read_substring_cleanup_ref_01-e802430",
+    "cmd": "lfortran --no-color --show-c {infile}",
+    "infile": "tests/c_backend_internal_read_substring_cleanup_ref_01.f90",
+    "infile_hash": "858e26fcf66d931e784fdc9ba165916543ad73c3dba61f503872ece5",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": "c-c_backend_internal_read_substring_cleanup_ref_01-e802430.stdout",
+    "stdout_hash": "d7a241b4de8b6cf8676e0c1333489350b829b30a37e4fe6b3bf30294",
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}
