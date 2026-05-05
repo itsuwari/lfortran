@@ -1,0 +1,198 @@
+
+#include <stdlib.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <string.h>
+#include <lfortran_intrinsics.h>
+
+
+#ifndef LFORTRAN_C_BACKEND_CONSTRUCTOR
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_CONSTRUCTOR __attribute__((constructor))
+#else
+#define LFORTRAN_C_BACKEND_CONSTRUCTOR
+#endif
+#endif
+#ifndef LFORTRAN_C_BACKEND_WEAK
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_WEAK __attribute__((weak))
+#else
+#define LFORTRAN_C_BACKEND_WEAK static
+#endif
+#endif
+
+
+struct dimension_descriptor
+{
+    int32_t lower_bound, length, stride;
+};
+#ifndef LFORTRAN_C_BACKEND_CONSTRUCTOR
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_CONSTRUCTOR __attribute__((constructor))
+#else
+#define LFORTRAN_C_BACKEND_CONSTRUCTOR
+#endif
+#endif
+#ifndef LFORTRAN_C_BACKEND_WEAK
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_WEAK __attribute__((weak))
+#else
+#define LFORTRAN_C_BACKEND_WEAK static
+#endif
+#endif
+
+
+struct r32___
+{
+    float *data;
+    struct dimension_descriptor dims[32];
+    int32_t n_dims;
+    int32_t offset;
+    bool is_allocated;
+};
+
+struct c_backend_scalar_alloc_struct_member_cleanup_01_m__child_type {
+ int64_t __lfortran_type_tag;
+ char * label;
+ struct r32___* values;
+};
+
+static void __lfortran_cleanup_struct_c_backend_scalar_alloc_struct_member_cleanup_01_m__child_type_x2050516054514949461(void *__lfortran_value)
+{
+    struct c_backend_scalar_alloc_struct_member_cleanup_01_m__child_type *__lfortran_self = (struct c_backend_scalar_alloc_struct_member_cleanup_01_m__child_type*)__lfortran_value;
+    if (__lfortran_self == NULL) {
+        return;
+    }
+    if (__lfortran_self->label != NULL) {
+        _lfortran_free_alloc(_lfortran_get_default_allocator(), __lfortran_self->label);
+        __lfortran_self->label = NULL;
+    }
+    if ((__lfortran_self->values) != NULL && (__lfortran_self->values)->is_allocated && (__lfortran_self->values)->data != NULL) {
+        _lfortran_free_alloc(_lfortran_get_default_allocator(), (char*) (__lfortran_self->values)->data);
+        (__lfortran_self->values)->data = NULL;
+    }
+    if ((__lfortran_self->values) != NULL) {
+        (__lfortran_self->values)->offset = 0;
+        (__lfortran_self->values)->is_allocated = false;
+        _lfortran_free_alloc(_lfortran_get_default_allocator(), (char*) __lfortran_self->values);
+        __lfortran_self->values = NULL;
+    }
+}
+
+LFORTRAN_C_BACKEND_CONSTRUCTOR static void __lfortran_register_struct_cleanup_c_backend_scalar_alloc_struct_member_cleanup_01_m__child_type_x2050516054514949461(void)
+{
+    _lfortran_register_c_struct_cleanup(2050516054514949461, __lfortran_cleanup_struct_c_backend_scalar_alloc_struct_member_cleanup_01_m__child_type_x2050516054514949461);
+}
+
+struct c_backend_scalar_alloc_struct_member_cleanup_01_m__concrete_holder {
+ int64_t __lfortran_type_tag;
+ struct c_backend_scalar_alloc_struct_member_cleanup_01_m__child_type* item;
+};
+
+static void __lfortran_cleanup_struct_c_backend_scalar_alloc_struct_member_cleanup_01_m__concrete_holder_x3595445048292249608(void *__lfortran_value)
+{
+    struct c_backend_scalar_alloc_struct_member_cleanup_01_m__concrete_holder *__lfortran_self = (struct c_backend_scalar_alloc_struct_member_cleanup_01_m__concrete_holder*)__lfortran_value;
+    if (__lfortran_self == NULL) {
+        return;
+    }
+    if ((__lfortran_self->item) != NULL) {
+        if (__lfortran_self->item->label != NULL) {
+            _lfortran_free_alloc(_lfortran_get_default_allocator(), __lfortran_self->item->label);
+            __lfortran_self->item->label = NULL;
+        }
+        if ((__lfortran_self->item->values) != NULL && (__lfortran_self->item->values)->is_allocated && (__lfortran_self->item->values)->data != NULL) {
+            _lfortran_free_alloc(_lfortran_get_default_allocator(), (char*) (__lfortran_self->item->values)->data);
+            (__lfortran_self->item->values)->data = NULL;
+        }
+        if ((__lfortran_self->item->values) != NULL) {
+            (__lfortran_self->item->values)->offset = 0;
+            (__lfortran_self->item->values)->is_allocated = false;
+            _lfortran_free_alloc(_lfortran_get_default_allocator(), (char*) __lfortran_self->item->values);
+            __lfortran_self->item->values = NULL;
+        }
+        _lfortran_free_alloc(_lfortran_get_default_allocator(), (char*) __lfortran_self->item);
+        __lfortran_self->item = NULL;
+    }
+}
+
+LFORTRAN_C_BACKEND_CONSTRUCTOR static void __lfortran_register_struct_cleanup_c_backend_scalar_alloc_struct_member_cleanup_01_m__concrete_holder_x3595445048292249608(void)
+{
+    _lfortran_register_c_struct_cleanup(3595445048292249608, __lfortran_cleanup_struct_c_backend_scalar_alloc_struct_member_cleanup_01_m__concrete_holder_x3595445048292249608);
+}
+
+void __lfortran_c_backend_scalar_alloc_struct_member_cleanup_01_m__fill_concrete__StructType(struct c_backend_scalar_alloc_struct_member_cleanup_01_m__concrete_holder* restrict holder);
+void __lfortran_c_backend_scalar_alloc_struct_member_cleanup_01_m__run();
+
+
+
+
+// Implementations
+void __lfortran_c_backend_scalar_alloc_struct_member_cleanup_01_m__fill_concrete__StructType(struct c_backend_scalar_alloc_struct_member_cleanup_01_m__concrete_holder* restrict holder)
+{
+    lfortran_allocator_t* __lfortran_default_allocator = _lfortran_get_default_allocator();
+    (*holder).item = (struct c_backend_scalar_alloc_struct_member_cleanup_01_m__child_type*) _lfortran_malloc_alloc(__lfortran_default_allocator, sizeof(struct c_backend_scalar_alloc_struct_member_cleanup_01_m__child_type));
+    memset((*holder).item, 0, sizeof(struct c_backend_scalar_alloc_struct_member_cleanup_01_m__child_type));
+    ((struct c_backend_scalar_alloc_struct_member_cleanup_01_m__child_type*)((*holder).item))->label = NULL;
+    struct r32___* struct_member_values_0;
+    struct_member_values_0 = _lfortran_malloc_alloc(__lfortran_default_allocator, sizeof(*struct_member_values_0));
+    memset(struct_member_values_0, 0, sizeof(*struct_member_values_0));
+    ((struct c_backend_scalar_alloc_struct_member_cleanup_01_m__child_type*)((*holder).item))->values = struct_member_values_0;
+    (*holder).item->__lfortran_type_tag = 2050516054514949461;
+    _lfortran_strcpy_alloc(__lfortran_default_allocator, &(*holder).item->label, NULL, true, true, (char*)"concrete", strlen((char*)"concrete"));
+    (*holder).item->values->n_dims = 1;
+    (*holder).item->values->dims[0].lower_bound = 1;
+    (*holder).item->values->dims[0].length = 2;
+    (*holder).item->values->dims[0].stride = 1;
+    (*holder).item->values->offset = 0;
+    (*holder).item->values->data = (float*) _lfortran_malloc_alloc(__lfortran_default_allocator, 1*(*holder).item->values->dims[0].length*sizeof(float));
+    (*holder).item->values->is_allocated = true;
+    (*holder).item->values->data[((0 + ((*holder).item->values->dims[0].stride * (1 - (*holder).item->values->dims[0].lower_bound))) + (*holder).item->values->offset)] =   3.00000000000000000e+00;
+    (*holder).item->values->data[((0 + ((*holder).item->values->dims[0].stride * (2 - (*holder).item->values->dims[0].lower_bound))) + (*holder).item->values->offset)] =   4.00000000000000000e+00;
+}
+
+void __lfortran_c_backend_scalar_alloc_struct_member_cleanup_01_m__run()
+{
+    lfortran_allocator_t* __lfortran_default_allocator = _lfortran_get_default_allocator();
+    struct c_backend_scalar_alloc_struct_member_cleanup_01_m__concrete_holder* concrete = NULL;
+    concrete = (struct c_backend_scalar_alloc_struct_member_cleanup_01_m__concrete_holder*) _lfortran_malloc_alloc(__lfortran_default_allocator, sizeof(struct c_backend_scalar_alloc_struct_member_cleanup_01_m__concrete_holder));
+    memset(concrete, 0, sizeof(struct c_backend_scalar_alloc_struct_member_cleanup_01_m__concrete_holder));
+    concrete->__lfortran_type_tag = 3595445048292249608;
+    __lfortran_c_backend_scalar_alloc_struct_member_cleanup_01_m__fill_concrete__StructType(((struct c_backend_scalar_alloc_struct_member_cleanup_01_m__concrete_holder*)(concrete)));
+    if (str_compare(concrete->item->label, ((concrete->item->label) != NULL ? strlen(concrete->item->label) : 0), (char*)"concrete", 8)  !=  0) {
+        fprintf(stderr, "ERROR STOP");
+        exit(1);
+    }
+    if (concrete->item->values->data[((0 + (concrete->item->values->dims[0].stride * (2 - concrete->item->values->dims[0].lower_bound))) + concrete->item->values->offset)] !=   4.00000000000000000e+00) {
+        fprintf(stderr, "ERROR STOP");
+        exit(1);
+    }
+    if ((concrete) != NULL) {
+        if ((concrete->item) != NULL) {
+            if (concrete->item->label != NULL) {
+                _lfortran_free_alloc(__lfortran_default_allocator, concrete->item->label);
+                concrete->item->label = NULL;
+            }
+            if ((concrete->item->values) != NULL && (concrete->item->values)->is_allocated && (concrete->item->values)->data != NULL) {
+                _lfortran_free_alloc(__lfortran_default_allocator, (char*) (concrete->item->values)->data);
+                (concrete->item->values)->data = NULL;
+            }
+            if ((concrete->item->values) != NULL) {
+                (concrete->item->values)->offset = 0;
+                (concrete->item->values)->is_allocated = false;
+                _lfortran_free_alloc(__lfortran_default_allocator, (char*) concrete->item->values);
+                concrete->item->values = NULL;
+            }
+            _lfortran_free_alloc(__lfortran_default_allocator, (char*) concrete->item);
+            concrete->item = NULL;
+        }
+        _lfortran_free_alloc(__lfortran_default_allocator, (char*) concrete);
+        concrete = NULL;
+    }
+}
+
+int main(int argc, char* argv[])
+{
+    _lpython_set_argv(argc, argv);
+    __lfortran_c_backend_scalar_alloc_struct_member_cleanup_01_m__run();
+    return 0;
+}

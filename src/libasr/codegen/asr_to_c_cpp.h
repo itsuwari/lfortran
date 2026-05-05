@@ -284,7 +284,8 @@ public:
         std::string cleanup;
         for (auto it = current_function_local_structs.rbegin();
                 it != current_function_local_structs.rend(); ++it) {
-            cleanup += emit_c_struct_member_cleanup(it->second, indent, it->first);
+            cleanup += emit_c_struct_member_cleanup(it->second, indent, it->first,
+                true, false);
         }
         for (auto it = current_function_local_allocatable_structs.rbegin();
                 it != current_function_local_allocatable_structs.rend(); ++it) {
@@ -426,7 +427,9 @@ public:
     }
 
     std::string emit_c_struct_member_cleanup(ASR::Struct_t *struct_t,
-            const std::string &indent, const std::string &target) {
+            const std::string &indent, const std::string &target,
+            bool clean_polymorphic_scalars=true,
+            bool clean_scalar_allocatable_structs=true) {
         std::string cleanup;
         if (struct_t == nullptr) {
             return cleanup;
@@ -440,7 +443,8 @@ public:
                 struct_t->m_parent);
             if (parent_sym != nullptr && ASR::is_a<ASR::Struct_t>(*parent_sym)) {
                 cleanup += emit_c_struct_member_cleanup(
-                    ASR::down_cast<ASR::Struct_t>(parent_sym), indent, target);
+                    ASR::down_cast<ASR::Struct_t>(parent_sym), indent, target,
+                    clean_polymorphic_scalars, clean_scalar_allocatable_structs);
             }
         }
         for (size_t i = 0; i < struct_t->n_members; i++) {
@@ -527,9 +531,22 @@ public:
                     && ASR::is_a<ASR::StructType_t>(*member_type)) {
                 ASR::StructType_t *struct_member_type =
                     ASR::down_cast<ASR::StructType_t>(member_type);
-                if (struct_member_type->m_is_unlimited_polymorphic) {
-                    cleanup += emit_c_tagged_struct_member_cleanup_dispatch(
-                        indent, member);
+                bool is_polymorphic = struct_member_type->m_is_unlimited_polymorphic;
+                ASR::Struct_t *member_struct = nullptr;
+                if (!is_polymorphic && member_var->m_type_declaration != nullptr) {
+                    ASR::symbol_t *member_struct_sym =
+                        ASRUtils::symbol_get_past_external(member_var->m_type_declaration);
+                    if (member_struct_sym != nullptr
+                            && ASR::is_a<ASR::Struct_t>(*member_struct_sym)) {
+                        member_struct = ASR::down_cast<ASR::Struct_t>(member_struct_sym);
+                    }
+                }
+                if ((is_polymorphic && clean_polymorphic_scalars)
+                        || (clean_scalar_allocatable_structs
+                            && member_struct != nullptr)) {
+                    cleanup += emit_c_scalar_allocatable_struct_cleanup(
+                        member_struct, indent, member, is_polymorphic,
+                        clean_polymorphic_scalars);
                 }
             } else {
                 bool is_plain_struct_member = !ASRUtils::is_array(member_var->m_type)
@@ -544,7 +561,9 @@ public:
                             && ASR::is_a<ASR::Struct_t>(*member_struct_sym)) {
                         cleanup += emit_c_struct_member_cleanup(
                             ASR::down_cast<ASR::Struct_t>(member_struct_sym),
-                            indent, "(&(" + member + "))");
+                            indent, "(&(" + member + "))",
+                            clean_polymorphic_scalars,
+                            clean_scalar_allocatable_structs);
                     }
                 }
             }
@@ -555,9 +574,9 @@ public:
 
     std::string emit_c_scalar_allocatable_struct_cleanup(ASR::Struct_t *struct_t,
             const std::string &indent, const std::string &target,
-            bool is_polymorphic) {
+            bool is_polymorphic, bool clean_polymorphic_scalars=true) {
         std::string cleanup;
-        if (struct_t == nullptr) {
+        if (struct_t == nullptr && !is_polymorphic) {
             return cleanup;
         }
         cleanup += indent + "if ((" + target + ") != NULL) {\n";
@@ -569,7 +588,8 @@ public:
                 + "))->" + get_runtime_type_tag_member_name() + ", (void*) "
                 + target + ");\n";
         } else {
-            cleanup += emit_c_struct_member_cleanup(struct_t, inner_indent, target);
+            cleanup += emit_c_struct_member_cleanup(struct_t, inner_indent, target,
+                clean_polymorphic_scalars, true);
         }
         cleanup += inner_indent
             + "_lfortran_free_alloc(_lfortran_get_default_allocator(), (char*) "
@@ -634,8 +654,9 @@ public:
             if (ASRUtils::is_allocatable(member_var->m_type)
                     && !ASRUtils::is_array(member_var->m_type)
                     && ASR::is_a<ASR::StructType_t>(*member_type)
-                    && ASR::down_cast<ASR::StructType_t>(
-                        member_type)->m_is_unlimited_polymorphic) {
+                    && (ASR::down_cast<ASR::StructType_t>(
+                            member_type)->m_is_unlimited_polymorphic
+                        || member_var->m_type_declaration != nullptr)) {
                 return true;
             }
             bool is_plain_struct_member = !ASRUtils::is_array(member_var->m_type)
