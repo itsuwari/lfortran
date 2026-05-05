@@ -2,11 +2,11 @@
     "basename": "c-c_backend_scalar_alloc_struct_member_cleanup_01-8b036b9",
     "cmd": "lfortran --no-color --show-c {infile}",
     "infile": "tests/c_backend_scalar_alloc_struct_member_cleanup_01.f90",
-    "infile_hash": "a23ad89009bd780de84fe5a6af8bf50ead8f7d9503c0c3a63c0c540f",
+    "infile_hash": "c3cc0056630041e10d6de50109776f0e842ba24f6779096e6668e3d2",
     "outfile": null,
     "outfile_hash": null,
     "stdout": "c-c_backend_scalar_alloc_struct_member_cleanup_01-8b036b9.stdout",
-    "stdout_hash": "f2c42ea5ef1f2595a052fa2ebf2f930ab5a3b48eb5c396403a078fb5",
+    "stdout_hash": "6060946a9af3e58cac09ba6124791a72ce00cf887e9504c41801a773",
     "stderr": null,
     "stderr_hash": null,
     "returncode": 0

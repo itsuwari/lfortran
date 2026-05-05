@@ -1,3 +1,4 @@
+#include <string.h>
 
 #include <stdlib.h>
 #include <stdbool.h>
@@ -154,6 +155,10 @@ void __lfortran_c_backend_scalar_alloc_struct_member_cleanup_01_m__run()
 {
     lfortran_allocator_t* __lfortran_default_allocator = _lfortran_get_default_allocator();
     struct c_backend_scalar_alloc_struct_member_cleanup_01_m__concrete_holder* concrete = NULL;
+    struct c_backend_scalar_alloc_struct_member_cleanup_01_m__concrete_holder local_value;
+    memset(&local_value, 0, sizeof(local_value));
+    local_value.__lfortran_type_tag = 3595445048292249608;
+    struct c_backend_scalar_alloc_struct_member_cleanup_01_m__concrete_holder* local = &local_value;
     concrete = (struct c_backend_scalar_alloc_struct_member_cleanup_01_m__concrete_holder*) _lfortran_malloc_alloc(__lfortran_default_allocator, sizeof(struct c_backend_scalar_alloc_struct_member_cleanup_01_m__concrete_holder));
     memset(concrete, 0, sizeof(struct c_backend_scalar_alloc_struct_member_cleanup_01_m__concrete_holder));
     concrete->__lfortran_type_tag = 3595445048292249608;
@@ -165,6 +170,31 @@ void __lfortran_c_backend_scalar_alloc_struct_member_cleanup_01_m__run()
     if (concrete->item->values->data[((0 + (concrete->item->values->dims[0].stride * (2 - concrete->item->values->dims[0].lower_bound))) + concrete->item->values->offset)] !=   4.00000000000000000e+00) {
         fprintf(stderr, "ERROR STOP");
         exit(1);
+    }
+    __lfortran_c_backend_scalar_alloc_struct_member_cleanup_01_m__fill_concrete__StructType(((struct c_backend_scalar_alloc_struct_member_cleanup_01_m__concrete_holder*)(local)));
+    if (str_compare(local->item->label, ((local->item->label) != NULL ? strlen(local->item->label) : 0), (char*)"concrete", 8)  !=  0) {
+        fprintf(stderr, "ERROR STOP");
+        exit(1);
+    }
+    if (local->item->values->data[((0 + (local->item->values->dims[0].stride * (2 - local->item->values->dims[0].lower_bound))) + local->item->values->offset)] !=   4.00000000000000000e+00) {
+        fprintf(stderr, "ERROR STOP");
+        exit(1);
+    }
+    if (((&(local_value))->item) != NULL) {
+        if ((&(local_value))->item->label != NULL) {
+            _lfortran_free_alloc(__lfortran_default_allocator, (&(local_value))->item->label);
+            (&(local_value))->item->label = NULL;
+        }
+        if (((&(local_value))->item->values) != NULL && ((&(local_value))->item->values)->is_allocated && ((&(local_value))->item->values)->data != NULL) {
+            _lfortran_free_alloc(__lfortran_default_allocator, (char*) ((&(local_value))->item->values)->data);
+            ((&(local_value))->item->values)->data = NULL;
+        }
+        if (((&(local_value))->item->values) != NULL) {
+            ((&(local_value))->item->values)->offset = 0;
+            ((&(local_value))->item->values)->is_allocated = false;
+        }
+        _lfortran_free_alloc(__lfortran_default_allocator, (char*) (&(local_value))->item);
+        (&(local_value))->item = NULL;
     }
     if ((concrete) != NULL) {
         if ((concrete->item) != NULL) {

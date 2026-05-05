@@ -319,7 +319,7 @@ public:
         for (auto it = current_function_local_structs.rbegin();
                 it != current_function_local_structs.rend(); ++it) {
             cleanup += emit_c_struct_member_cleanup(it->second, indent, it->first,
-                true, false);
+                true, true, true, false);
         }
         for (auto it = current_function_local_allocatable_structs.rbegin();
                 it != current_function_local_allocatable_structs.rend(); ++it) {
@@ -482,7 +482,9 @@ public:
     std::string emit_c_struct_member_cleanup(ASR::Struct_t *struct_t,
             const std::string &indent, const std::string &target,
             bool clean_polymorphic_scalars=true,
-            bool clean_scalar_allocatable_structs=true) {
+            bool clean_scalar_allocatable_structs=true,
+            bool free_allocatable_array_descriptors=true,
+            bool free_scalar_member_array_descriptors=true) {
         std::string cleanup;
         if (struct_t == nullptr) {
             return cleanup;
@@ -497,7 +499,9 @@ public:
             if (parent_sym != nullptr && ASR::is_a<ASR::Struct_t>(*parent_sym)) {
                 cleanup += emit_c_struct_member_cleanup(
                     ASR::down_cast<ASR::Struct_t>(parent_sym), indent, target,
-                    clean_polymorphic_scalars, clean_scalar_allocatable_structs);
+                    clean_polymorphic_scalars, clean_scalar_allocatable_structs,
+                    free_allocatable_array_descriptors,
+                    free_scalar_member_array_descriptors);
             }
         }
         for (size_t i = 0; i < struct_t->n_members; i++) {
@@ -556,7 +560,10 @@ public:
                             + idx + " < " + size + "; " + idx + "++) {\n";
                         cleanup += emit_c_struct_member_cleanup(
                             ASR::down_cast<ASR::Struct_t>(member_struct_sym),
-                            indent + "        ", "(&((" + member + ")->data[" + idx + "]))");
+                            indent + "        ", "(&((" + member + ")->data[" + idx + "]))",
+                            clean_polymorphic_scalars, clean_scalar_allocatable_structs,
+                            free_allocatable_array_descriptors,
+                            free_scalar_member_array_descriptors);
                         cleanup += indent + "    }\n"
                             + indent + "}\n";
                     }
@@ -566,14 +573,21 @@ public:
                     + indent + "    _lfortran_free_alloc(_lfortran_get_default_allocator(), "
                     + "(char*) (" + member + ")->data);\n"
                     + indent + "    (" + member + ")->data = NULL;\n"
-                    + indent + "}\n"
-                    + indent + "if ((" + member + ") != NULL) {\n"
+                    + indent + "}\n";
+                if (free_allocatable_array_descriptors) {
+                    cleanup += indent + "if ((" + member + ") != NULL) {\n"
+                        + indent + "    (" + member + ")->offset = 0;\n"
+                        + indent + "    (" + member + ")->is_allocated = false;\n"
+                        + indent + "    _lfortran_free_alloc(_lfortran_get_default_allocator(), "
+                        + "(char*) " + member + ");\n"
+                        + indent + "    " + member + " = NULL;\n"
+                        + indent + "}\n";
+                } else {
+                    cleanup += indent + "if ((" + member + ") != NULL) {\n"
                     + indent + "    (" + member + ")->offset = 0;\n"
                     + indent + "    (" + member + ")->is_allocated = false;\n"
-                    + indent + "    _lfortran_free_alloc(_lfortran_get_default_allocator(), "
-                    + "(char*) " + member + ");\n"
-                    + indent + "    " + member + " = NULL;\n"
                     + indent + "}\n";
+                }
             } else if (ASRUtils::is_allocatable(member_var->m_type)
                     && !ASRUtils::is_array(member_var->m_type)
                     && ASRUtils::is_character(*member_type)) {
@@ -602,7 +616,8 @@ public:
                             && member_struct != nullptr)) {
                     cleanup += emit_c_scalar_allocatable_struct_cleanup(
                         member_struct, indent, member, is_polymorphic,
-                        clean_polymorphic_scalars);
+                        clean_polymorphic_scalars,
+                        free_scalar_member_array_descriptors);
                 }
             } else {
                 bool is_plain_struct_member = !ASRUtils::is_array(member_var->m_type)
@@ -619,7 +634,9 @@ public:
                             ASR::down_cast<ASR::Struct_t>(member_struct_sym),
                             indent, "(&(" + member + "))",
                             clean_polymorphic_scalars,
-                            clean_scalar_allocatable_structs);
+                            clean_scalar_allocatable_structs,
+                            free_allocatable_array_descriptors,
+                            free_scalar_member_array_descriptors);
                     }
                 }
             }
@@ -630,7 +647,8 @@ public:
 
     std::string emit_c_scalar_allocatable_struct_cleanup(ASR::Struct_t *struct_t,
             const std::string &indent, const std::string &target,
-            bool is_polymorphic, bool clean_polymorphic_scalars=true) {
+            bool is_polymorphic, bool clean_polymorphic_scalars=true,
+            bool free_member_array_descriptors=true) {
         std::string cleanup;
         if (struct_t == nullptr && !is_polymorphic) {
             return cleanup;
@@ -645,7 +663,7 @@ public:
                 + target + ");\n";
         } else {
             cleanup += emit_c_struct_member_cleanup(struct_t, inner_indent, target,
-                clean_polymorphic_scalars, true);
+                clean_polymorphic_scalars, true, free_member_array_descriptors);
         }
         cleanup += inner_indent
             + "_lfortran_free_alloc(_lfortran_get_default_allocator(), (char*) "
