@@ -2242,7 +2242,7 @@ R"(#include <stdio.h>
     void visit_BlockCall(const ASR::BlockCall_t &x) {
         LCOMPILERS_ASSERT(ASR::is_a<ASR::Block_t>(*x.m_m));
         ASR::Block_t* block = ASR::down_cast<ASR::Block_t>(x.m_m);
-        std::string decl, body;
+        std::string decl, body, cleanup;
         std::string indent(indentation_level*indentation_spaces, ' ');
         std::string open_paranthesis = indent + "do {\n";
         std::string close_paranthesis = indent + "} while (0);\n";
@@ -2272,8 +2272,9 @@ R"(#include <stdio.h>
             self().visit_stmt(*block->m_body[i]);
             body += src;
         }
+        cleanup = emit_c_scope_compiler_return_slot_cleanup(block->m_symtab, indent);
         decl += check_tmp_buffer();
-        src = open_paranthesis + decl + body + close_paranthesis;
+        src = open_paranthesis + decl + body + cleanup + close_paranthesis;
         indentation_level -= 1;
         current_scope = current_scope_copy;
     }
@@ -2281,7 +2282,7 @@ R"(#include <stdio.h>
     void visit_AssociateBlockCall(const ASR::AssociateBlockCall_t &x) {
         LCOMPILERS_ASSERT(ASR::is_a<ASR::AssociateBlock_t>(*x.m_m));
         ASR::AssociateBlock_t* associate_block = ASR::down_cast<ASR::AssociateBlock_t>(x.m_m);
-        std::string decl, body;
+        std::string decl, body, cleanup;
         std::string indent(indentation_level*indentation_spaces, ' ');
         std::string open_paranthesis = indent + "do {\n";
         std::string close_paranthesis = indent + "} while (0);\n";
@@ -2302,8 +2303,9 @@ R"(#include <stdio.h>
             self().visit_stmt(*associate_block->m_body[i]);
             body += src;
         }
+        cleanup = emit_c_scope_compiler_return_slot_cleanup(associate_block->m_symtab, indent);
         decl += check_tmp_buffer();
-        src = open_paranthesis + decl + body + close_paranthesis;
+        src = open_paranthesis + decl + body + cleanup + close_paranthesis;
         indentation_level -= 1;
         current_scope = current_scope_copy;
     }
@@ -13363,6 +13365,39 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
     bool is_c_compiler_created_return_slot_name(const std::string &name) const {
         return name.find("__libasr__created__var__") != std::string::npos
             && name.find("return_slot") != std::string::npos;
+    }
+
+    std::string emit_c_scope_compiler_return_slot_cleanup(SymbolTable *symtab,
+            const std::string &indent) {
+        if (!is_c || symtab == nullptr) {
+            return "";
+        }
+        std::string cleanup;
+        std::vector<std::string> var_order =
+            ASRUtils::determine_variable_declaration_order(symtab);
+        for (auto it = var_order.rbegin(); it != var_order.rend(); ++it) {
+            ASR::symbol_t *var_sym = symtab->get_symbol(*it);
+            if (!ASR::is_a<ASR::Variable_t>(*var_sym)) {
+                continue;
+            }
+            ASR::Variable_t *var = ASR::down_cast<ASR::Variable_t>(var_sym);
+            std::string target = CUtils::get_c_variable_name(*var);
+            ASR::ttype_t *value_type =
+                ASRUtils::type_get_past_allocatable_pointer(var->m_type);
+            if (!is_c_compiler_created_return_slot_name(target)
+                    || !ASRUtils::is_allocatable(var->m_type)
+                    || ASRUtils::is_array(var->m_type)
+                    || value_type == nullptr
+                    || !ASRUtils::is_character(*value_type)) {
+                continue;
+            }
+            cleanup += indent + "if (" + target + " != NULL) {\n"
+                + indent + "    _lfortran_free_alloc(_lfortran_get_default_allocator(), "
+                + target + ");\n"
+                + indent + "    " + target + " = NULL;\n"
+                + indent + "}\n";
+        }
+        return cleanup;
     }
 
     std::string emit_c_deallocate(ASR::expr_t *expr, const std::string &indent,

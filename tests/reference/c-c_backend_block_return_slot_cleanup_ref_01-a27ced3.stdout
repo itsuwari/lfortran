@@ -1,0 +1,162 @@
+#include <inttypes.h>
+
+#include <stdlib.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <string.h>
+#include <lfortran_intrinsics.h>
+
+
+#ifndef LFORTRAN_C_BACKEND_CONSTRUCTOR
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_CONSTRUCTOR __attribute__((constructor))
+#else
+#define LFORTRAN_C_BACKEND_CONSTRUCTOR
+#endif
+#endif
+#ifndef LFORTRAN_C_BACKEND_WEAK
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_WEAK __attribute__((weak))
+#else
+#define LFORTRAN_C_BACKEND_WEAK static
+#endif
+#endif
+
+
+struct dimension_descriptor
+{
+    int32_t lower_bound, length, stride;
+};
+#ifndef LFORTRAN_C_BACKEND_CONSTRUCTOR
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_CONSTRUCTOR __attribute__((constructor))
+#else
+#define LFORTRAN_C_BACKEND_CONSTRUCTOR
+#endif
+#endif
+#ifndef LFORTRAN_C_BACKEND_WEAK
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_WEAK __attribute__((weak))
+#else
+#define LFORTRAN_C_BACKEND_WEAK static
+#endif
+#endif
+
+void __lfortran__lcompilers_stringconcat(char * s1, char * s2, int32_t s1_len, int32_t s2_len, char * *concat_result);
+void __lfortran_c_backend_block_return_slot_cleanup_ref_01__make_string(char * *out);
+void __lfortran_c_backend_block_return_slot_cleanup_ref_01__make_suffix(char * *out);
+void __lfortran_c_backend_block_return_slot_cleanup_ref_01__take(char * value);
+void __lfortran_c_backend_block_return_slot_cleanup_ref_01__take_associate(char * value);
+
+
+
+
+// Implementations
+void __lfortran__lcompilers_stringconcat(char * s1, char * s2, int32_t s1_len, int32_t s2_len, char * *concat_result)
+{
+    (*concat_result) = _lfortran_strcat_alloc(_lfortran_get_default_allocator(), s1, s1_len, s2, s2_len);
+}
+void __lfortran_c_backend_block_return_slot_cleanup_ref_01__make_string(char * *out)
+{
+    lfortran_allocator_t* __lfortran_default_allocator = _lfortran_get_default_allocator();
+    if (out != NULL && (*out) != NULL) {
+        _lfortran_free_alloc(__lfortran_default_allocator, *out);
+        *out = NULL;
+    }
+    if ((((*out)) != NULL)) {
+        if (((*out)) != NULL) {
+            (*out) = NULL;
+        }
+    }
+    _lfortran_strcpy_alloc(__lfortran_default_allocator, &(*out), NULL, true, true, (char*)"block-temp", strlen((char*)"block-temp"));
+}
+
+void __lfortran_c_backend_block_return_slot_cleanup_ref_01__make_suffix(char * *out)
+{
+    lfortran_allocator_t* __lfortran_default_allocator = _lfortran_get_default_allocator();
+    if (out != NULL && (*out) != NULL) {
+        _lfortran_free_alloc(__lfortran_default_allocator, *out);
+        *out = NULL;
+    }
+    if ((((*out)) != NULL)) {
+        if (((*out)) != NULL) {
+            (*out) = NULL;
+        }
+    }
+    _lfortran_strcpy_alloc(__lfortran_default_allocator, &(*out), NULL, true, true, (char*)"", strlen((char*)""));
+}
+
+void __lfortran_c_backend_block_return_slot_cleanup_ref_01__take(char * value)
+{
+    if (str_compare(value, ((value) != NULL ? strlen(value) : 0), (char*)"block-temp", 10)  !=  0) {
+        fprintf(stderr, "ERROR STOP");
+        exit(1);
+    }
+}
+
+void __lfortran_c_backend_block_return_slot_cleanup_ref_01__take_associate(char * value)
+{
+    if (str_compare(value, ((value) != NULL ? strlen(value) : 0), (char*)"associate-temp", 14)  !=  0) {
+        fprintf(stderr, "ERROR STOP");
+        exit(1);
+    }
+}
+
+int main(int argc, char* argv[])
+{
+    _lpython_set_argv(argc, argv);
+    char * base = NULL;
+    do {
+        char * __libasr__created__var__3_return_slot = NULL;
+        if (__libasr__created__var__3_return_slot != NULL) {
+            _lfortran_free_alloc(_lfortran_get_default_allocator(), __libasr__created__var__3_return_slot);
+            __libasr__created__var__3_return_slot = NULL;
+        }
+        __lfortran_c_backend_block_return_slot_cleanup_ref_01__make_string(&__libasr__created__var__3_return_slot);
+        __lfortran_c_backend_block_return_slot_cleanup_ref_01__take(__libasr__created__var__3_return_slot);
+        if (__libasr__created__var__3_return_slot != NULL) {
+            _lfortran_free_alloc(_lfortran_get_default_allocator(), __libasr__created__var__3_return_slot);
+            __libasr__created__var__3_return_slot = NULL;
+        }
+    } while (0);
+    _lfortran_strcpy_alloc(_lfortran_get_default_allocator(), &base, NULL, true, true, (char*)"associate-temp", strlen((char*)"associate-temp"));
+    do {
+        char * c_backend_block_return_slot_cleanup_ref_01__associate_block____libasr__created__var__0_return_slot = NULL;
+        char * c_backend_block_return_slot_cleanup_ref_01__associate_block____libasr__created__var__1_return_slot = NULL;
+        char * c_backend_block_return_slot_cleanup_ref_01__associate_block____libasr__created__var__2_return_slot = NULL;
+        char * c_backend_block_return_slot_cleanup_ref_01__associate_block__view;
+        c_backend_block_return_slot_cleanup_ref_01__associate_block__view = base;
+        if (c_backend_block_return_slot_cleanup_ref_01__associate_block____libasr__created__var__0_return_slot != NULL) {
+            _lfortran_free_alloc(_lfortran_get_default_allocator(), c_backend_block_return_slot_cleanup_ref_01__associate_block____libasr__created__var__0_return_slot);
+            c_backend_block_return_slot_cleanup_ref_01__associate_block____libasr__created__var__0_return_slot = NULL;
+        }
+        __lfortran_c_backend_block_return_slot_cleanup_ref_01__make_suffix(&c_backend_block_return_slot_cleanup_ref_01__associate_block____libasr__created__var__0_return_slot);
+        if (c_backend_block_return_slot_cleanup_ref_01__associate_block____libasr__created__var__1_return_slot != NULL) {
+            _lfortran_free_alloc(_lfortran_get_default_allocator(), c_backend_block_return_slot_cleanup_ref_01__associate_block____libasr__created__var__1_return_slot);
+            c_backend_block_return_slot_cleanup_ref_01__associate_block____libasr__created__var__1_return_slot = NULL;
+        }
+        __lfortran_c_backend_block_return_slot_cleanup_ref_01__make_suffix(&c_backend_block_return_slot_cleanup_ref_01__associate_block____libasr__created__var__1_return_slot);
+        if (c_backend_block_return_slot_cleanup_ref_01__associate_block____libasr__created__var__2_return_slot != NULL) {
+            _lfortran_free_alloc(_lfortran_get_default_allocator(), c_backend_block_return_slot_cleanup_ref_01__associate_block____libasr__created__var__2_return_slot);
+            c_backend_block_return_slot_cleanup_ref_01__associate_block____libasr__created__var__2_return_slot = NULL;
+        }
+        __lfortran__lcompilers_stringconcat(c_backend_block_return_slot_cleanup_ref_01__associate_block__view, c_backend_block_return_slot_cleanup_ref_01__associate_block____libasr__created__var__0_return_slot, ((c_backend_block_return_slot_cleanup_ref_01__associate_block__view) != NULL ? strlen(c_backend_block_return_slot_cleanup_ref_01__associate_block__view) : 0), ((c_backend_block_return_slot_cleanup_ref_01__associate_block____libasr__created__var__1_return_slot) != NULL ? strlen(c_backend_block_return_slot_cleanup_ref_01__associate_block____libasr__created__var__1_return_slot) : 0), &c_backend_block_return_slot_cleanup_ref_01__associate_block____libasr__created__var__2_return_slot);
+        __lfortran_c_backend_block_return_slot_cleanup_ref_01__take_associate(c_backend_block_return_slot_cleanup_ref_01__associate_block____libasr__created__var__2_return_slot);
+        if (c_backend_block_return_slot_cleanup_ref_01__associate_block____libasr__created__var__2_return_slot != NULL) {
+            _lfortran_free_alloc(_lfortran_get_default_allocator(), c_backend_block_return_slot_cleanup_ref_01__associate_block____libasr__created__var__2_return_slot);
+            c_backend_block_return_slot_cleanup_ref_01__associate_block____libasr__created__var__2_return_slot = NULL;
+        }
+        if (c_backend_block_return_slot_cleanup_ref_01__associate_block____libasr__created__var__1_return_slot != NULL) {
+            _lfortran_free_alloc(_lfortran_get_default_allocator(), c_backend_block_return_slot_cleanup_ref_01__associate_block____libasr__created__var__1_return_slot);
+            c_backend_block_return_slot_cleanup_ref_01__associate_block____libasr__created__var__1_return_slot = NULL;
+        }
+        if (c_backend_block_return_slot_cleanup_ref_01__associate_block____libasr__created__var__0_return_slot != NULL) {
+            _lfortran_free_alloc(_lfortran_get_default_allocator(), c_backend_block_return_slot_cleanup_ref_01__associate_block____libasr__created__var__0_return_slot);
+            c_backend_block_return_slot_cleanup_ref_01__associate_block____libasr__created__var__0_return_slot = NULL;
+        }
+    } while (0);
+    if ((base) != NULL) {
+        base = NULL;
+    }
+    return 0;
+}
