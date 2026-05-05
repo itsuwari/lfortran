@@ -1,0 +1,13 @@
+{
+    "basename": "c-c_backend_struct_scalar_allocatable_member_cleanup_ref_01-352892b",
+    "cmd": "lfortran --no-color --show-c {infile}",
+    "infile": "tests/c_backend_struct_scalar_allocatable_member_cleanup_ref_01.f90",
+    "infile_hash": "8f3352f32bb0b784a634adc2338c17f9fdb41d4601629e2fbb8f6c90",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": "c-c_backend_struct_scalar_allocatable_member_cleanup_ref_01-352892b.stdout",
+    "stdout_hash": "2549b4c23f326a09870807401e03adf450f7c0c0c1c48c5adca4385a",
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

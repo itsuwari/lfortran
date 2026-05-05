@@ -5122,6 +5122,14 @@ filename = "c_backend_struct_deepcopy_empty_member_descriptor_cleanup_ref_01.f90
 c = true
 
 [[test]]
+filename = "c_backend_local_scalar_allocatable_cleanup_ref_01.f90"
+c = true
+
+[[test]]
+filename = "c_backend_struct_scalar_allocatable_member_cleanup_ref_01.f90"
+c = true
+
+[[test]]
 filename = "c_backend_allocatable_char_component_deallocate_cleanup_ref_01.f90"
 c = true
 

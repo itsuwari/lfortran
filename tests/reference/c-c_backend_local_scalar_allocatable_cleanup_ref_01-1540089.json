@@ -1,0 +1,13 @@
+{
+    "basename": "c-c_backend_local_scalar_allocatable_cleanup_ref_01-1540089",
+    "cmd": "lfortran --no-color --show-c {infile}",
+    "infile": "tests/c_backend_local_scalar_allocatable_cleanup_ref_01.f90",
+    "infile_hash": "15e8b1993bc50916dec4319768f2411f2f4f210180b05ffb39e73863",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": "c-c_backend_local_scalar_allocatable_cleanup_ref_01-1540089.stdout",
+    "stdout_hash": "496ea2192c56f5a48270ac13c0b01ad6e2cdde3bf7901c5e243a3dbd",
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

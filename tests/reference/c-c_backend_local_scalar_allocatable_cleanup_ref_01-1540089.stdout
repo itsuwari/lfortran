@@ -1,0 +1,49 @@
+
+#include <stdlib.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <string.h>
+#include <lfortran_intrinsics.h>
+
+
+#ifndef LFORTRAN_C_BACKEND_CONSTRUCTOR
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_CONSTRUCTOR __attribute__((constructor))
+#else
+#define LFORTRAN_C_BACKEND_CONSTRUCTOR
+#endif
+#endif
+#ifndef LFORTRAN_C_BACKEND_WEAK
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_WEAK __attribute__((weak))
+#else
+#define LFORTRAN_C_BACKEND_WEAK static
+#endif
+#endif
+
+
+
+
+// Implementations
+int main(int argc, char* argv[])
+{
+    _lpython_set_argv(argc, argv);
+    lfortran_allocator_t* __lfortran_default_allocator = _lfortran_get_default_allocator();
+    float * charge = NULL;
+    charge = (float*) _lfortran_malloc_alloc(__lfortran_default_allocator, sizeof(float));
+    if (charge == NULL) { charge = (float*) _lfortran_malloc_alloc(__lfortran_default_allocator, sizeof(float)); }
+*(charge) =   1.25000000000000000e+00;
+    if (!((charge) != NULL)) {
+        fprintf(stderr, "ERROR STOP");
+        exit(1);
+    }
+    if ((*charge) !=   1.25000000000000000e+00) {
+        fprintf(stderr, "ERROR STOP");
+        exit(1);
+    }
+    if (charge != NULL) {
+        _lfortran_free_alloc(__lfortran_default_allocator, (char*) charge);
+        charge = NULL;
+    }
+    return 0;
+}

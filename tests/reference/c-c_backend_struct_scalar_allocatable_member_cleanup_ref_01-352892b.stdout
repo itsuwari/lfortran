@@ -1,0 +1,130 @@
+#include <string.h>
+
+#include <stdlib.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <string.h>
+#include <lfortran_intrinsics.h>
+
+
+#ifndef LFORTRAN_C_BACKEND_CONSTRUCTOR
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_CONSTRUCTOR __attribute__((constructor))
+#else
+#define LFORTRAN_C_BACKEND_CONSTRUCTOR
+#endif
+#endif
+#ifndef LFORTRAN_C_BACKEND_WEAK
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_WEAK __attribute__((weak))
+#else
+#define LFORTRAN_C_BACKEND_WEAK static
+#endif
+#endif
+
+
+struct dimension_descriptor
+{
+    int32_t lower_bound, length, stride;
+};
+#ifndef LFORTRAN_C_BACKEND_CONSTRUCTOR
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_CONSTRUCTOR __attribute__((constructor))
+#else
+#define LFORTRAN_C_BACKEND_CONSTRUCTOR
+#endif
+#endif
+#ifndef LFORTRAN_C_BACKEND_WEAK
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_WEAK __attribute__((weak))
+#else
+#define LFORTRAN_C_BACKEND_WEAK static
+#endif
+#endif
+
+struct c_backend_struct_scalar_allocatable_member_cleanup_ref_01_m__run_config {
+ int64_t __lfortran_type_tag;
+ int32_t * charge;
+ int32_t * spin;
+ int32_t * max_iter;
+};
+
+static void __lfortran_cleanup_struct_c_backend_struct_scalar_allocatable_member_cleanup_ref_01_m__run_config_x3059705294875234291(void *__lfortran_value)
+{
+    struct c_backend_struct_scalar_allocatable_member_cleanup_ref_01_m__run_config *__lfortran_self = (struct c_backend_struct_scalar_allocatable_member_cleanup_ref_01_m__run_config*)__lfortran_value;
+    if (__lfortran_self == NULL) {
+        return;
+    }
+    if (__lfortran_self->charge != NULL) {
+        _lfortran_free_alloc(_lfortran_get_default_allocator(), (char*) __lfortran_self->charge);
+        __lfortran_self->charge = NULL;
+    }
+    if (__lfortran_self->spin != NULL) {
+        _lfortran_free_alloc(_lfortran_get_default_allocator(), (char*) __lfortran_self->spin);
+        __lfortran_self->spin = NULL;
+    }
+    if (__lfortran_self->max_iter != NULL) {
+        _lfortran_free_alloc(_lfortran_get_default_allocator(), (char*) __lfortran_self->max_iter);
+        __lfortran_self->max_iter = NULL;
+    }
+}
+
+LFORTRAN_C_BACKEND_CONSTRUCTOR static void __lfortran_register_struct_cleanup_c_backend_struct_scalar_allocatable_member_cleanup_ref_01_m__run_config_x3059705294875234291(void)
+{
+    _lfortran_register_c_struct_cleanup(3059705294875234291, __lfortran_cleanup_struct_c_backend_struct_scalar_allocatable_member_cleanup_ref_01_m__run_config_x3059705294875234291);
+}
+
+void __lfortran_c_backend_struct_scalar_allocatable_member_cleanup_ref_01_m__exercise();
+
+
+
+
+// Implementations
+void __lfortran_c_backend_struct_scalar_allocatable_member_cleanup_ref_01_m__exercise()
+{
+    lfortran_allocator_t* __lfortran_default_allocator = _lfortran_get_default_allocator();
+    struct c_backend_struct_scalar_allocatable_member_cleanup_ref_01_m__run_config config_value;
+    memset(&config_value, 0, sizeof(config_value));
+    config_value.__lfortran_type_tag = 3059705294875234291;
+    struct c_backend_struct_scalar_allocatable_member_cleanup_ref_01_m__run_config* config = &config_value;
+    config->charge = (int32_t*) _lfortran_malloc_alloc(__lfortran_default_allocator, sizeof(int32_t));
+    config->spin = (int32_t*) _lfortran_malloc_alloc(__lfortran_default_allocator, sizeof(int32_t));
+    config->max_iter = (int32_t*) _lfortran_malloc_alloc(__lfortran_default_allocator, sizeof(int32_t));
+    if (config->charge == NULL) { config->charge = (int32_t*) _lfortran_malloc_alloc(__lfortran_default_allocator, sizeof(int32_t)); }
+*(config->charge) = 0;
+    if (config->spin == NULL) { config->spin = (int32_t*) _lfortran_malloc_alloc(__lfortran_default_allocator, sizeof(int32_t)); }
+*(config->spin) = 2;
+    if (config->max_iter == NULL) { config->max_iter = (int32_t*) _lfortran_malloc_alloc(__lfortran_default_allocator, sizeof(int32_t)); }
+*(config->max_iter) = 800;
+    if (!((config->charge) != NULL)) {
+        fprintf(stderr, "ERROR STOP");
+        exit(1);
+    }
+    if (!((config->spin) != NULL)) {
+        fprintf(stderr, "ERROR STOP");
+        exit(1);
+    }
+    if (!((config->max_iter) != NULL)) {
+        fprintf(stderr, "ERROR STOP");
+        exit(1);
+    }
+    if ((&(config_value))->charge != NULL) {
+        _lfortran_free_alloc(__lfortran_default_allocator, (char*) (&(config_value))->charge);
+        (&(config_value))->charge = NULL;
+    }
+    if ((&(config_value))->spin != NULL) {
+        _lfortran_free_alloc(__lfortran_default_allocator, (char*) (&(config_value))->spin);
+        (&(config_value))->spin = NULL;
+    }
+    if ((&(config_value))->max_iter != NULL) {
+        _lfortran_free_alloc(__lfortran_default_allocator, (char*) (&(config_value))->max_iter);
+        (&(config_value))->max_iter = NULL;
+    }
+}
+
+int main(int argc, char* argv[])
+{
+    _lpython_set_argv(argc, argv);
+    __lfortran_c_backend_struct_scalar_allocatable_member_cleanup_ref_01_m__exercise();
+    return 0;
+}

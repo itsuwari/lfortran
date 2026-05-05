@@ -218,6 +218,7 @@ public:
     std::vector<CLocalArrayStructCleanup> current_function_local_allocatable_array_structs;
     std::vector<CLocalArrayStringCleanup> current_function_local_allocatable_array_strings;
     std::vector<std::string> current_function_local_allocatable_strings;
+    std::vector<std::string> current_function_local_allocatable_scalars;
     std::vector<std::string> current_function_local_character_strings;
     std::vector<CLocalScalarStructCleanup> current_function_local_allocatable_structs;
     std::vector<CLocalStructCleanup> current_function_local_structs;
@@ -404,6 +405,14 @@ public:
                 + indent + "    " + *it + " = NULL;\n"
                 + indent + "}\n";
         }
+        for (auto it = current_function_local_allocatable_scalars.rbegin();
+                it != current_function_local_allocatable_scalars.rend(); ++it) {
+            cleanup += indent + "if (" + *it + " != NULL) {\n"
+                + indent + "    _lfortran_free_alloc(_lfortran_get_default_allocator(), "
+                + "(char*) " + *it + ");\n"
+                + indent + "    " + *it + " = NULL;\n"
+                + indent + "}\n";
+        }
         for (auto it = current_function_local_character_strings.rbegin();
                 it != current_function_local_character_strings.rend(); ++it) {
             cleanup += indent + "if (" + *it + " != NULL) {\n"
@@ -432,6 +441,7 @@ public:
         current_function_local_allocatable_array_structs.clear();
         current_function_local_allocatable_array_strings.clear();
         current_function_local_allocatable_strings.clear();
+        current_function_local_allocatable_scalars.clear();
         current_function_local_character_strings.clear();
         current_function_local_allocatable_structs.clear();
         current_function_local_structs.clear();
@@ -481,6 +491,16 @@ public:
             }
         }
         current_function_local_allocatable_strings.push_back(target);
+    }
+
+    void register_current_function_local_allocatable_scalar_cleanup(
+            const std::string &target) {
+        for (const std::string &existing: current_function_local_allocatable_scalars) {
+            if (existing == target) {
+                return;
+            }
+        }
+        current_function_local_allocatable_scalars.push_back(target);
     }
 
     void register_current_function_local_character_string_cleanup(
@@ -664,6 +684,13 @@ public:
                         clean_polymorphic_scalars,
                         free_scalar_member_array_descriptors);
                 }
+            } else if (ASRUtils::is_allocatable(member_var->m_type)
+                    && !ASRUtils::is_array(member_var->m_type)) {
+                cleanup += indent + "if (" + member + " != NULL) {\n"
+                    + indent + "    _lfortran_free_alloc(_lfortran_get_default_allocator(), "
+                    + "(char*) " + member + ");\n"
+                    + indent + "    " + member + " = NULL;\n"
+                    + indent + "}\n";
             } else {
                 bool is_plain_struct_member = !ASRUtils::is_array(member_var->m_type)
                     && !ASRUtils::is_allocatable(member_var->m_type)
@@ -867,6 +894,10 @@ public:
                         || member_var->m_type_declaration != nullptr)) {
                 return true;
             }
+            if (ASRUtils::is_allocatable(member_var->m_type)
+                    && !ASRUtils::is_array(member_var->m_type)) {
+                return true;
+            }
             bool is_plain_struct_member = !ASRUtils::is_array(member_var->m_type)
                 && !ASRUtils::is_allocatable(member_var->m_type)
                 && !ASRUtils::is_pointer(member_var->m_type)
@@ -976,6 +1007,9 @@ public:
                         is_c_owned_function_call_struct_temp_name(
                             emitted_name));
                 }
+            } else if (!is_c_compiler_generated_temporary_name(emitted_name)) {
+                register_current_function_local_allocatable_scalar_cleanup(
+                    emitted_name);
             }
         } else if (!ASRUtils::is_allocatable(v.m_type)
                 && !ASRUtils::is_pointer(v.m_type)
@@ -3896,6 +3930,7 @@ R"(#include <stdio.h>
         current_function_local_allocatable_array_structs.clear();
         current_function_local_allocatable_array_strings.clear();
         current_function_local_allocatable_strings.clear();
+        current_function_local_allocatable_scalars.clear();
         current_function_local_character_strings.clear();
         current_function_local_allocatable_structs.clear();
         current_function_local_structs.clear();
@@ -4072,6 +4107,9 @@ R"(#include <stdio.h>
                                         is_c_owned_function_call_struct_temp_name(
                                             emitted_name));
                                 }
+                            } else if (!is_c_compiler_generated_temporary_name(emitted_name)) {
+                                register_current_function_local_allocatable_scalar_cleanup(
+                                    emitted_name);
                             }
                         } else if (is_c && v->m_intent == ASRUtils::intent_local
                                 && !ASRUtils::is_allocatable(v->m_type)
@@ -4194,6 +4232,7 @@ R"(#include <stdio.h>
             current_function_local_allocatable_array_structs.clear();
             current_function_local_allocatable_array_strings.clear();
             current_function_local_allocatable_strings.clear();
+            current_function_local_allocatable_scalars.clear();
             current_function_local_character_strings.clear();
             current_function_local_allocatable_structs.clear();
             current_function_local_structs.clear();
