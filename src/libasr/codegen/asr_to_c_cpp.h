@@ -12599,7 +12599,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                     expected_stride = "(" + expected_stride + " * " + array_expr
                         + "->dims[" + std::to_string(i) + "].length)";
                 }
-                src = "(!" + array_expr + "->is_allocated || (" + is_contiguous + "))";
+                src = "(" + array_expr + "->is_allocated && (" + is_contiguous + "))";
                 return;
             }
             case ASR::array_physical_typeType::FixedSizeArray:

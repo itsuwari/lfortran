@@ -1055,7 +1055,69 @@ public:
                     Vec<ASR::dimension_t> allocate_dims; allocate_dims.reserve(al, 1);
                     ASR::expr_t* len_expr{}; // Character length to allocate with
                     size_t target_n_dims = ASRUtils::extract_n_dims_from_ttype(ASRUtils::expr_type(array_var_temporary));
-                    if( !set_allocation_size(al, arg_expr_past_cast, allocate_dims, target_n_dims, len_expr)
+                    bool allocation_size_set = false;
+                    bool is_spread_result_arg = name_hint.find("lcompilers_spread") != std::string::npos
+                        && is_arg_intent_out.size() > i && is_arg_intent_out[i];
+                    if (is_spread_result_arg && i >= 2) {
+                        size_t source_index = 0;
+                        size_t dim_index = i - 2;
+                        size_t ncopies_index = i - 1;
+                        ASR::expr_t *source = x_m_args[source_index].m_value;
+                        ASR::expr_t *dim = x_m_args[dim_index].m_value;
+                        ASR::expr_t *ncopies = x_m_args[ncopies_index].m_value;
+                        ASR::expr_t *dim_value = dim ? ASRUtils::expr_value(dim) : nullptr;
+                        if (source && dim_value && ASR::is_a<ASR::IntegerConstant_t>(*dim_value)) {
+                            int64_t spread_dim =
+                                ASR::down_cast<ASR::IntegerConstant_t>(dim_value)->m_n;
+                            allocate_dims.reserve(al, target_n_dims);
+                            int ncopies_inserted = 0;
+                            ASR::ttype_t *index_type = get_index_type(loc);
+                            auto make_index_length = [&](ASR::expr_t *expr) -> ASR::expr_t* {
+                                ASR::ttype_t *expr_type = ASRUtils::expr_type(expr);
+                                if (!expr_type) {
+                                    return expr;
+                                }
+                                if (ASRUtils::is_integer(*expr_type)) {
+                                    if (ASRUtils::extract_kind_from_ttype_t(expr_type)
+                                            == get_index_kind()) {
+                                        return expr;
+                                    }
+                                    return ASRUtils::EXPR(ASR::make_Cast_t(
+                                        al, expr->base.loc, expr,
+                                        ASR::cast_kindType::IntegerToInteger,
+                                        index_type, nullptr, nullptr));
+                                }
+                                if (ASRUtils::is_unsigned_integer(*expr_type)) {
+                                    return ASRUtils::EXPR(ASR::make_Cast_t(
+                                        al, expr->base.loc, expr,
+                                        ASR::cast_kindType::UnsignedIntegerToInteger,
+                                        index_type, nullptr, nullptr));
+                                }
+                                return expr;
+                            };
+                            ASR::expr_t *ncopies_length = make_index_length(ncopies);
+                            for (size_t idim = 0; idim < target_n_dims; idim++) {
+                                ASR::dimension_t allocate_dim;
+                                allocate_dim.loc = loc;
+                                allocate_dim.m_start = get_index_one(loc);
+                                if (static_cast<int64_t>(idim) == spread_dim - 1) {
+                                    allocate_dim.m_length = ncopies_length;
+                                    ncopies_inserted = 1;
+                                } else {
+                                    ASR::expr_t *source_length = ASRUtils::EXPR(ASR::make_ArraySize_t(
+                                        al, loc, ASRUtils::get_past_array_physical_cast(source),
+                                        get_index_constant(loc, idim + 1 - ncopies_inserted),
+                                        index_type, nullptr));
+                                    allocate_dim.m_length = make_index_length(source_length);
+                                }
+                                allocate_dims.push_back(al, allocate_dim);
+                            }
+                            allocation_size_set = true;
+                        }
+                    }
+                    if( (!allocation_size_set
+                            && !set_allocation_size(al, arg_expr_past_cast, allocate_dims,
+                                target_n_dims, len_expr))
                             || target_n_dims != allocate_dims.size() ) {
                         current_body->push_back(al, ASRUtils::STMT(ASR::make_Associate_t(
                             al, loc, array_var_temporary, arg_expr_past_cast)));
@@ -1071,6 +1133,25 @@ public:
                     alloc_arg.m_type = nullptr;
                     alloc_arg.m_sym_subclass = nullptr;
                     alloc_args.push_back(al, alloc_arg);
+                    bool arg_is_intent_out =
+                        is_arg_intent_out.size() > i && is_arg_intent_out[i];
+                    if (arg_is_intent_out && is_spread_result_arg
+                            && ASRUtils::is_allocatable(ASRUtils::expr_type(arg_expr_past_cast))) {
+                        ASR::alloc_arg_t actual_alloc_arg;
+                        actual_alloc_arg.loc = arg_expr_past_cast->base.loc;
+                        actual_alloc_arg.m_a = arg_expr_past_cast;
+                        actual_alloc_arg.m_dims = allocate_dims.p;
+                        actual_alloc_arg.n_dims = allocate_dims.size();
+                        actual_alloc_arg.m_len_expr = len_expr;
+                        actual_alloc_arg.m_type = nullptr;
+                        actual_alloc_arg.m_sym_subclass = nullptr;
+                        Vec<ASR::alloc_arg_t> actual_alloc_args;
+                        actual_alloc_args.reserve(al, 1);
+                        actual_alloc_args.push_back(al, actual_alloc_arg);
+                        current_body->push_back(al, ASRUtils::STMT(ASR::make_ReAlloc_t(
+                            al, arg_expr_past_cast->base.loc,
+                            actual_alloc_args.p, actual_alloc_args.size())));
+                    }
                 
                     Vec<ASR::expr_t*> dealloc_args; dealloc_args.reserve(al, 1);
                     dealloc_args.push_back(al, array_var_temporary);
@@ -1114,23 +1195,48 @@ public:
                             : ASRUtils::expr_type(b.i32(0));
                         do_loop_variables.push_back(b.Variable(current_scope, var_name, loop_var_type, ASR::intentType::Local));
                     }
+                    std::vector<ASR::stmt_t*> copy_in_body = {
+                        ASRUtils::STMT(ASR::make_ExplicitDeallocate_t(al,
+                            array_var_temporary->base.loc, dealloc_args.p, dealloc_args.size())),
+                        ASRUtils::STMT(ASR::make_Allocate_t(al,
+                            array_var_temporary->base.loc, alloc_args.p, alloc_args.size(),
+                            nullptr, nullptr, nullptr))
+                    };
+                    if (!arg_is_intent_out) {
+                        copy_in_body.push_back(create_do_loop(al, loc, do_loop_variables,
+                            array_var_temporary, arg_expr_past_cast, array_rank, integer_kind));
+                    }
                     current_body->push_back(al,
-                        b.If(must_copy_actual, {
-                            ASRUtils::STMT(ASR::make_ExplicitDeallocate_t(al,
-                                array_var_temporary->base.loc, dealloc_args.p, dealloc_args.size())),
-                            ASRUtils::STMT(ASR::make_Allocate_t(al,
-                                array_var_temporary->base.loc, alloc_args.p, alloc_args.size(),
-                                nullptr, nullptr, nullptr)),
-                                create_do_loop(al, loc, do_loop_variables, array_var_temporary, arg_expr_past_cast, array_rank, integer_kind)
-                        }, {
+                        b.If(must_copy_actual, copy_in_body, {
                             ASRUtils::STMT(ASR::make_Associate_t(
                                 al, loc, array_var_temporary, arg_expr_past_cast))
                         })
                     );
-                    if ( is_arg_intent_out.size() > 0 && is_arg_intent_out[i] ) {
-                        body_after_curr_stmt->push_back(al, b.If(must_copy_actual, {
-                            create_do_loop(al, loc, do_loop_variables, arg_expr_past_cast, array_var_temporary, array_rank, integer_kind)
-                        }, {}));
+                    if ( arg_is_intent_out ) {
+                        std::vector<ASR::stmt_t*> copy_out_body;
+                        copy_out_body.reserve(2);
+                        if (is_spread_result_arg
+                                && ASRUtils::is_allocatable(ASRUtils::expr_type(arg_expr_past_cast))) {
+                            ASR::alloc_arg_t actual_alloc_arg;
+                            actual_alloc_arg.loc = arg_expr_past_cast->base.loc;
+                            actual_alloc_arg.m_a = arg_expr_past_cast;
+                            actual_alloc_arg.m_dims = allocate_dims.p;
+                            actual_alloc_arg.n_dims = allocate_dims.size();
+                            actual_alloc_arg.m_len_expr = len_expr;
+                            actual_alloc_arg.m_type = nullptr;
+                            actual_alloc_arg.m_sym_subclass = nullptr;
+                            Vec<ASR::alloc_arg_t> actual_alloc_args;
+                            actual_alloc_args.reserve(al, 1);
+                            actual_alloc_args.push_back(al, actual_alloc_arg);
+                            copy_out_body.push_back(ASRUtils::STMT(ASR::make_ReAlloc_t(
+                                al, arg_expr_past_cast->base.loc,
+                                actual_alloc_args.p, actual_alloc_args.size())));
+                        }
+                        copy_out_body.push_back(
+                            create_do_loop(al, loc, do_loop_variables, arg_expr_past_cast,
+                                array_var_temporary, array_rank, integer_kind));
+                        body_after_curr_stmt->push_back(al, b.If(must_copy_actual,
+                            copy_out_body, {}));
                     }
                     // Nullify the pointer after the call if it was associated (contiguous case).
                     // This prevents double-free on the next loop iteration: without nullification,

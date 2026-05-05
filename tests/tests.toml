@@ -5134,6 +5134,10 @@ filename = "c_backend_module_allocatable_array_descriptor_ref_01.f90"
 c = true
 
 [[test]]
+filename = "c_backend_spread_allocatable_assignment_01.f90"
+c = true
+
+[[test]]
 filename = "c_backend_allocatable_char_component_deallocate_cleanup_ref_01.f90"
 c = true
 
