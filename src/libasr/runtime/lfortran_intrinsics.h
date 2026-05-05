@@ -84,6 +84,7 @@ typedef struct {
 } lfortran_allocator_t;
 
 typedef void (*lfortran_c_tbp_func_ptr)(void);
+typedef void (*lfortran_c_struct_cleanup_func_ptr)(void*);
 
 /* Default malloc-based allocator (defined in lfortran_intrinsics.c) */
 LFORTRAN_API lfortran_allocator_t* _lfortran_get_default_allocator(void);
@@ -98,6 +99,11 @@ LFORTRAN_API lfortran_c_tbp_func_ptr _lfortran_get_c_tbp_impl_by_hash_or_die(
         const char* method_name, uint64_t method_hash, int64_t type_id);
 LFORTRAN_API lfortran_c_tbp_func_ptr _lfortran_get_c_tbp_impl(const char* method_name,
         int64_t type_id);
+LFORTRAN_API void _lfortran_register_c_struct_cleanup(int64_t type_id,
+        lfortran_c_struct_cleanup_func_ptr func);
+LFORTRAN_API lfortran_c_struct_cleanup_func_ptr _lfortran_get_c_struct_cleanup(
+        int64_t type_id);
+LFORTRAN_API void _lfortran_cleanup_c_struct(int64_t type_id, void *ptr);
 
 /* Convenience macros for calling through an allocator */
 #define ALLOCATOR_ALLOC(a, size)          ((a)->alloc((a)->context, (size)))

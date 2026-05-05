@@ -41,6 +41,9 @@ public:
     bool defer_c_tbp_parent_registration_defs = false;
     std::set<int64_t> deferred_c_tbp_parent_registration_type_ids;
     std::string deferred_c_tbp_parent_registration_defs;
+    bool defer_c_struct_cleanup_defs = false;
+    std::set<int64_t> deferred_c_struct_cleanup_type_ids;
+    std::string deferred_c_struct_cleanup_defs;
 
     bool target_offload_enabled;
     std::vector<std::string> kernel_func_names;
@@ -1757,7 +1760,10 @@ R"(
 
     void append_c_tbp_parent_registration(const ASR::Struct_t &x,
             std::string &src_dest) {
+        SymbolTable *saved_scope = current_scope;
+        current_scope = global_scope;
         std::string registration = emit_c_tbp_parent_registration(x);
+        current_scope = saved_scope;
         if (registration.empty()) {
             return;
         }
@@ -1770,6 +1776,66 @@ R"(
         if (deferred_c_tbp_parent_registration_type_ids.insert(type_id).second) {
             deferred_c_tbp_parent_registration_defs += registration;
         }
+    }
+
+    std::string emit_c_struct_cleanup_registration(const ASR::Struct_t &x) {
+        if (!is_c || !c_struct_has_member_cleanup(
+                const_cast<ASR::Struct_t*>(&x))) {
+            return "";
+        }
+        SymbolTable *saved_scope = current_scope;
+        current_scope = global_scope;
+        ensure_c_backend_constructor_macro_decl();
+        ASR::symbol_t *struct_sym =
+            reinterpret_cast<ASR::symbol_t*>(const_cast<ASR::Struct_t*>(&x));
+        int64_t type_id = get_struct_runtime_type_id(struct_sym);
+        std::string safe_name = CUtils::sanitize_c_identifier(
+            CUtils::get_c_symbol_name(struct_sym));
+        std::string cleanup_name = get_unique_local_name(
+            "__lfortran_cleanup_struct_" + safe_name
+            + "_x" + std::to_string(static_cast<uint64_t>(type_id)), false);
+        std::string registrar_name = get_unique_local_name(
+            "__lfortran_register_struct_cleanup_" + safe_name
+            + "_x" + std::to_string(static_cast<uint64_t>(type_id)), false);
+        std::string struct_type = "struct " + CUtils::get_c_symbol_name(struct_sym);
+        std::string cleanup = "static void " + cleanup_name
+            + "(void *__lfortran_value)\n{\n"
+            + "    " + struct_type + " *__lfortran_self = ("
+            + struct_type + "*)__lfortran_value;\n"
+            + "    if (__lfortran_self == NULL) {\n"
+            + "        return;\n"
+            + "    }\n";
+        cleanup += emit_c_struct_member_cleanup(
+            const_cast<ASR::Struct_t*>(&x), "    ", "__lfortran_self");
+        cleanup += "}\n\n";
+        cleanup += "LFORTRAN_C_BACKEND_CONSTRUCTOR static void "
+            + registrar_name + "(void)\n{\n"
+            + "    _lfortran_register_c_struct_cleanup("
+            + std::to_string(type_id) + ", "
+            + cleanup_name + ");\n"
+            + "}\n\n";
+        current_scope = saved_scope;
+        return cleanup;
+    }
+
+    void append_c_struct_cleanup_registration(const ASR::Struct_t &x,
+            std::string &src_dest) {
+        int64_t type_id = get_struct_runtime_type_id(
+            reinterpret_cast<ASR::symbol_t*>(const_cast<ASR::Struct_t*>(&x)));
+        if (deferred_c_struct_cleanup_type_ids.find(type_id)
+                != deferred_c_struct_cleanup_type_ids.end()) {
+            return;
+        }
+        std::string registration = emit_c_struct_cleanup_registration(x);
+        if (registration.empty()) {
+            return;
+        }
+        if (!defer_c_struct_cleanup_defs) {
+            src_dest += registration;
+            return;
+        }
+        deferred_c_struct_cleanup_type_ids.insert(type_id);
+        deferred_c_struct_cleanup_defs += registration;
     }
 
     std::string get_variable_c_name(const ASR::Variable_t &v) {
@@ -3696,6 +3762,9 @@ R"(
         defer_c_tbp_parent_registration_defs = true;
         deferred_c_tbp_parent_registration_type_ids.clear();
         deferred_c_tbp_parent_registration_defs.clear();
+        defer_c_struct_cleanup_defs = true;
+        deferred_c_struct_cleanup_type_ids.clear();
+        deferred_c_struct_cleanup_defs.clear();
         global_scope = x.m_symtab;
         LCOMPILERS_ASSERT(x.n_items == 0);
         indentation_level = 0;
@@ -3918,6 +3987,9 @@ R"(
         if (!deferred_c_tbp_parent_registration_defs.empty()) {
             shared_body += deferred_c_tbp_parent_registration_defs + "\n";
         }
+        if (!deferred_c_struct_cleanup_defs.empty()) {
+            shared_body += deferred_c_struct_cleanup_defs + "\n";
+        }
         if (!global_var_defs.empty()) {
             shared_body += global_var_defs + "\n";
         }
@@ -3961,6 +4033,7 @@ R"(
         }
 
         defer_c_tbp_parent_registration_defs = false;
+        defer_c_struct_cleanup_defs = false;
         return {source_files, header_name, has_main_program};
     }
 
@@ -4234,6 +4307,7 @@ R"(    // Initialise Numpy
         src_dest += open_struct + body + end_struct;
         if constexpr (std::is_same_v<std::decay_t<T>, ASR::Struct_t>) {
             append_c_tbp_parent_registration(x, src_dest);
+            append_c_struct_cleanup_registration(x, src_dest);
         }
     }
 

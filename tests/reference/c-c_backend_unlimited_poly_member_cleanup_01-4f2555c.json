@@ -1,0 +1,13 @@
+{
+    "basename": "c-c_backend_unlimited_poly_member_cleanup_01-4f2555c",
+    "cmd": "lfortran --no-color --show-c {infile}",
+    "infile": "tests/c_backend_unlimited_poly_member_cleanup_01.f90",
+    "infile_hash": "ebf7ac52e51fa584d558a853bb80cf1bfb354e9d242ca5ed2f0ee180",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": "c-c_backend_unlimited_poly_member_cleanup_01-4f2555c.stdout",
+    "stdout_hash": "8003e7743dbe71c9b9c995406529fe861f4ee07e4ccf9bdb20d925b3",
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

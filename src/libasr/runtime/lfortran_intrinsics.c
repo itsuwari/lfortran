@@ -63,11 +63,19 @@ typedef struct LFortranCTbpEntry {
     struct LFortranCTbpEntry *next;
 } LFortranCTbpEntry;
 
+typedef struct LFortranCStructCleanupEntry {
+    int64_t type_id;
+    lfortran_c_struct_cleanup_func_ptr func;
+    struct LFortranCStructCleanupEntry *next;
+} LFortranCStructCleanupEntry;
+
 #define LFORTRAN_C_TBP_BUCKET_COUNT 4096
 #define LFORTRAN_C_TYPE_PARENT_BUCKET_COUNT 1024
+#define LFORTRAN_C_STRUCT_CLEANUP_BUCKET_COUNT 4096
 
 static LFortranCTypeParentEntry *lfortran_c_type_parent_registry[LFORTRAN_C_TYPE_PARENT_BUCKET_COUNT] = {NULL};
 static LFortranCTbpEntry *lfortran_c_tbp_registry[LFORTRAN_C_TBP_BUCKET_COUNT] = {NULL};
+static LFortranCStructCleanupEntry *lfortran_c_struct_cleanup_registry[LFORTRAN_C_STRUCT_CLEANUP_BUCKET_COUNT] = {NULL};
 
 static uint64_t lfortran_hash_c_string(const char *str) {
     uint64_t hash = UINT64_C(1469598103934665603);
@@ -112,6 +120,20 @@ static LFortranCTbpEntry *lfortran_find_c_tbp_entry(const char *method_name,
                 && entry->method_hash == method_hash
                 && (entry->method_name == method_name
                     || strcmp(entry->method_name, method_name) == 0)) {
+            return entry;
+        }
+        entry = entry->next;
+    }
+    return NULL;
+}
+
+static LFortranCStructCleanupEntry *lfortran_find_c_struct_cleanup_entry(
+        int64_t type_id) {
+    size_t bucket = (size_t)(lfortran_mix_i64_hash(type_id)
+        & (LFORTRAN_C_STRUCT_CLEANUP_BUCKET_COUNT - 1));
+    LFortranCStructCleanupEntry *entry = lfortran_c_struct_cleanup_registry[bucket];
+    while (entry != NULL) {
+        if (entry->type_id == type_id) {
             return entry;
         }
         entry = entry->next;
@@ -199,6 +221,54 @@ LFORTRAN_API lfortran_c_tbp_func_ptr _lfortran_get_c_tbp_impl_by_hash_or_die(
     }
     fprintf(stderr, "Deferred type-bound dispatch failed for %s\n", method_name);
     exit(1);
+}
+
+LFORTRAN_API void _lfortran_register_c_struct_cleanup(int64_t type_id,
+        lfortran_c_struct_cleanup_func_ptr func) {
+    if (type_id == 0 || func == NULL) {
+        return;
+    }
+    LFortranCStructCleanupEntry *entry = lfortran_find_c_struct_cleanup_entry(type_id);
+    if (entry != NULL) {
+        entry->func = func;
+        return;
+    }
+    entry = (LFortranCStructCleanupEntry*) malloc(sizeof(LFortranCStructCleanupEntry));
+    if (entry == NULL) {
+        fprintf(stderr, "ERROR: unable to register C struct cleanup\n");
+        exit(1);
+    }
+    size_t bucket = (size_t)(lfortran_mix_i64_hash(type_id)
+        & (LFORTRAN_C_STRUCT_CLEANUP_BUCKET_COUNT - 1));
+    entry->type_id = type_id;
+    entry->func = func;
+    entry->next = lfortran_c_struct_cleanup_registry[bucket];
+    lfortran_c_struct_cleanup_registry[bucket] = entry;
+}
+
+LFORTRAN_API lfortran_c_struct_cleanup_func_ptr _lfortran_get_c_struct_cleanup(
+        int64_t type_id) {
+    while (type_id != 0) {
+        LFortranCStructCleanupEntry *entry =
+            lfortran_find_c_struct_cleanup_entry(type_id);
+        if (entry != NULL) {
+            return entry->func;
+        }
+        LFortranCTypeParentEntry *parent_entry = lfortran_find_c_type_parent_entry(type_id);
+        if (parent_entry == NULL) {
+            break;
+        }
+        type_id = parent_entry->parent_type_id;
+    }
+    return NULL;
+}
+
+LFORTRAN_API void _lfortran_cleanup_c_struct(int64_t type_id, void *ptr) {
+    lfortran_c_struct_cleanup_func_ptr func =
+        _lfortran_get_c_struct_cleanup(type_id);
+    if (func != NULL) {
+        func(ptr);
+    }
 }
 
 /* ----------------------------------------------------- */

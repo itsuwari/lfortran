@@ -28,6 +28,21 @@ struct dimension_descriptor
 {
     int32_t lower_bound, length, stride;
 };
+#ifndef LFORTRAN_C_BACKEND_CONSTRUCTOR
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_CONSTRUCTOR __attribute__((constructor))
+#else
+#define LFORTRAN_C_BACKEND_CONSTRUCTOR
+#endif
+#endif
+#ifndef LFORTRAN_C_BACKEND_WEAK
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_WEAK __attribute__((weak))
+#else
+#define LFORTRAN_C_BACKEND_WEAK static
+#endif
+#endif
+
 
 struct r32___
 {
@@ -54,6 +69,39 @@ struct c_backend_struct_scalar_member_init_01_m__record_type {
  struct r32___* values;
  struct r32_____* matrix;
 };
+
+static void __lfortran_cleanup_struct_c_backend_struct_scalar_member_init_01_m__record_type_x3734091061174572910(void *__lfortran_value)
+{
+    struct c_backend_struct_scalar_member_init_01_m__record_type *__lfortran_self = (struct c_backend_struct_scalar_member_init_01_m__record_type*)__lfortran_value;
+    if (__lfortran_self == NULL) {
+        return;
+    }
+    if ((__lfortran_self->values) != NULL && (__lfortran_self->values)->is_allocated && (__lfortran_self->values)->data != NULL) {
+        _lfortran_free_alloc(_lfortran_get_default_allocator(), (char*) (__lfortran_self->values)->data);
+        (__lfortran_self->values)->data = NULL;
+    }
+    if ((__lfortran_self->values) != NULL) {
+        (__lfortran_self->values)->offset = 0;
+        (__lfortran_self->values)->is_allocated = false;
+        _lfortran_free_alloc(_lfortran_get_default_allocator(), (char*) __lfortran_self->values);
+        __lfortran_self->values = NULL;
+    }
+    if ((__lfortran_self->matrix) != NULL && (__lfortran_self->matrix)->is_allocated && (__lfortran_self->matrix)->data != NULL) {
+        _lfortran_free_alloc(_lfortran_get_default_allocator(), (char*) (__lfortran_self->matrix)->data);
+        (__lfortran_self->matrix)->data = NULL;
+    }
+    if ((__lfortran_self->matrix) != NULL) {
+        (__lfortran_self->matrix)->offset = 0;
+        (__lfortran_self->matrix)->is_allocated = false;
+        _lfortran_free_alloc(_lfortran_get_default_allocator(), (char*) __lfortran_self->matrix);
+        __lfortran_self->matrix = NULL;
+    }
+}
+
+LFORTRAN_C_BACKEND_CONSTRUCTOR static void __lfortran_register_struct_cleanup_c_backend_struct_scalar_member_init_01_m__record_type_x3734091061174572910(void)
+{
+    _lfortran_register_c_struct_cleanup(3734091061174572910, __lfortran_cleanup_struct_c_backend_struct_scalar_member_init_01_m__record_type_x3734091061174572910);
+}
 
 void __lfortran_c_backend_struct_scalar_member_init_01_m__run();
 

@@ -31,6 +31,21 @@ struct __lfortran_runtime_type_header
 {
     int64_t __lfortran_type_tag;
 };
+#ifndef LFORTRAN_C_BACKEND_CONSTRUCTOR
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_CONSTRUCTOR __attribute__((constructor))
+#else
+#define LFORTRAN_C_BACKEND_CONSTRUCTOR
+#endif
+#endif
+#ifndef LFORTRAN_C_BACKEND_WEAK
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_WEAK __attribute__((weak))
+#else
+#define LFORTRAN_C_BACKEND_WEAK static
+#endif
+#endif
+
 
 struct i32___
 {
@@ -45,6 +60,29 @@ struct c_backend_allocatable_class_deallocate_01_m__record_type {
  int64_t __lfortran_type_tag;
  struct i32___* values;
 };
+
+static void __lfortran_cleanup_struct_c_backend_allocatable_class_deallocate_01_m__record_type_x2276338243294138762(void *__lfortran_value)
+{
+    struct c_backend_allocatable_class_deallocate_01_m__record_type *__lfortran_self = (struct c_backend_allocatable_class_deallocate_01_m__record_type*)__lfortran_value;
+    if (__lfortran_self == NULL) {
+        return;
+    }
+    if ((__lfortran_self->values) != NULL && (__lfortran_self->values)->is_allocated && (__lfortran_self->values)->data != NULL) {
+        _lfortran_free_alloc(_lfortran_get_default_allocator(), (char*) (__lfortran_self->values)->data);
+        (__lfortran_self->values)->data = NULL;
+    }
+    if ((__lfortran_self->values) != NULL) {
+        (__lfortran_self->values)->offset = 0;
+        (__lfortran_self->values)->is_allocated = false;
+        _lfortran_free_alloc(_lfortran_get_default_allocator(), (char*) __lfortran_self->values);
+        __lfortran_self->values = NULL;
+    }
+}
+
+LFORTRAN_C_BACKEND_CONSTRUCTOR static void __lfortran_register_struct_cleanup_c_backend_allocatable_class_deallocate_01_m__record_type_x2276338243294138762(void)
+{
+    _lfortran_register_c_struct_cleanup(2276338243294138762, __lfortran_cleanup_struct_c_backend_allocatable_class_deallocate_01_m__record_type_x2276338243294138762);
+}
 
 void __lfortran_c_backend_allocatable_class_deallocate_01_m__run();
 
@@ -78,34 +116,12 @@ void __lfortran_c_backend_allocatable_class_deallocate_01_m__run()
         exit(1);
     }
     if ((item) != NULL) {
-        if (((struct __lfortran_runtime_type_header*)(item))->__lfortran_type_tag == 2276338243294138762) {
-            if ((((struct c_backend_allocatable_class_deallocate_01_m__record_type*)(item))->values) != NULL && (((struct c_backend_allocatable_class_deallocate_01_m__record_type*)(item))->values)->is_allocated && (((struct c_backend_allocatable_class_deallocate_01_m__record_type*)(item))->values)->data != NULL) {
-                _lfortran_free_alloc(__lfortran_default_allocator, (char*) (((struct c_backend_allocatable_class_deallocate_01_m__record_type*)(item))->values)->data);
-                (((struct c_backend_allocatable_class_deallocate_01_m__record_type*)(item))->values)->data = NULL;
-            }
-            if ((((struct c_backend_allocatable_class_deallocate_01_m__record_type*)(item))->values) != NULL) {
-                (((struct c_backend_allocatable_class_deallocate_01_m__record_type*)(item))->values)->offset = 0;
-                (((struct c_backend_allocatable_class_deallocate_01_m__record_type*)(item))->values)->is_allocated = false;
-                _lfortran_free_alloc(__lfortran_default_allocator, (char*) ((struct c_backend_allocatable_class_deallocate_01_m__record_type*)(item))->values);
-                ((struct c_backend_allocatable_class_deallocate_01_m__record_type*)(item))->values = NULL;
-            }
-        }
+        _lfortran_cleanup_c_struct(((struct __lfortran_runtime_type_header*)(item))->__lfortran_type_tag, (void*) item);
         _lfortran_free_alloc(__lfortran_default_allocator, (char*) item);
         item = NULL;
     }
     if ((item) != NULL) {
-        if (((struct __lfortran_runtime_type_header*)(item))->__lfortran_type_tag == 2276338243294138762) {
-            if ((((struct c_backend_allocatable_class_deallocate_01_m__record_type*)(item))->values) != NULL && (((struct c_backend_allocatable_class_deallocate_01_m__record_type*)(item))->values)->is_allocated && (((struct c_backend_allocatable_class_deallocate_01_m__record_type*)(item))->values)->data != NULL) {
-                _lfortran_free_alloc(__lfortran_default_allocator, (char*) (((struct c_backend_allocatable_class_deallocate_01_m__record_type*)(item))->values)->data);
-                (((struct c_backend_allocatable_class_deallocate_01_m__record_type*)(item))->values)->data = NULL;
-            }
-            if ((((struct c_backend_allocatable_class_deallocate_01_m__record_type*)(item))->values) != NULL) {
-                (((struct c_backend_allocatable_class_deallocate_01_m__record_type*)(item))->values)->offset = 0;
-                (((struct c_backend_allocatable_class_deallocate_01_m__record_type*)(item))->values)->is_allocated = false;
-                _lfortran_free_alloc(__lfortran_default_allocator, (char*) ((struct c_backend_allocatable_class_deallocate_01_m__record_type*)(item))->values);
-                ((struct c_backend_allocatable_class_deallocate_01_m__record_type*)(item))->values = NULL;
-            }
-        }
+        _lfortran_cleanup_c_struct(((struct __lfortran_runtime_type_header*)(item))->__lfortran_type_tag, (void*) item);
         _lfortran_free_alloc(__lfortran_default_allocator, (char*) item);
         item = NULL;
     }
