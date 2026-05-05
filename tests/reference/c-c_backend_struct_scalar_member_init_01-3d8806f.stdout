@@ -76,6 +76,10 @@ static void __lfortran_cleanup_struct_c_backend_struct_scalar_member_init_01_m__
     if (__lfortran_self == NULL) {
         return;
     }
+    if (__lfortran_self->label != NULL) {
+        _lfortran_free_alloc(_lfortran_get_default_allocator(), __lfortran_self->label);
+        __lfortran_self->label = NULL;
+    }
     if ((__lfortran_self->values) != NULL && (__lfortran_self->values)->is_allocated && (__lfortran_self->values)->data != NULL) {
         _lfortran_free_alloc(_lfortran_get_default_allocator(), (char*) (__lfortran_self->values)->data);
         (__lfortran_self->values)->data = NULL;
@@ -137,6 +141,10 @@ void __lfortran_c_backend_struct_scalar_member_init_01_m__run()
     if (fabs(record->values->data[((0 + (record->values->dims[0].stride * (2 - record->values->dims[0].lower_bound))) + record->values->offset)] -   2.00000000000000000e+00) >   9.99999997475242708e-07) {
         fprintf(stderr, "ERROR STOP");
         exit(1);
+    }
+    if ((&(record_value))->label != NULL) {
+        _lfortran_free_alloc(__lfortran_default_allocator, (&(record_value))->label);
+        (&(record_value))->label = NULL;
     }
     if (((&(record_value))->values) != NULL && ((&(record_value))->values)->is_allocated && ((&(record_value))->values)->data != NULL) {
         _lfortran_free_alloc(__lfortran_default_allocator, (char*) ((&(record_value))->values)->data);

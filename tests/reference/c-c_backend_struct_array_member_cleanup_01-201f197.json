@@ -1,0 +1,13 @@
+{
+    "basename": "c-c_backend_struct_array_member_cleanup_01-201f197",
+    "cmd": "lfortran --no-color --show-c {infile}",
+    "infile": "tests/c_backend_struct_array_member_cleanup_01.f90",
+    "infile_hash": "0c691ce1d0211ff0c3f519deff4c152edb4cabeff3fb80a2be568bff",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": "c-c_backend_struct_array_member_cleanup_01-201f197.stdout",
+    "stdout_hash": "df26061cd6840ad1be8287f03957c3ed534dcd2fd19d2df83838060a",
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

@@ -468,6 +468,39 @@ public:
                     && !(ASR::is_a<ASR::StructType_t>(*member_element_type)
                         && ASR::down_cast<ASR::StructType_t>(
                             member_element_type)->m_is_unlimited_polymorphic)) {
+                if (ASR::is_a<ASR::StructType_t>(*member_element_type)
+                        && member_var->m_type_declaration != nullptr) {
+                    ASR::symbol_t *member_struct_sym =
+                        ASRUtils::symbol_get_past_external(member_var->m_type_declaration);
+                    if (member_struct_sym != nullptr
+                            && ASR::is_a<ASR::Struct_t>(*member_struct_sym)
+                            && c_struct_has_member_cleanup(
+                                ASR::down_cast<ASR::Struct_t>(member_struct_sym))) {
+                        std::string idx = "__lfortran_cleanup_i_"
+                            + CUtils::sanitize_c_identifier(member);
+                        std::string size = "__lfortran_cleanup_size_"
+                            + CUtils::sanitize_c_identifier(member);
+                        std::string dim = "__lfortran_cleanup_dim_"
+                            + CUtils::sanitize_c_identifier(member);
+                        cleanup += indent + "if ((" + member + ") != NULL && ("
+                            + member + ")->is_allocated && (" + member
+                            + ")->data != NULL) {\n"
+                            + indent + "    int64_t " + size + " = 1;\n"
+                            + indent + "    for (int32_t " + dim + " = 0; "
+                            + dim + " < (" + member + ")->n_dims; " + dim
+                            + "++) {\n"
+                            + indent + "        " + size + " *= (" + member
+                            + ")->dims[" + dim + "].length;\n"
+                            + indent + "    }\n"
+                            + indent + "    for (int64_t " + idx + " = 0; "
+                            + idx + " < " + size + "; " + idx + "++) {\n";
+                        cleanup += emit_c_struct_member_cleanup(
+                            ASR::down_cast<ASR::Struct_t>(member_struct_sym),
+                            indent + "        ", "(&((" + member + ")->data[" + idx + "]))");
+                        cleanup += indent + "    }\n"
+                            + indent + "}\n";
+                    }
+                }
                 cleanup += indent + "if ((" + member + ") != NULL && (" + member
                     + ")->is_allocated && (" + member + ")->data != NULL) {\n"
                     + indent + "    _lfortran_free_alloc(_lfortran_get_default_allocator(), "
@@ -479,6 +512,14 @@ public:
                     + indent + "    (" + member + ")->is_allocated = false;\n"
                     + indent + "    _lfortran_free_alloc(_lfortran_get_default_allocator(), "
                     + "(char*) " + member + ");\n"
+                    + indent + "    " + member + " = NULL;\n"
+                    + indent + "}\n";
+            } else if (ASRUtils::is_allocatable(member_var->m_type)
+                    && !ASRUtils::is_array(member_var->m_type)
+                    && ASRUtils::is_character(*member_type)) {
+                cleanup += indent + "if (" + member + " != NULL) {\n"
+                    + indent + "    _lfortran_free_alloc(_lfortran_get_default_allocator(), "
+                    + member + ");\n"
                     + indent + "    " + member + " = NULL;\n"
                     + indent + "}\n";
             } else if (ASRUtils::is_allocatable(member_var->m_type)
@@ -583,6 +624,11 @@ public:
                     && !(ASR::is_a<ASR::StructType_t>(*member_element_type)
                         && ASR::down_cast<ASR::StructType_t>(
                             member_element_type)->m_is_unlimited_polymorphic)) {
+                return true;
+            }
+            if (ASRUtils::is_allocatable(member_var->m_type)
+                    && !ASRUtils::is_array(member_var->m_type)
+                    && ASRUtils::is_character(*member_type)) {
                 return true;
             }
             if (ASRUtils::is_allocatable(member_var->m_type)

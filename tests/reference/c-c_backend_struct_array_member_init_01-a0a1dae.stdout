@@ -75,6 +75,10 @@ static void __lfortran_cleanup_struct_c_backend_struct_array_member_init_01_m__r
     if (__lfortran_self == NULL) {
         return;
     }
+    if (__lfortran_self->label != NULL) {
+        _lfortran_free_alloc(_lfortran_get_default_allocator(), __lfortran_self->label);
+        __lfortran_self->label = NULL;
+    }
     if ((__lfortran_self->values) != NULL && (__lfortran_self->values)->is_allocated && (__lfortran_self->values)->data != NULL) {
         _lfortran_free_alloc(_lfortran_get_default_allocator(), (char*) (__lfortran_self->values)->data);
         (__lfortran_self->values)->data = NULL;
@@ -166,6 +170,10 @@ void __lfortran_c_backend_struct_array_member_init_01_m__run()
     }
     if ((records) != NULL && (records)->is_allocated && (records)->data != NULL) {
         for (int64_t __lfortran_cleanup_i_records = 0; __lfortran_cleanup_i_records < (records)->dims[0].length; __lfortran_cleanup_i_records++) {
+            if ((&((records)->data[__lfortran_cleanup_i_records]))->label != NULL) {
+                _lfortran_free_alloc(__lfortran_default_allocator, (&((records)->data[__lfortran_cleanup_i_records]))->label);
+                (&((records)->data[__lfortran_cleanup_i_records]))->label = NULL;
+            }
             if (((&((records)->data[__lfortran_cleanup_i_records]))->values) != NULL && ((&((records)->data[__lfortran_cleanup_i_records]))->values)->is_allocated && ((&((records)->data[__lfortran_cleanup_i_records]))->values)->data != NULL) {
                 _lfortran_free_alloc(__lfortran_default_allocator, (char*) ((&((records)->data[__lfortran_cleanup_i_records]))->values)->data);
                 ((&((records)->data[__lfortran_cleanup_i_records]))->values)->data = NULL;

@@ -1,0 +1,250 @@
+#include <string.h>
+
+#include <stdlib.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <string.h>
+#include <lfortran_intrinsics.h>
+
+
+#ifndef LFORTRAN_C_BACKEND_CONSTRUCTOR
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_CONSTRUCTOR __attribute__((constructor))
+#else
+#define LFORTRAN_C_BACKEND_CONSTRUCTOR
+#endif
+#endif
+#ifndef LFORTRAN_C_BACKEND_WEAK
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_WEAK __attribute__((weak))
+#else
+#define LFORTRAN_C_BACKEND_WEAK static
+#endif
+#endif
+
+
+struct dimension_descriptor
+{
+    int32_t lower_bound, length, stride;
+};
+#ifndef LFORTRAN_C_BACKEND_CONSTRUCTOR
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_CONSTRUCTOR __attribute__((constructor))
+#else
+#define LFORTRAN_C_BACKEND_CONSTRUCTOR
+#endif
+#endif
+#ifndef LFORTRAN_C_BACKEND_WEAK
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_WEAK __attribute__((weak))
+#else
+#define LFORTRAN_C_BACKEND_WEAK static
+#endif
+#endif
+
+
+struct xc_backend_struct_array_member_cleanup_01_m__record_type
+{
+    struct c_backend_struct_array_member_cleanup_01_m__record_type *data;
+    struct dimension_descriptor dims[32];
+    int32_t n_dims;
+    int32_t offset;
+    bool is_allocated;
+};
+
+struct c_backend_struct_array_member_cleanup_01_m__holder_type {
+ int64_t __lfortran_type_tag;
+ struct xc_backend_struct_array_member_cleanup_01_m__record_type* records;
+};
+
+static void __lfortran_cleanup_struct_c_backend_struct_array_member_cleanup_01_m__holder_type_x8748839484852134798(void *__lfortran_value)
+{
+    struct c_backend_struct_array_member_cleanup_01_m__holder_type *__lfortran_self = (struct c_backend_struct_array_member_cleanup_01_m__holder_type*)__lfortran_value;
+    if (__lfortran_self == NULL) {
+        return;
+    }
+    if ((__lfortran_self->records) != NULL && (__lfortran_self->records)->is_allocated && (__lfortran_self->records)->data != NULL) {
+        int64_t __lfortran_cleanup_size___lfortran_self_x2D__x3E_records = 1;
+        for (int32_t __lfortran_cleanup_dim___lfortran_self_x2D__x3E_records = 0; __lfortran_cleanup_dim___lfortran_self_x2D__x3E_records < (__lfortran_self->records)->n_dims; __lfortran_cleanup_dim___lfortran_self_x2D__x3E_records++) {
+            __lfortran_cleanup_size___lfortran_self_x2D__x3E_records *= (__lfortran_self->records)->dims[__lfortran_cleanup_dim___lfortran_self_x2D__x3E_records].length;
+        }
+        for (int64_t __lfortran_cleanup_i___lfortran_self_x2D__x3E_records = 0; __lfortran_cleanup_i___lfortran_self_x2D__x3E_records < __lfortran_cleanup_size___lfortran_self_x2D__x3E_records; __lfortran_cleanup_i___lfortran_self_x2D__x3E_records++) {
+            if ((&((__lfortran_self->records)->data[__lfortran_cleanup_i___lfortran_self_x2D__x3E_records]))->label != NULL) {
+                _lfortran_free_alloc(_lfortran_get_default_allocator(), (&((__lfortran_self->records)->data[__lfortran_cleanup_i___lfortran_self_x2D__x3E_records]))->label);
+                (&((__lfortran_self->records)->data[__lfortran_cleanup_i___lfortran_self_x2D__x3E_records]))->label = NULL;
+            }
+            if (((&((__lfortran_self->records)->data[__lfortran_cleanup_i___lfortran_self_x2D__x3E_records]))->values) != NULL && ((&((__lfortran_self->records)->data[__lfortran_cleanup_i___lfortran_self_x2D__x3E_records]))->values)->is_allocated && ((&((__lfortran_self->records)->data[__lfortran_cleanup_i___lfortran_self_x2D__x3E_records]))->values)->data != NULL) {
+                _lfortran_free_alloc(_lfortran_get_default_allocator(), (char*) ((&((__lfortran_self->records)->data[__lfortran_cleanup_i___lfortran_self_x2D__x3E_records]))->values)->data);
+                ((&((__lfortran_self->records)->data[__lfortran_cleanup_i___lfortran_self_x2D__x3E_records]))->values)->data = NULL;
+            }
+            if (((&((__lfortran_self->records)->data[__lfortran_cleanup_i___lfortran_self_x2D__x3E_records]))->values) != NULL) {
+                ((&((__lfortran_self->records)->data[__lfortran_cleanup_i___lfortran_self_x2D__x3E_records]))->values)->offset = 0;
+                ((&((__lfortran_self->records)->data[__lfortran_cleanup_i___lfortran_self_x2D__x3E_records]))->values)->is_allocated = false;
+                _lfortran_free_alloc(_lfortran_get_default_allocator(), (char*) (&((__lfortran_self->records)->data[__lfortran_cleanup_i___lfortran_self_x2D__x3E_records]))->values);
+                (&((__lfortran_self->records)->data[__lfortran_cleanup_i___lfortran_self_x2D__x3E_records]))->values = NULL;
+            }
+        }
+    }
+    if ((__lfortran_self->records) != NULL && (__lfortran_self->records)->is_allocated && (__lfortran_self->records)->data != NULL) {
+        _lfortran_free_alloc(_lfortran_get_default_allocator(), (char*) (__lfortran_self->records)->data);
+        (__lfortran_self->records)->data = NULL;
+    }
+    if ((__lfortran_self->records) != NULL) {
+        (__lfortran_self->records)->offset = 0;
+        (__lfortran_self->records)->is_allocated = false;
+        _lfortran_free_alloc(_lfortran_get_default_allocator(), (char*) __lfortran_self->records);
+        __lfortran_self->records = NULL;
+    }
+}
+
+LFORTRAN_C_BACKEND_CONSTRUCTOR static void __lfortran_register_struct_cleanup_c_backend_struct_array_member_cleanup_01_m__holder_type_x8748839484852134798(void)
+{
+    _lfortran_register_c_struct_cleanup(8748839484852134798, __lfortran_cleanup_struct_c_backend_struct_array_member_cleanup_01_m__holder_type_x8748839484852134798);
+}
+
+
+struct r32___
+{
+    float *data;
+    struct dimension_descriptor dims[32];
+    int32_t n_dims;
+    int32_t offset;
+    bool is_allocated;
+};
+
+struct c_backend_struct_array_member_cleanup_01_m__record_type {
+ int64_t __lfortran_type_tag;
+ char * label;
+ struct r32___* values;
+};
+
+static void __lfortran_cleanup_struct_c_backend_struct_array_member_cleanup_01_m__record_type_x1865571929651341231(void *__lfortran_value)
+{
+    struct c_backend_struct_array_member_cleanup_01_m__record_type *__lfortran_self = (struct c_backend_struct_array_member_cleanup_01_m__record_type*)__lfortran_value;
+    if (__lfortran_self == NULL) {
+        return;
+    }
+    if (__lfortran_self->label != NULL) {
+        _lfortran_free_alloc(_lfortran_get_default_allocator(), __lfortran_self->label);
+        __lfortran_self->label = NULL;
+    }
+    if ((__lfortran_self->values) != NULL && (__lfortran_self->values)->is_allocated && (__lfortran_self->values)->data != NULL) {
+        _lfortran_free_alloc(_lfortran_get_default_allocator(), (char*) (__lfortran_self->values)->data);
+        (__lfortran_self->values)->data = NULL;
+    }
+    if ((__lfortran_self->values) != NULL) {
+        (__lfortran_self->values)->offset = 0;
+        (__lfortran_self->values)->is_allocated = false;
+        _lfortran_free_alloc(_lfortran_get_default_allocator(), (char*) __lfortran_self->values);
+        __lfortran_self->values = NULL;
+    }
+}
+
+LFORTRAN_C_BACKEND_CONSTRUCTOR static void __lfortran_register_struct_cleanup_c_backend_struct_array_member_cleanup_01_m__record_type_x1865571929651341231(void)
+{
+    _lfortran_register_c_struct_cleanup(1865571929651341231, __lfortran_cleanup_struct_c_backend_struct_array_member_cleanup_01_m__record_type_x1865571929651341231);
+}
+
+void __lfortran_c_backend_struct_array_member_cleanup_01_m__fill__StructType(struct c_backend_struct_array_member_cleanup_01_m__holder_type* restrict holder);
+void __lfortran_c_backend_struct_array_member_cleanup_01_m__run();
+
+
+
+
+// Implementations
+void __lfortran_c_backend_struct_array_member_cleanup_01_m__fill__StructType(struct c_backend_struct_array_member_cleanup_01_m__holder_type* restrict holder)
+{
+    lfortran_allocator_t* __lfortran_default_allocator = _lfortran_get_default_allocator();
+    (*holder).records->n_dims = 1;
+    (*holder).records->dims[0].lower_bound = 1;
+    (*holder).records->dims[0].length = 2;
+    (*holder).records->dims[0].stride = 1;
+    (*holder).records->offset = 0;
+    (*holder).records->data = (struct c_backend_struct_array_member_cleanup_01_m__record_type*) _lfortran_malloc_alloc(__lfortran_default_allocator, 1*(*holder).records->dims[0].length*sizeof(struct c_backend_struct_array_member_cleanup_01_m__record_type));
+    (*holder).records->is_allocated = true;
+    memset((*holder).records->data, 0, 1*(*holder).records->dims[0].length*sizeof(struct c_backend_struct_array_member_cleanup_01_m__record_type));
+    for (int64_t __lfortran_struct_array_init_i = 0; __lfortran_struct_array_init_i < 1*(*holder).records->dims[0].length; __lfortran_struct_array_init_i++) {
+        (&((*holder).records->data[__lfortran_struct_array_init_i]))->__lfortran_type_tag = 1865571929651341231;
+        (&((*holder).records->data[__lfortran_struct_array_init_i]))->label = NULL;
+        struct r32___* struct_member_values_0;
+        struct_member_values_0 = _lfortran_malloc_alloc(__lfortran_default_allocator, sizeof(*struct_member_values_0));
+        memset(struct_member_values_0, 0, sizeof(*struct_member_values_0));
+        (&((*holder).records->data[__lfortran_struct_array_init_i]))->values = struct_member_values_0;
+    }
+    _lfortran_strcpy_alloc(__lfortran_default_allocator, &(*holder).records->data[((0 + ((*holder).records->dims[0].stride * (1 - (*holder).records->dims[0].lower_bound))) + (*holder).records->offset)].label, NULL, true, true, (char*)"mno2", strlen((char*)"mno2"));
+    (*holder).records->data[((0 + ((*holder).records->dims[0].stride * (1 - (*holder).records->dims[0].lower_bound))) + (*holder).records->offset)].values->n_dims = 1;
+    (*holder).records->data[((0 + ((*holder).records->dims[0].stride * (1 - (*holder).records->dims[0].lower_bound))) + (*holder).records->offset)].values->dims[0].lower_bound = 1;
+    (*holder).records->data[((0 + ((*holder).records->dims[0].stride * (1 - (*holder).records->dims[0].lower_bound))) + (*holder).records->offset)].values->dims[0].length = 2;
+    (*holder).records->data[((0 + ((*holder).records->dims[0].stride * (1 - (*holder).records->dims[0].lower_bound))) + (*holder).records->offset)].values->dims[0].stride = 1;
+    (*holder).records->data[((0 + ((*holder).records->dims[0].stride * (1 - (*holder).records->dims[0].lower_bound))) + (*holder).records->offset)].values->offset = 0;
+    (*holder).records->data[((0 + ((*holder).records->dims[0].stride * (1 - (*holder).records->dims[0].lower_bound))) + (*holder).records->offset)].values->data = (float*) _lfortran_malloc_alloc(__lfortran_default_allocator, 1*(*holder).records->data[((0 + ((*holder).records->dims[0].stride * (1 - (*holder).records->dims[0].lower_bound))) + (*holder).records->offset)].values->dims[0].length*sizeof(float));
+    (*holder).records->data[((0 + ((*holder).records->dims[0].stride * (1 - (*holder).records->dims[0].lower_bound))) + (*holder).records->offset)].values->is_allocated = true;
+    (*holder).records->data[((0 + ((*holder).records->dims[0].stride * (1 - (*holder).records->dims[0].lower_bound))) + (*holder).records->offset)].values->data[((0 + ((*holder).records->data[((0 + ((*holder).records->dims[0].stride * (1 - (*holder).records->dims[0].lower_bound))) + (*holder).records->offset)].values->dims[0].stride * (1 - (*holder).records->data[((0 + ((*holder).records->dims[0].stride * (1 - (*holder).records->dims[0].lower_bound))) + (*holder).records->offset)].values->dims[0].lower_bound))) + (*holder).records->data[((0 + ((*holder).records->dims[0].stride * (1 - (*holder).records->dims[0].lower_bound))) + (*holder).records->offset)].values->offset)] =   1.00000000000000000e+00;
+    (*holder).records->data[((0 + ((*holder).records->dims[0].stride * (1 - (*holder).records->dims[0].lower_bound))) + (*holder).records->offset)].values->data[((0 + ((*holder).records->data[((0 + ((*holder).records->dims[0].stride * (1 - (*holder).records->dims[0].lower_bound))) + (*holder).records->offset)].values->dims[0].stride * (2 - (*holder).records->data[((0 + ((*holder).records->dims[0].stride * (1 - (*holder).records->dims[0].lower_bound))) + (*holder).records->offset)].values->dims[0].lower_bound))) + (*holder).records->data[((0 + ((*holder).records->dims[0].stride * (1 - (*holder).records->dims[0].lower_bound))) + (*holder).records->offset)].values->offset)] =   2.00000000000000000e+00;
+    _lfortran_strcpy_alloc(__lfortran_default_allocator, &(*holder).records->data[((0 + ((*holder).records->dims[0].stride * (2 - (*holder).records->dims[0].lower_bound))) + (*holder).records->offset)].label, NULL, true, true, (char*)"h2o", strlen((char*)"h2o"));
+}
+
+void __lfortran_c_backend_struct_array_member_cleanup_01_m__run()
+{
+    lfortran_allocator_t* __lfortran_default_allocator = _lfortran_get_default_allocator();
+    struct c_backend_struct_array_member_cleanup_01_m__holder_type holder_value;
+    memset(&holder_value, 0, sizeof(holder_value));
+    holder_value.__lfortran_type_tag = 8748839484852134798;
+    struct xc_backend_struct_array_member_cleanup_01_m__record_type* struct_member_records_1;
+    struct_member_records_1 = _lfortran_malloc_alloc(__lfortran_default_allocator, sizeof(*struct_member_records_1));
+    memset(struct_member_records_1, 0, sizeof(*struct_member_records_1));
+    (&(holder_value))->records = struct_member_records_1;
+    struct c_backend_struct_array_member_cleanup_01_m__holder_type* holder = &holder_value;
+    __lfortran_c_backend_struct_array_member_cleanup_01_m__fill__StructType(((struct c_backend_struct_array_member_cleanup_01_m__holder_type*)(holder)));
+    if (str_compare(holder->records->data[((0 + (holder->records->dims[0].stride * (1 - holder->records->dims[0].lower_bound))) + holder->records->offset)].label, ((holder->records->data[((0 + (holder->records->dims[0].stride * (1 - holder->records->dims[0].lower_bound))) + holder->records->offset)].label) != NULL ? strlen(holder->records->data[((0 + (holder->records->dims[0].stride * (1 - holder->records->dims[0].lower_bound))) + holder->records->offset)].label) : 0), (char*)"mno2", 4)  !=  0) {
+        fprintf(stderr, "ERROR STOP");
+        exit(1);
+    }
+    if (holder->records->data[((0 + (holder->records->dims[0].stride * (1 - holder->records->dims[0].lower_bound))) + holder->records->offset)].values->data[((0 + (holder->records->data[((0 + (holder->records->dims[0].stride * (1 - holder->records->dims[0].lower_bound))) + holder->records->offset)].values->dims[0].stride * (2 - holder->records->data[((0 + (holder->records->dims[0].stride * (1 - holder->records->dims[0].lower_bound))) + holder->records->offset)].values->dims[0].lower_bound))) + holder->records->data[((0 + (holder->records->dims[0].stride * (1 - holder->records->dims[0].lower_bound))) + holder->records->offset)].values->offset)] !=   2.00000000000000000e+00) {
+        fprintf(stderr, "ERROR STOP");
+        exit(1);
+    }
+    if (str_compare(holder->records->data[((0 + (holder->records->dims[0].stride * (2 - holder->records->dims[0].lower_bound))) + holder->records->offset)].label, ((holder->records->data[((0 + (holder->records->dims[0].stride * (2 - holder->records->dims[0].lower_bound))) + holder->records->offset)].label) != NULL ? strlen(holder->records->data[((0 + (holder->records->dims[0].stride * (2 - holder->records->dims[0].lower_bound))) + holder->records->offset)].label) : 0), (char*)"h2o", 3)  !=  0) {
+        fprintf(stderr, "ERROR STOP");
+        exit(1);
+    }
+    if (((&(holder_value))->records) != NULL && ((&(holder_value))->records)->is_allocated && ((&(holder_value))->records)->data != NULL) {
+        int64_t __lfortran_cleanup_size__x28__x26__x28_holder_value_x29__x29__x2D__x3E_records = 1;
+        for (int32_t __lfortran_cleanup_dim__x28__x26__x28_holder_value_x29__x29__x2D__x3E_records = 0; __lfortran_cleanup_dim__x28__x26__x28_holder_value_x29__x29__x2D__x3E_records < ((&(holder_value))->records)->n_dims; __lfortran_cleanup_dim__x28__x26__x28_holder_value_x29__x29__x2D__x3E_records++) {
+            __lfortran_cleanup_size__x28__x26__x28_holder_value_x29__x29__x2D__x3E_records *= ((&(holder_value))->records)->dims[__lfortran_cleanup_dim__x28__x26__x28_holder_value_x29__x29__x2D__x3E_records].length;
+        }
+        for (int64_t __lfortran_cleanup_i__x28__x26__x28_holder_value_x29__x29__x2D__x3E_records = 0; __lfortran_cleanup_i__x28__x26__x28_holder_value_x29__x29__x2D__x3E_records < __lfortran_cleanup_size__x28__x26__x28_holder_value_x29__x29__x2D__x3E_records; __lfortran_cleanup_i__x28__x26__x28_holder_value_x29__x29__x2D__x3E_records++) {
+            if ((&(((&(holder_value))->records)->data[__lfortran_cleanup_i__x28__x26__x28_holder_value_x29__x29__x2D__x3E_records]))->label != NULL) {
+                _lfortran_free_alloc(__lfortran_default_allocator, (&(((&(holder_value))->records)->data[__lfortran_cleanup_i__x28__x26__x28_holder_value_x29__x29__x2D__x3E_records]))->label);
+                (&(((&(holder_value))->records)->data[__lfortran_cleanup_i__x28__x26__x28_holder_value_x29__x29__x2D__x3E_records]))->label = NULL;
+            }
+            if (((&(((&(holder_value))->records)->data[__lfortran_cleanup_i__x28__x26__x28_holder_value_x29__x29__x2D__x3E_records]))->values) != NULL && ((&(((&(holder_value))->records)->data[__lfortran_cleanup_i__x28__x26__x28_holder_value_x29__x29__x2D__x3E_records]))->values)->is_allocated && ((&(((&(holder_value))->records)->data[__lfortran_cleanup_i__x28__x26__x28_holder_value_x29__x29__x2D__x3E_records]))->values)->data != NULL) {
+                _lfortran_free_alloc(__lfortran_default_allocator, (char*) ((&(((&(holder_value))->records)->data[__lfortran_cleanup_i__x28__x26__x28_holder_value_x29__x29__x2D__x3E_records]))->values)->data);
+                ((&(((&(holder_value))->records)->data[__lfortran_cleanup_i__x28__x26__x28_holder_value_x29__x29__x2D__x3E_records]))->values)->data = NULL;
+            }
+            if (((&(((&(holder_value))->records)->data[__lfortran_cleanup_i__x28__x26__x28_holder_value_x29__x29__x2D__x3E_records]))->values) != NULL) {
+                ((&(((&(holder_value))->records)->data[__lfortran_cleanup_i__x28__x26__x28_holder_value_x29__x29__x2D__x3E_records]))->values)->offset = 0;
+                ((&(((&(holder_value))->records)->data[__lfortran_cleanup_i__x28__x26__x28_holder_value_x29__x29__x2D__x3E_records]))->values)->is_allocated = false;
+                _lfortran_free_alloc(__lfortran_default_allocator, (char*) (&(((&(holder_value))->records)->data[__lfortran_cleanup_i__x28__x26__x28_holder_value_x29__x29__x2D__x3E_records]))->values);
+                (&(((&(holder_value))->records)->data[__lfortran_cleanup_i__x28__x26__x28_holder_value_x29__x29__x2D__x3E_records]))->values = NULL;
+            }
+        }
+    }
+    if (((&(holder_value))->records) != NULL && ((&(holder_value))->records)->is_allocated && ((&(holder_value))->records)->data != NULL) {
+        _lfortran_free_alloc(__lfortran_default_allocator, (char*) ((&(holder_value))->records)->data);
+        ((&(holder_value))->records)->data = NULL;
+    }
+    if (((&(holder_value))->records) != NULL) {
+        ((&(holder_value))->records)->offset = 0;
+        ((&(holder_value))->records)->is_allocated = false;
+        _lfortran_free_alloc(__lfortran_default_allocator, (char*) (&(holder_value))->records);
+        (&(holder_value))->records = NULL;
+    }
+}
+
+int main(int argc, char* argv[])
+{
+    _lpython_set_argv(argc, argv);
+    __lfortran_c_backend_struct_array_member_cleanup_01_m__run();
+    return 0;
+}
