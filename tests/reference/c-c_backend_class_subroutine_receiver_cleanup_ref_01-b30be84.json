@@ -1,0 +1,13 @@
+{
+    "basename": "c-c_backend_class_subroutine_receiver_cleanup_ref_01-b30be84",
+    "cmd": "lfortran --no-color --show-c {infile}",
+    "infile": "tests/c_backend_class_subroutine_receiver_cleanup_ref_01.f90",
+    "infile_hash": "2ee675e30648ea32a022480941e82d791bb5b86a1d7b30cd0a11f4ac",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": "c-c_backend_class_subroutine_receiver_cleanup_ref_01-b30be84.stdout",
+    "stdout_hash": "ed5fbfe16c04ba0df19dd55fd26bac789195b7e778eda78c1f975e24",
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

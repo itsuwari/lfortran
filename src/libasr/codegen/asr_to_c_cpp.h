@@ -14450,16 +14450,16 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             if (!cleaned.insert(target).second) {
                 continue;
             }
-            ensure_runtime_type_tag_header_decl();
-            cleanup += indent + "if ((" + target + ") != NULL) {\n"
-                + indent + "    _lfortran_cleanup_c_struct(((struct "
-                + get_runtime_type_tag_header_struct_name() + "*)(" + target
-                + "))->" + get_runtime_type_tag_member_name() + ", (void*) "
-                + target + ");\n"
-                + indent + "    _lfortran_free_alloc(_lfortran_get_default_allocator(), "
-                + "(char*) " + target + ");\n"
-                + indent + "    " + target + " = NULL;\n"
-                + indent + "}\n";
+            ASR::Struct_t *struct_t = nullptr;
+            if (var->m_type_declaration != nullptr) {
+                ASR::symbol_t *struct_sym = ASRUtils::symbol_get_past_external(
+                    var->m_type_declaration);
+                if (struct_sym != nullptr && ASR::is_a<ASR::Struct_t>(*struct_sym)) {
+                    struct_t = ASR::down_cast<ASR::Struct_t>(struct_sym);
+                }
+            }
+            cleanup += emit_c_shallow_copied_struct_root_cleanup(
+                struct_t, indent, target, ASRUtils::is_class_type(var_type_unwrapped));
         }
         return cleanup;
     }

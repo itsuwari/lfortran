@@ -5114,6 +5114,10 @@ filename = "c_backend_class_function_receiver_cleanup_ref_01.f90"
 c = true
 
 [[test]]
+filename = "c_backend_class_subroutine_receiver_cleanup_ref_01.f90"
+c = true
+
+[[test]]
 filename = "allocatable_aggregate_dummy_slot_01.f90"
 run = true
 options = "--backend=c --separate-compilation"
