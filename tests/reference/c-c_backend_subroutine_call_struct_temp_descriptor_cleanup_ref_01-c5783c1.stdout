@@ -1,0 +1,365 @@
+#include <inttypes.h>
+#include <string.h>
+
+#include <stdlib.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <string.h>
+#include <lfortran_intrinsics.h>
+
+
+#ifndef LFORTRAN_C_BACKEND_CONSTRUCTOR
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_CONSTRUCTOR __attribute__((constructor))
+#else
+#define LFORTRAN_C_BACKEND_CONSTRUCTOR
+#endif
+#endif
+#ifndef LFORTRAN_C_BACKEND_WEAK
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_WEAK __attribute__((weak))
+#else
+#define LFORTRAN_C_BACKEND_WEAK static
+#endif
+#endif
+
+
+struct dimension_descriptor
+{
+    int32_t lower_bound, length, stride;
+};
+#ifndef LFORTRAN_C_BACKEND_CONSTRUCTOR
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_CONSTRUCTOR __attribute__((constructor))
+#else
+#define LFORTRAN_C_BACKEND_CONSTRUCTOR
+#endif
+#endif
+#ifndef LFORTRAN_C_BACKEND_WEAK
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_WEAK __attribute__((weak))
+#else
+#define LFORTRAN_C_BACKEND_WEAK static
+#endif
+#endif
+
+
+struct r32_____
+{
+    float *data;
+    struct dimension_descriptor dims[32];
+    int32_t n_dims;
+    int32_t offset;
+    bool is_allocated;
+};
+
+struct c_backend_subroutine_call_struct_temp_descriptor_cleanup_ref_01_m__holder_type {
+ int64_t __lfortran_type_tag;
+ struct r32_____* copied;
+};
+
+static void __lfortran_cleanup_struct_c_backend_subroutine_call_struct_temp_descriptor_cleanup_ref_01_m__holder_type_x3554099481065998674(void *__lfortran_value)
+{
+    struct c_backend_subroutine_call_struct_temp_descriptor_cleanup_ref_01_m__holder_type *__lfortran_self = (struct c_backend_subroutine_call_struct_temp_descriptor_cleanup_ref_01_m__holder_type*)__lfortran_value;
+    if (__lfortran_self == NULL) {
+        return;
+    }
+    if ((__lfortran_self->copied) != NULL && (__lfortran_self->copied)->is_allocated && (__lfortran_self->copied)->data != NULL) {
+        _lfortran_free_alloc(_lfortran_get_default_allocator(), (char*) (__lfortran_self->copied)->data);
+        (__lfortran_self->copied)->data = NULL;
+    }
+    if ((__lfortran_self->copied) != NULL) {
+        (__lfortran_self->copied)->offset = 0;
+        (__lfortran_self->copied)->is_allocated = false;
+        _lfortran_free_alloc(_lfortran_get_default_allocator(), (char*) __lfortran_self->copied);
+        __lfortran_self->copied = NULL;
+    }
+}
+
+LFORTRAN_C_BACKEND_CONSTRUCTOR static void __lfortran_register_struct_cleanup_c_backend_subroutine_call_struct_temp_descriptor_cleanup_ref_01_m__holder_type_x3554099481065998674(void)
+{
+    _lfortran_register_c_struct_cleanup(3554099481065998674, __lfortran_cleanup_struct_c_backend_subroutine_call_struct_temp_descriptor_cleanup_ref_01_m__holder_type_x3554099481065998674);
+}
+
+struct c_backend_subroutine_call_struct_temp_descriptor_cleanup_ref_01_m__spec_type {
+ int64_t __lfortran_type_tag;
+ struct r32_____* kpair;
+};
+
+static void __lfortran_cleanup_struct_c_backend_subroutine_call_struct_temp_descriptor_cleanup_ref_01_m__spec_type_x6344758760921848117(void *__lfortran_value)
+{
+    struct c_backend_subroutine_call_struct_temp_descriptor_cleanup_ref_01_m__spec_type *__lfortran_self = (struct c_backend_subroutine_call_struct_temp_descriptor_cleanup_ref_01_m__spec_type*)__lfortran_value;
+    if (__lfortran_self == NULL) {
+        return;
+    }
+    if ((__lfortran_self->kpair) != NULL && (__lfortran_self->kpair)->is_allocated && (__lfortran_self->kpair)->data != NULL) {
+        _lfortran_free_alloc(_lfortran_get_default_allocator(), (char*) (__lfortran_self->kpair)->data);
+        (__lfortran_self->kpair)->data = NULL;
+    }
+    if ((__lfortran_self->kpair) != NULL) {
+        (__lfortran_self->kpair)->offset = 0;
+        (__lfortran_self->kpair)->is_allocated = false;
+        _lfortran_free_alloc(_lfortran_get_default_allocator(), (char*) __lfortran_self->kpair);
+        __lfortran_self->kpair = NULL;
+    }
+}
+
+LFORTRAN_C_BACKEND_CONSTRUCTOR static void __lfortran_register_struct_cleanup_c_backend_subroutine_call_struct_temp_descriptor_cleanup_ref_01_m__spec_type_x6344758760921848117(void)
+{
+    _lfortran_register_c_struct_cleanup(6344758760921848117, __lfortran_cleanup_struct_c_backend_subroutine_call_struct_temp_descriptor_cleanup_ref_01_m__spec_type_x6344758760921848117);
+}
+
+
+struct Allocatable_r32______
+{
+    float *data;
+    struct dimension_descriptor dims[32];
+    int32_t n_dims;
+    int32_t offset;
+    bool is_allocated;
+};
+
+float __lfortran__lcompilers_Sum_4_2_0_idx4_real_______0(struct r32_____* restrict array, int32_t __1array, int32_t __2array);
+float __lfortran__lcompilers_Sum_4_2_0_idx4(struct r32_____* restrict array);
+void __lfortran_c_backend_subroutine_call_struct_temp_descriptor_cleanup_ref_01_m__make_spec(int32_t n, struct c_backend_subroutine_call_struct_temp_descriptor_cleanup_ref_01_m__spec_type* restrict spec);
+void __lfortran_c_backend_subroutine_call_struct_temp_descriptor_cleanup_ref_01_m__take_spec__StructType(struct c_backend_subroutine_call_struct_temp_descriptor_cleanup_ref_01_m__holder_type* restrict holder, struct c_backend_subroutine_call_struct_temp_descriptor_cleanup_ref_01_m__spec_type* restrict spec);
+void __lfortran_c_backend_subroutine_call_struct_temp_descriptor_cleanup_ref_01_m__exercise();
+
+
+
+
+// Implementations
+float __lfortran__lcompilers_Sum_4_2_0_idx4_real_______0(struct r32_____* restrict array, int32_t __1array, int32_t __2array)
+{
+    int32_t __1_i;
+    int32_t __2_i;
+    float result;
+    float * restrict __lfortran_array_data = array->data;
+    const int32_t __lfortran_array_offset = array->offset;
+    const int32_t __lfortran_array_dim1_lower_bound = array->dims[0].lower_bound;
+    const int32_t __lfortran_array_dim1_stride = array->dims[0].stride;
+    const int32_t __lfortran_array_dim2_lower_bound = array->dims[1].lower_bound;
+    const int32_t __lfortran_array_dim2_stride = array->dims[1].stride;
+    result =   0.00000000000000000e+00;
+    for (__2_i=1; __2_i<=__2array + 1 - 1; __2_i++) {
+        for (__1_i=1; __1_i<=__1array + 1 - 1; __1_i++) {
+            result = result + __lfortran_array_data[(((0 + (__lfortran_array_dim1_stride * (__1_i - __lfortran_array_dim1_lower_bound))) + (__lfortran_array_dim2_stride * (__2_i - __lfortran_array_dim2_lower_bound))) + __lfortran_array_offset)];
+        }
+    }
+    return result;
+}
+
+float __lfortran__lcompilers_Sum_4_2_0_idx4(struct r32_____* restrict array)
+{
+    return __lfortran__lcompilers_Sum_4_2_0_idx4_real_______0(array, ((int32_t)array->dims[0].length + array->dims[0].lower_bound - 1), ((int32_t)array->dims[1].length + array->dims[1].lower_bound - 1));
+}
+
+void __lfortran_c_backend_subroutine_call_struct_temp_descriptor_cleanup_ref_01_m__make_spec(int32_t n, struct c_backend_subroutine_call_struct_temp_descriptor_cleanup_ref_01_m__spec_type* restrict spec)
+{
+    lfortran_allocator_t* __lfortran_default_allocator = _lfortran_get_default_allocator();
+    int32_t __libasr_index_0_;
+    int32_t __libasr_index_1_;
+    if ((spec->kpair) != NULL && (spec->kpair)->is_allocated && (spec->kpair)->data != NULL) {
+        _lfortran_free_alloc(__lfortran_default_allocator, (char*) (spec->kpair)->data);
+        (spec->kpair)->data = NULL;
+    }
+    if ((spec->kpair) != NULL) {
+        (spec->kpair)->offset = 0;
+        (spec->kpair)->is_allocated = false;
+        _lfortran_free_alloc(__lfortran_default_allocator, (char*) spec->kpair);
+        spec->kpair = NULL;
+    }
+    memset(spec, 0, sizeof(*spec));
+    spec->__lfortran_type_tag = 6344758760921848117;
+    struct r32_____* struct_member_kpair_0;
+    struct_member_kpair_0 = _lfortran_malloc_alloc(__lfortran_default_allocator, sizeof(*struct_member_kpair_0));
+    memset(struct_member_kpair_0, 0, sizeof(*struct_member_kpair_0));
+    spec->kpair = struct_member_kpair_0;
+    if ((((*spec).kpair) != NULL && ((*spec).kpair)->data != NULL)) {
+        if (((*spec).kpair) != NULL && ((*spec).kpair)->is_allocated && ((*spec).kpair)->data != NULL) {
+            _lfortran_free_alloc(__lfortran_default_allocator, (char*) ((*spec).kpair)->data);
+            ((*spec).kpair)->data = NULL;
+        }
+        if (((*spec).kpair) != NULL) {
+            ((*spec).kpair)->offset = 0;
+            ((*spec).kpair)->is_allocated = false;
+        }
+    }
+    (*spec).kpair->n_dims = 2;
+    (*spec).kpair->dims[0].lower_bound = 1;
+    (*spec).kpair->dims[0].length = n;
+    (*spec).kpair->dims[0].stride = 1;
+    (*spec).kpair->dims[1].lower_bound = 1;
+    (*spec).kpair->dims[1].length = n;
+    (*spec).kpair->dims[1].stride = (1 * n);
+    (*spec).kpair->offset = 0;
+    (*spec).kpair->data = (float*) _lfortran_malloc_alloc(__lfortran_default_allocator, 1*(*spec).kpair->dims[0].length*(*spec).kpair->dims[1].length*sizeof(float));
+    (*spec).kpair->is_allocated = true;
+    for (__libasr_index_1_=((int32_t)(*spec).kpair->dims[2-1].lower_bound); __libasr_index_1_<=((int32_t) (*spec).kpair->dims[2-1].length + (*spec).kpair->dims[2-1].lower_bound - 1); __libasr_index_1_++) {
+        for (__libasr_index_0_=((int32_t)(*spec).kpair->dims[1-1].lower_bound); __libasr_index_0_<=((int32_t) (*spec).kpair->dims[1-1].length + (*spec).kpair->dims[1-1].lower_bound - 1); __libasr_index_0_++) {
+            (*spec).kpair->data[(((0 + ((*spec).kpair->dims[0].stride * (__libasr_index_0_ - (*spec).kpair->dims[0].lower_bound))) + ((*spec).kpair->dims[1].stride * (__libasr_index_1_ - (*spec).kpair->dims[1].lower_bound))) + (*spec).kpair->offset)] =   1.00000000000000000e+00;
+        }
+    }
+}
+
+void __lfortran_c_backend_subroutine_call_struct_temp_descriptor_cleanup_ref_01_m__take_spec__StructType(struct c_backend_subroutine_call_struct_temp_descriptor_cleanup_ref_01_m__holder_type* restrict holder, struct c_backend_subroutine_call_struct_temp_descriptor_cleanup_ref_01_m__spec_type* restrict spec)
+{
+    lfortran_allocator_t* __lfortran_default_allocator = _lfortran_get_default_allocator();
+    int32_t __libasr_index_0_;
+    int32_t __libasr_index_0_1;
+    int32_t __libasr_index_1_;
+    int32_t __libasr_index_1_1;
+    float * __lfortran_component_array_0_data = spec->kpair->data;
+    const int32_t __lfortran_component_array_0_offset = spec->kpair->offset;
+    const int32_t __lfortran_component_array_0_dim1_lower_bound = spec->kpair->dims[0].lower_bound;
+    const int32_t __lfortran_component_array_0_dim1_stride = spec->kpair->dims[0].stride;
+    const int32_t __lfortran_component_array_0_dim2_lower_bound = spec->kpair->dims[1].lower_bound;
+    const int32_t __lfortran_component_array_0_dim2_stride = spec->kpair->dims[1].stride;
+    int64_t __lfortran_realloc_old_size = 0;
+    if ((*holder).copied != NULL && (*holder).copied->is_allocated && (*holder).copied->data != NULL) {
+        __lfortran_realloc_old_size = 1;
+        for (int32_t __lfortran_realloc_dim = 0; __lfortran_realloc_dim < (*holder).copied->n_dims; __lfortran_realloc_dim++) {
+            __lfortran_realloc_old_size *= (*holder).copied->dims[__lfortran_realloc_dim].length;
+        }
+    }
+    (*holder).copied->n_dims = 2;
+    (*holder).copied->dims[0].lower_bound = ((int32_t)spec->kpair->dims[1-1].lower_bound);
+    (*holder).copied->dims[0].length = ((int32_t)spec->kpair->dims[1-1].length);
+    (*holder).copied->dims[0].stride = 1;
+    (*holder).copied->dims[1].lower_bound = ((int32_t)spec->kpair->dims[2-1].lower_bound);
+    (*holder).copied->dims[1].length = ((int32_t)spec->kpair->dims[2-1].length);
+    (*holder).copied->dims[1].stride = (1 * ((int32_t)spec->kpair->dims[1-1].length));
+    (*holder).copied->offset = 0;
+    int64_t __lfortran_realloc_new_size = 1*(*holder).copied->dims[0].length*(*holder).copied->dims[1].length;
+    if ((*holder).copied->is_allocated && (*holder).copied->data != NULL && __lfortran_realloc_old_size != __lfortran_realloc_new_size) {
+        _lfortran_free_alloc(__lfortran_default_allocator, (char*) (*holder).copied->data);
+        (*holder).copied->data = NULL;
+        (*holder).copied->is_allocated = false;
+    }
+    if (!(*holder).copied->is_allocated || (*holder).copied->data == NULL) {
+        (*holder).copied->data = (float*) _lfortran_malloc_alloc(__lfortran_default_allocator, 1*(*holder).copied->dims[0].length*(*holder).copied->dims[1].length*sizeof(float));
+    }
+    (*holder).copied->is_allocated = true;
+    __libasr_index_1_1 = ((int32_t)spec->kpair->dims[2-1].lower_bound);
+    for (__libasr_index_1_=((int32_t)(*holder).copied->dims[2-1].lower_bound); __libasr_index_1_<=((int32_t) (*holder).copied->dims[2-1].length + (*holder).copied->dims[2-1].lower_bound - 1); __libasr_index_1_++) {
+        __libasr_index_0_1 = ((int32_t)spec->kpair->dims[1-1].lower_bound);
+        for (__libasr_index_0_=((int32_t)(*holder).copied->dims[1-1].lower_bound); __libasr_index_0_<=((int32_t) (*holder).copied->dims[1-1].length + (*holder).copied->dims[1-1].lower_bound - 1); __libasr_index_0_++) {
+            (*holder).copied->data[(((0 + ((*holder).copied->dims[0].stride * (__libasr_index_0_ - (*holder).copied->dims[0].lower_bound))) + ((*holder).copied->dims[1].stride * (__libasr_index_1_ - (*holder).copied->dims[1].lower_bound))) + (*holder).copied->offset)] = __lfortran_component_array_0_data[(((0 + (__lfortran_component_array_0_dim1_stride * (__libasr_index_0_1 - __lfortran_component_array_0_dim1_lower_bound))) + (__lfortran_component_array_0_dim2_stride * (__libasr_index_1_1 - __lfortran_component_array_0_dim2_lower_bound))) + __lfortran_component_array_0_offset)];
+            __libasr_index_0_1 = __libasr_index_0_1 + 1;
+        }
+        __libasr_index_1_1 = __libasr_index_1_1 + 1;
+    }
+}
+
+void __lfortran_c_backend_subroutine_call_struct_temp_descriptor_cleanup_ref_01_m__exercise()
+{
+    lfortran_allocator_t* __lfortran_default_allocator = _lfortran_get_default_allocator();
+    int32_t __lcompilers_i_0;
+    int32_t __lcompilers_i_1;
+    struct r32_____ __libasr_created__function_call__lcompilers_Sum_4_2_0_idx4_real_______0_value;
+    __libasr_created__function_call__lcompilers_Sum_4_2_0_idx4_real_______0_value.data = NULL;
+    __libasr_created__function_call__lcompilers_Sum_4_2_0_idx4_real_______0_value.is_allocated = false;
+    struct r32_____* __libasr_created__function_call__lcompilers_Sum_4_2_0_idx4_real_______0 = &__libasr_created__function_call__lcompilers_Sum_4_2_0_idx4_real_______0_value;
+    float __libasr_created__intrinsic_array_function_Sum;
+    struct c_backend_subroutine_call_struct_temp_descriptor_cleanup_ref_01_m__spec_type __libasr_created__subroutine_call_take_spec_value;
+    memset(&__libasr_created__subroutine_call_take_spec_value, 0, sizeof(__libasr_created__subroutine_call_take_spec_value));
+    __libasr_created__subroutine_call_take_spec_value.__lfortran_type_tag = 6344758760921848117;
+    struct r32_____* struct_member_kpair_1;
+    struct_member_kpair_1 = _lfortran_malloc_alloc(__lfortran_default_allocator, sizeof(*struct_member_kpair_1));
+    memset(struct_member_kpair_1, 0, sizeof(*struct_member_kpair_1));
+    (&(__libasr_created__subroutine_call_take_spec_value))->kpair = struct_member_kpair_1;
+    struct c_backend_subroutine_call_struct_temp_descriptor_cleanup_ref_01_m__spec_type* __libasr_created__subroutine_call_take_spec = &__libasr_created__subroutine_call_take_spec_value;
+    struct c_backend_subroutine_call_struct_temp_descriptor_cleanup_ref_01_m__holder_type holder_value;
+    memset(&holder_value, 0, sizeof(holder_value));
+    holder_value.__lfortran_type_tag = 3554099481065998674;
+    struct r32_____* struct_member_copied_2;
+    struct_member_copied_2 = _lfortran_malloc_alloc(__lfortran_default_allocator, sizeof(*struct_member_copied_2));
+    memset(struct_member_copied_2, 0, sizeof(*struct_member_copied_2));
+    (&(holder_value))->copied = struct_member_copied_2;
+    struct c_backend_subroutine_call_struct_temp_descriptor_cleanup_ref_01_m__holder_type* holder = &holder_value;
+    __lfortran_c_backend_subroutine_call_struct_temp_descriptor_cleanup_ref_01_m__make_spec(2, ((struct c_backend_subroutine_call_struct_temp_descriptor_cleanup_ref_01_m__spec_type*)(__libasr_created__subroutine_call_take_spec)));
+    __lfortran_c_backend_subroutine_call_struct_temp_descriptor_cleanup_ref_01_m__take_spec__StructType(((struct c_backend_subroutine_call_struct_temp_descriptor_cleanup_ref_01_m__holder_type*)(holder)), ((struct c_backend_subroutine_call_struct_temp_descriptor_cleanup_ref_01_m__spec_type*)(__libasr_created__subroutine_call_take_spec)));
+    if (!((holder->copied) != NULL && (holder->copied)->data != NULL)) {
+        fprintf(stderr, "ERROR STOP");
+        exit(1);
+    }
+    if (!((!holder->copied->is_allocated || (true && (holder->copied->dims[0].stride == 1) && (holder->copied->dims[1].stride == (1 * holder->copied->dims[0].length)))) && ((int32_t)holder->copied->dims[1-1].lower_bound) == 1 && ((int32_t)holder->copied->dims[2-1].lower_bound) == 1)) {
+        if ((__libasr_created__function_call__lcompilers_Sum_4_2_0_idx4_real_______0) != NULL && (__libasr_created__function_call__lcompilers_Sum_4_2_0_idx4_real_______0)->is_allocated && (__libasr_created__function_call__lcompilers_Sum_4_2_0_idx4_real_______0)->data != NULL) {
+            _lfortran_free_alloc(__lfortran_default_allocator, (char*) (__libasr_created__function_call__lcompilers_Sum_4_2_0_idx4_real_______0)->data);
+            (__libasr_created__function_call__lcompilers_Sum_4_2_0_idx4_real_______0)->data = NULL;
+        }
+        if ((__libasr_created__function_call__lcompilers_Sum_4_2_0_idx4_real_______0) != NULL) {
+            (__libasr_created__function_call__lcompilers_Sum_4_2_0_idx4_real_______0)->offset = 0;
+            (__libasr_created__function_call__lcompilers_Sum_4_2_0_idx4_real_______0)->is_allocated = false;
+        }
+        __libasr_created__function_call__lcompilers_Sum_4_2_0_idx4_real_______0->n_dims = 2;
+        __libasr_created__function_call__lcompilers_Sum_4_2_0_idx4_real_______0->dims[0].lower_bound = 1;
+        __libasr_created__function_call__lcompilers_Sum_4_2_0_idx4_real_______0->dims[0].length = ((int32_t)holder->copied->dims[1-1].length);
+        __libasr_created__function_call__lcompilers_Sum_4_2_0_idx4_real_______0->dims[0].stride = 1;
+        __libasr_created__function_call__lcompilers_Sum_4_2_0_idx4_real_______0->dims[1].lower_bound = 1;
+        __libasr_created__function_call__lcompilers_Sum_4_2_0_idx4_real_______0->dims[1].length = ((int32_t)holder->copied->dims[2-1].length);
+        __libasr_created__function_call__lcompilers_Sum_4_2_0_idx4_real_______0->dims[1].stride = (1 * ((int32_t)holder->copied->dims[1-1].length));
+        __libasr_created__function_call__lcompilers_Sum_4_2_0_idx4_real_______0->offset = 0;
+        __libasr_created__function_call__lcompilers_Sum_4_2_0_idx4_real_______0->data = (float*) _lfortran_malloc_alloc(__lfortran_default_allocator, 1*__libasr_created__function_call__lcompilers_Sum_4_2_0_idx4_real_______0->dims[0].length*__libasr_created__function_call__lcompilers_Sum_4_2_0_idx4_real_______0->dims[1].length*sizeof(float));
+        __libasr_created__function_call__lcompilers_Sum_4_2_0_idx4_real_______0->is_allocated = true;
+        for (__lcompilers_i_1=((int32_t)__libasr_created__function_call__lcompilers_Sum_4_2_0_idx4_real_______0->dims[2-1].lower_bound); __lcompilers_i_1<=((int32_t) __libasr_created__function_call__lcompilers_Sum_4_2_0_idx4_real_______0->dims[2-1].length + __libasr_created__function_call__lcompilers_Sum_4_2_0_idx4_real_______0->dims[2-1].lower_bound - 1); __lcompilers_i_1++) {
+            for (__lcompilers_i_0=((int32_t)__libasr_created__function_call__lcompilers_Sum_4_2_0_idx4_real_______0->dims[1-1].lower_bound); __lcompilers_i_0<=((int32_t) __libasr_created__function_call__lcompilers_Sum_4_2_0_idx4_real_______0->dims[1-1].length + __libasr_created__function_call__lcompilers_Sum_4_2_0_idx4_real_______0->dims[1-1].lower_bound - 1); __lcompilers_i_0++) {
+                __libasr_created__function_call__lcompilers_Sum_4_2_0_idx4_real_______0->data[(((0 + (__libasr_created__function_call__lcompilers_Sum_4_2_0_idx4_real_______0->dims[0].stride * (__lcompilers_i_0 - __libasr_created__function_call__lcompilers_Sum_4_2_0_idx4_real_______0->dims[0].lower_bound))) + (__libasr_created__function_call__lcompilers_Sum_4_2_0_idx4_real_______0->dims[1].stride * (__lcompilers_i_1 - __libasr_created__function_call__lcompilers_Sum_4_2_0_idx4_real_______0->dims[1].lower_bound))) + __libasr_created__function_call__lcompilers_Sum_4_2_0_idx4_real_______0->offset)] = holder->copied->data[(((0 + (holder->copied->dims[0].stride * (((int32_t)holder->copied->dims[1-1].lower_bound) + (__lcompilers_i_0 - ((int32_t)__libasr_created__function_call__lcompilers_Sum_4_2_0_idx4_real_______0->dims[1-1].lower_bound)) - holder->copied->dims[0].lower_bound))) + (holder->copied->dims[1].stride * (((int32_t)holder->copied->dims[2-1].lower_bound) + (__lcompilers_i_1 - ((int32_t)__libasr_created__function_call__lcompilers_Sum_4_2_0_idx4_real_______0->dims[2-1].lower_bound)) - holder->copied->dims[1].lower_bound))) + holder->copied->offset)];
+            }
+        }
+    } else {
+        __libasr_created__function_call__lcompilers_Sum_4_2_0_idx4_real_______0 = ((struct r32_____*)(holder->copied));
+    }
+    __libasr_created__intrinsic_array_function_Sum = __lfortran__lcompilers_Sum_4_2_0_idx4_real_______0((&(struct r32_____){ .data = __libasr_created__function_call__lcompilers_Sum_4_2_0_idx4_real_______0->data, .dims = {{1, __libasr_created__function_call__lcompilers_Sum_4_2_0_idx4_real_______0->dims[0].length, __libasr_created__function_call__lcompilers_Sum_4_2_0_idx4_real_______0->dims[0].stride}, {1, __libasr_created__function_call__lcompilers_Sum_4_2_0_idx4_real_______0->dims[1].length, __libasr_created__function_call__lcompilers_Sum_4_2_0_idx4_real_______0->dims[1].stride}}, .n_dims = 2, .offset = __libasr_created__function_call__lcompilers_Sum_4_2_0_idx4_real_______0->offset, .is_allocated = __libasr_created__function_call__lcompilers_Sum_4_2_0_idx4_real_______0->is_allocated }), ((int32_t) (&(struct r32_____){ .data = __libasr_created__function_call__lcompilers_Sum_4_2_0_idx4_real_______0->data, .dims = {{1, __libasr_created__function_call__lcompilers_Sum_4_2_0_idx4_real_______0->dims[0].length, __libasr_created__function_call__lcompilers_Sum_4_2_0_idx4_real_______0->dims[0].stride}, {1, __libasr_created__function_call__lcompilers_Sum_4_2_0_idx4_real_______0->dims[1].length, __libasr_created__function_call__lcompilers_Sum_4_2_0_idx4_real_______0->dims[1].stride}}, .n_dims = 2, .offset = __libasr_created__function_call__lcompilers_Sum_4_2_0_idx4_real_______0->offset, .is_allocated = __libasr_created__function_call__lcompilers_Sum_4_2_0_idx4_real_______0->is_allocated })->dims[0].length), ((int32_t) (&(struct r32_____){ .data = __libasr_created__function_call__lcompilers_Sum_4_2_0_idx4_real_______0->data, .dims = {{1, __libasr_created__function_call__lcompilers_Sum_4_2_0_idx4_real_______0->dims[0].length, __libasr_created__function_call__lcompilers_Sum_4_2_0_idx4_real_______0->dims[0].stride}, {1, __libasr_created__function_call__lcompilers_Sum_4_2_0_idx4_real_______0->dims[1].length, __libasr_created__function_call__lcompilers_Sum_4_2_0_idx4_real_______0->dims[1].stride}}, .n_dims = 2, .offset = __libasr_created__function_call__lcompilers_Sum_4_2_0_idx4_real_______0->offset, .is_allocated = __libasr_created__function_call__lcompilers_Sum_4_2_0_idx4_real_______0->is_allocated })->dims[1].length));
+    if ((!holder->copied->is_allocated || (true && (holder->copied->dims[0].stride == 1) && (holder->copied->dims[1].stride == (1 * holder->copied->dims[0].length)))) && ((int32_t)holder->copied->dims[1-1].lower_bound) == 1 && ((int32_t)holder->copied->dims[2-1].lower_bound) == 1) {
+        __libasr_created__function_call__lcompilers_Sum_4_2_0_idx4_real_______0 = &__libasr_created__function_call__lcompilers_Sum_4_2_0_idx4_real_______0_value;
+        if ((__libasr_created__function_call__lcompilers_Sum_4_2_0_idx4_real_______0) != NULL) {
+            (__libasr_created__function_call__lcompilers_Sum_4_2_0_idx4_real_______0)->data = NULL;
+            (__libasr_created__function_call__lcompilers_Sum_4_2_0_idx4_real_______0)->offset = 0;
+            (__libasr_created__function_call__lcompilers_Sum_4_2_0_idx4_real_______0)->is_allocated = false;
+        }
+    } else {
+        if ((__libasr_created__function_call__lcompilers_Sum_4_2_0_idx4_real_______0) != NULL && (__libasr_created__function_call__lcompilers_Sum_4_2_0_idx4_real_______0)->is_allocated && (__libasr_created__function_call__lcompilers_Sum_4_2_0_idx4_real_______0)->data != NULL) {
+            _lfortran_free_alloc(__lfortran_default_allocator, (char*) (__libasr_created__function_call__lcompilers_Sum_4_2_0_idx4_real_______0)->data);
+            (__libasr_created__function_call__lcompilers_Sum_4_2_0_idx4_real_______0)->data = NULL;
+        }
+        if ((__libasr_created__function_call__lcompilers_Sum_4_2_0_idx4_real_______0) != NULL) {
+            (__libasr_created__function_call__lcompilers_Sum_4_2_0_idx4_real_______0)->offset = 0;
+            (__libasr_created__function_call__lcompilers_Sum_4_2_0_idx4_real_______0)->is_allocated = false;
+        }
+    }
+    if (__libasr_created__intrinsic_array_function_Sum !=   4.00000000000000000e+00) {
+        fprintf(stderr, "ERROR STOP");
+        exit(1);
+    }
+    if (((&(holder_value))->copied) != NULL && ((&(holder_value))->copied)->is_allocated && ((&(holder_value))->copied)->data != NULL) {
+        _lfortran_free_alloc(__lfortran_default_allocator, (char*) ((&(holder_value))->copied)->data);
+        ((&(holder_value))->copied)->data = NULL;
+    }
+    if (((&(holder_value))->copied) != NULL) {
+        ((&(holder_value))->copied)->offset = 0;
+        ((&(holder_value))->copied)->is_allocated = false;
+    }
+    if (((&(__libasr_created__subroutine_call_take_spec_value))->kpair) != NULL && ((&(__libasr_created__subroutine_call_take_spec_value))->kpair)->is_allocated && ((&(__libasr_created__subroutine_call_take_spec_value))->kpair)->data != NULL) {
+        _lfortran_free_alloc(__lfortran_default_allocator, (char*) ((&(__libasr_created__subroutine_call_take_spec_value))->kpair)->data);
+        ((&(__libasr_created__subroutine_call_take_spec_value))->kpair)->data = NULL;
+    }
+    if (((&(__libasr_created__subroutine_call_take_spec_value))->kpair) != NULL) {
+        ((&(__libasr_created__subroutine_call_take_spec_value))->kpair)->offset = 0;
+        ((&(__libasr_created__subroutine_call_take_spec_value))->kpair)->is_allocated = false;
+        _lfortran_free_alloc(__lfortran_default_allocator, (char*) (&(__libasr_created__subroutine_call_take_spec_value))->kpair);
+        (&(__libasr_created__subroutine_call_take_spec_value))->kpair = NULL;
+    }
+    if (((&(holder_value))->copied) == struct_member_copied_2) {
+        _lfortran_free_alloc(__lfortran_default_allocator, (char*) struct_member_copied_2);
+        (&(holder_value))->copied = NULL;
+        struct_member_copied_2 = NULL;
+    }
+}
+
+int main(int argc, char* argv[])
+{
+    _lpython_set_argv(argc, argv);
+    __lfortran_c_backend_subroutine_call_struct_temp_descriptor_cleanup_ref_01_m__exercise();
+    return 0;
+}

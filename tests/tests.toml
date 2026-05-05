@@ -5110,6 +5110,10 @@ filename = "c_backend_block_allocatable_array_cleanup_ref_01.f90"
 c = true
 
 [[test]]
+filename = "c_backend_subroutine_call_struct_temp_descriptor_cleanup_ref_01.f90"
+c = true
+
+[[test]]
 filename = "c_backend_allocatable_char_component_deallocate_cleanup_ref_01.f90"
 c = true
 
