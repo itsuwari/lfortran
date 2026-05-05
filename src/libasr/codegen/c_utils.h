@@ -1318,6 +1318,54 @@ class CCPPDSUtils {
                         tmp_generated += indent + tab + "memcpy(dest->" + emitted_mem_name + ", src->" + emitted_mem_name +
                                             ", " + array_size + ");\n";
                     } else {
+                        ASR::ttype_t *member_element_type =
+                            ASRUtils::extract_type(member_type_asr);
+                        if (ASR::is_a<ASR::Allocatable_t>(*member_type_asr)
+                                && ASR::is_a<ASR::StructType_t>(*member_element_type)) {
+                            tmp_generated += indent + tab + "if (src->" + emitted_mem_name
+                                + " != NULL && src->" + emitted_mem_name
+                                + "->data != NULL) {\n";
+                            tmp_generated += indent + tab + tab + "if (dest->" + emitted_mem_name
+                                + " != NULL && dest->" + emitted_mem_name
+                                + " != src->" + emitted_mem_name
+                                + " && dest->" + emitted_mem_name + "->data == NULL) {\n";
+                            tmp_generated += indent + tab + tab + tab
+                                + "_lfortran_free_alloc(_lfortran_get_default_allocator(), "
+                                + "(char*) dest->" + emitted_mem_name + ");\n";
+                            tmp_generated += indent + tab + tab + tab + "dest->" + emitted_mem_name
+                                + " = NULL;\n";
+                            tmp_generated += indent + tab + tab + tab + "dest->"
+                                + emitted_mem_name + " = _lfortran_malloc_alloc("
+                                + "_lfortran_get_default_allocator(), sizeof(*dest->"
+                                + emitted_mem_name + "));\n";
+                            tmp_generated += indent + tab + tab + tab + "memset(dest->"
+                                + emitted_mem_name + ", 0, sizeof(*dest->"
+                                + emitted_mem_name + "));\n";
+                            tmp_generated += indent + tab + tab + tab + "*(dest->"
+                                + emitted_mem_name + ") = *(src->" + emitted_mem_name
+                                + ");\n";
+                            tmp_generated += indent + tab + tab + tab + "dest->" + emitted_mem_name
+                                + "->is_allocated = false;\n";
+                            tmp_generated += indent + tab + tab + "} else {\n";
+                            tmp_generated += indent + tab + tab + tab + "dest->"
+                                + emitted_mem_name + " = src->" + emitted_mem_name + ";\n";
+                            tmp_generated += indent + tab + tab + "}\n";
+                            tmp_generated += indent + tab + "} else {\n";
+                            tmp_generated += indent + tab + tab + "if (dest->"
+                                + emitted_mem_name + " != NULL && dest->" + emitted_mem_name
+                                + " != src->" + emitted_mem_name
+                                + " && dest->" + emitted_mem_name + "->data == NULL) {\n";
+                            tmp_generated += indent + tab + tab + tab
+                                + "_lfortran_free_alloc(_lfortran_get_default_allocator(), "
+                                + "(char*) dest->" + emitted_mem_name + ");\n";
+                            tmp_generated += indent + tab + tab + tab + "dest->"
+                                + emitted_mem_name + " = NULL;\n";
+                            tmp_generated += indent + tab + tab + "}\n";
+                            tmp_generated += indent + tab + tab + "dest->" + emitted_mem_name
+                                + " = NULL;\n";
+                            tmp_generated += indent + tab + "}\n";
+                            continue;
+                        }
                         tmp_generated += indent + tab + get_deepcopy(member_type_asr,
                                             "src->" + emitted_mem_name, "dest->" + emitted_mem_name) + ";\n";
                     }

@@ -997,11 +997,14 @@ public:
                     bool free_member_array_descriptors =
                         should_free_c_local_struct_member_array_descriptors(
                             v, emitted_name);
+                    bool free_scalar_member_array_descriptors =
+                        should_free_c_local_struct_scalar_member_array_descriptors(
+                            v, emitted_name);
                     register_current_function_local_struct_cleanup(
                         get_c_local_struct_cleanup_target(v, emitted_name),
                         ASR::down_cast<ASR::Struct_t>(struct_sym),
                         free_member_array_descriptors,
-                        free_member_array_descriptors);
+                        free_scalar_member_array_descriptors);
                 }
             }
         }
@@ -1411,6 +1414,12 @@ public:
         }
         return variable_name.rfind("temp_struct_var__", 0) == 0
             || variable_name == "calc";
+    }
+
+    bool should_free_c_local_struct_scalar_member_array_descriptors(
+            const ASR::Variable_t &v, const std::string &emitted_name) const {
+        return !is_c_compiler_generated_temporary_name(emitted_name)
+            || should_free_c_local_struct_member_array_descriptors(v, emitted_name);
     }
 
     void register_c_intent_out_local_struct_descriptor_cleanup(
@@ -4085,11 +4094,14 @@ R"(#include <stdio.h>
                                     bool free_member_array_descriptors =
                                         should_free_c_local_struct_member_array_descriptors(
                                             *v, emitted_name);
+                                    bool free_scalar_member_array_descriptors =
+                                        should_free_c_local_struct_scalar_member_array_descriptors(
+                                            *v, emitted_name);
                                     register_current_function_local_struct_cleanup(
                                         get_c_local_struct_cleanup_target(*v, emitted_name),
                                         ASR::down_cast<ASR::Struct_t>(struct_sym),
                                         free_member_array_descriptors,
-                                        free_member_array_descriptors);
+                                        free_scalar_member_array_descriptors);
                                 }
                             }
                         }

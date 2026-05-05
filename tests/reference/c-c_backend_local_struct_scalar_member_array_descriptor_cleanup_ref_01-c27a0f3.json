@@ -1,0 +1,13 @@
+{
+    "basename": "c-c_backend_local_struct_scalar_member_array_descriptor_cleanup_ref_01-c27a0f3",
+    "cmd": "lfortran --no-color --show-c {infile}",
+    "infile": "tests/c_backend_local_struct_scalar_member_array_descriptor_cleanup_ref_01.f90",
+    "infile_hash": "f06d1978daaf4a3c7008a7a1c6aa5c2acdbba0894637d05b44054ca3",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": "c-c_backend_local_struct_scalar_member_array_descriptor_cleanup_ref_01-c27a0f3.stdout",
+    "stdout_hash": "f5302c6a775325bae531b5266b99fe34d019b68e2beefa5e601c3a33",
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}
