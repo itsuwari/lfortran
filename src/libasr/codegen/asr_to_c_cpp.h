@@ -1940,6 +1940,27 @@ R"(#include <stdio.h>
         return true;
     }
 
+    bool try_get_c_scalar_string_call_arg_view(ASR::expr_t *expr,
+            ASR::Variable_t *param, ASR::ttype_t *param_type,
+            std::string &arg_src, std::string &arg_setup) {
+        if (!is_c || param == nullptr || param_type == nullptr
+                || param->m_intent != ASRUtils::intent_in
+                || ASRUtils::is_allocatable(param_type)
+                || ASRUtils::is_pointer(param_type)
+                || ASRUtils::is_array(param_type)) {
+            return false;
+        }
+        ASR::ttype_t *param_type_unwrapped =
+            ASRUtils::type_get_past_allocatable_pointer(param_type);
+        if (param_type_unwrapped == nullptr
+                || !ASRUtils::is_character(*param_type_unwrapped)) {
+            return false;
+        }
+        std::string arg_len;
+        return try_get_unit_step_string_section_view(
+            expr, arg_src, arg_len, arg_setup);
+    }
+
     bool looks_like_non_expression_stmt(const std::string &expr) {
         auto trim_ws = [](const std::string &text) -> std::string {
             size_t begin = text.find_first_not_of(" \t\r\n");
@@ -8508,13 +8529,18 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 && is_struct_or_class_type(type_unwrapped)
                 && !wants_pointer_dummy_slot_actual
                 && !wants_aggregate_dummy_slot_actual;
-            bool saved_force_storage_expr_in_call_args = force_storage_expr_in_call_args;
-            force_storage_expr_in_call_args = is_c && wants_raw_pointer_actual;
-            self().visit_expr(*call_arg);
-            std::string arg_src = src;
-            std::string arg_setup = drain_tmp_buffer();
-            arg_setup += extract_stmt_setup_from_expr(arg_src);
-            force_storage_expr_in_call_args = saved_force_storage_expr_in_call_args;
+            std::string arg_src, arg_setup;
+            if (!try_get_c_scalar_string_call_arg_view(
+                    call_arg, param, param_type, arg_src, arg_setup)) {
+                bool saved_force_storage_expr_in_call_args = force_storage_expr_in_call_args;
+                force_storage_expr_in_call_args = is_c && wants_raw_pointer_actual;
+                self().visit_expr(*call_arg);
+                arg_src = src;
+                arg_setup = drain_tmp_buffer();
+                arg_setup += extract_stmt_setup_from_expr(arg_src);
+                force_storage_expr_in_call_args = saved_force_storage_expr_in_call_args;
+            }
+            src = arg_src;
             if (is_c && raw_call_arg && ASR::is_a<ASR::Var_t>(*raw_call_arg)) {
                 ASR::symbol_t *arg_sym = ASRUtils::symbol_get_past_external(
                     ASR::down_cast<ASR::Var_t>(raw_call_arg)->m_v);
@@ -9014,13 +9040,18 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 && is_struct_or_class_type(type_unwrapped)
                 && !wants_pointer_dummy_slot_actual
                 && !wants_aggregate_dummy_slot_actual;
-            bool saved_force_storage_expr_in_call_args = force_storage_expr_in_call_args;
-            force_storage_expr_in_call_args = is_c && wants_raw_pointer_actual;
-            self().visit_expr(*call_arg);
-            std::string arg_src = src;
-            std::string arg_setup = drain_tmp_buffer();
-            arg_setup += extract_stmt_setup_from_expr(arg_src);
-            force_storage_expr_in_call_args = saved_force_storage_expr_in_call_args;
+            std::string arg_src, arg_setup;
+            if (!try_get_c_scalar_string_call_arg_view(
+                    call_arg, param, param_type, arg_src, arg_setup)) {
+                bool saved_force_storage_expr_in_call_args = force_storage_expr_in_call_args;
+                force_storage_expr_in_call_args = is_c && wants_raw_pointer_actual;
+                self().visit_expr(*call_arg);
+                arg_src = src;
+                arg_setup = drain_tmp_buffer();
+                arg_setup += extract_stmt_setup_from_expr(arg_src);
+                force_storage_expr_in_call_args = saved_force_storage_expr_in_call_args;
+            }
+            src = arg_src;
             if (is_c && raw_call_arg && ASR::is_a<ASR::Var_t>(*raw_call_arg)) {
                 ASR::symbol_t *arg_sym = ASRUtils::symbol_get_past_external(
                     ASR::down_cast<ASR::Var_t>(raw_call_arg)->m_v);

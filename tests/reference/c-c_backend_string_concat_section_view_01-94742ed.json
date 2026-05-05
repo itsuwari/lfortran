@@ -1,0 +1,13 @@
+{
+    "basename": "c-c_backend_string_concat_section_view_01-94742ed",
+    "cmd": "lfortran --no-color --show-c {infile}",
+    "infile": "tests/c_backend_string_concat_section_view_01.f90",
+    "infile_hash": "48ddaba7216705b69505f5ba9656083eb8845c2f248adec813b8ca37",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": "c-c_backend_string_concat_section_view_01-94742ed.stdout",
+    "stdout_hash": "e6eb27f8a7542b96a71a1c7a559be69d5a81c768fdd60e38f1b2c3c5",
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}
