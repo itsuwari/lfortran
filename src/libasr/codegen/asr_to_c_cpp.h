@@ -140,6 +140,7 @@ struct CLocalScalarStructCleanup {
     std::string target;
     ASR::Struct_t *struct_t;
     bool is_polymorphic;
+    bool shallow_copy;
 };
 
 struct CLocalArrayStructCleanup {
@@ -323,8 +324,13 @@ public:
         }
         for (auto it = current_function_local_allocatable_structs.rbegin();
                 it != current_function_local_allocatable_structs.rend(); ++it) {
-            cleanup += emit_c_scalar_allocatable_struct_cleanup(
-                it->struct_t, indent, it->target, it->is_polymorphic);
+            if (it->shallow_copy) {
+                cleanup += emit_c_shallow_copied_struct_root_cleanup(
+                    it->struct_t, indent, it->target, it->is_polymorphic);
+            } else {
+                cleanup += emit_c_scalar_allocatable_struct_cleanup(
+                    it->struct_t, indent, it->target, it->is_polymorphic);
+            }
         }
         for (auto it = current_function_local_allocatable_arrays.rbegin();
                 it != current_function_local_allocatable_arrays.rend(); ++it) {
@@ -451,14 +457,15 @@ public:
     }
 
     void register_current_function_local_allocatable_struct_cleanup(
-            const std::string &target, ASR::Struct_t *struct_t, bool is_polymorphic) {
+            const std::string &target, ASR::Struct_t *struct_t, bool is_polymorphic,
+            bool shallow_copy=false) {
         for (const auto &existing: current_function_local_allocatable_structs) {
             if (existing.target == target) {
                 return;
             }
         }
         current_function_local_allocatable_structs.push_back(
-            {target, struct_t, is_polymorphic});
+            {target, struct_t, is_polymorphic, shallow_copy});
     }
 
     std::string emit_c_tagged_struct_member_cleanup_dispatch(
@@ -644,6 +651,95 @@ public:
             }
         }
         current_c_struct_cleanup_stack.erase(cleanup_key);
+        return cleanup;
+    }
+
+    std::string emit_c_shallow_copied_struct_member_root_cleanup(
+            ASR::Struct_t *struct_t, const std::string &indent,
+            const std::string &target) {
+        std::string cleanup;
+        if (struct_t == nullptr) {
+            return cleanup;
+        }
+        uint64_t cleanup_key = get_hash(reinterpret_cast<ASR::asr_t*>(struct_t));
+        if (!current_c_struct_cleanup_stack.insert(cleanup_key).second) {
+            return cleanup;
+        }
+        if (struct_t->m_parent != nullptr) {
+            ASR::symbol_t *parent_sym = ASRUtils::symbol_get_past_external(
+                struct_t->m_parent);
+            if (parent_sym != nullptr && ASR::is_a<ASR::Struct_t>(*parent_sym)) {
+                cleanup += emit_c_shallow_copied_struct_member_root_cleanup(
+                    ASR::down_cast<ASR::Struct_t>(parent_sym), indent, target);
+            }
+        }
+        for (size_t i = 0; i < struct_t->n_members; i++) {
+            if (struct_t->m_members[i] == nullptr) {
+                continue;
+            }
+            ASR::symbol_t *member_sym0 = struct_t->m_symtab->get_symbol(
+                struct_t->m_members[i]);
+            if (member_sym0 == nullptr) {
+                continue;
+            }
+            ASR::symbol_t *member_sym = ASRUtils::symbol_get_past_external(
+                member_sym0);
+            if (member_sym == nullptr || !ASR::is_a<ASR::Variable_t>(*member_sym)) {
+                continue;
+            }
+            ASR::Variable_t *member_var = ASR::down_cast<ASR::Variable_t>(member_sym);
+            if (!ASRUtils::is_allocatable(member_var->m_type)
+                    || ASRUtils::is_array(member_var->m_type)) {
+                continue;
+            }
+            ASR::ttype_t *member_type =
+                ASRUtils::type_get_past_allocatable_pointer(member_var->m_type);
+            if (member_type == nullptr || !ASR::is_a<ASR::StructType_t>(*member_type)
+                    || member_var->m_type_declaration == nullptr) {
+                continue;
+            }
+            ASR::StructType_t *struct_member_type =
+                ASR::down_cast<ASR::StructType_t>(member_type);
+            bool is_polymorphic = struct_member_type->m_is_unlimited_polymorphic
+                || ASRUtils::is_class_type(member_var->m_type)
+                || ASRUtils::is_class_type(member_type);
+            if (is_polymorphic) {
+                continue;
+            }
+            ASR::symbol_t *member_struct_sym =
+                ASRUtils::symbol_get_past_external(member_var->m_type_declaration);
+            if (member_struct_sym == nullptr
+                    || !ASR::is_a<ASR::Struct_t>(*member_struct_sym)) {
+                continue;
+            }
+            std::string member = target + "->" + CUtils::get_c_member_name(member_sym);
+            cleanup += indent + "if ((" + member + ") != NULL) {\n";
+            cleanup += emit_c_shallow_copied_struct_member_root_cleanup(
+                ASR::down_cast<ASR::Struct_t>(member_struct_sym),
+                indent + "    ", member);
+            cleanup += indent + "    _lfortran_free_alloc(_lfortran_get_default_allocator(), "
+                + "(char*) " + member + ");\n"
+                + indent + "    " + member + " = NULL;\n"
+                + indent + "}\n";
+        }
+        current_c_struct_cleanup_stack.erase(cleanup_key);
+        return cleanup;
+    }
+
+    std::string emit_c_shallow_copied_struct_root_cleanup(ASR::Struct_t *struct_t,
+            const std::string &indent, const std::string &target,
+            bool is_polymorphic) {
+        std::string cleanup;
+        cleanup += indent + "if ((" + target + ") != NULL) {\n";
+        if (!is_polymorphic) {
+            cleanup += emit_c_shallow_copied_struct_member_root_cleanup(
+                struct_t, indent + "    ", target);
+        }
+        cleanup += indent
+            + "    _lfortran_free_alloc(_lfortran_get_default_allocator(), (char*) "
+            + target + ");\n"
+            + indent + "    " + target + " = NULL;\n"
+            + indent + "}\n";
         return cleanup;
     }
 
@@ -1149,6 +1245,10 @@ public:
             || name.rfind("__libasr__created", 0) == 0
             || name.find("__libasr_created") != std::string::npos
             || name.find("__libasr__created") != std::string::npos;
+    }
+
+    bool is_c_owned_function_call_struct_temp_name(const std::string &name) const {
+        return name.rfind("__libasr_created__function_call_1_", 0) == 0;
     }
 
     void cache_c_default_allocator(std::string &decl, std::string &body,
@@ -3739,7 +3839,8 @@ R"(#include <stdio.h>
                             if (ASRUtils::is_character(*v_type_unwrapped)) {
                                 register_current_function_local_allocatable_string_cleanup(
                                     emitted_name);
-                            } else if (!is_c_compiler_generated_temporary_name(emitted_name)
+                            } else if ((!is_c_compiler_generated_temporary_name(emitted_name)
+                                        || is_c_owned_function_call_struct_temp_name(emitted_name))
                                     && ASR::is_a<ASR::StructType_t>(*v_type_unwrapped)
                                     && v->m_type_declaration != nullptr) {
                                 ASR::symbol_t *struct_sym =
@@ -3749,7 +3850,9 @@ R"(#include <stdio.h>
                                     register_current_function_local_allocatable_struct_cleanup(
                                         emitted_name,
                                         ASR::down_cast<ASR::Struct_t>(struct_sym),
-                                        ASRUtils::is_class_type(v_type_unwrapped));
+                                        ASRUtils::is_class_type(v_type_unwrapped),
+                                        is_c_owned_function_call_struct_temp_name(
+                                            emitted_name));
                                 }
                             }
                         } else if (is_c && v->m_intent == ASRUtils::intent_local

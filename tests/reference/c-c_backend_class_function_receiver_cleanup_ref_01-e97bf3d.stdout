@@ -1,0 +1,243 @@
+#include <string.h>
+
+#include <stdlib.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <string.h>
+#include <lfortran_intrinsics.h>
+
+
+#ifndef LFORTRAN_C_BACKEND_CONSTRUCTOR
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_CONSTRUCTOR __attribute__((constructor))
+#else
+#define LFORTRAN_C_BACKEND_CONSTRUCTOR
+#endif
+#endif
+#ifndef LFORTRAN_C_BACKEND_WEAK
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_WEAK __attribute__((weak))
+#else
+#define LFORTRAN_C_BACKEND_WEAK static
+#endif
+#endif
+
+
+struct dimension_descriptor
+{
+    int32_t lower_bound, length, stride;
+};
+#ifndef LFORTRAN_C_BACKEND_CONSTRUCTOR
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_CONSTRUCTOR __attribute__((constructor))
+#else
+#define LFORTRAN_C_BACKEND_CONSTRUCTOR
+#endif
+#endif
+#ifndef LFORTRAN_C_BACKEND_WEAK
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_WEAK __attribute__((weak))
+#else
+#define LFORTRAN_C_BACKEND_WEAK static
+#endif
+#endif
+
+struct c_backend_class_function_receiver_cleanup_ref_01_m__base_type {
+ int64_t __lfortran_type_tag;
+ char * label;
+};
+
+static void __lfortran_cleanup_struct_c_backend_class_function_receiver_cleanup_ref_01_m__base_type_x874858387864598948(void *__lfortran_value)
+{
+    struct c_backend_class_function_receiver_cleanup_ref_01_m__base_type *__lfortran_self = (struct c_backend_class_function_receiver_cleanup_ref_01_m__base_type*)__lfortran_value;
+    if (__lfortran_self == NULL) {
+        return;
+    }
+    if (__lfortran_self->label != NULL) {
+        _lfortran_free_alloc(_lfortran_get_default_allocator(), __lfortran_self->label);
+        __lfortran_self->label = NULL;
+    }
+}
+
+LFORTRAN_C_BACKEND_CONSTRUCTOR static void __lfortran_register_struct_cleanup_c_backend_class_function_receiver_cleanup_ref_01_m__base_type_x874858387864598948(void)
+{
+    _lfortran_register_c_struct_cleanup(874858387864598948, __lfortran_cleanup_struct_c_backend_class_function_receiver_cleanup_ref_01_m__base_type_x874858387864598948);
+}
+
+struct c_backend_class_function_receiver_cleanup_ref_01_m__child_type {
+ int64_t __lfortran_type_tag;
+ char * label;
+};
+
+extern void __lfortran_force_link_tbp_c_backend_class_function_receiver_cleanup_ref_01_m__base_type__info(void);
+LFORTRAN_C_BACKEND_CONSTRUCTOR LFORTRAN_C_BACKEND_WEAK void __lfortran_register_type_parent_child_type_x5824109775553586457(void)
+{
+    _lfortran_register_c_type_parent(5824109775553586457, 874858387864598948);
+    __lfortran_force_link_tbp_c_backend_class_function_receiver_cleanup_ref_01_m__base_type__info();
+}
+
+static void __lfortran_cleanup_struct_c_backend_class_function_receiver_cleanup_ref_01_m__child_type_x5824109775553586457(void *__lfortran_value)
+{
+    struct c_backend_class_function_receiver_cleanup_ref_01_m__child_type *__lfortran_self = (struct c_backend_class_function_receiver_cleanup_ref_01_m__child_type*)__lfortran_value;
+    if (__lfortran_self == NULL) {
+        return;
+    }
+    if (__lfortran_self->label != NULL) {
+        _lfortran_free_alloc(_lfortran_get_default_allocator(), __lfortran_self->label);
+        __lfortran_self->label = NULL;
+    }
+}
+
+LFORTRAN_C_BACKEND_CONSTRUCTOR static void __lfortran_register_struct_cleanup_c_backend_class_function_receiver_cleanup_ref_01_m__child_type_x5824109775553586457(void)
+{
+    _lfortran_register_c_struct_cleanup(5824109775553586457, __lfortran_cleanup_struct_c_backend_class_function_receiver_cleanup_ref_01_m__child_type_x5824109775553586457);
+}
+
+struct c_backend_class_function_receiver_cleanup_ref_01_m__holder_type {
+ int64_t __lfortran_type_tag;
+ struct c_backend_class_function_receiver_cleanup_ref_01_m__child_type* item;
+};
+
+static void __lfortran_cleanup_struct_c_backend_class_function_receiver_cleanup_ref_01_m__holder_type_x8784404336353747409(void *__lfortran_value)
+{
+    struct c_backend_class_function_receiver_cleanup_ref_01_m__holder_type *__lfortran_self = (struct c_backend_class_function_receiver_cleanup_ref_01_m__holder_type*)__lfortran_value;
+    if (__lfortran_self == NULL) {
+        return;
+    }
+    if ((__lfortran_self->item) != NULL) {
+        if (__lfortran_self->item->label != NULL) {
+            _lfortran_free_alloc(_lfortran_get_default_allocator(), __lfortran_self->item->label);
+            __lfortran_self->item->label = NULL;
+        }
+        _lfortran_free_alloc(_lfortran_get_default_allocator(), (char*) __lfortran_self->item);
+        __lfortran_self->item = NULL;
+    }
+}
+
+LFORTRAN_C_BACKEND_CONSTRUCTOR static void __lfortran_register_struct_cleanup_c_backend_class_function_receiver_cleanup_ref_01_m__holder_type_x8784404336353747409(void)
+{
+    _lfortran_register_c_struct_cleanup(8784404336353747409, __lfortran_cleanup_struct_c_backend_class_function_receiver_cleanup_ref_01_m__holder_type_x8784404336353747409);
+}
+
+
+void struct_deepcopy_c_backend_class_function_receiver_cleanup_ref_01_m__child_type(void* src_void, void* dest_void);
+
+void __lfortran_c_backend_class_function_receiver_cleanup_ref_01_m__exercise();
+void __lfortran_c_backend_class_function_receiver_cleanup_ref_01_m__info__StructType_Class(struct c_backend_class_function_receiver_cleanup_ref_01_m__base_type* restrict self, char * *str);
+
+
+
+
+// Implementations
+void __lfortran_c_backend_class_function_receiver_cleanup_ref_01_m__exercise()
+{
+    lfortran_allocator_t* __lfortran_default_allocator = _lfortran_get_default_allocator();
+    char * __libasr__created__var__0_return_slot = NULL;
+    struct c_backend_class_function_receiver_cleanup_ref_01_m__child_type* __libasr_created__function_call_1_base_type_info = NULL;
+    struct c_backend_class_function_receiver_cleanup_ref_01_m__holder_type holder_value;
+    memset(&holder_value, 0, sizeof(holder_value));
+    holder_value.__lfortran_type_tag = 8784404336353747409;
+    struct c_backend_class_function_receiver_cleanup_ref_01_m__holder_type* holder = &holder_value;
+    char * text = NULL;
+    holder->item = (struct c_backend_class_function_receiver_cleanup_ref_01_m__child_type*) _lfortran_malloc_alloc(__lfortran_default_allocator, sizeof(struct c_backend_class_function_receiver_cleanup_ref_01_m__child_type));
+    memset(holder->item, 0, sizeof(struct c_backend_class_function_receiver_cleanup_ref_01_m__child_type));
+    ((struct c_backend_class_function_receiver_cleanup_ref_01_m__child_type*)(holder->item))->label = NULL;
+    holder->item->__lfortran_type_tag = 5824109775553586457;
+    _lfortran_strcpy_alloc(__lfortran_default_allocator, &holder->item->label, NULL, true, true, (char*)"payload", strlen((char*)"payload"));
+    if (__libasr_created__function_call_1_base_type_info == NULL) {
+        __libasr_created__function_call_1_base_type_info = (struct c_backend_class_function_receiver_cleanup_ref_01_m__child_type*) _lfortran_malloc_alloc(__lfortran_default_allocator, sizeof(struct c_backend_class_function_receiver_cleanup_ref_01_m__child_type));
+        memset(__libasr_created__function_call_1_base_type_info, 0, sizeof(struct c_backend_class_function_receiver_cleanup_ref_01_m__child_type));
+    }
+    struct_deepcopy_c_backend_class_function_receiver_cleanup_ref_01_m__child_type(holder->item, __libasr_created__function_call_1_base_type_info);
+    if (__libasr__created__var__0_return_slot != NULL) {
+        _lfortran_free_alloc(__lfortran_default_allocator, __libasr__created__var__0_return_slot);
+        __libasr__created__var__0_return_slot = NULL;
+    }
+    __lfortran_c_backend_class_function_receiver_cleanup_ref_01_m__info__StructType_Class(((struct c_backend_class_function_receiver_cleanup_ref_01_m__base_type*)(__libasr_created__function_call_1_base_type_info)), &__libasr__created__var__0_return_slot);
+    _lfortran_strcpy_alloc(__lfortran_default_allocator, &text, NULL, true, true, __libasr__created__var__0_return_slot, strlen(__libasr__created__var__0_return_slot));
+    if (__libasr__created__var__0_return_slot != NULL) {
+        _lfortran_free_alloc(__lfortran_default_allocator, __libasr__created__var__0_return_slot);
+        __libasr__created__var__0_return_slot = NULL;
+    }
+    if (str_compare(text, ((text) != NULL ? strlen(text) : 0), (char*)"payload", 7)  !=  0) {
+        fprintf(stderr, "ERROR STOP");
+        exit(1);
+    }
+    if (text != NULL) {
+        _lfortran_free_alloc(__lfortran_default_allocator, text);
+        text = NULL;
+    }
+    if ((holder->item) != NULL) {
+        if (holder->item->label != NULL) {
+            _lfortran_free_alloc(__lfortran_default_allocator, holder->item->label);
+            holder->item->label = NULL;
+        }
+        _lfortran_free_alloc(__lfortran_default_allocator, (char*) holder->item);
+        holder->item = NULL;
+    }
+    if (((&(holder_value))->item) != NULL) {
+        if ((&(holder_value))->item->label != NULL) {
+            _lfortran_free_alloc(__lfortran_default_allocator, (&(holder_value))->item->label);
+            (&(holder_value))->item->label = NULL;
+        }
+        _lfortran_free_alloc(__lfortran_default_allocator, (char*) (&(holder_value))->item);
+        (&(holder_value))->item = NULL;
+    }
+    if ((__libasr_created__function_call_1_base_type_info) != NULL) {
+        _lfortran_free_alloc(__lfortran_default_allocator, (char*) __libasr_created__function_call_1_base_type_info);
+        __libasr_created__function_call_1_base_type_info = NULL;
+    }
+    if (text != NULL) {
+        _lfortran_free_alloc(__lfortran_default_allocator, text);
+        text = NULL;
+    }
+    if (__libasr__created__var__0_return_slot != NULL) {
+        _lfortran_free_alloc(__lfortran_default_allocator, __libasr__created__var__0_return_slot);
+        __libasr__created__var__0_return_slot = NULL;
+    }
+}
+
+void __lfortran_c_backend_class_function_receiver_cleanup_ref_01_m__info__StructType_Class(struct c_backend_class_function_receiver_cleanup_ref_01_m__base_type* restrict self, char * *str)
+{
+    lfortran_allocator_t* __lfortran_default_allocator = _lfortran_get_default_allocator();
+    if (str != NULL && (*str) != NULL) {
+        _lfortran_free_alloc(__lfortran_default_allocator, *str);
+        *str = NULL;
+    }
+    if ((((*str)) != NULL)) {
+        if ((*str) != NULL) {
+            _lfortran_free_alloc(__lfortran_default_allocator, (*str));
+            (*str) = NULL;
+        }
+    }
+    _lfortran_strcpy_alloc(__lfortran_default_allocator, &(*str), NULL, true, true, self->label, strlen(self->label));
+}
+
+static void __lfortran_tbp_wrapper_info(void* __lfortran_self, char * *str)
+{
+    __lfortran_c_backend_class_function_receiver_cleanup_ref_01_m__info__StructType_Class(((struct c_backend_class_function_receiver_cleanup_ref_01_m__base_type*)(__lfortran_self)), str);
+}
+
+LFORTRAN_C_BACKEND_CONSTRUCTOR static void __lfortran_register_tbp_info(void)
+{
+    _lfortran_register_c_tbp_impl("info", 874858387864598948, (lfortran_c_tbp_func_ptr)__lfortran_tbp_wrapper_info);
+}
+
+void __lfortran_force_link_tbp_c_backend_class_function_receiver_cleanup_ref_01_m__base_type__info(void)
+{
+    __lfortran_register_tbp_info();
+}
+
+int main(int argc, char* argv[])
+{
+    _lpython_set_argv(argc, argv);
+    __lfortran_c_backend_class_function_receiver_cleanup_ref_01_m__exercise();
+    return 0;
+}
+
+void struct_deepcopy_c_backend_class_function_receiver_cleanup_ref_01_m__child_type(void* src_void, void* dest_void) {
+    struct c_backend_class_function_receiver_cleanup_ref_01_m__child_type* src = (struct c_backend_class_function_receiver_cleanup_ref_01_m__child_type*) src_void;
+    struct c_backend_class_function_receiver_cleanup_ref_01_m__child_type* dest = (struct c_backend_class_function_receiver_cleanup_ref_01_m__child_type*) dest_void;
+}
+
+
