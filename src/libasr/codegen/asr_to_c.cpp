@@ -3419,13 +3419,17 @@ R"(
                         sub += indent + "memset(&" + value_var_name + ", 0, sizeof("
                             + value_var_name + "));\n";
                     }
+                    bool register_local_descriptor_cleanup =
+                        indentation_level == 1
+                        && should_register_c_local_struct_descriptor_cleanup(
+                            v, decl_name, value_var_name);
                     sub += indent + value_var_name + "." + get_runtime_type_tag_member_name()
                         + " = " + std::to_string(get_struct_runtime_type_id(v.m_type_declaration))
                         + ";\n";
                     if (!has_decl_init) {
                         initialize_struct_instance_members(
                             der_type_t, sub, indent, "(&(" + value_var_name + "))",
-                            true);
+                            register_local_descriptor_cleanup);
                     }
                     std::string ptr_char = "*";
                     if( !use_ptr_for_derived_type ) {
@@ -3440,7 +3444,7 @@ R"(
                         if (has_decl_init) {
                             sub += ";\n";
                             allocate_array_members_of_struct(der_type_t, sub, indent,
-                                decl_name, true, true);
+                                decl_name, true, register_local_descriptor_cleanup);
                             sub.pop_back();
                             sub.pop_back();
                         }

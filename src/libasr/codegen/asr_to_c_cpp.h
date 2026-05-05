@@ -1386,6 +1386,15 @@ public:
         return name.rfind("__libasr_created__function_call_1_", 0) == 0;
     }
 
+    bool should_register_c_local_struct_descriptor_cleanup(
+            const ASR::Variable_t &v, const std::string &emitted_name,
+            const std::string &backing_name="") const {
+        return !is_c_compiler_generated_temporary_name(std::string(v.m_name))
+            && !is_c_compiler_generated_temporary_name(emitted_name)
+            && (backing_name.empty()
+                || !is_c_compiler_generated_temporary_name(backing_name));
+    }
+
     bool should_free_c_local_struct_member_array_descriptors(
             const ASR::Variable_t &v, const std::string &emitted_name) const {
         if (is_c_compiler_generated_temporary_name(emitted_name)) {
