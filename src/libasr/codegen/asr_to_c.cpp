@@ -2365,7 +2365,8 @@ R"(
     }
 
     void allocate_array_members_of_struct(ASR::Struct_t* der_type_t, std::string& sub,
-        std::string indent, std::string name, bool recurse_plain_struct_members=true) {
+        std::string indent, std::string name, bool recurse_plain_struct_members=true,
+        bool register_descriptor_cleanup=false) {
         // File scope in C only permits declarations. Skip member-level runtime
         // initialization there; static objects are already zero-initialized.
         if (indentation_level == 0) {
@@ -2407,6 +2408,10 @@ R"(
                     sub += indent + mem_var_name + " = _lfortran_malloc_alloc(_lfortran_get_default_allocator(), sizeof(*" + mem_var_name + "));\n";
                     sub += indent + "memset(" + mem_var_name + ", 0, sizeof(*" + mem_var_name + "));\n";
                     sub += indent + name + "->" + emitted_member_name + " = " + mem_var_name + ";\n";
+                    if (register_descriptor_cleanup) {
+                        register_current_function_local_descriptor_cleanup(
+                            name + "->" + emitted_member_name, mem_var_name);
+                    }
                 }
             } else if( ASRUtils::is_character(*mem_type) ) {
                 sub += indent + name + "->" + emitted_member_name + " = NULL;\n";
@@ -2419,7 +2424,8 @@ R"(
                     if (struct_sym != nullptr && ASR::is_a<ASR::Struct_t>(*struct_sym)) {
                         allocate_array_members_of_struct(
                             ASR::down_cast<ASR::Struct_t>(struct_sym), sub, indent,
-                            "(&(" + name + "->" + emitted_member_name + "))");
+                            "(&(" + name + "->" + emitted_member_name + "))",
+                            recurse_plain_struct_members, register_descriptor_cleanup);
                     }
                 }
             }
@@ -2427,7 +2433,7 @@ R"(
     }
 
     void initialize_struct_instance_members(ASR::Struct_t* der_type_t, std::string& sub,
-        std::string indent, std::string name) {
+        std::string indent, std::string name, bool register_descriptor_cleanup=false) {
         if (der_type_t == nullptr) {
             return;
         }
@@ -2468,7 +2474,7 @@ R"(
                         + std::to_string(get_struct_runtime_type_id(struct_sym)) + ";\n";
                     initialize_struct_instance_members(
                         ASR::down_cast<ASR::Struct_t>(struct_sym), sub, indent,
-                        "(&(" + member_access + "))");
+                        "(&(" + member_access + "))", register_descriptor_cleanup);
                 }
                 continue;
             }
@@ -2488,7 +2494,8 @@ R"(
             sub += indent + name + "->" + CUtils::get_c_member_name(member_sym)
                 + " = " + src + ";\n";
         }
-        allocate_array_members_of_struct(der_type_t, sub, indent, name, false);
+        allocate_array_members_of_struct(der_type_t, sub, indent, name, false,
+            register_descriptor_cleanup);
     }
 
     void emit_function_arg_initialization(const ASR::Function_t &x,
@@ -3353,7 +3360,8 @@ R"(
                             + ";\n";
                         ASR::Struct_t* der_type_t = ASR::down_cast<ASR::Struct_t>(
                             ASRUtils::symbol_get_past_external(v.m_type_declaration));
-                        allocate_array_members_of_struct(der_type_t, sub, indent, "(&(" + decl_name + "))");
+                        allocate_array_members_of_struct(der_type_t, sub, indent,
+                            "(&(" + decl_name + "))");
                         sub.pop_back();
                         sub.pop_back();
                         return sub;
@@ -3416,7 +3424,8 @@ R"(
                         + ";\n";
                     if (!has_decl_init) {
                         initialize_struct_instance_members(
-                            der_type_t, sub, indent, "(&(" + value_var_name + "))");
+                            der_type_t, sub, indent, "(&(" + value_var_name + "))",
+                            true);
                     }
                     std::string ptr_char = "*";
                     if( !use_ptr_for_derived_type ) {
@@ -3430,7 +3439,8 @@ R"(
                         sub += " = &" + value_var_name;
                         if (has_decl_init) {
                             sub += ";\n";
-                            allocate_array_members_of_struct(der_type_t, sub, indent, decl_name);
+                            allocate_array_members_of_struct(der_type_t, sub, indent,
+                                decl_name, true, true);
                             sub.pop_back();
                             sub.pop_back();
                         }

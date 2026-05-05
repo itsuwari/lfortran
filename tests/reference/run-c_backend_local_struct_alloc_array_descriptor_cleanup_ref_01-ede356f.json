@@ -1,0 +1,13 @@
+{
+    "basename": "run-c_backend_local_struct_alloc_array_descriptor_cleanup_ref_01-ede356f",
+    "cmd": "lfortran --no-color {infile}",
+    "infile": "tests/c_backend_local_struct_alloc_array_descriptor_cleanup_ref_01.f90",
+    "infile_hash": "919a1701b4924b4fbb7826b14106f46fe24ac2d19cd31d8ac34c0451",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

@@ -150,6 +150,11 @@ struct CLocalStructCleanup {
     bool free_scalar_member_array_descriptors;
 };
 
+struct CLocalDescriptorCleanup {
+    std::string target;
+    std::string descriptor;
+};
+
 struct CLocalArrayStructCleanup {
     std::string descriptor;
     ASR::Struct_t *struct_t;
@@ -216,6 +221,7 @@ public:
     std::vector<std::string> current_function_local_character_strings;
     std::vector<CLocalScalarStructCleanup> current_function_local_allocatable_structs;
     std::vector<CLocalStructCleanup> current_function_local_structs;
+    std::vector<CLocalDescriptorCleanup> current_function_local_descriptors;
     std::set<uint64_t> current_c_struct_cleanup_stack;
     std::map<std::string, CArrayDescriptorCache> current_function_array_descriptor_cache;
     std::map<std::string, CScalarExprCacheEntry> current_function_pow_cache;
@@ -330,6 +336,15 @@ public:
                 true, true, it->free_allocatable_array_descriptors,
                 it->free_scalar_member_array_descriptors);
         }
+        for (auto it = current_function_local_descriptors.rbegin();
+                it != current_function_local_descriptors.rend(); ++it) {
+            cleanup += indent + "if ((" + it->target + ") == " + it->descriptor + ") {\n"
+                + indent + "    _lfortran_free_alloc(_lfortran_get_default_allocator(), "
+                + "(char*) " + it->descriptor + ");\n"
+                + indent + "    " + it->target + " = NULL;\n"
+                + indent + "    " + it->descriptor + " = NULL;\n"
+                + indent + "}\n";
+        }
         for (auto it = current_function_local_allocatable_structs.rbegin();
                 it != current_function_local_allocatable_structs.rend(); ++it) {
             if (it->shallow_copy) {
@@ -420,6 +435,7 @@ public:
         current_function_local_character_strings.clear();
         current_function_local_allocatable_structs.clear();
         current_function_local_structs.clear();
+        current_function_local_descriptors.clear();
     }
 
     std::string emit_c_lazy_automatic_array_temp_allocation(
@@ -888,6 +904,16 @@ public:
         current_function_local_structs.push_back(
             {target, struct_t, free_allocatable_array_descriptors,
              free_scalar_member_array_descriptors});
+    }
+
+    void register_current_function_local_descriptor_cleanup(
+            const std::string &target, const std::string &descriptor) {
+        for (const auto &existing: current_function_local_descriptors) {
+            if (existing.target == target && existing.descriptor == descriptor) {
+                return;
+            }
+        }
+        current_function_local_descriptors.push_back({target, descriptor});
     }
 
     void register_c_local_variable_cleanup(const ASR::Variable_t &v,
@@ -3811,6 +3837,7 @@ R"(#include <stdio.h>
         current_function_local_character_strings.clear();
         current_function_local_allocatable_structs.clear();
         current_function_local_structs.clear();
+        current_function_local_descriptors.clear();
         current_function_array_descriptor_cache.clear();
         current_function_pow_cache.clear();
         current_function_lazy_automatic_array_storage.clear();
@@ -4105,6 +4132,7 @@ R"(#include <stdio.h>
             current_function_local_character_strings.clear();
             current_function_local_allocatable_structs.clear();
             current_function_local_structs.clear();
+            current_function_local_descriptors.clear();
             current_function_array_descriptor_cache.clear();
             current_function_pow_cache.clear();
             current_function_lazy_automatic_array_storage.clear();

@@ -5128,6 +5128,11 @@ c = true
 options = "--separate-compilation"
 
 [[test]]
+filename = "c_backend_local_struct_alloc_array_descriptor_cleanup_ref_01.f90"
+run = true
+options = "--backend=c --separate-compilation"
+
+[[test]]
 filename = "c_backend_select_type_class_cast_temp_ref_01.f90"
 c = true
 options = "--separate-compilation"
