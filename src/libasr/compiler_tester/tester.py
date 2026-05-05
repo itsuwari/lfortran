@@ -12,8 +12,20 @@ import pprint
 import shutil
 import subprocess
 import sys
-import toml
 from typing import Any, Mapping, List, Union
+
+try:
+    import tomllib
+except ImportError:
+    import toml
+
+    def load_toml(path):
+        with open(path) as f:
+            return toml.load(f)
+else:
+    def load_toml(path):
+        with open(path, "rb") as f:
+            return tomllib.load(f)
 
 level = logging.DEBUG
 log = logging.getLogger(__name__)
@@ -578,7 +590,7 @@ def tester_main(compiler, single_test, is_lcompilers_executable_installed=False)
     if not is_lcompilers_executable_installed:
         os.environ["PATH"] = os.path.join(SRC_DIR, "bin") \
             + os.pathsep + os.environ["PATH"]
-    test_data = toml.load(open(os.path.join(ROOT_DIR, "tests", "tests.toml")))
+    test_data = load_toml(os.path.join(ROOT_DIR, "tests", "tests.toml"))
     test_for_duplicates(test_data)
     filtered_tests = test_data["test"]
     if specific_tests:

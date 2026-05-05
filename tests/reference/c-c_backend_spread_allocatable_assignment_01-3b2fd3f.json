@@ -1,0 +1,13 @@
+{
+    "basename": "c-c_backend_spread_allocatable_assignment_01-3b2fd3f",
+    "cmd": "lfortran --no-color --show-c {infile}",
+    "infile": "tests/c_backend_spread_allocatable_assignment_01.f90",
+    "infile_hash": "e8c997b62804d3c44edf7d9c8934ab785c5da435bb75173ef2f121bd",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": "c-c_backend_spread_allocatable_assignment_01-3b2fd3f.stdout",
+    "stdout_hash": "49ca5e9497a026b84e67509046c308797a9def2236d46781d92d5779",
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

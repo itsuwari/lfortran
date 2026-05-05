@@ -1,0 +1,372 @@
+#include <inttypes.h>
+#include <math.h>
+
+#include <stdlib.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <string.h>
+#include <lfortran_intrinsics.h>
+
+
+#ifndef LFORTRAN_C_BACKEND_CONSTRUCTOR
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_CONSTRUCTOR __attribute__((constructor))
+#else
+#define LFORTRAN_C_BACKEND_CONSTRUCTOR
+#endif
+#endif
+#ifndef LFORTRAN_C_BACKEND_WEAK
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_WEAK __attribute__((weak))
+#else
+#define LFORTRAN_C_BACKEND_WEAK static
+#endif
+#endif
+
+
+struct dimension_descriptor
+{
+    int32_t lower_bound, length, stride;
+};
+#ifndef LFORTRAN_C_BACKEND_CONSTRUCTOR
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_CONSTRUCTOR __attribute__((constructor))
+#else
+#define LFORTRAN_C_BACKEND_CONSTRUCTOR
+#endif
+#endif
+#ifndef LFORTRAN_C_BACKEND_WEAK
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_WEAK __attribute__((weak))
+#else
+#define LFORTRAN_C_BACKEND_WEAK static
+#endif
+#endif
+
+
+struct r64_____
+{
+    double *data;
+    struct dimension_descriptor dims[32];
+    int32_t n_dims;
+    int32_t offset;
+    bool is_allocated;
+};
+
+
+struct r64___
+{
+    double *data;
+    struct dimension_descriptor dims[32];
+    int32_t n_dims;
+    int32_t offset;
+    bool is_allocated;
+};
+
+
+struct Allocatable_r64______
+{
+    double *data;
+    struct dimension_descriptor dims[32];
+    int32_t n_dims;
+    int32_t offset;
+    bool is_allocated;
+};
+
+double __lfortran__lcompilers_Sum_8_2_0_idx4_real_______0(struct r64_____* restrict array, int32_t __1array, int32_t __2array);
+double __lfortran__lcompilers_Sum_8_2_0_idx4(struct r64_____* restrict array);
+void __lfortran__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3(struct r64___* restrict source, int32_t __1source, int32_t dim, int32_t ncopies, struct r64_____* restrict result, int32_t __1result, int32_t __2result);
+void __lfortran__lcompilers_spread_r64____ret_r64______idx4(struct r64___* restrict source, int32_t dim, int32_t ncopies, struct r64_____* restrict result);
+
+
+
+
+// Implementations
+double __lfortran__lcompilers_Sum_8_2_0_idx4_real_______0(struct r64_____* restrict array, int32_t __1array, int32_t __2array)
+{
+    int32_t __1_i;
+    int32_t __2_i;
+    double result;
+    double * restrict __lfortran_array_data = array->data;
+    const int32_t __lfortran_array_offset = array->offset;
+    const int32_t __lfortran_array_dim1_lower_bound = array->dims[0].lower_bound;
+    const int32_t __lfortran_array_dim1_stride = array->dims[0].stride;
+    const int32_t __lfortran_array_dim2_lower_bound = array->dims[1].lower_bound;
+    const int32_t __lfortran_array_dim2_stride = array->dims[1].stride;
+    result =   0.00000000000000000e+00;
+    for (__2_i=1; __2_i<=__2array + 1 - 1; __2_i++) {
+        for (__1_i=1; __1_i<=__1array + 1 - 1; __1_i++) {
+            result = result + __lfortran_array_data[(((0 + (__lfortran_array_dim1_stride * (__1_i - __lfortran_array_dim1_lower_bound))) + (__lfortran_array_dim2_stride * (__2_i - __lfortran_array_dim2_lower_bound))) + __lfortran_array_offset)];
+        }
+    }
+    return result;
+}
+
+double __lfortran__lcompilers_Sum_8_2_0_idx4(struct r64_____* restrict array)
+{
+    return __lfortran__lcompilers_Sum_8_2_0_idx4_real_______0(array, ((int32_t)array->dims[0].length + array->dims[0].lower_bound - 1), ((int32_t)array->dims[1].length + array->dims[1].lower_bound - 1));
+}
+
+void __lfortran__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3(struct r64___* restrict source, int32_t __1source, int32_t dim, int32_t ncopies, struct r64_____* restrict result, int32_t __1result, int32_t __2result)
+{
+    int32_t i;
+    double * restrict __lfortran_source_data = source->data;
+    const int32_t __lfortran_source_offset = source->offset;
+    const int32_t __lfortran_source_dim1_lower_bound = source->dims[0].lower_bound;
+    const int32_t __lfortran_source_dim1_stride = source->dims[0].stride;
+    double * restrict __lfortran_result_data = result->data;
+    const int32_t __lfortran_result_offset = result->offset;
+    const int32_t __lfortran_result_dim1_lower_bound = result->dims[0].lower_bound;
+    const int32_t __lfortran_result_dim1_stride = result->dims[0].stride;
+    const int32_t __lfortran_result_dim2_lower_bound = result->dims[1].lower_bound;
+    const int32_t __lfortran_result_dim2_stride = result->dims[1].stride;
+    if (dim == 1) {
+        for (i=1; i<=ncopies; i++) {
+            {
+            double *__lfortran_lhs_data = __lfortran_result_data;
+            int64_t __lfortran_lhs_stride = __lfortran_result_dim2_stride * (1);
+            int64_t __lfortran_lhs_offset = (__lfortran_result_offset + __lfortran_result_dim1_stride * ((i) - __lfortran_result_dim1_lower_bound) + __lfortran_result_dim2_stride * ((1) - __lfortran_result_dim2_lower_bound));
+            int64_t __lfortran_lhs_length = ((((__2result + 1 - 1) - (1)) / (1)) + 1);
+            double *__lfortran_rhs_data = __lfortran_source_data;
+            int64_t __lfortran_rhs_stride = __lfortran_source_dim1_stride * (1);
+            int64_t __lfortran_rhs_offset = __lfortran_source_offset;
+            int64_t __lfortran_rhs_length = (((((__lfortran_source_dim1_lower_bound + source->dims[0].length - 1)) - (__lfortran_source_dim1_lower_bound)) / (1)) + 1);
+                for (int64_t __lfortran_i = 0; __lfortran_i < __lfortran_lhs_length; __lfortran_i++) {
+                    __lfortran_lhs_data[__lfortran_lhs_offset + __lfortran_i * __lfortran_lhs_stride] = __lfortran_rhs_data[__lfortran_rhs_offset + __lfortran_i * __lfortran_rhs_stride];
+                }
+            }
+        }
+    } else {
+        for (i=1; i<=ncopies; i++) {
+            {
+            double *__lfortran_lhs_data1 = __lfortran_result_data;
+            int64_t __lfortran_lhs_stride1 = __lfortran_result_dim1_stride * (1);
+            int64_t __lfortran_lhs_offset1 = (__lfortran_result_offset + __lfortran_result_dim1_stride * ((1) - __lfortran_result_dim1_lower_bound) + __lfortran_result_dim2_stride * ((i) - __lfortran_result_dim2_lower_bound));
+            int64_t __lfortran_lhs_length1 = ((((__1result + 1 - 1) - (1)) / (1)) + 1);
+            double *__lfortran_rhs_data1 = __lfortran_source_data;
+            int64_t __lfortran_rhs_stride1 = __lfortran_source_dim1_stride * (1);
+            int64_t __lfortran_rhs_offset1 = __lfortran_source_offset;
+            int64_t __lfortran_rhs_length1 = (((((__lfortran_source_dim1_lower_bound + source->dims[0].length - 1)) - (__lfortran_source_dim1_lower_bound)) / (1)) + 1);
+                for (int64_t __lfortran_i1 = 0; __lfortran_i1 < __lfortran_lhs_length1; __lfortran_i1++) {
+                    __lfortran_lhs_data1[__lfortran_lhs_offset1 + __lfortran_i1 * __lfortran_lhs_stride1] = __lfortran_rhs_data1[__lfortran_rhs_offset1 + __lfortran_i1 * __lfortran_rhs_stride1];
+                }
+            }
+        }
+    }
+        return;
+}
+
+void __lfortran__lcompilers_spread_r64____ret_r64______idx4(struct r64___* restrict source, int32_t dim, int32_t ncopies, struct r64_____* restrict result)
+{
+    __lfortran__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3(source, ((int32_t)source->dims[0].length + source->dims[0].lower_bound - 1), dim, ncopies, result, ((int32_t)result->dims[0].length + result->dims[0].lower_bound - 1), ((int32_t)result->dims[1].length + result->dims[1].lower_bound - 1));
+}
+
+int main(int argc, char* argv[])
+{
+    _lpython_set_argv(argc, argv);
+    lfortran_allocator_t* __lfortran_default_allocator = _lfortran_get_default_allocator();
+    int32_t __lcompilers_i_0;
+    int32_t __lcompilers_i_01;
+    int32_t __lcompilers_i_1;
+    int32_t __lcompilers_i_11;
+    struct r64_____ __libasr_created__function_call__lcompilers_Sum_8_2_0_idx4_real_______0_value;
+    __libasr_created__function_call__lcompilers_Sum_8_2_0_idx4_real_______0_value.data = NULL;
+    __libasr_created__function_call__lcompilers_Sum_8_2_0_idx4_real_______0_value.is_allocated = false;
+    struct r64_____* __libasr_created__function_call__lcompilers_Sum_8_2_0_idx4_real_______0 = &__libasr_created__function_call__lcompilers_Sum_8_2_0_idx4_real_______0_value;
+    double __libasr_created__intrinsic_array_function_Sum;
+    struct r64_____ __libasr_created__subroutine_call__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3_value;
+    __libasr_created__subroutine_call__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3_value.data = NULL;
+    __libasr_created__subroutine_call__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3_value.is_allocated = false;
+    struct r64_____* __libasr_created__subroutine_call__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3 = &__libasr_created__subroutine_call__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3_value;
+    struct r64_____ a_value;
+    struct r64_____* a = &a_value;
+    double *a_data = NULL;
+    a->data = a_data;
+    a->n_dims = 2;
+    a->offset = 0;
+    a->is_allocated = false;
+    a->dims[0].lower_bound = 1;
+    a->dims[0].length = 0;
+    a->dims[0].stride = 1;
+    a->dims[1].lower_bound = 1;
+    a->dims[1].length = 0;
+    a->dims[1].stride = (1*0);
+    struct r64___ v_value;
+    struct r64___* v = &v_value;
+    double v_data[3];
+    v->data = v_data;
+    v->n_dims = 1;
+    v->offset = 0;
+    v->is_allocated = true;
+    v->dims[0].lower_bound = 1;
+    v->dims[0].length = 3;
+    v->dims[0].stride = 1;
+    v_data[(0 + (1 * (1 - 1)))] =   1.00000000000000000e+00;
+    v_data[(0 + (1 * (2 - 1)))] =   2.00000000000000000e+00;
+    v_data[(0 + (1 * (3 - 1)))] =   3.00000000000000000e+00;
+    int64_t __lfortran_realloc_old_size = 0;
+    if (a != NULL && a->is_allocated && a->data != NULL) {
+        __lfortran_realloc_old_size = 1;
+        for (int32_t __lfortran_realloc_dim = 0; __lfortran_realloc_dim < a->n_dims; __lfortran_realloc_dim++) {
+            __lfortran_realloc_old_size *= a->dims[__lfortran_realloc_dim].length;
+        }
+    }
+    a->n_dims = 2;
+    a->dims[0].lower_bound = 1;
+    a->dims[0].length = 1;
+    a->dims[0].stride = 1;
+    a->dims[1].lower_bound = 1;
+    a->dims[1].length = ((int32_t)v->dims[1-1].length);
+    a->dims[1].stride = (1 * 1);
+    a->offset = 0;
+    int64_t __lfortran_realloc_new_size = 1*a->dims[0].length*a->dims[1].length;
+    if (a->is_allocated && a->data != NULL && __lfortran_realloc_old_size != __lfortran_realloc_new_size) {
+        _lfortran_free_alloc(__lfortran_default_allocator, (char*) a->data);
+        a->data = NULL;
+        a->is_allocated = false;
+    }
+    if (!a->is_allocated || a->data == NULL) {
+        a->data = (double*) _lfortran_malloc_alloc(__lfortran_default_allocator, 1*a->dims[0].length*a->dims[1].length*sizeof(double));
+    }
+    a->is_allocated = true;
+    if (!((a->is_allocated && (true && (a->dims[0].stride == 1) && (a->dims[1].stride == (1 * a->dims[0].length)))) && ((int32_t)a->dims[1-1].lower_bound) == 1 && ((int32_t)a->dims[2-1].lower_bound) == 1)) {
+        if ((__libasr_created__subroutine_call__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3) != NULL && (__libasr_created__subroutine_call__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3)->is_allocated && (__libasr_created__subroutine_call__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3)->data != NULL) {
+            _lfortran_free_alloc(__lfortran_default_allocator, (char*) (__libasr_created__subroutine_call__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3)->data);
+            (__libasr_created__subroutine_call__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3)->data = NULL;
+        }
+        if ((__libasr_created__subroutine_call__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3) != NULL) {
+            (__libasr_created__subroutine_call__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3)->offset = 0;
+            (__libasr_created__subroutine_call__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3)->is_allocated = false;
+        }
+        __libasr_created__subroutine_call__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3->n_dims = 2;
+        __libasr_created__subroutine_call__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3->dims[0].lower_bound = 1;
+        __libasr_created__subroutine_call__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3->dims[0].length = 1;
+        __libasr_created__subroutine_call__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3->dims[0].stride = 1;
+        __libasr_created__subroutine_call__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3->dims[1].lower_bound = 1;
+        __libasr_created__subroutine_call__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3->dims[1].length = ((int32_t)v->dims[1-1].length);
+        __libasr_created__subroutine_call__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3->dims[1].stride = (1 * 1);
+        __libasr_created__subroutine_call__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3->offset = 0;
+        __libasr_created__subroutine_call__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3->data = (double*) _lfortran_malloc_alloc(__lfortran_default_allocator, 1*__libasr_created__subroutine_call__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3->dims[0].length*__libasr_created__subroutine_call__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3->dims[1].length*sizeof(double));
+        __libasr_created__subroutine_call__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3->is_allocated = true;
+    } else {
+        __libasr_created__subroutine_call__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3 = ((struct r64_____*)(a));
+    }
+    struct r64___ __lfortran_array_view = { .data = v->data, .dims = {{1, v->dims[0].length, v->dims[0].stride}}, .n_dims = 1, .offset = v->offset, .is_allocated = v->is_allocated };
+    struct r64_____ __lfortran_array_view1 = { .data = __libasr_created__subroutine_call__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3->data, .dims = {{1, __libasr_created__subroutine_call__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3->dims[0].length, __libasr_created__subroutine_call__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3->dims[0].stride}, {1, __libasr_created__subroutine_call__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3->dims[1].length, __libasr_created__subroutine_call__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3->dims[1].stride}}, .n_dims = 2, .offset = __libasr_created__subroutine_call__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3->offset, .is_allocated = __libasr_created__subroutine_call__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3->is_allocated };
+    __lfortran__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3(&__lfortran_array_view, 3, 1, 1, &__lfortran_array_view1, ((int32_t)a->dims[1-1].length), ((int32_t)a->dims[2-1].length));
+    if (!((a->is_allocated && (true && (a->dims[0].stride == 1) && (a->dims[1].stride == (1 * a->dims[0].length)))) && ((int32_t)a->dims[1-1].lower_bound) == 1 && ((int32_t)a->dims[2-1].lower_bound) == 1)) {
+        int64_t __lfortran_realloc_old_size1 = 0;
+        if (a != NULL && a->is_allocated && a->data != NULL) {
+            __lfortran_realloc_old_size1 = 1;
+            for (int32_t __lfortran_realloc_dim1 = 0; __lfortran_realloc_dim1 < a->n_dims; __lfortran_realloc_dim1++) {
+                __lfortran_realloc_old_size1 *= a->dims[__lfortran_realloc_dim1].length;
+            }
+        }
+        a->n_dims = 2;
+        a->dims[0].lower_bound = 1;
+        a->dims[0].length = 1;
+        a->dims[0].stride = 1;
+        a->dims[1].lower_bound = 1;
+        a->dims[1].length = ((int32_t)v->dims[1-1].length);
+        a->dims[1].stride = (1 * 1);
+        a->offset = 0;
+        int64_t __lfortran_realloc_new_size1 = 1*a->dims[0].length*a->dims[1].length;
+        if (a->is_allocated && a->data != NULL && __lfortran_realloc_old_size1 != __lfortran_realloc_new_size1) {
+            _lfortran_free_alloc(__lfortran_default_allocator, (char*) a->data);
+            a->data = NULL;
+            a->is_allocated = false;
+        }
+        if (!a->is_allocated || a->data == NULL) {
+            a->data = (double*) _lfortran_malloc_alloc(__lfortran_default_allocator, 1*a->dims[0].length*a->dims[1].length*sizeof(double));
+        }
+        a->is_allocated = true;
+        for (__lcompilers_i_1=((int32_t)a->dims[2-1].lower_bound); __lcompilers_i_1<=((int32_t) a->dims[2-1].length + a->dims[2-1].lower_bound - 1); __lcompilers_i_1++) {
+            for (__lcompilers_i_0=((int32_t)a->dims[1-1].lower_bound); __lcompilers_i_0<=((int32_t) a->dims[1-1].length + a->dims[1-1].lower_bound - 1); __lcompilers_i_0++) {
+                a->data[(((0 + (a->dims[0].stride * (__lcompilers_i_0 - a->dims[0].lower_bound))) + (a->dims[1].stride * (__lcompilers_i_1 - a->dims[1].lower_bound))) + a->offset)] = __libasr_created__subroutine_call__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3->data[(((0 + (__libasr_created__subroutine_call__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3->dims[0].stride * (((int32_t)__libasr_created__subroutine_call__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3->dims[1-1].lower_bound) + (__lcompilers_i_0 - ((int32_t)a->dims[1-1].lower_bound)) - __libasr_created__subroutine_call__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3->dims[0].lower_bound))) + (__libasr_created__subroutine_call__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3->dims[1].stride * (((int32_t)__libasr_created__subroutine_call__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3->dims[2-1].lower_bound) + (__lcompilers_i_1 - ((int32_t)a->dims[2-1].lower_bound)) - __libasr_created__subroutine_call__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3->dims[1].lower_bound))) + __libasr_created__subroutine_call__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3->offset)];
+            }
+        }
+    }
+    if ((a->is_allocated && (true && (a->dims[0].stride == 1) && (a->dims[1].stride == (1 * a->dims[0].length)))) && ((int32_t)a->dims[1-1].lower_bound) == 1 && ((int32_t)a->dims[2-1].lower_bound) == 1) {
+        __libasr_created__subroutine_call__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3 = &__libasr_created__subroutine_call__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3_value;
+        if ((__libasr_created__subroutine_call__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3) != NULL) {
+            (__libasr_created__subroutine_call__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3)->data = NULL;
+            (__libasr_created__subroutine_call__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3)->offset = 0;
+            (__libasr_created__subroutine_call__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3)->is_allocated = false;
+        }
+    } else {
+        if ((__libasr_created__subroutine_call__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3) != NULL && (__libasr_created__subroutine_call__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3)->is_allocated && (__libasr_created__subroutine_call__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3)->data != NULL) {
+            _lfortran_free_alloc(__lfortran_default_allocator, (char*) (__libasr_created__subroutine_call__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3)->data);
+            (__libasr_created__subroutine_call__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3)->data = NULL;
+        }
+        if ((__libasr_created__subroutine_call__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3) != NULL) {
+            (__libasr_created__subroutine_call__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3)->offset = 0;
+            (__libasr_created__subroutine_call__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3)->is_allocated = false;
+        }
+    }
+    if (((int32_t)a->dims[1-1].length) != 1) {
+        fprintf(stderr, "ERROR STOP");
+        exit(1);
+    }
+    if (((int32_t)a->dims[2-1].length) != 3) {
+        fprintf(stderr, "ERROR STOP");
+        exit(1);
+    }
+    if (!((a->is_allocated && (true && (a->dims[0].stride == 1) && (a->dims[1].stride == (1 * a->dims[0].length)))) && ((int32_t)a->dims[1-1].lower_bound) == 1 && ((int32_t)a->dims[2-1].lower_bound) == 1)) {
+        if ((__libasr_created__function_call__lcompilers_Sum_8_2_0_idx4_real_______0) != NULL && (__libasr_created__function_call__lcompilers_Sum_8_2_0_idx4_real_______0)->is_allocated && (__libasr_created__function_call__lcompilers_Sum_8_2_0_idx4_real_______0)->data != NULL) {
+            _lfortran_free_alloc(__lfortran_default_allocator, (char*) (__libasr_created__function_call__lcompilers_Sum_8_2_0_idx4_real_______0)->data);
+            (__libasr_created__function_call__lcompilers_Sum_8_2_0_idx4_real_______0)->data = NULL;
+        }
+        if ((__libasr_created__function_call__lcompilers_Sum_8_2_0_idx4_real_______0) != NULL) {
+            (__libasr_created__function_call__lcompilers_Sum_8_2_0_idx4_real_______0)->offset = 0;
+            (__libasr_created__function_call__lcompilers_Sum_8_2_0_idx4_real_______0)->is_allocated = false;
+        }
+        __libasr_created__function_call__lcompilers_Sum_8_2_0_idx4_real_______0->n_dims = 2;
+        __libasr_created__function_call__lcompilers_Sum_8_2_0_idx4_real_______0->dims[0].lower_bound = 1;
+        __libasr_created__function_call__lcompilers_Sum_8_2_0_idx4_real_______0->dims[0].length = ((int32_t)a->dims[1-1].length);
+        __libasr_created__function_call__lcompilers_Sum_8_2_0_idx4_real_______0->dims[0].stride = 1;
+        __libasr_created__function_call__lcompilers_Sum_8_2_0_idx4_real_______0->dims[1].lower_bound = 1;
+        __libasr_created__function_call__lcompilers_Sum_8_2_0_idx4_real_______0->dims[1].length = ((int32_t)a->dims[2-1].length);
+        __libasr_created__function_call__lcompilers_Sum_8_2_0_idx4_real_______0->dims[1].stride = (1 * ((int32_t)a->dims[1-1].length));
+        __libasr_created__function_call__lcompilers_Sum_8_2_0_idx4_real_______0->offset = 0;
+        __libasr_created__function_call__lcompilers_Sum_8_2_0_idx4_real_______0->data = (double*) _lfortran_malloc_alloc(__lfortran_default_allocator, 1*__libasr_created__function_call__lcompilers_Sum_8_2_0_idx4_real_______0->dims[0].length*__libasr_created__function_call__lcompilers_Sum_8_2_0_idx4_real_______0->dims[1].length*sizeof(double));
+        __libasr_created__function_call__lcompilers_Sum_8_2_0_idx4_real_______0->is_allocated = true;
+        for (__lcompilers_i_11=((int32_t)__libasr_created__function_call__lcompilers_Sum_8_2_0_idx4_real_______0->dims[2-1].lower_bound); __lcompilers_i_11<=((int32_t) __libasr_created__function_call__lcompilers_Sum_8_2_0_idx4_real_______0->dims[2-1].length + __libasr_created__function_call__lcompilers_Sum_8_2_0_idx4_real_______0->dims[2-1].lower_bound - 1); __lcompilers_i_11++) {
+            for (__lcompilers_i_01=((int32_t)__libasr_created__function_call__lcompilers_Sum_8_2_0_idx4_real_______0->dims[1-1].lower_bound); __lcompilers_i_01<=((int32_t) __libasr_created__function_call__lcompilers_Sum_8_2_0_idx4_real_______0->dims[1-1].length + __libasr_created__function_call__lcompilers_Sum_8_2_0_idx4_real_______0->dims[1-1].lower_bound - 1); __lcompilers_i_01++) {
+                __libasr_created__function_call__lcompilers_Sum_8_2_0_idx4_real_______0->data[(((0 + (__libasr_created__function_call__lcompilers_Sum_8_2_0_idx4_real_______0->dims[0].stride * (__lcompilers_i_01 - __libasr_created__function_call__lcompilers_Sum_8_2_0_idx4_real_______0->dims[0].lower_bound))) + (__libasr_created__function_call__lcompilers_Sum_8_2_0_idx4_real_______0->dims[1].stride * (__lcompilers_i_11 - __libasr_created__function_call__lcompilers_Sum_8_2_0_idx4_real_______0->dims[1].lower_bound))) + __libasr_created__function_call__lcompilers_Sum_8_2_0_idx4_real_______0->offset)] = a->data[(((0 + (a->dims[0].stride * (((int32_t)a->dims[1-1].lower_bound) + (__lcompilers_i_01 - ((int32_t)__libasr_created__function_call__lcompilers_Sum_8_2_0_idx4_real_______0->dims[1-1].lower_bound)) - a->dims[0].lower_bound))) + (a->dims[1].stride * (((int32_t)a->dims[2-1].lower_bound) + (__lcompilers_i_11 - ((int32_t)__libasr_created__function_call__lcompilers_Sum_8_2_0_idx4_real_______0->dims[2-1].lower_bound)) - a->dims[1].lower_bound))) + a->offset)];
+            }
+        }
+    } else {
+        __libasr_created__function_call__lcompilers_Sum_8_2_0_idx4_real_______0 = ((struct r64_____*)(a));
+    }
+    __libasr_created__intrinsic_array_function_Sum = __lfortran__lcompilers_Sum_8_2_0_idx4_real_______0((&(struct r64_____){ .data = __libasr_created__function_call__lcompilers_Sum_8_2_0_idx4_real_______0->data, .dims = {{1, __libasr_created__function_call__lcompilers_Sum_8_2_0_idx4_real_______0->dims[0].length, __libasr_created__function_call__lcompilers_Sum_8_2_0_idx4_real_______0->dims[0].stride}, {1, __libasr_created__function_call__lcompilers_Sum_8_2_0_idx4_real_______0->dims[1].length, __libasr_created__function_call__lcompilers_Sum_8_2_0_idx4_real_______0->dims[1].stride}}, .n_dims = 2, .offset = __libasr_created__function_call__lcompilers_Sum_8_2_0_idx4_real_______0->offset, .is_allocated = __libasr_created__function_call__lcompilers_Sum_8_2_0_idx4_real_______0->is_allocated }), ((int32_t) (&(struct r64_____){ .data = __libasr_created__function_call__lcompilers_Sum_8_2_0_idx4_real_______0->data, .dims = {{1, __libasr_created__function_call__lcompilers_Sum_8_2_0_idx4_real_______0->dims[0].length, __libasr_created__function_call__lcompilers_Sum_8_2_0_idx4_real_______0->dims[0].stride}, {1, __libasr_created__function_call__lcompilers_Sum_8_2_0_idx4_real_______0->dims[1].length, __libasr_created__function_call__lcompilers_Sum_8_2_0_idx4_real_______0->dims[1].stride}}, .n_dims = 2, .offset = __libasr_created__function_call__lcompilers_Sum_8_2_0_idx4_real_______0->offset, .is_allocated = __libasr_created__function_call__lcompilers_Sum_8_2_0_idx4_real_______0->is_allocated })->dims[0].length), ((int32_t) (&(struct r64_____){ .data = __libasr_created__function_call__lcompilers_Sum_8_2_0_idx4_real_______0->data, .dims = {{1, __libasr_created__function_call__lcompilers_Sum_8_2_0_idx4_real_______0->dims[0].length, __libasr_created__function_call__lcompilers_Sum_8_2_0_idx4_real_______0->dims[0].stride}, {1, __libasr_created__function_call__lcompilers_Sum_8_2_0_idx4_real_______0->dims[1].length, __libasr_created__function_call__lcompilers_Sum_8_2_0_idx4_real_______0->dims[1].stride}}, .n_dims = 2, .offset = __libasr_created__function_call__lcompilers_Sum_8_2_0_idx4_real_______0->offset, .is_allocated = __libasr_created__function_call__lcompilers_Sum_8_2_0_idx4_real_______0->is_allocated })->dims[1].length));
+    if ((a->is_allocated && (true && (a->dims[0].stride == 1) && (a->dims[1].stride == (1 * a->dims[0].length)))) && ((int32_t)a->dims[1-1].lower_bound) == 1 && ((int32_t)a->dims[2-1].lower_bound) == 1) {
+        __libasr_created__function_call__lcompilers_Sum_8_2_0_idx4_real_______0 = &__libasr_created__function_call__lcompilers_Sum_8_2_0_idx4_real_______0_value;
+        if ((__libasr_created__function_call__lcompilers_Sum_8_2_0_idx4_real_______0) != NULL) {
+            (__libasr_created__function_call__lcompilers_Sum_8_2_0_idx4_real_______0)->data = NULL;
+            (__libasr_created__function_call__lcompilers_Sum_8_2_0_idx4_real_______0)->offset = 0;
+            (__libasr_created__function_call__lcompilers_Sum_8_2_0_idx4_real_______0)->is_allocated = false;
+        }
+    } else {
+        if ((__libasr_created__function_call__lcompilers_Sum_8_2_0_idx4_real_______0) != NULL && (__libasr_created__function_call__lcompilers_Sum_8_2_0_idx4_real_______0)->is_allocated && (__libasr_created__function_call__lcompilers_Sum_8_2_0_idx4_real_______0)->data != NULL) {
+            _lfortran_free_alloc(__lfortran_default_allocator, (char*) (__libasr_created__function_call__lcompilers_Sum_8_2_0_idx4_real_______0)->data);
+            (__libasr_created__function_call__lcompilers_Sum_8_2_0_idx4_real_______0)->data = NULL;
+        }
+        if ((__libasr_created__function_call__lcompilers_Sum_8_2_0_idx4_real_______0) != NULL) {
+            (__libasr_created__function_call__lcompilers_Sum_8_2_0_idx4_real_______0)->offset = 0;
+            (__libasr_created__function_call__lcompilers_Sum_8_2_0_idx4_real_______0)->is_allocated = false;
+        }
+    }
+    if (fabs(__libasr_created__intrinsic_array_function_Sum -   6.00000000000000000e+00) >   9.99999999999999980e-13) {
+        fprintf(stderr, "ERROR STOP");
+        exit(1);
+    }
+    if ((a) != NULL && (a)->is_allocated && (a)->data != NULL) {
+        _lfortran_free_alloc(__lfortran_default_allocator, (char*) (a)->data);
+        (a)->data = NULL;
+    }
+    if ((a) != NULL) {
+        (a)->offset = 0;
+        (a)->is_allocated = false;
+    }
+    return 0;
+}
