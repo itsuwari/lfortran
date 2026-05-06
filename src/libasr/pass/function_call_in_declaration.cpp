@@ -181,9 +181,9 @@ public:
         SymbolTable *current_scope {nullptr};
     public : 
 
-        void visit_Function(const ASR::Function_t &x){throw LCompilersException("Not expected to visit");}
-        void visit_Program(const ASR::Program_t &x){throw LCompilersException("Not expected to visit");}
-        void visit_Module(const ASR::Module_t &x){throw LCompilersException("Not expected to visit");}
+        void visit_Function(const ASR::Function_t &x){(void)x;throw LCompilersException("Not expected to visit");}
+        void visit_Program(const ASR::Program_t &x)  {(void)x;throw LCompilersException("Not expected to visit");}
+        void visit_Module(const ASR::Module_t &x)    {(void)x;throw LCompilersException("Not expected to visit");}
         void visit_FunctionParam(const ASR::FunctionParam_t &x){
             LCOMPILERS_ASSERT(current_scope)
             ASR::Function_t* func = ASR::down_cast2<ASR::Function_t>(current_scope->asr_owner);
