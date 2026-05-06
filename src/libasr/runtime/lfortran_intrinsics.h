@@ -273,6 +273,8 @@ LFORTRAN_API int32_t _lpython_bit_length4(int32_t num);
 LFORTRAN_API int32_t _lpython_bit_length8(int64_t num);
 LFORTRAN_API void _lfortran_strrepeat_alloc(lfortran_allocator_t* al, char** s, int32_t n, char** dest);
 LFORTRAN_API char* _lfortran_strrepeat_c_alloc(lfortran_allocator_t* al, char* s, int32_t n);
+LFORTRAN_API char* _lfortran_strrepeat_c_len_alloc(lfortran_allocator_t* al,
+    char* s, int64_t s_len, int32_t n);
 LFORTRAN_API char* _lfortran_strcat_alloc(lfortran_allocator_t* al, char* s1, int64_t s1_len, char* s2, int64_t s2_len);
 LFORTRAN_API void _lfortran_strcpy_alloc(lfortran_allocator_t* al, char** lhs, int64_t* lhs_len, bool is_lhs_allocatable, bool is_lhs_deferred, char* rhs, int64_t rhs_len);
 static inline int64_t _lfortran_cstr_len0(const char *s) {
@@ -314,6 +316,8 @@ LFORTRAN_API int64_t _lfortran_str_index(char* str, int64_t str_len, char* subst
 LFORTRAN_API int _lfortran_str_ord(char** s);
 LFORTRAN_API int _lfortran_str_ord_c(char* s);
 LFORTRAN_API char* _lfortran_str_chr_alloc(lfortran_allocator_t* al, uint8_t c);
+LFORTRAN_API char* _lfortran_transfer_scalar_to_string_alloc(lfortran_allocator_t* al,
+    const void* src, int64_t src_size, int64_t dst_len);
 LFORTRAN_API int _lfortran_str_to_int(char** s);
 LFORTRAN_API void _lfortran_memset(void* s, int32_t c, int32_t size);
 LFORTRAN_API void* _lfortran_malloc_alloc(lfortran_allocator_t* al, int64_t size);

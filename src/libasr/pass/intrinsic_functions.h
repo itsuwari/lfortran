@@ -6105,14 +6105,9 @@ namespace Ichar {
         declare_basic_variables("_lcompilers_ichar_" + type_to_str_python_expr(arg_types[0], new_args[0].m_value));
         fill_func_arg("str", ASRUtils::TYPE(ASR::make_String_t(al, loc, 1, nullptr, ASR::string_length_kindType::AssumedLength, ASR::string_physical_typeType::DescriptorString)));
         auto result = declare("result", return_type, ReturnVar);
-        auto itr = declare("i", int32, Local);
-        body.push_back(al, b.Assignment(itr, b.i32(1)));
         body.push_back(al, b.Assignment(result, b.i2i_t(
-            ASRUtils::EXPR(ASR::make_Ichar_t(al, loc, ASRUtils::EXPR(ASR::make_StringItem_t(al, loc, args[0], itr,
-            ASRUtils::TYPE(ASR::make_String_t(al, loc, 1, nullptr, 
-                ASR::string_length_kindType::AssumedLength,
-                ASR::string_physical_typeType::DescriptorString)),
-            nullptr)), int32, nullptr)), return_type)));
+            ASRUtils::EXPR(ASR::make_Ichar_t(al, loc, args[0], int32, nullptr)),
+            return_type)));
 
         ASR::symbol_t *f_sym = make_ASR_Function_t(fn_name, fn_symtab, dep, args,
             body, result, ASR::abiType::Source, ASR::deftypeType::Implementation, nullptr);
@@ -6263,14 +6258,9 @@ namespace Iachar {
         declare_basic_variables("_lcompilers_iachar_" + type_to_str_python_expr(arg_types[0], new_args[0].m_value));
         fill_func_arg("str", ASRUtils::TYPE(ASR::make_String_t(al, loc, 1, nullptr, ASR::string_length_kindType::AssumedLength, ASR::string_physical_typeType::DescriptorString)));
         auto result = declare("result", return_type, ReturnVar);
-        auto itr = declare("i", int32, Local);
-        body.push_back(al, b.Assignment(itr, b.i32(1)));
         body.push_back(al, b.Assignment(result, b.i2i_t(
-            ASRUtils::EXPR(ASR::make_Iachar_t(al, loc, ASRUtils::EXPR(ASR::make_StringItem_t(al, loc, args[0], itr,
-            ASRUtils::TYPE(ASR::make_String_t(al, loc, 1, nullptr,
-                ASR::string_length_kindType::AssumedLength,
-                ASR::string_physical_typeType::DescriptorString)),
-            nullptr)), int32, nullptr)), return_type)));
+            ASRUtils::EXPR(ASR::make_Iachar_t(al, loc, args[0], int32, nullptr)),
+            return_type)));
 
         ASR::symbol_t *f_sym = make_ASR_Function_t(fn_name, fn_symtab, dep, args,
             body, result, ASR::abiType::Source, ASR::deftypeType::Implementation, nullptr);
@@ -6412,15 +6402,25 @@ namespace Repeat {
 
     static ASR::expr_t *eval_Repeat(Allocator &al, const Location &loc,
             ASR::ttype_t* /*t1*/, Vec<ASR::expr_t*> &args, diag::Diagnostics& /*diag*/) {
-        char* str = ASR::down_cast<ASR::StringConstant_t>(expr_value(args[0]))->m_s;
+        ASR::StringConstant_t *str_const =
+            ASR::down_cast<ASR::StringConstant_t>(expr_value(args[0]));
+        char* str = str_const->m_s;
         int64_t n = ASR::down_cast<ASR::IntegerConstant_t>(expr_value(args[1]))->m_n;
-        size_t len = std::strlen(str);
-        size_t new_len = len*n;
-        char* result = new char[new_len+1];
-        for (size_t i=0; i<new_len; i++) {
-            result[i] = str[i%len];
+        int64_t len = -1;
+        ASR::String_t *str_type = ASRUtils::get_string_type(str_const->m_type);
+        if (str_type == nullptr || str_type->m_len == nullptr
+                || !ASRUtils::extract_value(str_type->m_len, len)) {
+            len = std::strlen(str);
         }
-        result[new_len] = '\0';
+        int64_t new_len = n > 0 ? len*n : 0;
+        std::string repeated;
+        repeated.resize(new_len);
+        for (int64_t i=0; i<new_len; i++) {
+            repeated[i] = str[i%len];
+        }
+        Str result_s;
+        result_s.from_str_view(repeated);
+        char* result = result_s.c_str(al);
         return make_ConstantWithType(make_StringConstant_t, result, character(new_len), loc);
     }
 

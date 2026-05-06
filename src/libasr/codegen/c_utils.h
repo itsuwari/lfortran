@@ -815,7 +815,8 @@ class CCPPDSUtils {
                 case ASR::ttypeType::String : {
                     if (is_c) {
                         result = "_lfortran_strcpy_alloc(_lfortran_get_default_allocator(), &"
-                            + target + ", NULL, true, true, " + value + ", strlen(" + value + "));";
+                            + target + ", NULL, true, true, " + value
+                            + ", _lfortran_str_len(" + value + "));";
                     } else {
                         result = target + " = " + value  + ";";
                     }
@@ -828,7 +829,8 @@ class CCPPDSUtils {
                         result = get_deepcopy(alloc_value_type, value, target);
                     } else if (ASRUtils::is_character(*alloc_value_type)) {
                         result = "_lfortran_strcpy_alloc(_lfortran_get_default_allocator(), &"
-                            + target + ", NULL, true, true, " + value + ", strlen(" + value + "));";
+                            + target + ", NULL, true, true, " + value
+                            + ", _lfortran_str_len(" + value + "));";
                     } else if (!ASRUtils::is_aggregate_type(alloc_value_type)) {
                         std::string alloc_type_name = CUtils::get_c_type_from_ttype_t(alloc_value_type);
                         result = "if (" + target + " == NULL) { " + target + " = ("

@@ -2295,6 +2295,14 @@ R"(#include <stdio.h>
             case ASR::exprType::StringFormat:
             case ASR::exprType::StringChr:
                 return true;
+            case ASR::exprType::IntrinsicElementalFunction: {
+                ASR::IntrinsicElementalFunction_t *ief =
+                    ASR::down_cast<ASR::IntrinsicElementalFunction_t>(expr);
+                return ief->m_intrinsic_id == static_cast<int64_t>(
+                        ASRUtils::IntrinsicElementalFunctions::Char)
+                    || ief->m_intrinsic_id == static_cast<int64_t>(
+                        ASRUtils::IntrinsicElementalFunctions::Repeat);
+            }
             case ASR::exprType::StringPhysicalCast:
                 return is_allocating_string_expr(
                     ASR::down_cast<ASR::StringPhysicalCast_t>(expr)->m_arg);
@@ -2312,7 +2320,84 @@ R"(#include <stdio.h>
             setup += extract_stmt_setup_from_expr(src);
             return src;
         }
-        return "((" + expr_src + ") != NULL ? strlen(" + expr_src + ") : 0)";
+        return get_c_string_runtime_length_expr(expr_src);
+    }
+
+    std::string get_c_string_runtime_length_expr(const std::string &expr_src) {
+        return "((" + expr_src + ") != NULL ? _lfortran_str_len(" + expr_src + ") : 0)";
+    }
+
+    bool try_materialize_c_intrinsic_string_expr(ASR::expr_t *expr,
+            std::string &expr_src, std::string &expr_len,
+            std::string &setup, std::string &cleanup) {
+        if (!is_c) {
+            return false;
+        }
+        expr = unwrap_c_lvalue_expr(expr);
+        if (expr == nullptr) {
+            return false;
+        }
+        ASR::IntrinsicElementalFunction_t *ief =
+            ASR::is_a<ASR::IntrinsicElementalFunction_t>(*expr)
+                ? ASR::down_cast<ASR::IntrinsicElementalFunction_t>(expr) : nullptr;
+        ASR::StringChr_t *string_chr =
+            ASR::is_a<ASR::StringChr_t>(*expr)
+                ? ASR::down_cast<ASR::StringChr_t>(expr) : nullptr;
+        ASR::StringRepeat_t *string_repeat =
+            ASR::is_a<ASR::StringRepeat_t>(*expr)
+                ? ASR::down_cast<ASR::StringRepeat_t>(expr) : nullptr;
+        std::string indent(indentation_level * indentation_spaces, ' ');
+        if (string_chr || (ief && ief->m_intrinsic_id == static_cast<int64_t>(
+                ASRUtils::IntrinsicElementalFunctions::Char))) {
+            ASR::expr_t *char_arg = string_chr ? string_chr->m_arg : ief->m_args[0];
+            visit_expr_without_c_pow_cache(*char_arg);
+            std::string char_value = src;
+            setup += drain_tmp_buffer();
+            setup += extract_stmt_setup_from_expr(char_value);
+            std::string tmp_name = get_unique_local_name("__lfortran_string_tmp");
+            setup += indent + "char* " + tmp_name
+                + " = _lfortran_str_chr_alloc(_lfortran_get_default_allocator(), "
+                + char_value + ");\n";
+            expr_src = tmp_name;
+            expr_len = "1";
+            cleanup += indent + "_lfortran_free_alloc(_lfortran_get_default_allocator(), "
+                + tmp_name + ");\n";
+            return true;
+        }
+        if (string_repeat || (ief && ief->m_intrinsic_id == static_cast<int64_t>(
+                ASRUtils::IntrinsicElementalFunctions::Repeat))) {
+            ASR::expr_t *repeat_left = string_repeat ? string_repeat->m_left : ief->m_args[0];
+            ASR::expr_t *repeat_right = string_repeat ? string_repeat->m_right : ief->m_args[1];
+            std::string left_src;
+            std::string left_len;
+            std::string left_setup;
+            std::string left_cleanup;
+            if (!try_materialize_c_intrinsic_string_expr(repeat_left,
+                    left_src, left_len, left_setup, left_cleanup)) {
+                visit_expr_without_c_pow_cache(*repeat_left);
+                left_src = src;
+                left_setup += drain_tmp_buffer();
+                left_setup += extract_stmt_setup_from_expr(left_src);
+                left_len = get_string_length_expr(repeat_left, left_src, left_setup);
+            }
+            visit_expr_without_c_pow_cache(*repeat_right);
+            std::string repeat_count = src;
+            std::string repeat_setup = drain_tmp_buffer();
+            repeat_setup += extract_stmt_setup_from_expr(repeat_count);
+            std::string tmp_name = get_unique_local_name("__lfortran_string_tmp");
+            setup += left_setup;
+            setup += repeat_setup;
+            setup += indent + "char* " + tmp_name
+                + " = _lfortran_strrepeat_c_len_alloc(_lfortran_get_default_allocator(), "
+                + left_src + ", " + left_len + ", " + repeat_count + ");\n";
+            setup += left_cleanup;
+            expr_src = tmp_name;
+            expr_len = "((" + left_len + ") * (" + repeat_count + "))";
+            cleanup += indent + "_lfortran_free_alloc(_lfortran_get_default_allocator(), "
+                + tmp_name + ");\n";
+            return true;
+        }
+        return false;
     }
 
     void materialize_allocating_string_expr(ASR::expr_t *expr, std::string &expr_src,
@@ -2321,11 +2406,48 @@ R"(#include <stdio.h>
             expr_len = get_string_length_expr(expr, expr_src, setup);
             return;
         }
+        if (try_materialize_c_intrinsic_string_expr(
+                expr, expr_src, expr_len, setup, cleanup)) {
+            return;
+        }
+        if (ASR::is_a<ASR::BitCast_t>(*expr)) {
+            ASR::BitCast_t *bitcast = ASR::down_cast<ASR::BitCast_t>(expr);
+            ASR::expr_t *source = bitcast->m_value ? bitcast->m_value : bitcast->m_source;
+            ASR::ttype_t *target_type = bitcast->m_type;
+            ASR::ttype_t *source_type = source ? ASRUtils::expr_type(source) : nullptr;
+            if (source && ASR::is_a<ASR::ArrayItem_t>(*source)) {
+                ASR::ArrayItem_t *array_item = ASR::down_cast<ASR::ArrayItem_t>(source);
+                source_type = ASRUtils::type_get_past_array(
+                    ASRUtils::expr_type(array_item->m_v));
+            }
+            if (target_type && source_type
+                    && ASRUtils::is_character(*target_type)
+                    && (ASRUtils::is_integer(*source_type)
+                        || ASRUtils::is_unsigned_integer(*source_type))) {
+                int64_t fixed_len = -1;
+                ASR::String_t *str_type = ASRUtils::get_string_type(target_type);
+                if (str_type && str_type->m_len
+                        && ASRUtils::extract_value(str_type->m_len, fixed_len)) {
+                    expr_len = std::to_string(fixed_len);
+                } else {
+                    expr_len = "sizeof(" + CUtils::get_c_type_from_ttype_t(source_type)
+                        + ")";
+                }
+                std::string tmp_name = get_unique_local_name("__lfortran_string_tmp");
+                setup += std::string(indentation_level * indentation_spaces, ' ')
+                    + "char* " + tmp_name + " = " + expr_src + ";\n";
+                expr_src = tmp_name;
+                cleanup += std::string(indentation_level * indentation_spaces, ' ')
+                    + "_lfortran_free_alloc(_lfortran_get_default_allocator(), "
+                    + tmp_name + ");\n";
+                return;
+            }
+        }
         std::string tmp_name = get_unique_local_name("__lfortran_string_tmp");
         setup += std::string(indentation_level * indentation_spaces, ' ')
             + "char* " + tmp_name + " = " + expr_src + ";\n";
         expr_src = tmp_name;
-        expr_len = "((" + expr_src + ") != NULL ? strlen(" + expr_src + ") : 0)";
+        expr_len = get_c_string_runtime_length_expr(expr_src);
         cleanup += std::string(indentation_level * indentation_spaces, ' ')
             + "_lfortran_free_alloc(_lfortran_get_default_allocator(), "
             + tmp_name + ");\n";
@@ -3165,7 +3287,7 @@ R"(#include <stdio.h>
         }
 
         SymbolTable *parent_scope = x.m_symtab ? x.m_symtab->parent : nullptr;
-        if (parent_scope) {
+        if (parent_scope && !startswith(x.m_name, "_lcompilers_")) {
             if (find_other_scope_implementation_with_local_name(
                         parent_scope, wrapper_local_name, x) != nullptr) {
                 return "";
@@ -3787,6 +3909,58 @@ R"(#include <stdio.h>
             tmp_buffer_src.push_back(call_arg_setup);
         }
         return true;
+    }
+
+    void record_pass_array_by_data_direct_call_decl(const ASR::Function_t &x,
+            const std::string &target_name, const std::vector<size_t> &indices) {
+        if (!is_c || target_name.empty()) {
+            return;
+        }
+        bool has_typevar = false;
+        std::string decl;
+        if (x.m_return_var) {
+            decl += get_return_var_type(ASRUtils::EXPR2VAR(x.m_return_var));
+        } else {
+            decl += "void ";
+        }
+        decl += target_name + "(";
+        std::string dim_type = compiler_options.po.descriptor_index_64
+            ? "int64_t" : "int32_t";
+        for (size_t i = 0; i < x.n_args; i++) {
+            if (i > 0) {
+                decl += ", ";
+            }
+            ASR::symbol_t *sym = ASRUtils::symbol_get_past_external(
+                ASR::down_cast<ASR::Var_t>(x.m_args[i])->m_v);
+            if (ASR::is_a<ASR::Variable_t>(*sym)) {
+                ASR::Variable_t *arg = ASR::down_cast<ASR::Variable_t>(sym);
+                CDeclarationOptions c_decl_options;
+                c_decl_options.pre_initialise_derived_type = false;
+                decl += self().convert_variable_decl(*arg, &c_decl_options);
+                if (ASR::is_a<ASR::TypeParameter_t>(*arg->m_type)) {
+                    has_typevar = true;
+                    break;
+                }
+                if (std::find(indices.begin(), indices.end(), i) != indices.end()) {
+                    ASR::dimension_t *dims = nullptr;
+                    int n_dims = ASRUtils::extract_dimensions_from_ttype(arg->m_type, dims);
+                    std::string arg_name = CUtils::sanitize_c_identifier(arg->m_name);
+                    for (int j = 0; j < n_dims; j++) {
+                        decl += ", " + dim_type + " __" + std::to_string(j + 1)
+                            + arg_name;
+                    }
+                }
+            } else if (ASR::is_a<ASR::Function_t>(*sym)) {
+                ASR::Function_t *fun = ASR::down_cast<ASR::Function_t>(sym);
+                decl += get_function_declaration(*fun, has_typevar, true, false);
+            } else {
+                return;
+            }
+        }
+        decl += ")";
+        if (!has_typevar) {
+            record_generated_forward_decl(decl);
+        }
     }
 
     std::string get_arg_conv_bind_python(const ASR::Function_t &x) {
@@ -10367,17 +10541,19 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         }
         if (is_c && left_present == "true" && rig_present == "true"
                 && step == "1" && raw_left == raw_right) {
-            src = "_lfortran_str_item(" + arg + ", strlen(" + arg + "), "
+            src = "_lfortran_str_item(" + arg + ", _lfortran_str_len(" + arg + "), "
                 + raw_left + ", (char[2]){0})";
             return;
         }
         src = "_lfortran_str_slice_alloc(_lfortran_get_default_allocator(), "
-            + arg + ", strlen(" + arg + "), " + left + ", " + right + ", "
+            + arg + ", _lfortran_str_len(" + arg + "), " + left + ", " + right + ", "
             + step + ", " + left_present + ", " + rig_present + ")";
     }
 
     void visit_StringChr(const ASR::StringChr_t& x) {
-        CHECK_FAST_C_CPP(compiler_options, x)
+        if (!is_c) {
+            CHECK_FAST_C_CPP(compiler_options, x)
+        }
         self().visit_expr(*x.m_arg);
         src = "_lfortran_str_chr_alloc(_lfortran_get_default_allocator(), " + src + ")";
     }
@@ -10393,12 +10569,17 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
     }
 
     void visit_StringRepeat(const ASR::StringRepeat_t &x) {
-        CHECK_FAST_C_CPP(compiler_options, x)
+        if (!is_c) {
+            CHECK_FAST_C_CPP(compiler_options, x)
+        }
         self().visit_expr(*x.m_left);
         std::string s = src;
+        std::string setup;
+        std::string s_len = get_string_length_expr(x.m_left, s, setup);
         self().visit_expr(*x.m_right);
         std::string n = src;
-        src = "_lfortran_strrepeat_c_alloc(_lfortran_get_default_allocator(), " + s + ", " + n + ")";
+        src = setup + "_lfortran_strrepeat_c_len_alloc(_lfortran_get_default_allocator(), "
+            + s + ", " + s_len + ", " + n + ")";
     }
 
     void visit_Assignment(const ASR::Assignment_t &x) {
@@ -10589,12 +10770,16 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             std::string string_value;
             if (!try_get_unit_step_string_section_view(
                     x.m_value, string_value, value_len, value_setup)) {
-                self().visit_expr(*x.m_value);
-                string_value = src;
-                value_setup += drain_tmp_buffer();
-                value_setup += extract_stmt_setup_from_expr(string_value);
-                materialize_allocating_string_expr(
-                    x.m_value, string_value, value_len, value_setup, value_cleanup);
+                bool materialized = try_materialize_c_intrinsic_string_expr(
+                        x.m_value, string_value, value_len, value_setup, value_cleanup);
+                if (!materialized) {
+                    self().visit_expr(*x.m_value);
+                    string_value = src;
+                    value_setup += drain_tmp_buffer();
+                    value_setup += extract_stmt_setup_from_expr(string_value);
+                    materialize_allocating_string_expr(
+                        x.m_value, string_value, value_len, value_setup, value_cleanup);
+                }
             }
             self().visit_expr(*si->m_idx);
             std::string idx = src;
@@ -10608,8 +10793,9 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 string_value + ", " + value_len + ", " +
                 idx + ", " + idx + ", 1, true, true)";
             src += indent + "char* " + updated_value_name + " = " + updated_value + ";\n";
-            src += indent + c_ds_api->get_deepcopy(ASRUtils::expr_type(si->m_arg),
-                updated_value_name, string_arg) + "\n";
+            src += indent + "_lfortran_strcpy_alloc(_lfortran_get_default_allocator(), &"
+                + string_arg + ", NULL, true, true, " + updated_value_name
+                + ", " + string_len + ");\n";
             src += indent + "if (" + updated_value_name + " != " + string_arg + ") {\n";
             src += indent + std::string(indentation_spaces, ' ')
                 + "_lfortran_free_alloc(_lfortran_get_default_allocator(), "
@@ -10627,12 +10813,16 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             std::string string_value;
             if (!try_get_unit_step_string_section_view(
                     x.m_value, string_value, value_len, value_setup)) {
-                self().visit_expr(*x.m_value);
-                string_value = src;
-                value_setup += drain_tmp_buffer();
-                value_setup += extract_stmt_setup_from_expr(string_value);
-                materialize_allocating_string_expr(
-                    x.m_value, string_value, value_len, value_setup, value_cleanup);
+                bool materialized = try_materialize_c_intrinsic_string_expr(
+                        x.m_value, string_value, value_len, value_setup, value_cleanup);
+                if (!materialized) {
+                    self().visit_expr(*x.m_value);
+                    string_value = src;
+                    value_setup += drain_tmp_buffer();
+                    value_setup += extract_stmt_setup_from_expr(string_value);
+                    materialize_allocating_string_expr(
+                        x.m_value, string_value, value_len, value_setup, value_cleanup);
+                }
             }
             std::string left, right, step, left_present, right_present;
             if (ss->m_start) {
@@ -10668,8 +10858,9 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 left + ", " + right + ", " + step + ", " +
                 left_present + ", " + right_present + ")";
             src += indent + "char* " + updated_value_name + " = " + updated_value + ";\n";
-            src += indent + c_ds_api->get_deepcopy(ASRUtils::expr_type(ss->m_arg),
-                updated_value_name, string_arg) + "\n";
+            src += indent + "_lfortran_strcpy_alloc(_lfortran_get_default_allocator(), &"
+                + string_arg + ", NULL, true, true, " + updated_value_name
+                + ", " + string_len + ");\n";
             src += indent + "if (" + updated_value_name + " != " + string_arg + ") {\n";
             src += indent + std::string(indentation_spaces, ' ')
                 + "_lfortran_free_alloc(_lfortran_get_default_allocator(), "
@@ -11796,10 +11987,18 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
 
 
     void visit_StringConstant(const ASR::StringConstant_t &x) {
+        std::string value(x.m_s);
+        int64_t fixed_len = -1;
+        ASR::String_t *str_type = ASRUtils::get_string_type(x.m_type);
+        if (str_type && str_type->m_len
+                && ASRUtils::extract_value(str_type->m_len, fixed_len)
+                && fixed_len >= 0) {
+            value.assign(x.m_s, x.m_s + fixed_len);
+        }
         if (is_c) {
-            src = "(char*)\"" + CUtils::escape_c_string_literal(x.m_s) + "\"";
+            src = "(char*)\"" + CUtils::escape_c_string_literal(value) + "\"";
         } else {
-            src = "\"" + str_escape_c(x.m_s) + "\"";
+            src = "\"" + str_escape_c(value) + "\"";
         }
         last_expr_precedence = 2;
     }
@@ -13348,6 +13547,15 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             }
             default: throw CodeGenError("BinOp: " + std::to_string(x.m_op) + " operator not implemented yet");
         }
+        if (is_c && x.m_op == ASR::binopType::LBitRShift) {
+            int kind = ASRUtils::extract_kind_from_ttype_t(x.m_type);
+            std::string signed_type = CUtils::get_c_type_from_ttype_t(x.m_type);
+            std::string unsigned_type = "uint" + std::to_string(kind * 8) + "_t";
+            src = "((" + signed_type + ")(((" + unsigned_type + ")(" + left
+                + ")) >> (" + right + ")))";
+            last_expr_precedence = 2;
+            return;
+        }
         src = "";
         if (left_precedence == 3) {
             src += "(" + left + ")";
@@ -14855,6 +15063,8 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                     *s, direct_target_name, pass_array_by_data_indices)
                     && try_construct_pass_array_by_data_direct_call_args(
                         s, x.n_args, x.m_args, pass_array_by_data_indices, call_args)) {
+                record_pass_array_by_data_direct_call_decl(
+                    *s, direct_target_name, pass_array_by_data_indices);
                 sym_name = direct_target_name;
             } else if (try_construct_specialized_pass_array_no_copy_call_args(
                     s, x.n_args, x.m_args, call_args)) {
@@ -14954,6 +15164,24 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         }
 
     void visit_IntrinsicElementalFunction(const ASR::IntrinsicElementalFunction_t &x) {
+        if (is_c && x.m_intrinsic_id == static_cast<int64_t>(
+                ASRUtils::IntrinsicElementalFunctions::Char)) {
+            visit_expr_without_c_pow_cache(*x.m_args[0]);
+            src = "_lfortran_str_chr_alloc(_lfortran_get_default_allocator(), " + src + ")";
+            return;
+        }
+        if (is_c && x.m_intrinsic_id == static_cast<int64_t>(
+                ASRUtils::IntrinsicElementalFunctions::Repeat)) {
+            visit_expr_without_c_pow_cache(*x.m_args[0]);
+            std::string s = src;
+            std::string setup;
+            std::string s_len = get_string_length_expr(x.m_args[0], s, setup);
+            visit_expr_without_c_pow_cache(*x.m_args[1]);
+            std::string n = src;
+            src = setup + "_lfortran_strrepeat_c_len_alloc(_lfortran_get_default_allocator(), "
+                + s + ", " + s_len + ", " + n + ")";
+            return;
+        }
         if (compiler_options.po.fast && x.m_value != nullptr) {
             visit_expr_without_c_pow_cache(*x.m_value);
             return;
@@ -15173,7 +15401,18 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 && (ASRUtils::is_integer(*source_type)
                     || ASRUtils::is_unsigned_integer(*source_type))) {
             self().visit_expr(*src_expr);
-            src = "_lfortran_str_chr_alloc(_lfortran_get_default_allocator(), " + src + ")";
+            std::string source = src;
+            std::string source_type_name = CUtils::get_c_type_from_ttype_t(source_type);
+            std::string target_len = "sizeof(" + source_type_name + ")";
+            int64_t fixed_len = -1;
+            ASR::String_t *str_type = ASRUtils::get_string_type(target_type);
+            if (str_type && str_type->m_len
+                    && ASRUtils::extract_value(str_type->m_len, fixed_len)) {
+                target_len = std::to_string(fixed_len);
+            }
+            src = "_lfortran_transfer_scalar_to_string_alloc(_lfortran_get_default_allocator(), "
+                "&((" + source_type_name + "){" + source + "}), sizeof("
+                + source_type_name + "), " + target_len + ")";
             return;
         }
         if (is_c && src_expr && target_type && source_type

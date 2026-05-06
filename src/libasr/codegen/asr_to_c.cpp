@@ -44,6 +44,7 @@ public:
     bool defer_c_struct_cleanup_defs = false;
     std::set<int64_t> deferred_c_struct_cleanup_type_ids;
     std::string deferred_c_struct_cleanup_defs;
+    bool suppress_c_struct_cleanup_registration = false;
 
     bool target_offload_enabled;
     std::vector<std::string> kernel_func_names;
@@ -104,7 +105,7 @@ public:
 
         this->visit_expr(*string_arg);
         std::string string_value = src;
-        std::string string_len = "((" + string_value + ") != NULL ? strlen(" + string_value + ") : 0)";
+        std::string string_len = get_c_string_runtime_length_expr(string_value);
         std::string updated_value =
             "_lfortran_str_slice_assign_alloc(_lfortran_get_default_allocator(), "
             + string_value + ", " + string_len + ", "
@@ -1499,7 +1500,10 @@ R"(
                 if (struct_sym == nullptr) {
                     continue;
                 }
+                bool saved_suppress = suppress_c_struct_cleanup_registration;
+                suppress_c_struct_cleanup_registration = mod->m_loaded_from_mod;
                 visit_symbol(*struct_sym);
+                suppress_c_struct_cleanup_registration = saved_suppress;
                 decls += src;
             }
         }
@@ -4381,7 +4385,9 @@ R"(    // Initialise Numpy
         src_dest += open_struct + body + end_struct;
         if constexpr (std::is_same_v<std::decay_t<T>, ASR::Struct_t>) {
             append_c_tbp_parent_registration(x, src_dest);
-            append_c_struct_cleanup_registration(x, src_dest);
+            if (!suppress_c_struct_cleanup_registration) {
+                append_c_struct_cleanup_registration(x, src_dest);
+            }
         }
     }
 
@@ -5505,7 +5511,7 @@ R"(    // Initialise Numpy
                             + std::to_string(kind) + ", 1, " + unit + ", " + iostat_ptr + ");\n";
                     } else if (ASRUtils::is_character(*element_type)) {
                         ASR::String_t *str_type = ASRUtils::get_string_type(value_expr);
-                        std::string value_len = "strlen(" + data_ptr + ")";
+                        std::string value_len = get_c_string_runtime_length_expr(data_ptr);
                         if (str_type && str_type->m_len) {
                             this->visit_expr(*str_type->m_len);
                             value_len = src;
@@ -5580,7 +5586,7 @@ R"(    // Initialise Numpy
                     read_code += indent + "_lfortran_read_logical((bool*)&(" + value + "), " + unit + ", " + iostat_ptr + ");\n";
                 } else if (ASRUtils::is_character(*value_type_past_allocatable)) {
                     ASR::String_t *value_str_type = ASRUtils::get_string_type(value_expr);
-                    std::string value_len = "strlen(" + value + ")";
+                    std::string value_len = get_c_string_runtime_length_expr(value);
                     if (value_str_type && value_str_type->m_len) {
                         this->visit_expr(*value_str_type->m_len);
                         value_len = src;
@@ -5650,7 +5656,7 @@ R"(    // Initialise Numpy
 
                 if (ASRUtils::is_character(*value_type_past_allocatable)) {
                     ASR::String_t *value_str_type = ASRUtils::get_string_type(value_expr);
-                    std::string value_len = "strlen(" + value + ")";
+                    std::string value_len = get_c_string_runtime_length_expr(value);
                     if (value_str_type && value_str_type->m_len) {
                         this->visit_expr(*value_str_type->m_len);
                         value_len = src;
@@ -6268,7 +6274,7 @@ R"(    // Initialise Numpy
 
                     if (ASRUtils::is_character(*element_type)) {
                         ASR::String_t *str_type = ASRUtils::get_string_type(expr);
-                        std::string value_len = "strlen(" + data_ptr + ")";
+                        std::string value_len = "_lfortran_str_len(" + data_ptr + ")";
                         if (str_type && str_type->m_len) {
                             this->visit_expr(*str_type->m_len);
                             value_len = src;
@@ -6287,7 +6293,7 @@ R"(    // Initialise Numpy
 
                 if (ASRUtils::is_character(*past_type)) {
                     ASR::String_t *str_type = ASRUtils::get_string_type(expr);
-                    std::string value_len = "strlen(" + value + ")";
+                    std::string value_len = "_lfortran_str_len(" + value + ")";
                     if (str_type && str_type->m_len) {
                         this->visit_expr(*str_type->m_len);
                         value_len = src;
@@ -6337,8 +6343,18 @@ R"(    // Initialise Numpy
                     has_non_character_arg = true;
                 }
             }
+            bool has_literal_format_descriptor = str_fmt->n_args == 0;
+            if (!has_literal_format_descriptor && str_fmt->m_fmt) {
+                ASR::expr_t *fmt_value = ASRUtils::expr_value(str_fmt->m_fmt);
+                if (fmt_value && ASR::is_a<ASR::StringConstant_t>(*fmt_value)) {
+                    std::string fmt_text = ASR::down_cast<ASR::StringConstant_t>(
+                        fmt_value)->m_s;
+                    has_literal_format_descriptor = fmt_text.find('"') != std::string::npos
+                        || fmt_text.find('\'') != std::string::npos;
+                }
+            }
             if (str_fmt->m_kind == ASR::string_format_kindType::FormatFortran
-                    && has_non_character_arg) {
+                    && (has_non_character_arg || has_literal_format_descriptor)) {
                 std::string format_value = "NULL";
                 std::string format_len = "0";
                 if (str_fmt->m_fmt) {
@@ -7467,8 +7483,14 @@ R"(    // Initialise Numpy
         std::string idx = std::move(src);
         this->visit_expr(*x.m_arg);
         std::string str = std::move(src);
-        src = "_lfortran_str_item(" + str + ", strlen(" + str + "), "
-            + idx + ", (char[2]){0})";
+        std::string str_len = "_lfortran_str_len(" + str + ")";
+        ASR::String_t* str_type = ASRUtils::get_string_type(x.m_arg);
+        if (str_type && str_type->m_len) {
+            this->visit_expr(*str_type->m_len);
+            str_len = std::move(src);
+        }
+        src = "_lfortran_str_item(" + str + ", " + str_len + ", " + idx
+            + ", (char[2]){0})";
     }
 
     void visit_StringPhysicalCast(const ASR::StringPhysicalCast_t &x) {
@@ -7606,7 +7628,7 @@ R"(    // Initialise Numpy
         CHECK_FAST_C(compiler_options, x)
         this->visit_expr(*x.m_arg);
         std::string arg = src;
-        src = "((" + arg + ") != NULL ? strlen(" + arg + ") : 0)";
+        src = "((" + arg + ") != NULL ? _lfortran_str_len(" + arg + ") : 0)";
     }
 
     void visit_OMPRegion(const ASR::OMPRegion_t &x) {
