@@ -1016,6 +1016,7 @@ RUN(NAME array_constructor_07 LABELS gfortran c EXTRA_ARGS --separate-compilatio
 RUN(NAME array_member_minval_01 LABELS gfortran c)
 RUN(NAME array_reshape_section_01 LABELS gfortran c)
 RUN(NAME array_rank3_section_density_01 LABELS gfortran c EXTRA_ARGS --separate-compilation)
+RUN(NAME c_backend_assumed_shape_section_explicit_01 LABELS gfortran llvm c)
 RUN(NAME move_alloc_class_star_01 LABELS gfortran c)
 RUN(NAME string_alloc_concat_read_01 LABELS gfortran c)
 RUN(NAME string_transfer_01 LABELS gfortran c)

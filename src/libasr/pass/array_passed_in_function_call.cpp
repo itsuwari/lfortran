@@ -1157,7 +1157,9 @@ public:
                     dealloc_args.push_back(al, array_var_temporary);
                     bool is_read_only_arg = is_arg_intent_in.size() > i && is_arg_intent_in[i];
                     if ((is_read_only_arg || pass_options.c_backend) &&
-                            is_whole_dummy_array_variable(arg_expr_past_cast)) {
+                            is_whole_dummy_array_variable(arg_expr_past_cast) &&
+                            (!pass_options.c_backend ||
+                                is_known_one_based_contiguous_whole_array(arg_expr_past_cast))) {
                         current_body->push_back(al, ASRUtils::STMT(ASR::make_Associate_t(
                             al, loc, array_var_temporary, arg_expr_past_cast)));
                         body_after_curr_stmt->push_back(al, ASRUtils::STMT(ASR::make_Nullify_t(

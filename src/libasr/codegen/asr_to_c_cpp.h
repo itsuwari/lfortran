@@ -3738,6 +3738,14 @@ R"(#include <stdio.h>
                     }
                 }
             }
+            if (param_is_array) {
+                ASR::expr_t *unwrapped_call_arg = unwrap_c_lvalue_expr(call_arg);
+                if ((unwrapped_call_arg != nullptr
+                            && ASR::is_a<ASR::ArraySection_t>(*unwrapped_call_arg))
+                        || is_c_array_section_association_temp_expr(call_arg)) {
+                    return false;
+                }
+            }
 
             visit_expr_without_c_pow_cache(*call_arg);
             std::string arg_src = src;
@@ -3850,6 +3858,14 @@ R"(#include <stdio.h>
                 ASRUtils::type_get_past_allocatable_pointer(param_type);
             bool param_is_array = param_type_unwrapped
                 && ASRUtils::is_array(param_type_unwrapped);
+            if (param_is_array) {
+                ASR::expr_t *unwrapped_call_arg = unwrap_c_lvalue_expr(call_arg);
+                if ((unwrapped_call_arg != nullptr
+                            && ASR::is_a<ASR::ArraySection_t>(*unwrapped_call_arg))
+                        || is_c_array_section_association_temp_expr(call_arg)) {
+                    return false;
+                }
+            }
 
             visit_expr_without_c_pow_cache(*call_arg);
             std::string arg_src = src;
