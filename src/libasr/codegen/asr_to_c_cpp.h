@@ -10775,7 +10775,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 self().visit_expr(*str_type->m_len);
                 return src;
             }
-            return "strlen(" + expr_src + ")";
+            return get_c_string_runtime_length_expr(expr_src);
         };
         if (is_c && ASR::is_a<ASR::StringItem_t>(*x.m_target)) {
             ASR::StringItem_t *si = ASR::down_cast<ASR::StringItem_t>(x.m_target);
@@ -11072,6 +11072,82 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             expr_setup += self().emit_c_lazy_automatic_array_temp_allocation(
                 x.m_target, target);
         }
+        auto emit_c_allocatable_function_result_slot_setup =
+                [&](ASR::expr_t *target_expr, ASR::expr_t *value_expr,
+                    const std::string &target_src) -> std::string {
+            if (!is_c
+                    || !ASR::is_a<ASR::FunctionCall_t>(*value_expr)
+                    || !ASR::is_a<ASR::Allocatable_t>(*m_target_type)
+                    || ASRUtils::is_array(m_target_type)) {
+                return "";
+            }
+            ASR::ttype_t *target_value_type =
+                ASRUtils::type_get_past_allocatable_pointer(m_target_type);
+            ASR::ttype_t *value_value_type =
+                ASRUtils::type_get_past_allocatable_pointer(m_value_type);
+            if (target_value_type == nullptr || value_value_type == nullptr
+                    || !ASR::is_a<ASR::StructType_t>(*target_value_type)
+                    || !ASR::is_a<ASR::StructType_t>(*value_value_type)
+                    || ASR::down_cast<ASR::StructType_t>(
+                        target_value_type)->m_is_unlimited_polymorphic) {
+                return "";
+            }
+            ASR::symbol_t *value_struct_sym = ASRUtils::symbol_get_past_external(
+                ASRUtils::get_struct_sym_from_struct_expr(value_expr));
+            if (value_struct_sym == nullptr
+                    || !ASR::is_a<ASR::Struct_t>(*value_struct_sym)) {
+                return "";
+            }
+            ASR::symbol_t *target_type_decl =
+                get_expr_type_declaration_symbol(target_expr);
+            if (target_type_decl == nullptr) {
+                target_type_decl = value_struct_sym;
+            }
+            std::string target_concrete_type = get_c_concrete_type_from_ttype_t(
+                target_value_type, target_type_decl);
+            std::string allocation_type = "struct "
+                + CUtils::get_c_symbol_name(value_struct_sym);
+            if (target_concrete_type.empty() || target_concrete_type == "void*"
+                    || allocation_type.empty()) {
+                return "";
+            }
+            headers.insert("string.h");
+            std::string setup;
+            std::string result_type_id =
+                std::to_string(get_struct_runtime_type_id(value_struct_sym));
+            std::string old_type_id_name =
+                get_unique_local_name("__lfortran_result_slot_type_id");
+            setup += indent + "if (" + target_src + " != NULL) {\n";
+            setup += indent + std::string(indentation_spaces, ' ')
+                + "int64_t " + old_type_id_name + " = "
+                + get_runtime_type_tag_expr(target_src, true) + ";\n";
+            setup += indent + std::string(indentation_spaces, ' ')
+                + "_lfortran_cleanup_c_struct(" + old_type_id_name
+                + ", (void*) " + target_src + ");\n";
+            setup += indent + std::string(indentation_spaces, ' ')
+                + "if (" + old_type_id_name + " != " + result_type_id + ") {\n";
+            setup += indent + std::string(2 * indentation_spaces, ' ')
+                + "_lfortran_free_alloc(_lfortran_get_default_allocator(), (char*) "
+                + target_src + ");\n";
+            setup += indent + std::string(2 * indentation_spaces, ' ')
+                + target_src + " = NULL;\n";
+            setup += indent + std::string(indentation_spaces, ' ') + "}\n";
+            setup += indent + "}\n";
+            setup += indent + "if (" + target_src + " == NULL) {\n";
+            setup += indent + std::string(indentation_spaces, ' ')
+                + target_src + " = (" + target_concrete_type
+                + "*) _lfortran_malloc_alloc(_lfortran_get_default_allocator(), sizeof("
+                + allocation_type + "));\n";
+            setup += indent + std::string(indentation_spaces, ' ')
+                + "memset(" + target_src + ", 0, sizeof(" + allocation_type + "));\n";
+            setup += indent + std::string(indentation_spaces, ' ')
+                + get_runtime_type_tag_expr(target_src, true) + " = "
+                + result_type_id + ";\n";
+            setup += indent + "}\n";
+            return setup;
+        };
+        expr_setup += emit_c_allocatable_function_result_slot_setup(
+            x.m_target, x.m_value, target);
         from_std_vector_helper.clear();
         if( ASR::is_a<ASR::UnionConstructor_t>(*x.m_value) ) {
             src = "";
@@ -11305,6 +11381,28 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                     from_std_vector_helper.clear();
                     return;
                 }
+            }
+            if (is_c
+                    && !ASRUtils::is_allocatable(m_target_type)
+                    && !ASRUtils::is_pointer(m_target_type)
+                    && !ASRUtils::is_array(m_target_type)
+                    && ASR::is_a<ASR::StructType_t>(*target_value_type)
+                    && !ASRUtils::is_class_type(target_value_type)
+                    && !ASR::down_cast<ASR::StructType_t>(
+                        target_value_type)->m_is_unlimited_polymorphic) {
+                ASR::expr_t *deepcopy_expr = unwrap_c_lvalue_expr(x.m_target);
+                if (deepcopy_expr == nullptr) {
+                    deepcopy_expr = x.m_target;
+                }
+                std::string deepcopy_source = target_is_pointer_backed
+                    ? value : "&(" + value + ")";
+                std::string deepcopy_target = target_is_pointer_backed
+                    ? target : "&(" + target + ")";
+                src = check_tmp_buffer();
+                src += indent + c_ds_api->get_struct_deepcopy(
+                    deepcopy_expr, deepcopy_source, deepcopy_target) + "\n";
+                from_std_vector_helper.clear();
+                return;
             }
         }
         if (is_c && ASRUtils::is_pointer(m_target_type)
@@ -13703,6 +13801,9 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                                     tmp_expr->base.loc);
             }
             if (ASRUtils::is_array(type)) {
+                if (is_c && is_unlimited_polymorphic_storage_type(type)) {
+                    continue;
+                }
                 if (is_c && is_vector_subscript_scalar_array_item(tmp_expr)) {
                     continue;
                 }
@@ -15070,6 +15171,108 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             record_forward_decl_for_function(*s);
             sym_name = get_c_function_target_name(*s);
         }
+        std::string function_result_slot_setup;
+        if (is_c && x.n_args > 0) {
+            ASR::expr_t *result_slot = x.m_args[x.n_args - 1].m_value;
+            ASR::Variable_t *return_var = nullptr;
+            if (s->m_return_var != nullptr) {
+                return_var = ASRUtils::EXPR2VAR(s->m_return_var);
+            } else if (x.n_args <= s->n_args && s->m_args[x.n_args - 1] != nullptr
+                    && ASR::is_a<ASR::Var_t>(*s->m_args[x.n_args - 1])) {
+                ASR::symbol_t *formal_sym = ASRUtils::symbol_get_past_external(
+                    ASR::down_cast<ASR::Var_t>(s->m_args[x.n_args - 1])->m_v);
+                if (ASR::is_a<ASR::Variable_t>(*formal_sym)) {
+                    ASR::Variable_t *candidate =
+                        ASR::down_cast<ASR::Variable_t>(formal_sym);
+                    ASR::ttype_t *candidate_value_type =
+                        ASRUtils::type_get_past_allocatable_pointer(candidate->m_type);
+                    if ((candidate->m_intent == ASRUtils::intent_return_var
+                            || candidate->m_intent == ASRUtils::intent_out
+                            || candidate->m_intent == ASRUtils::intent_inout)
+                            && candidate_value_type != nullptr
+                            && ASR::is_a<ASR::StructType_t>(*candidate_value_type)
+                            && !ASRUtils::is_allocatable(candidate->m_type)
+                            && !ASRUtils::is_array(candidate->m_type)) {
+                        return_var = candidate;
+                    }
+                }
+            }
+            ASR::ttype_t *result_slot_type = result_slot != nullptr
+                ? ASRUtils::expr_type(result_slot) : nullptr;
+            ASR::ttype_t *result_slot_value_type =
+                ASRUtils::type_get_past_allocatable_pointer(result_slot_type);
+            ASR::ttype_t *return_value_type =
+                return_var != nullptr
+                    ? ASRUtils::type_get_past_allocatable_pointer(return_var->m_type)
+                    : nullptr;
+            ASR::symbol_t *return_struct_sym = return_var != nullptr
+                ? ASRUtils::symbol_get_past_external(return_var->m_type_declaration)
+                : nullptr;
+            if (return_struct_sym == nullptr && s->m_return_var != nullptr) {
+                return_struct_sym = ASRUtils::symbol_get_past_external(
+                    ASRUtils::get_struct_sym_from_struct_expr(s->m_return_var));
+            }
+            if (return_var != nullptr
+                    && result_slot != nullptr
+                    && result_slot_type != nullptr
+                    && ASRUtils::is_allocatable(result_slot_type)
+                    && !ASRUtils::is_array(result_slot_type)
+                    && result_slot_value_type != nullptr
+                    && return_value_type != nullptr
+                    && ASR::is_a<ASR::StructType_t>(*result_slot_value_type)
+                    && ASR::is_a<ASR::StructType_t>(*return_value_type)
+                    && !ASR::down_cast<ASR::StructType_t>(
+                        result_slot_value_type)->m_is_unlimited_polymorphic
+                    && return_struct_sym != nullptr
+                    && ASR::is_a<ASR::Struct_t>(*return_struct_sym)) {
+                ASR::symbol_t *target_type_decl =
+                    get_expr_type_declaration_symbol(result_slot);
+                if (target_type_decl == nullptr) {
+                    target_type_decl = return_struct_sym;
+                }
+                std::string target_concrete_type = get_c_concrete_type_from_ttype_t(
+                    result_slot_value_type, target_type_decl);
+                std::string allocation_type = "struct "
+                    + CUtils::get_c_symbol_name(return_struct_sym);
+                if (!target_concrete_type.empty() && target_concrete_type != "void*") {
+                    headers.insert("string.h");
+                    std::string target = get_c_deallocation_target_expr(result_slot);
+                    function_result_slot_setup += drain_tmp_buffer();
+                    std::string result_type_id =
+                        std::to_string(get_struct_runtime_type_id(return_struct_sym));
+                    std::string old_type_id_name =
+                        get_unique_local_name("__lfortran_result_slot_type_id");
+                    function_result_slot_setup += indent + "if (" + target + " != NULL) {\n";
+                    function_result_slot_setup += indent + std::string(indentation_spaces, ' ')
+                        + "int64_t " + old_type_id_name + " = "
+                        + get_runtime_type_tag_expr(target, true) + ";\n";
+                    function_result_slot_setup += indent + std::string(indentation_spaces, ' ')
+                        + "_lfortran_cleanup_c_struct(" + old_type_id_name
+                        + ", (void*) " + target + ");\n";
+                    function_result_slot_setup += indent + std::string(indentation_spaces, ' ')
+                        + "if (" + old_type_id_name + " != " + result_type_id + ") {\n";
+                    function_result_slot_setup += indent + std::string(2 * indentation_spaces, ' ')
+                        + "_lfortran_free_alloc(_lfortran_get_default_allocator(), (char*) "
+                        + target + ");\n";
+                    function_result_slot_setup += indent + std::string(2 * indentation_spaces, ' ')
+                        + target + " = NULL;\n";
+                    function_result_slot_setup += indent + std::string(indentation_spaces, ' ')
+                        + "}\n";
+                    function_result_slot_setup += indent + "}\n";
+                    function_result_slot_setup += indent + "if (" + target + " == NULL) {\n";
+                    function_result_slot_setup += indent + std::string(indentation_spaces, ' ')
+                        + target + " = (" + target_concrete_type
+                        + "*) _lfortran_malloc_alloc(_lfortran_get_default_allocator(), sizeof("
+                        + allocation_type + "));\n";
+                    function_result_slot_setup += indent + std::string(indentation_spaces, ' ')
+                        + "memset(" + target + ", 0, sizeof(" + allocation_type + "));\n";
+                    function_result_slot_setup += indent + std::string(indentation_spaces, ' ')
+                        + get_runtime_type_tag_expr(target, true) + " = "
+                        + result_type_id + ";\n";
+                    function_result_slot_setup += indent + "}\n";
+                }
+            }
+        }
         bool callee_is_procedure_variable = ASR::is_a<ASR::Variable_t>(*callee_sym);
         std::string call_args;
         if (is_c && !callee_is_procedure_variable) {
@@ -15092,7 +15295,8 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             call_args = construct_call_args(
                 s, x.n_args, x.m_args, callee_is_procedure_variable, true, true);
         }
-        src = drain_tmp_buffer() + indent + sym_name + "(" + call_args + ");\n";
+        src = drain_tmp_buffer() + function_result_slot_setup
+            + indent + sym_name + "(" + call_args + ");\n";
         if (is_c && x.n_args > 0
                 && std::string(s->m_name).rfind("_lcompilers_move_alloc_", 0) == 0) {
             src += emit_move_alloc_source_reset(x.m_args[0].m_value, indent);

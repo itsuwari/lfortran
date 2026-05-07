@@ -2157,19 +2157,21 @@ class ArrayOpVisitor: public ASR::CallReplacerOnExpressionsVisitor<ArrayOpVisito
     }
 
     void insert_realloc_for_target(ASR::expr_t* target, ASR::expr_t* value, Vec<ASR::expr_t**>& vars, bool per_assign_realloc = false) {
+        ASR::expr_t *realloc_target = ASRUtils::get_past_array_physical_cast(target);
+        if (ASR::is_a<ASR::ArraySection_t>(*realloc_target)
+                || ASR::is_a<ASR::ArrayItem_t>(*realloc_target)) {
+            return;
+        }
         ASR::ttype_t* target_type = ASRUtils::expr_type(target);
         bool target_is_allocatable = ASRUtils::is_allocatable(target_type);
+        if (!target_is_allocatable) {
+            return;
+        }
         bool array_copy = ASR::is_a<ASR::Var_t>(*value) && ASR::is_a<ASR::Var_t>(*target);
         if (!realloc_lhs && !per_assign_realloc) {
             return;
         }
-        if( !target_is_allocatable && vars.size() == 1 ) {
-            return ;
-        }
         if( target_is_allocatable && !per_assign_realloc && !(realloc_lhs || array_copy) ) {
-            return ;
-        }
-        if( !target_is_allocatable && !array_copy && vars.size() == 0 ) {
             return ;
         }
 

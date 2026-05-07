@@ -2367,7 +2367,8 @@ class ArgSimplifier: public ASR::CallReplacerOnExpressionsVisitor<ArgSimplifier>
         }
         // e.g.; a = [b, a], where 'a' is an allocatable
         if (realloc_lhs && ASR::is_a<ASR::ArrayConstructor_t>(*xx.m_value) &&
-            ASRUtils::is_allocatable(xx.m_target)
+            ASRUtils::is_allocatable(xx.m_target) &&
+            ASR::is_a<ASR::Var_t>(*ASRUtils::get_past_array_physical_cast(xx.m_target))
         ) {
             // TODO: dealing with StructType would need thinking similar to the
             // way `traverse_args` handles it, the only reason to not
@@ -3079,7 +3080,12 @@ class ReplaceExprWithTemporary: public ASR::BaseExprReplacer<ReplaceExprWithTemp
         if( is_current_expr_linked_to_target(exprs_with_target, current_expr) ) {
             std::pair<ASR::expr_t*, targetType>& target_info = exprs_with_target[*current_expr];
             ASR::expr_t* target = target_info.first; targetType target_Type = target_info.second;
-            if( ASRUtils::is_allocatable(ASRUtils::expr_type(target)) &&
+            ASR::expr_t *realloc_target = ASRUtils::get_past_array_physical_cast(target);
+            bool is_whole_allocatable_target =
+                !ASR::is_a<ASR::ArraySection_t>(*realloc_target) &&
+                !ASR::is_a<ASR::ArrayItem_t>(*realloc_target);
+            if( is_whole_allocatable_target &&
+                ASRUtils::is_allocatable(ASRUtils::expr_type(target)) &&
                 target_Type == targetType::OriginalTarget &&
                 realloc_lhs ) {
                 insert_allocate_stmt_for_array(al, target, *current_expr, current_body);

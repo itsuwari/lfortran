@@ -2524,6 +2524,9 @@ R"(
 
     void emit_function_arg_initialization(const ASR::Function_t &x,
             std::string &sub, const std::string &indent) {
+        ASR::FunctionType_t *function_type = ASRUtils::get_FunctionType(x);
+        bool has_function_result = x.m_return_var != nullptr
+            || (function_type != nullptr && function_type->m_return_var_type != nullptr);
         for (size_t i = 0; i < x.n_args; i++) {
             ASR::expr_t *arg = x.m_args[i];
             if (arg == nullptr || !ASR::is_a<ASR::Var_t>(*arg)) {
@@ -2573,9 +2576,20 @@ R"(
             if (derived_type == nullptr || !ASR::is_a<ASR::Struct_t>(*derived_type)) {
                 continue;
             }
+            bool is_return_var_arg = false;
+            if (x.m_return_var && ASR::is_a<ASR::Var_t>(*x.m_return_var)) {
+                ASR::symbol_t *return_sym = ASRUtils::symbol_get_past_external(
+                    ASR::down_cast<ASR::Var_t>(x.m_return_var)->m_v);
+                is_return_var_arg = return_sym == arg_sym;
+            }
+            if (!is_return_var_arg && has_function_result && i == x.n_args - 1) {
+                is_return_var_arg = true;
+            }
             headers.insert("string.h");
             std::string arg_name = CUtils::get_c_variable_name(*arg_var);
-            if (c_struct_has_member_cleanup(ASR::down_cast<ASR::Struct_t>(derived_type))) {
+            if (!is_return_var_arg
+                    && c_struct_has_member_cleanup(
+                        ASR::down_cast<ASR::Struct_t>(derived_type))) {
                 sub += emit_c_struct_member_cleanup(
                     ASR::down_cast<ASR::Struct_t>(derived_type), indent, arg_name);
             }

@@ -814,9 +814,17 @@ class CCPPDSUtils {
                 }
                 case ASR::ttypeType::String : {
                     if (is_c) {
-                        result = "_lfortran_strcpy_alloc(_lfortran_get_default_allocator(), &"
+                        result = "if (" + value + " != NULL) {\n";
+                        result += "    _lfortran_strcpy_alloc(_lfortran_get_default_allocator(), &"
                             + target + ", NULL, true, true, " + value
-                            + ", _lfortran_str_len(" + value + "));";
+                            + ", _lfortran_str_len(" + value + "));\n";
+                        result += "} else {\n";
+                        result += "    if (" + target + " != NULL) {\n";
+                        result += "        _lfortran_free_alloc(_lfortran_get_default_allocator(), "
+                            + target + ");\n";
+                        result += "        " + target + " = NULL;\n";
+                        result += "    }\n";
+                        result += "}";
                     } else {
                         result = target + " = " + value  + ";";
                     }
@@ -828,9 +836,17 @@ class CCPPDSUtils {
                     if (ASRUtils::is_array(alloc_value_type)) {
                         result = get_deepcopy(alloc_value_type, value, target);
                     } else if (ASRUtils::is_character(*alloc_value_type)) {
-                        result = "_lfortran_strcpy_alloc(_lfortran_get_default_allocator(), &"
+                        result = "if (" + value + " != NULL) {\n";
+                        result += "    _lfortran_strcpy_alloc(_lfortran_get_default_allocator(), &"
                             + target + ", NULL, true, true, " + value
-                            + ", _lfortran_str_len(" + value + "));";
+                            + ", _lfortran_str_len(" + value + "));\n";
+                        result += "} else {\n";
+                        result += "    if (" + target + " != NULL) {\n";
+                        result += "        _lfortran_free_alloc(_lfortran_get_default_allocator(), "
+                            + target + ");\n";
+                        result += "        " + target + " = NULL;\n";
+                        result += "    }\n";
+                        result += "}";
                     } else if (!ASRUtils::is_aggregate_type(alloc_value_type)) {
                         std::string alloc_type_name = CUtils::get_c_type_from_ttype_t(alloc_value_type);
                         result = "if (" + target + " == NULL) { " + target + " = ("
@@ -1322,6 +1338,15 @@ class CCPPDSUtils {
                     } else {
                         ASR::ttype_t *member_element_type =
                             ASRUtils::extract_type(member_type_asr);
+                        if (ASR::is_a<ASR::Allocatable_t>(*member_type_asr)
+                                && member_element_type != nullptr
+                                && ASR::is_a<ASR::StructType_t>(*member_element_type)
+                                && ASR::down_cast<ASR::StructType_t>(
+                                    member_element_type)->m_is_unlimited_polymorphic) {
+                            tmp_generated += indent + tab + "dest->" + emitted_mem_name
+                                + " = src->" + emitted_mem_name + ";\n";
+                            continue;
+                        }
                         if (ASR::is_a<ASR::Allocatable_t>(*member_type_asr)
                                 && ASR::is_a<ASR::StructType_t>(*member_element_type)) {
                             tmp_generated += indent + tab + "if (src->" + emitted_mem_name

@@ -512,11 +512,26 @@ bool fill_new_args(Vec<ASR::call_arg_t>& new_args, Allocator& al,
             }
             ASR::call_arg_t present_arg;
             present_arg.loc = x.m_args[i].loc;
+            auto get_allocatable_actual = [](ASR::expr_t *arg) -> ASR::expr_t* {
+                if (arg && ASR::is_a<ASR::ArrayPhysicalCast_t>(*arg)) {
+                    ASR::ArrayPhysicalCast_t *cast_arg =
+                        ASR::down_cast<ASR::ArrayPhysicalCast_t>(arg);
+                    if (cast_arg->m_arg && ASRUtils::is_allocatable(cast_arg->m_arg)) {
+                        return cast_arg->m_arg;
+                    }
+                }
+                return arg;
+            };
+            ASR::expr_t *allocatable_actual = (i < (int)x.n_args && x.m_args[i].m_value)
+                ? get_allocatable_actual(x.m_args[i].m_value) : nullptr;
             if( i < (int)x.n_args &&
                 x.m_args[i].m_value &&
-                ASRUtils::is_allocatable(x.m_args[i].m_value) &&
+                allocatable_actual &&
+                ASRUtils::is_allocatable(allocatable_actual) &&
                 !ASRUtils::is_allocatable(func_arg_j->m_type) ) {
                 ASR::expr_t* arg_expr = x.m_args[i].m_value;
+                ASR::expr_t* allocated_arg_expr = allocatable_actual;
+                bool arg_expr_is_allocatable_physical_cast = arg_expr != allocated_arg_expr;
                 ASR::ttype_t* arg_expr_type = ASRUtils::expr_type(arg_expr);
                 // Create a temporary variable if arg_expr is a FunctionCall
                 // This is to avoid calling the function more than once
@@ -530,16 +545,18 @@ bool fill_new_args(Vec<ASR::call_arg_t>& new_args, Allocator& al,
                                 arg_expr, nullptr, false, ASRUtils::is_array(arg_expr_type)));
                     pass_result.push_back(al, assignment);
                     arg_expr = dummy_variable;
+                    allocated_arg_expr = dummy_variable;
                 }
                 Vec<ASR::expr_t*> arg_expr_vec;
                 arg_expr_vec.reserve(al, 1);
-                arg_expr_vec.push_back(al, arg_expr);
+                arg_expr_vec.push_back(al, allocated_arg_expr);
                 ASR::expr_t* is_allocated = ASRUtils::EXPR(ASR::make_IntrinsicImpureFunction_t(
                     al, x.m_args[i].loc, static_cast<int64_t>(ASRUtils::IntrinsicImpureFunctions::Allocated),
                     arg_expr_vec.p, arg_expr_vec.n, 0, logical_t, nullptr));
                 is_present = ASRUtils::EXPR(ASR::make_LogicalBinOp_t(al, x.m_args[i].loc,
                     is_allocated, ASR::logicalbinopType::And, is_present, logical_t, nullptr));
 
+                if (!arg_expr_is_allocatable_physical_cast) {
                 // If the argument is allocated then pass in the actual argument
                 // else pass in a dummy variable allocated on the stack
                 // This is to prevent passing in unallocated arguments when non-allocatable arguments are expected by the procedure
@@ -625,6 +642,7 @@ bool fill_new_args(Vec<ASR::call_arg_t>& new_args, Allocator& al,
                 ASR::call_arg_t replaced_arg;
                 replaced_arg.m_value = pointer_variable;
                 new_args.p[new_args.n - 1] = replaced_arg;
+                }
             }
             present_arg.m_value = is_present;
             new_args.push_back(al, present_arg);
