@@ -6506,7 +6506,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         }
         if (!ASRUtils::is_array(ASRUtils::expr_type(expr))) {
             self().visit_expr(*expr);
-            out = src;
+            out = "(" + src + ")";
             setup += drain_tmp_buffer();
             setup += extract_stmt_setup_from_expr(out);
             return true;
@@ -6988,7 +6988,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         if (!ASRUtils::is_array(ASRUtils::expr_type(expr))
                 && !ASRUtils::is_array_t(expr)) {
             self().visit_expr(*expr);
-            out = src;
+            out = "(" + src + ")";
             setup += drain_tmp_buffer();
             setup += extract_stmt_setup_from_expr(out);
             return true;
