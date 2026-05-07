@@ -1028,6 +1028,7 @@ RUN(NAME c_backend_realloc_lhs_class_component_01 LABELS gfortran c EXTRA_ARGS -
 RUN(NAME c_backend_realloc_lhs_vector_subscript_01 LABELS gfortran c EXTRA_ARGS --realloc-lhs-arrays)
 RUN(NAME c_backend_function_result_intent_out_struct_01 LABELS gfortran c)
 RUN(NAME c_backend_alloc_class_constructor_result_01 LABELS gfortran c)
+RUN(NAME c_backend_nonadvancing_abs_read_01 LABELS gfortran c)
 RUN(NAME move_alloc_class_star_01 LABELS gfortran c)
 RUN(NAME string_alloc_concat_read_01 LABELS gfortran c)
 RUN(NAME string_transfer_01 LABELS gfortran c)

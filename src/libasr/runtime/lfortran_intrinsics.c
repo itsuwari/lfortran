@@ -5344,10 +5344,10 @@ LFORTRAN_API char* _lfortran_str_slice_alloc(lfortran_allocator_t* al, char* s, 
     int dest_len = 0;
     if (step > 0) {
         idx2 = idx2 > s_len ? s_len : idx2;
-        dest_len = (idx2-idx1+step-1)/step + 1;
+        dest_len = (idx2-idx1+step-1)/step;
     } else {
         idx1 = idx1 >= s_len ? s_len-1 : idx1;
-        dest_len = (idx2-idx1+step+1)/step + 1;
+        dest_len = (idx2-idx1+step+1)/step;
     }
 
     char* dest_char = (char*)ALLOCATOR_ALLOC(al, dest_len + 1);
@@ -5403,13 +5403,19 @@ LFORTRAN_API char* _lfortran_str_slice_assign_alloc(lfortran_allocator_t* al, ch
     memset(dest_char, ' ', s_len);
     if (s != NULL) {
         int64_t copy_len = s_len;
-        copy_len = (copy_len < s_len) ? copy_len : s_len;
-        memcpy(dest_char, s, copy_len);
+        int64_t current_len = 0;
+        if (!_lfortran_lookup_string_len(s, &current_len)) {
+            current_len = (int64_t)strlen(s);
+        }
+        copy_len = (copy_len < current_len) ? copy_len : current_len;
+        if (copy_len > 0) {
+            memcpy(dest_char, s, copy_len);
+        }
     }
     int s_i = idx1, d_i = 0;
     while((step > 0 && s_i >= idx1 && s_i < idx2) ||
         (step < 0 && s_i <= idx1 && s_i > idx2)) {
-        dest_char[s_i] = r[d_i++];
+        dest_char[s_i] = d_i < r_len ? r[d_i++] : ' ';
         s_i += step;
     }
     dest_char[s_len] = '\0';
