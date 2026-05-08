@@ -1925,6 +1925,8 @@ R"(
         std::string original_type_name = type_name;
         bool element_needs_null_init = original_type_name == "char *"
             || original_type_name == "char*";
+        bool len_one_char_array = var != nullptr
+            && CUtils::is_len_one_character_array_type(var->m_type);
         type_name = c_ds_api->get_array_type(type_name, encoded_type_name, array_types_decls);
         std::string type_name_without_ptr = c_ds_api->get_array_type(type_name, encoded_type_name, array_types_decls, false);
         if (is_simd_array) {
@@ -2106,6 +2108,21 @@ R"(
                         sub += " = {0}";
                     }
                     sub += ";\n";
+                    int64_t fixed_size = ASRUtils::get_fixed_size_of_array(m_dims, n_dims);
+                    if (len_one_char_array && fixed_size >= 0 && indentation_level > 0) {
+                        sub += indent + format_type_c(dims, "char",
+                            std::string(v_m_name) + "_byte_data", use_ref, dummy)
+                            + " = {0};\n";
+                        std::string init_idx = get_unique_local_name(
+                            std::string(v_m_name) + "_char_init_i");
+                        sub += indent + "for (int64_t " + init_idx + " = 0; "
+                            + init_idx + " < " + std::to_string(fixed_size)
+                            + "; " + init_idx + "++) {\n";
+                        sub += indent + "    " + std::string(v_m_name) + "_data["
+                            + init_idx + "] = &" + std::string(v_m_name)
+                            + "_byte_data[" + init_idx + "];\n";
+                        sub += indent + "}\n";
+                    }
                 }
                 sub += indent + std::string(v_m_name) + "->data = "
                     + (lazy_dynamic_stack_storage ? "NULL"
@@ -3329,7 +3346,7 @@ R"(
                                             v.m_intent != ASRUtils::intent_inout &&
                                             v.m_intent != ASRUtils::intent_out &&
                                             v.m_intent != ASRUtils::intent_unspecified,
-                                            is_fixed_size, false, ASR::abiType::Source, false);
+                                            is_fixed_size, false, ASR::abiType::Source, false, &v);
                     }
                 } else {
                     bool is_fixed_size = true;
@@ -5570,6 +5587,53 @@ R"(    // Initialise Numpy
                             phys == ASR::array_physical_typeType::DescriptorArray ||
                             phys == ASR::array_physical_typeType::PointerArray ||
                             phys == ASR::array_physical_typeType::UnboundedPointerArray;
+                        if (CUtils::is_len_one_character_array_type(value_type_past_allocatable)) {
+                            if (descriptor_char_array) {
+                                std::string tmp_name = get_unique_local_name("__lfortran_read_char_tmp");
+                                std::string idx_name = get_unique_local_name("__lfortran_read_char_i");
+                                std::string elem_name = get_unique_local_name("__lfortran_read_char_elem");
+                                std::string stride_expr = value + "->dims[0].stride";
+                                std::string offset_expr = value + "->offset";
+                                read_code += indent + "if (" + stride_expr + " == 1 && "
+                                    + data_ptr + "[" + offset_expr + "] != NULL) {\n";
+                                read_code += indent + std::string(indentation_spaces, ' ')
+                                    + "_lfortran_read_array_char(" + data_ptr + "["
+                                    + offset_expr + "], 1, " + array_size + ", "
+                                    + unit + ", " + iostat_ptr + ");\n";
+                                read_code += indent + "} else {\n";
+                                read_code += indent + std::string(indentation_spaces, ' ')
+                                    + "char *" + tmp_name
+                                    + " = (char*) _lfortran_string_malloc_alloc(_lfortran_get_default_allocator(), "
+                                    + array_size + ");\n";
+                                read_code += indent + std::string(indentation_spaces, ' ')
+                                    + "_lfortran_read_array_char(" + tmp_name + ", 1, "
+                                    + array_size + ", " + unit + ", " + iostat_ptr + ");\n";
+                                read_code += indent + std::string(indentation_spaces, ' ')
+                                    + "for (int64_t " + idx_name + " = 0; "
+                                    + idx_name + " < " + array_size + "; " + idx_name + "++) {\n";
+                                read_code += indent + std::string(indentation_spaces * 2, ' ')
+                                    + "char *" + elem_name + " = " + data_ptr + "["
+                                    + offset_expr + " + " + idx_name + " * "
+                                    + stride_expr + "];\n";
+                                read_code += indent + std::string(indentation_spaces * 2, ' ')
+                                    + "if (" + elem_name + " == NULL) " + elem_name
+                                    + " = " + data_ptr + "[" + offset_expr + " + "
+                                    + idx_name + " * " + stride_expr
+                                    + "] = (char*) _lfortran_string_malloc_alloc(_lfortran_get_default_allocator(), 1);\n";
+                                read_code += indent + std::string(indentation_spaces * 2, ' ')
+                                    + elem_name + "[0] = " + tmp_name + "["
+                                    + idx_name + "];\n";
+                                read_code += indent + std::string(indentation_spaces, ' ') + "}\n";
+                                read_code += indent + std::string(indentation_spaces, ' ')
+                                    + "_lfortran_free_alloc(_lfortran_get_default_allocator(), "
+                                    + tmp_name + ");\n";
+                                read_code += indent + "}\n";
+                            } else {
+                                read_code += indent + "_lfortran_read_array_char(" + data_ptr + ", 1, "
+                                    + array_size + ", " + unit + ", " + iostat_ptr + ");\n";
+                            }
+                            return;
+                        }
                         if (descriptor_char_array) {
                             std::string tmp_name = get_unique_local_name("__lfortran_read_char_tmp");
                             std::string idx_name = get_unique_local_name("__lfortran_read_char_i");
@@ -6328,6 +6392,55 @@ R"(    // Initialise Numpy
                         if (str_type && str_type->m_len) {
                             this->visit_expr(*str_type->m_len);
                             value_len = src;
+                        }
+                        bool descriptor_char_array =
+                            phys == ASR::array_physical_typeType::DescriptorArray ||
+                            phys == ASR::array_physical_typeType::PointerArray ||
+                            phys == ASR::array_physical_typeType::UnboundedPointerArray;
+                        if (CUtils::is_len_one_character_array_type(past_type)) {
+                            if (descriptor_char_array) {
+                                std::string tmp_name = get_unique_local_name("__lfortran_write_char_tmp");
+                                std::string idx_name = get_unique_local_name("__lfortran_write_char_i");
+                                std::string elem_name = get_unique_local_name("__lfortran_write_char_elem");
+                                std::string stride_expr = value + "->dims[0].stride";
+                                std::string offset_expr = value + "->offset";
+                                code += indent + "if (" + stride_expr + " == 1 && "
+                                    + data_ptr + "[" + offset_expr + "] != NULL) {\n";
+                                code += indent + std::string(indentation_spaces, ' ')
+                                    + "_lfortran_file_write(" + unit + ", " + iostat_ptr
+                                    + ", \"\", 0, ((int32_t)(" + array_size + ")), "
+                                    + "(void*)(" + data_ptr + "[" + offset_expr + "]), -1);\n";
+                                code += indent + "} else {\n";
+                                code += indent + std::string(indentation_spaces, ' ')
+                                    + "char *" + tmp_name
+                                    + " = (char*) _lfortran_string_malloc_alloc(_lfortran_get_default_allocator(), "
+                                    + array_size + ");\n";
+                                code += indent + std::string(indentation_spaces, ' ')
+                                    + "for (int64_t " + idx_name + " = 0; "
+                                    + idx_name + " < " + array_size + "; " + idx_name + "++) {\n";
+                                code += indent + std::string(indentation_spaces * 2, ' ')
+                                    + "char *" + elem_name + " = " + data_ptr + "["
+                                    + offset_expr + " + " + idx_name + " * "
+                                    + stride_expr + "];\n";
+                                code += indent + std::string(indentation_spaces * 2, ' ')
+                                    + tmp_name + "[" + idx_name + "] = ("
+                                    + elem_name + " != NULL) ? " + elem_name
+                                    + "[0] : '\\0';\n";
+                                code += indent + std::string(indentation_spaces, ' ') + "}\n";
+                                code += indent + std::string(indentation_spaces, ' ')
+                                    + "_lfortran_file_write(" + unit + ", " + iostat_ptr
+                                    + ", \"\", 0, ((int32_t)(" + array_size + ")), "
+                                    + "(void*)(" + tmp_name + "), -1);\n";
+                                code += indent + std::string(indentation_spaces, ' ')
+                                    + "_lfortran_free_alloc(_lfortran_get_default_allocator(), "
+                                    + tmp_name + ");\n";
+                                code += indent + "}\n";
+                            } else {
+                                code += indent + "_lfortran_file_write(" + unit + ", " + iostat_ptr
+                                    + ", \"\", 0, ((int32_t)(" + array_size + ")), "
+                                    + "(void*)(" + data_ptr + "), -1);\n";
+                            }
+                            return;
                         }
                         code += indent + "_lfortran_file_write(" + unit + ", " + iostat_ptr + ", \"\", 0, "
                             + "((int32_t)((" + array_size + ") * (" + value_len + "))), "
