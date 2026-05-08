@@ -2894,6 +2894,32 @@ class ArgSimplifier: public ASR::CallReplacerOnExpressionsVisitor<ArgSimplifier>
 
     void visit_ArrayReshape(const ASR::ArrayReshape_t& x) {
         ASR::ArrayReshape_t& xx = const_cast<ASR::ArrayReshape_t&>(x);
+        auto is_c_char_transfer_reshape = [&]() {
+            if (!c_backend) {
+                return false;
+            }
+            ASR::expr_t *array_expr = ASRUtils::get_past_array_physical_cast(x.m_array);
+            if (array_expr == nullptr || !ASR::is_a<ASR::BitCast_t>(*array_expr)) {
+                return false;
+            }
+            ASR::BitCast_t *bitcast = ASR::down_cast<ASR::BitCast_t>(array_expr);
+            if (bitcast->m_source == nullptr) {
+                return false;
+            }
+            ASR::ttype_t *source_type = ASRUtils::type_get_past_allocatable_pointer(
+                ASRUtils::expr_type(bitcast->m_source));
+            ASR::ttype_t *source_element_type = source_type != nullptr
+                ? ASRUtils::type_get_past_array(source_type) : nullptr;
+            ASR::ttype_t *result_type = ASRUtils::type_get_past_allocatable_pointer(x.m_type);
+            ASR::ttype_t *result_element_type = result_type != nullptr
+                ? ASRUtils::type_get_past_array(result_type) : nullptr;
+            return source_type != nullptr
+                && ASRUtils::is_array(source_type)
+                && source_element_type != nullptr
+                && ASRUtils::is_character(*source_element_type)
+                && result_element_type != nullptr
+                && !ASRUtils::is_character(*result_element_type);
+        };
         if( !ASR::is_a<ASR::Var_t>(*ASRUtils::get_past_array_physical_cast(x.m_shape)) ) {
             replace_expr_with_temporary_variable(xx.m_shape, x.m_shape, "_array_reshape_shape", true);
             ASR::ttype_t* shape_ttype = ASRUtils::expr_type(xx.m_shape);
@@ -2912,7 +2938,9 @@ class ArgSimplifier: public ASR::CallReplacerOnExpressionsVisitor<ArgSimplifier>
             ASR::array_physical_typeType::AssumedRankArray ) {
             return ; 
         }
-        replace_expr_with_temporary_variable(xx.m_array, x.m_array, "_array_reshape_array", true);
+        if (!is_c_char_transfer_reshape()) {
+            replace_expr_with_temporary_variable(xx.m_array, x.m_array, "_array_reshape_array", true);
+        }
         if( ASRUtils::is_fixed_size_array(ASRUtils::expr_type(xx.m_array)) &&
             ASRUtils::extract_physical_type(xx.m_type) !=
             ASR::array_physical_typeType::FixedSizeArray &&

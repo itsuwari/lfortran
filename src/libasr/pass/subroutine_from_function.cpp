@@ -320,6 +320,36 @@ private :
         }
     }
 
+    bool is_string_concat_call(const ASR::FunctionCall_t *x) const {
+        if (x == nullptr) {
+            return false;
+        }
+        ASR::symbol_t *sym = ASRUtils::symbol_get_past_external(x->m_name);
+        if (sym == nullptr || !ASR::is_a<ASR::Function_t>(*sym)) {
+            return false;
+        }
+        return std::string(ASR::down_cast<ASR::Function_t>(sym)->m_name)
+            .find("_lcompilers_stringconcat") != std::string::npos;
+    }
+
+    void replace_string_concat_value_args_and_rebuild_lengths(
+            ASR::FunctionCall_t *x) {
+        LCOMPILERS_ASSERT(x != nullptr && x->n_args >= 4)
+        for (size_t i = 0; i < 2; i++) {
+            ASR::expr_t** current_expr_copy = current_expr;
+            current_expr = &x->m_args[i].m_value;
+            replace_expr(x->m_args[i].m_value);
+            current_expr = current_expr_copy;
+        }
+        ASRUtils::ASRBuilder builder(al, x->base.base.loc);
+        x->m_args[2].m_value = ASRUtils::StringConcat::get_safe_string_len(
+            al, x->base.base.loc, x->m_args[0].m_value,
+            ASRUtils::expr_type(x->m_args[0].m_value), builder);
+        x->m_args[3].m_value = ASRUtils::StringConcat::get_safe_string_len(
+            al, x->base.base.loc, x->m_args[1].m_value,
+            ASRUtils::expr_type(x->m_args[1].m_value), builder);
+    }
+
     /// Check if return slot must be allocated before passed to functionCall.
     bool allocate_stmt_needed_for_return_slot(ASR::ttype_t* function_return_t, ASR::ttype_t* return_slot_t){
         LCOMPILERS_ASSERT(
@@ -391,7 +421,11 @@ private :
 public :
 
     void replace_FunctionCall(ASR::FunctionCall_t* x){
-        traverse_functionCall_args(x->m_args, x->n_args);
+        if (is_string_concat_call(x) && x->n_args >= 4) {
+            replace_string_concat_value_args_and_rebuild_lengths(x);
+        } else {
+            traverse_functionCall_args(x->m_args, x->n_args);
+        }
         if (x->m_dt) {
             ASR::expr_t** current_expr_copy = current_expr;
             current_expr = &(x->m_dt);

@@ -1665,16 +1665,21 @@ void handle_decimal(char* format, double val, int scale, char** result, char* c,
         int zeros = 0;
         if (digits < strlen(new_str)) {
             if (digits + scale <= 15) {
-                new_str[15] = '\0';
+                size_t new_str_len = strlen(new_str);
+                size_t capped_len = new_str_len > 15 ? 15 : new_str_len;
+                new_str[capped_len] = '\0';
                 zeros = strspn(new_str, "0");
-                long double scaled = (long double)atoll(new_str) / (long long) pow(10, (strlen(new_str) - digits));
+                long double scaled = (long double)atoll(new_str)
+                    / (long long) pow(10, (strlen(new_str) - digits));
                 long long t = round_scaled_value(scaled, rounding_mode, is_negative);
-                sprintf(new_str, "%lld", t);
-                int index = zeros;
-                while(index--) {
-                    memmove(new_str + 1, new_str, strlen(new_str)+1);
-                    new_str[0] = '0';
-                }
+                char rounded_str[32];
+                snprintf(rounded_str, sizeof(rounded_str), "%lld", t);
+                size_t rounded_len = strlen(rounded_str);
+                size_t needed_len = zeros + rounded_len;
+                if (needed_len < (size_t)digits) needed_len = digits;
+                new_str = internal_realloc(new_str, needed_len + 1);
+                memmove(new_str + zeros, rounded_str, rounded_len + 1);
+                memset(new_str, '0', zeros);
             } else {
                 if (should_round_up_digits(new_str, digits, rounding_mode, is_negative)) {
                     int carry = 1;
@@ -3995,7 +4000,6 @@ LFORTRAN_API char* _lcompilers_string_format_fortran(lfortran_allocator_t* al, c
     for (int i = 0;(i<format_values_count);i++) {
             internal_free(format_values[i]);
     }
-    va_end(args);
     internal_free(format_values);
     free_serialization_info(&s_info);
 

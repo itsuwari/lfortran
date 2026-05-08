@@ -4729,6 +4729,8 @@ R"(    // Initialise Numpy
     void visit_FileOpen(const ASR::FileOpen_t &x) {
         headers.insert("string.h");
         std::string indent(indentation_level * indentation_spaces, ' ');
+        std::string setup_code;
+        std::string post_code;
 
         auto visit_scalar_ptr = [&](ASR::expr_t *expr) -> std::string {
             if (!expr) return "NULL";
@@ -4743,6 +4745,39 @@ R"(    // Initialise Numpy
             return {value, "strlen(" + value + ")"};
         };
 
+        auto visit_string_output_arg = [&](ASR::expr_t *expr) -> std::pair<std::string, std::string> {
+            if (!expr) return {"NULL", "0"};
+            this->visit_expr(*expr);
+            std::string value = src;
+            ASR::String_t *str_type = ASRUtils::get_string_type(expr);
+            std::string value_len = "strlen(" + value + ")";
+            bool has_fixed_char_len = false;
+            if (str_type && str_type->m_len) {
+                this->visit_expr(*str_type->m_len);
+                value_len = src;
+                has_fixed_char_len = true;
+            }
+            std::string tmp_name, setup_readback, post_readback;
+            if (prepare_string_readback_target(expr, value_len,
+                    tmp_name, setup_readback, post_readback)) {
+                setup_code += setup_readback;
+                post_code += post_readback;
+                return {tmp_name, value_len};
+            }
+            value = get_c_mutable_scalar_expr(expr);
+            if (has_fixed_char_len) {
+                setup_code += indent + "if (" + value + " == NULL || ((int64_t)strlen(" + value
+                    + ")) < ((int64_t)(" + value_len + "))) " + value
+                    + " = (char*) _lfortran_string_malloc_alloc(_lfortran_get_default_allocator(), "
+                    + value_len + ");\n";
+            } else {
+                setup_code += indent + "if (" + value + " == NULL) " + value
+                    + " = (char*) _lfortran_string_malloc_alloc(_lfortran_get_default_allocator(), "
+                    + value_len + ");\n";
+            }
+            return {value, value_len};
+        };
+
         std::string unit = "-1";
         if (x.m_newunit) {
             this->visit_expr(*x.m_newunit);
@@ -4753,7 +4788,7 @@ R"(    // Initialise Numpy
         std::pair<std::string, std::string> status_arg = visit_string_arg(x.m_status);
         std::pair<std::string, std::string> form_arg = visit_string_arg(x.m_form);
         std::pair<std::string, std::string> access_arg = visit_string_arg(x.m_access);
-        std::pair<std::string, std::string> iomsg_arg = visit_string_arg(x.m_iomsg);
+        std::pair<std::string, std::string> iomsg_arg = visit_string_output_arg(x.m_iomsg);
         std::pair<std::string, std::string> action_arg = visit_string_arg(x.m_action);
         std::pair<std::string, std::string> delim_arg = visit_string_arg(x.m_delim);
         std::pair<std::string, std::string> position_arg = visit_string_arg(x.m_position);
@@ -4764,7 +4799,7 @@ R"(    // Initialise Numpy
         std::pair<std::string, std::string> round_arg = visit_string_arg(x.m_round);
         std::pair<std::string, std::string> pad_arg = visit_string_arg(x.m_pad);
 
-        src = indent + "_lfortran_open("
+        src = setup_code + indent + "_lfortran_open("
             + unit + ", "
             + file_arg.first + ", " + file_arg.second + ", "
             + status_arg.first + ", " + status_arg.second + ", "
@@ -4781,7 +4816,8 @@ R"(    // Initialise Numpy
             + sign_arg.first + ", " + sign_arg.second + ", "
             + decimal_arg.first + ", " + decimal_arg.second + ", "
             + round_arg.first + ", " + round_arg.second + ", "
-            + pad_arg.first + ", " + pad_arg.second + ");\n";
+            + pad_arg.first + ", " + pad_arg.second + ");\n"
+            + post_code;
     }
 
     void visit_FileClose(const ASR::FileClose_t &x) {
@@ -7504,8 +7540,8 @@ R"(    // Initialise Numpy
             this->visit_expr(*str_type->m_len);
             str_len = std::move(src);
         }
-        src = "_lfortran_str_item(" + str + ", " + str_len + ", " + idx
-            + ", (char[2]){0})";
+        src = "_lfortran_str_item_alloc(_lfortran_get_default_allocator(), "
+            + str + ", " + str_len + ", " + idx + ")";
     }
 
     void visit_StringPhysicalCast(const ASR::StringPhysicalCast_t &x) {
