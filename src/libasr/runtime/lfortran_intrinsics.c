@@ -5641,6 +5641,10 @@ LFORTRAN_API void _lfortran_free_alloc(lfortran_allocator_t* al, char* ptr) {
     ALLOCATOR_DEALLOC(al, (void*)ptr);
 }
 
+LFORTRAN_API void _lfortran_free_alloc_plain(lfortran_allocator_t* al, char* ptr) {
+    ALLOCATOR_DEALLOC(al, (void*)ptr);
+}
+
 
 
 // bit  ------------------------------------------------------------------------

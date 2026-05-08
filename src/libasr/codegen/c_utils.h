@@ -1357,7 +1357,7 @@ class CCPPDSUtils {
                                 + " != src->" + emitted_mem_name
                                 + " && dest->" + emitted_mem_name + "->data == NULL) {\n";
                             tmp_generated += indent + tab + tab + tab
-                                + "_lfortran_free_alloc(_lfortran_get_default_allocator(), "
+                                + "_lfortran_free_alloc_plain(_lfortran_get_default_allocator(), "
                                 + "(char*) dest->" + emitted_mem_name + ");\n";
                             tmp_generated += indent + tab + tab + tab + "dest->" + emitted_mem_name
                                 + " = NULL;\n";
@@ -1383,7 +1383,7 @@ class CCPPDSUtils {
                                 + " != src->" + emitted_mem_name
                                 + " && dest->" + emitted_mem_name + "->data == NULL) {\n";
                             tmp_generated += indent + tab + tab + tab
-                                + "_lfortran_free_alloc(_lfortran_get_default_allocator(), "
+                                + "_lfortran_free_alloc_plain(_lfortran_get_default_allocator(), "
                                 + "(char*) dest->" + emitted_mem_name + ");\n";
                             tmp_generated += indent + tab + tab + tab + "dest->"
                                 + emitted_mem_name + " = NULL;\n";

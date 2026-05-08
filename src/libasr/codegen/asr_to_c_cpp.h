@@ -322,7 +322,7 @@ public:
                 + indent + "    }\n"
                 + indent + "    if (" + size + " > 0 && (" + descriptor
                 + ")->data[0] != NULL) {\n"
-                + indent + "        _lfortran_free_alloc(_lfortran_get_default_allocator(), "
+                + indent + "        _lfortran_free_alloc_plain(_lfortran_get_default_allocator(), "
                 + "(" + descriptor + ")->data[0]);\n"
                 + indent + "        (" + descriptor + ")->data[0] = NULL;\n"
                 + indent + "    }\n"
@@ -367,7 +367,7 @@ public:
         for (auto it = current_function_local_descriptors.rbegin();
                 it != current_function_local_descriptors.rend(); ++it) {
             cleanup += indent + "if ((" + it->target + ") == " + it->descriptor + ") {\n"
-                + indent + "    _lfortran_free_alloc(_lfortran_get_default_allocator(), "
+                + indent + "    _lfortran_free_alloc_plain(_lfortran_get_default_allocator(), "
                 + "(char*) " + it->descriptor + ");\n"
                 + indent + "    " + it->target + " = NULL;\n"
                 + indent + "    " + it->descriptor + " = NULL;\n"
@@ -416,7 +416,7 @@ public:
             }
             cleanup += indent + "if ((" + *it + ") != NULL && (" + *it
                 + ")->is_allocated && (" + *it + ")->data != NULL) {\n"
-                + indent + "    _lfortran_free_alloc(_lfortran_get_default_allocator(), "
+                + indent + "    _lfortran_free_alloc_plain(_lfortran_get_default_allocator(), "
                 + "(char*) (" + *it + ")->data);\n"
                 + indent + "    (" + *it + ")->data = NULL;\n"
                 + indent + "}\n"
@@ -436,7 +436,7 @@ public:
         for (auto it = current_function_local_allocatable_scalars.rbegin();
                 it != current_function_local_allocatable_scalars.rend(); ++it) {
             cleanup += indent + "if (" + *it + " != NULL) {\n"
-                + indent + "    _lfortran_free_alloc(_lfortran_get_default_allocator(), "
+                + indent + "    _lfortran_free_alloc_plain(_lfortran_get_default_allocator(), "
                 + "(char*) " + *it + ");\n"
                 + indent + "    " + *it + " = NULL;\n"
                 + indent + "}\n";
@@ -567,7 +567,7 @@ public:
             + "))->" + get_runtime_type_tag_member_name() + ", (void*) "
             + target + ");\n";
         cleanup += inner_indent
-            + "_lfortran_free_alloc(_lfortran_get_default_allocator(), (char*) "
+            + "_lfortran_free_alloc_plain(_lfortran_get_default_allocator(), (char*) "
             + target + ");\n";
         cleanup += inner_indent + target + " = NULL;\n";
         cleanup += indent + "}\n";
@@ -681,7 +681,7 @@ public:
                     + member + ") != NULL && (" + member + ")->is_allocated;\n";
                 cleanup += indent + "if ((" + member + ") != NULL && (" + member
                     + ")->is_allocated && (" + member + ")->data != NULL) {\n"
-                    + indent + "    _lfortran_free_alloc(_lfortran_get_default_allocator(), "
+                    + indent + "    _lfortran_free_alloc_plain(_lfortran_get_default_allocator(), "
                     + "(char*) (" + member + ")->data);\n"
                     + indent + "    (" + member + ")->data = NULL;\n"
                     + indent + "}\n";
@@ -690,7 +690,7 @@ public:
                         + indent + "    (" + member + ")->offset = 0;\n"
                         + indent + "    (" + member + ")->is_allocated = false;\n"
                         + indent + "    if (" + descriptor_owned + ") {\n"
-                        + indent + "        _lfortran_free_alloc(_lfortran_get_default_allocator(), "
+                        + indent + "        _lfortran_free_alloc_plain(_lfortran_get_default_allocator(), "
                         + "(char*) " + member + ");\n"
                         + indent + "        " + member + " = NULL;\n"
                         + indent + "    }\n"
@@ -737,7 +737,7 @@ public:
             } else if (ASRUtils::is_allocatable(member_var->m_type)
                     && !ASRUtils::is_array(member_var->m_type)) {
                 cleanup += indent + "if (" + member + " != NULL) {\n"
-                    + indent + "    _lfortran_free_alloc(_lfortran_get_default_allocator(), "
+                    + indent + "    _lfortran_free_alloc_plain(_lfortran_get_default_allocator(), "
                     + "(char*) " + member + ");\n"
                     + indent + "    " + member + " = NULL;\n"
                     + indent + "}\n";
@@ -830,7 +830,7 @@ public:
             cleanup += emit_c_shallow_copied_struct_member_root_cleanup(
                 ASR::down_cast<ASR::Struct_t>(member_struct_sym),
                 indent + "    ", member);
-            cleanup += indent + "    _lfortran_free_alloc(_lfortran_get_default_allocator(), "
+            cleanup += indent + "    _lfortran_free_alloc_plain(_lfortran_get_default_allocator(), "
                 + "(char*) " + member + ");\n"
                 + indent + "    " + member + " = NULL;\n"
                 + indent + "}\n";
@@ -849,7 +849,7 @@ public:
                 struct_t, indent + "    ", target);
         }
         cleanup += indent
-            + "    _lfortran_free_alloc(_lfortran_get_default_allocator(), (char*) "
+            + "    _lfortran_free_alloc_plain(_lfortran_get_default_allocator(), (char*) "
             + target + ");\n"
             + indent + "    " + target + " = NULL;\n"
             + indent + "}\n";
@@ -877,7 +877,7 @@ public:
                 clean_polymorphic_scalars, true, free_member_array_descriptors);
         }
         cleanup += inner_indent
-            + "_lfortran_free_alloc(_lfortran_get_default_allocator(), (char*) "
+            + "_lfortran_free_alloc_plain(_lfortran_get_default_allocator(), (char*) "
             + target + ");\n";
         cleanup += inner_indent + target + " = NULL;\n";
         cleanup += indent + "}\n";
@@ -7721,7 +7721,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         src += setup;
         src += inner_indent + "int64_t " + len_name + " = " + source_length + ";\n";
         src += inner_indent + "char *" + tmp_name
-            + " = (char*) _lfortran_string_malloc_alloc(_lfortran_get_default_allocator(), "
+            + " = (char*) _lfortran_malloc_alloc(_lfortran_get_default_allocator(), "
             + "(" + len_name + " + 1));\n";
         src += inner_indent + "for (int64_t " + idx_name + " = 0; "
             + idx_name + " < " + len_name + "; " + idx_name + "++) {\n";
@@ -7736,7 +7736,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         src += inner_indent + tmp_name + "[" + len_name + "] = '\\0';\n";
         src += inner_indent + "_lfortran_strcpy_alloc(_lfortran_get_default_allocator(), &"
             + target + ", NULL, true, true, " + tmp_name + ", " + len_name + ");\n";
-        src += inner_indent + "_lfortran_free_alloc(_lfortran_get_default_allocator(), "
+        src += inner_indent + "_lfortran_free_alloc_plain(_lfortran_get_default_allocator(), "
             + tmp_name + ");\n";
         indentation_level--;
         src += indent + "}\n";
@@ -11821,7 +11821,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             setup += indent + std::string(indentation_spaces, ' ')
                 + "if (" + old_type_id_name + " != " + result_type_id + ") {\n";
             setup += indent + std::string(2 * indentation_spaces, ' ')
-                + "_lfortran_free_alloc(_lfortran_get_default_allocator(), (char*) "
+                + "_lfortran_free_alloc_plain(_lfortran_get_default_allocator(), (char*) "
                 + target_src + ");\n";
             setup += indent + std::string(2 * indentation_spaces, ' ')
                 + target_src + " = NULL;\n";
@@ -14634,10 +14634,10 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                             + " != " + new_size_name + ") {\n";
                         out += indent + "    if (" + old_size_name + " > 0 && "
                             + sym + "->data[0] != NULL) {\n";
-                        out += indent + "        _lfortran_free_alloc(_lfortran_get_default_allocator(), "
+                        out += indent + "        _lfortran_free_alloc_plain(_lfortran_get_default_allocator(), "
                             + sym + "->data[0]);\n";
                         out += indent + "    }\n";
-                        out += indent + "    _lfortran_free_alloc(_lfortran_get_default_allocator(), "
+                        out += indent + "    _lfortran_free_alloc_plain(_lfortran_get_default_allocator(), "
                             + "(char*) " + sym + "->data);\n";
                         out += indent + "    " + sym + "->data = NULL;\n";
                         out += indent + "    " + sym + "->is_allocated = false;\n";
@@ -14661,10 +14661,10 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                         + sym + "->data == NULL || " + byte_data_name
                         + " == NULL)) {\n";
                     out += branch_indent + "    if (" + byte_data_name
-                        + " != NULL) _lfortran_free_alloc(_lfortran_get_default_allocator(), "
+                        + " != NULL) _lfortran_free_alloc_plain(_lfortran_get_default_allocator(), "
                         + byte_data_name + ");\n";
                     out += branch_indent + "    if (" + sym
-                        + "->data != NULL) _lfortran_free_alloc(_lfortran_get_default_allocator(), "
+                        + "->data != NULL) _lfortran_free_alloc_plain(_lfortran_get_default_allocator(), "
                         + "(char*) " + sym + "->data);\n";
                     out += branch_indent + "    " + sym + "->data = NULL;\n";
                     out += branch_indent + "} else if (" + sym + "->data != NULL) {\n";
@@ -14691,7 +14691,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                     out += indent + "if (" + sym + "->is_allocated && " + sym
                         + "->data != NULL && " + old_size_name + " != "
                         + new_size_name + ") {\n";
-                    out += indent + "    _lfortran_free_alloc(_lfortran_get_default_allocator(), "
+                    out += indent + "    _lfortran_free_alloc_plain(_lfortran_get_default_allocator(), "
                         + "(char*) " + sym + "->data);\n";
                     out += indent + "    " + sym + "->data = NULL;\n";
                     out += indent + "    " + sym + "->is_allocated = false;\n";
@@ -14986,7 +14986,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             }
             cleanup += indent + "if ((" + target + ") != NULL && (" + target
                 + ")->is_allocated && (" + target + ")->data != NULL) {\n"
-                + indent + "    _lfortran_free_alloc(_lfortran_get_default_allocator(), "
+                + indent + "    _lfortran_free_alloc_plain(_lfortran_get_default_allocator(), "
                 + "(char*) (" + target + ")->data);\n"
                 + indent + "    (" + target + ")->data = NULL;\n"
                 + indent + "}\n"
@@ -15050,7 +15050,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             }
             return cleanup + indent + "if ((" + target + ") != NULL && (" + target
                 + ")->is_allocated && (" + target + ")->data != NULL) {\n"
-                + indent + "    _lfortran_free_alloc(_lfortran_get_default_allocator(), "
+                + indent + "    _lfortran_free_alloc_plain(_lfortran_get_default_allocator(), "
                 + "(char*) (" + target + ")->data);\n"
                 + indent + "    (" + target + ")->data = NULL;\n"
                 + indent + "}\n"
@@ -16077,7 +16077,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                     function_result_slot_setup += indent + std::string(indentation_spaces, ' ')
                         + "if (" + old_type_id_name + " != " + result_type_id + ") {\n";
                     function_result_slot_setup += indent + std::string(2 * indentation_spaces, ' ')
-                        + "_lfortran_free_alloc(_lfortran_get_default_allocator(), (char*) "
+                        + "_lfortran_free_alloc_plain(_lfortran_get_default_allocator(), (char*) "
                         + target + ");\n";
                     function_result_slot_setup += indent + std::string(2 * indentation_spaces, ' ')
                         + target + " = NULL;\n";

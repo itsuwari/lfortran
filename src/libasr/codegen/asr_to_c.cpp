@@ -5603,7 +5603,7 @@ R"(    // Initialise Numpy
                                 read_code += indent + "} else {\n";
                                 read_code += indent + std::string(indentation_spaces, ' ')
                                     + "char *" + tmp_name
-                                    + " = (char*) _lfortran_string_malloc_alloc(_lfortran_get_default_allocator(), "
+                                    + " = (char*) _lfortran_malloc_alloc(_lfortran_get_default_allocator(), "
                                     + array_size + ");\n";
                                 read_code += indent + std::string(indentation_spaces, ' ')
                                     + "_lfortran_read_array_char(" + tmp_name + ", 1, "
@@ -5625,7 +5625,7 @@ R"(    // Initialise Numpy
                                     + idx_name + "];\n";
                                 read_code += indent + std::string(indentation_spaces, ' ') + "}\n";
                                 read_code += indent + std::string(indentation_spaces, ' ')
-                                    + "_lfortran_free_alloc(_lfortran_get_default_allocator(), "
+                                    + "_lfortran_free_alloc_plain(_lfortran_get_default_allocator(), "
                                     + tmp_name + ");\n";
                                 read_code += indent + "}\n";
                             } else {
@@ -5639,7 +5639,7 @@ R"(    // Initialise Numpy
                             std::string idx_name = get_unique_local_name("__lfortran_read_char_i");
                             std::string elem_name = get_unique_local_name("__lfortran_read_char_elem");
                             read_code += indent + "char *" + tmp_name
-                                + " = (char*) _lfortran_string_malloc_alloc(_lfortran_get_default_allocator(), "
+                                + " = (char*) _lfortran_malloc_alloc(_lfortran_get_default_allocator(), "
                                 + "(" + value_len + ") * (" + array_size + ") + 1);\n";
                             read_code += indent + "_lfortran_read_array_char(" + tmp_name + ", " + value_len + ", "
                                 + array_size + ", " + unit + ", " + iostat_ptr + ");\n";
@@ -5654,7 +5654,7 @@ R"(    // Initialise Numpy
                                 + " * " + value + "->dims[0].stride], NULL, true, true, "
                                 + elem_name + ", " + value_len + ");\n";
                             read_code += indent + "}\n";
-                            read_code += indent + "_lfortran_free_alloc(_lfortran_get_default_allocator(), "
+                            read_code += indent + "_lfortran_free_alloc_plain(_lfortran_get_default_allocator(), "
                                 + tmp_name + ");\n";
                         } else {
                             read_code += indent + "_lfortran_read_array_char(" + data_ptr + ", " + value_len + ", "
@@ -6413,7 +6413,7 @@ R"(    // Initialise Numpy
                                 code += indent + "} else {\n";
                                 code += indent + std::string(indentation_spaces, ' ')
                                     + "char *" + tmp_name
-                                    + " = (char*) _lfortran_string_malloc_alloc(_lfortran_get_default_allocator(), "
+                                    + " = (char*) _lfortran_malloc_alloc(_lfortran_get_default_allocator(), "
                                     + array_size + ");\n";
                                 code += indent + std::string(indentation_spaces, ' ')
                                     + "for (int64_t " + idx_name + " = 0; "
@@ -6432,7 +6432,7 @@ R"(    // Initialise Numpy
                                     + ", \"\", 0, ((int32_t)(" + array_size + ")), "
                                     + "(void*)(" + tmp_name + "), -1);\n";
                                 code += indent + std::string(indentation_spaces, ' ')
-                                    + "_lfortran_free_alloc(_lfortran_get_default_allocator(), "
+                                    + "_lfortran_free_alloc_plain(_lfortran_get_default_allocator(), "
                                     + tmp_name + ");\n";
                                 code += indent + "}\n";
                             } else {
@@ -6663,7 +6663,7 @@ R"(    // Initialise Numpy
                             array_sizes.push_back(temp_name + "_size");
                             arg_ptrs.push_back(temp_name);
                             array_temp_cleanups.push_back(indent
-                                + "_lfortran_free_alloc(_lfortran_get_default_allocator(), (char*) "
+                                + "_lfortran_free_alloc_plain(_lfortran_get_default_allocator(), (char*) "
                                 + temp_name + ");\n");
                             continue;
                         }
