@@ -1768,6 +1768,85 @@ public:
             get_c_array_constant_storage_index(arr, array_type, c_index));
     }
 
+    bool can_emit_sparse_c_array_constant_initializer(ASR::ttype_t *element_type) {
+        if (!is_c || element_type == nullptr) {
+            return false;
+        }
+        ASR::ttype_t *type = ASRUtils::type_get_past_pointer(
+            ASRUtils::type_get_past_allocatable(element_type));
+        return type != nullptr
+            && (ASRUtils::is_integer(*type)
+                || ASRUtils::is_unsigned_integer(*type)
+                || ASRUtils::is_real(*type));
+    }
+
+    bool is_c_array_constant_zero_storage_element(ASR::ArrayConstant_t *arr,
+            ASR::ttype_t *array_type, ASR::ttype_t *element_type, size_t c_index) {
+        if (arr == nullptr || arr->m_data == nullptr) {
+            return false;
+        }
+        size_t element_size = get_c_array_constant_element_size(element_type);
+        if (element_size == 0) {
+            return false;
+        }
+        size_t storage_index = get_c_array_constant_storage_index(arr, array_type, c_index);
+        const unsigned char *data =
+            reinterpret_cast<const unsigned char*>(arr->m_data)
+            + storage_index * element_size;
+        for (size_t i = 0; i < element_size; i++) {
+            if (data[i] != 0) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    std::string emit_c_array_constant_initializer(ASR::ArrayConstant_t *arr,
+            ASR::ttype_t *array_type, ASR::ttype_t *element_type, size_t n) {
+        if (can_emit_sparse_c_array_constant_initializer(element_type)) {
+            size_t zero_count = 0;
+            for (size_t i = 0; i < n; i++) {
+                if (is_c_array_constant_zero_storage_element(
+                        arr, array_type, element_type, i)) {
+                    zero_count++;
+                }
+            }
+            if (zero_count == n) {
+                return "{0}";
+            }
+            if (n >= 16 && zero_count >= 8 && zero_count * 2 >= n) {
+                std::string init = "{";
+                bool first = true;
+                for (size_t i = 0; i < n; i++) {
+                    if (is_c_array_constant_zero_storage_element(
+                            arr, array_type, element_type, i)) {
+                        continue;
+                    }
+                    if (!first) {
+                        init += ", ";
+                    }
+                    init += "[" + std::to_string(i) + "] = "
+                        + get_c_array_constant_init_element_for_c_index(
+                            arr, array_type, element_type, i);
+                    first = false;
+                }
+                init += "}";
+                return init;
+            }
+        }
+
+        std::string init = "{";
+        for (size_t i = 0; i < n; i++) {
+            init += get_c_array_constant_init_element_for_c_index(
+                arr, array_type, element_type, i);
+            if (i + 1 < n) {
+                init += ", ";
+            }
+        }
+        init += "}";
+        return init;
+    }
+
     int64_t get_struct_runtime_type_id(ASR::symbol_t *struct_sym) {
         struct_sym = ASRUtils::symbol_get_past_external(struct_sym);
         if (struct_sym == nullptr) {
@@ -5173,16 +5252,8 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         }
         ASR::ArrayConstant_t *arr = ASR::down_cast<ASR::ArrayConstant_t>(value);
         size_t n = ASRUtils::get_fixed_size_of_array(member_type);
-        std::string init = "{";
-        for (size_t i = 0; i < n; i++) {
-            init += get_c_array_constant_init_element_for_c_index(
-                arr, member_type, array_type->m_type, i);
-            if (i + 1 < n) {
-                init += ", ";
-            }
-        }
-        init += "}";
-        return init;
+        return emit_c_array_constant_initializer(
+            arr, member_type, array_type->m_type, n);
     }
 
     size_t get_c_array_constant_element_size(ASR::ttype_t *element_type) {
@@ -8579,22 +8650,9 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         src += indent + "{\n";
         std::string inner_indent = indent + std::string(indentation_spaces, ' ');
         src += inner_indent + "static const " + c_element_type + " " + const_name
-            + "[" + std::to_string(n) + "] = {\n";
-        std::string data_indent = inner_indent + std::string(indentation_spaces, ' ');
-        for (size_t i = 0; i < n; i++) {
-            if (i % 8 == 0) {
-                src += data_indent;
-            }
-            src += get_c_array_constant_init_element_for_c_index(
-                arr, value_type, element_type, i);
-            if (i + 1 < n) {
-                src += ", ";
-            }
-            if (i % 8 == 7 || i + 1 == n) {
-                src += "\n";
-            }
-        }
-        src += inner_indent + "};\n";
+            + "[" + std::to_string(n) + "] = "
+            + emit_c_array_constant_initializer(arr, value_type, element_type, n)
+            + ";\n";
         src += inner_indent + "int64_t " + stride_name + " = "
             + target_stride + ";\n";
         src += inner_indent + "int64_t " + start_name + " = "
