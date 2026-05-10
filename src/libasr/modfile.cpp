@@ -36,9 +36,21 @@ inline void save_asr(const ASR::TranslationUnit_t &m, std::string& asr_string, L
     // Export ASR:
     // Currently empty.
 
-    // Full LocationManager:
-    b.write_int32(lm.files.size());
-    for(auto file: lm.files) {
+    // Save only the module's own location map. Imported modules loaded while
+    // compiling this module have their own modfiles, and serializing their
+    // location maps into every dependent modfile makes downstream builds carry
+    // transitive diagnostic metadata repeatedly.
+    LCompilers::LocationManager mod_lm;
+    if (!lm.files.empty()) {
+        mod_lm.files.push_back(lm.files[0]);
+    }
+    if (!lm.file_ends.empty()) {
+        mod_lm.file_ends.push_back(lm.file_ends[0]);
+    }
+
+    // LocationManager:
+    b.write_int32(mod_lm.files.size());
+    for(auto file: mod_lm.files) {
         // std::vector<FileLocations> files;
         b.write_string(file.in_filename);
         b.write_int32(file.current_line);
@@ -96,8 +108,8 @@ inline void save_asr(const ASR::TranslationUnit_t &m, std::string& asr_string, L
     }
 
     // std::vector<uint32_t> file_ends
-    b.write_int32(lm.file_ends.size());
-    for(auto i: lm.file_ends) {
+    b.write_int32(mod_lm.file_ends.size());
+    for(auto i: mod_lm.file_ends) {
         b.write_int32(i);
     }
 
