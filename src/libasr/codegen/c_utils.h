@@ -211,6 +211,32 @@ namespace LCompilers {
         return o.str();
     }
 
+    static inline std::string format_c_float_hex_literal(float x) {
+        return string_format("%.6a", x) + "f";
+    }
+
+    static inline std::string format_c_double_hex_literal(double x) {
+        return string_format("%.13a", x);
+    }
+
+    static inline std::string format_c_real_hex_literal(double x, int kind) {
+        switch (kind) {
+            case 4: return format_c_float_hex_literal(static_cast<float>(x));
+            case 8: return format_c_double_hex_literal(x);
+            default: {
+                throw CodeGenError(std::to_string(kind * 8)
+                    + "-bit floating points not yet supported.");
+            }
+        }
+    }
+
+    static inline std::string format_c_real_hex_literal(double x,
+            ASR::ttype_t *type) {
+        type = ASRUtils::type_get_past_allocatable_pointer(type);
+        return format_c_real_hex_literal(x,
+            ASRUtils::extract_kind_from_ttype_t(type));
+    }
+
     static inline std::string get_c_symbol_name(const ASR::symbol_t *sym) {
         sym = ASRUtils::symbol_get_past_external(const_cast<ASR::symbol_t*>(sym));
         std::string name = sanitize_c_identifier(ASRUtils::symbol_name(sym));

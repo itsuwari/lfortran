@@ -15,6 +15,7 @@
 #include <memory>
 #include <cctype>
 #include <cmath>
+#include <cstring>
 #include <numeric>
 #include <set>
 #include <vector>
@@ -1697,9 +1698,33 @@ public:
 
     std::string get_c_array_constant_init_element(ASR::ArrayConstant_t *arr,
             ASR::ttype_t *element_type, size_t index) {
-        std::string value = ASRUtils::fetch_ArrayConstant_value(arr, index);
         ASR::ttype_t *element_type_unwrapped = ASRUtils::type_get_past_pointer(
             ASRUtils::type_get_past_allocatable(element_type));
+        if (is_c && element_type_unwrapped != nullptr
+                && ASRUtils::is_real(*element_type_unwrapped)
+                && arr != nullptr && arr->m_data != nullptr) {
+            int kind = ASRUtils::extract_kind_from_ttype_t(element_type_unwrapped);
+            const char *data = static_cast<const char*>(arr->m_data);
+            switch (kind) {
+                case 4: {
+                    float value;
+                    std::memcpy(&value,
+                        data + index * sizeof(value), sizeof(value));
+                    return CUtils::format_c_float_hex_literal(value);
+                }
+                case 8: {
+                    double value;
+                    std::memcpy(&value,
+                        data + index * sizeof(value), sizeof(value));
+                    return CUtils::format_c_double_hex_literal(value);
+                }
+                default: {
+                    throw CodeGenError(std::to_string(kind * 8)
+                        + "-bit floating points not yet supported.");
+                }
+            }
+        }
+        std::string value = ASRUtils::fetch_ArrayConstant_value(arr, index);
         if (is_c && element_type_unwrapped != nullptr
                 && ASR::is_a<ASR::Logical_t>(*element_type_unwrapped)) {
             if (value == ".true.") {
@@ -13406,8 +13431,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             src = "((" + CUtils::get_c_type_from_ttype_t(x.m_type) + ")"
                 + std::string(std::signbit(x.m_r) ? "(-INFINITY)" : "INFINITY") + ")";
         } else {
-            // TODO: remove extra spaces from the front of double_to_scientific result
-            src = double_to_scientific(x.m_r);
+            src = CUtils::format_c_real_hex_literal(x.m_r, x.m_type);
         }
         last_expr_precedence = 2;
     }

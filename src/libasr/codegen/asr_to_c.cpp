@@ -4590,8 +4590,9 @@ R"(    // Initialise Numpy
 
     void visit_ComplexConstant(const ASR::ComplexConstant_t &x) {
         headers.insert("complex.h");
-        std::string re = std::to_string(x.m_re);
-        std::string im = std::to_string(x.m_im);
+        int kind = ASRUtils::extract_kind_from_ttype_t(x.m_type);
+        std::string re = CUtils::format_c_real_hex_literal(x.m_re, kind);
+        std::string im = CUtils::format_c_real_hex_literal(x.m_im, kind);
         src = "CMPLX(" + re + ", " + im + ")";
 
         last_expr_precedence = 2;
