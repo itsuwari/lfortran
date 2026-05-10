@@ -84,6 +84,8 @@ def single_test(test: Dict, verbose: bool, no_llvm: bool, skip_run_with_dbg: boo
     cpp_infer = is_included("cpp_infer")
     c = is_included("c")
     c_split_cleanup_dedupe = is_included("c_split_cleanup_dedupe")
+    c_require_pattern = is_included("c_require_pattern")
+    c_forbid_pattern = is_included("c_forbid_pattern")
     is_cumulative_pass = is_included("cumulative")
     julia = is_included("julia")
     wat = is_included("wat")
@@ -96,6 +98,8 @@ def single_test(test: Dict, verbose: bool, no_llvm: bool, skip_run_with_dbg: boo
     interactive = is_included("interactive")
     options = test.get("options", "")
     c_split_cleanup_dedupe_symbol = test.get("c_split_cleanup_dedupe_symbol", "")
+    c_require_pattern_value = test.get("c_require_pattern_value", "")
+    c_forbid_pattern_value = test.get("c_forbid_pattern_value", "")
     pass_ = test.get("pass", None)
     extrafiles = test.get("extrafiles", "").split(",")
     run = test.get("run")
@@ -735,6 +739,32 @@ def single_test(test: Dict, verbose: bool, no_llvm: bool, skip_run_with_dbg: boo
             "test \"$count\" = \"2\" #"
         )
         run_test(filename, "c_split_cleanup_dedupe", cmd,
+                filename,
+                update_reference,
+                verify_hash,
+                extra_args)
+
+    if c_require_pattern:
+        if not c_require_pattern_value:
+            raise Exception("c_require_pattern requires c_require_pattern_value")
+        cmd = (
+            f"lfortran --no-color --show-c {{infile}} | "
+            f"grep -F -q \"{c_require_pattern_value}\" #"
+        )
+        run_test(filename, "c_require_pattern", cmd,
+                filename,
+                update_reference,
+                verify_hash,
+                extra_args)
+
+    if c_forbid_pattern:
+        if not c_forbid_pattern_value:
+            raise Exception("c_forbid_pattern requires c_forbid_pattern_value")
+        cmd = (
+            f"lfortran --no-color --show-c {{infile}} | "
+            f"(! grep -F -q \"{c_forbid_pattern_value}\") #"
+        )
+        run_test(filename, "c_forbid_pattern", cmd,
                 filename,
                 update_reference,
                 verify_hash,

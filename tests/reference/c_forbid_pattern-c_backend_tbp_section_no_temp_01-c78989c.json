@@ -1,0 +1,13 @@
+{
+    "basename": "c_forbid_pattern-c_backend_tbp_section_no_temp_01-c78989c",
+    "cmd": "lfortran --no-color --show-c {infile} | (! grep -F -q \"__libasr_created__subroutine_call_\") #",
+    "infile": "tests/c_backend_tbp_section_no_temp_01.f90",
+    "infile_hash": "42068568c0b205133e61eca3b223fe5fd52e5a0ca65c47b841d6d7c1",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

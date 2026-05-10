@@ -15071,17 +15071,93 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         std::string array_expr = src;
         switch (physical_type) {
             case ASR::array_physical_typeType::DescriptorArray: {
+                ASR::expr_t *array_lvalue =
+                    unwrap_c_lvalue_expr(const_cast<ASR::expr_t*>(x.m_array));
+                if (array_lvalue != nullptr
+                        && ASR::is_a<ASR::ArraySection_t>(*array_lvalue)) {
+                    ASR::ArraySection_t *section =
+                        ASR::down_cast<ASR::ArraySection_t>(array_lvalue);
+                    ASR::ttype_t *base_type =
+                        ASRUtils::type_get_past_allocatable_pointer(
+                            ASRUtils::expr_type(section->m_v));
+                    ASR::dimension_t *base_dims = nullptr;
+                    int base_rank = ASRUtils::extract_dimensions_from_ttype(
+                        base_type, base_dims);
+                    ASR::dimension_t *section_dims = nullptr;
+                    int section_rank = ASRUtils::extract_dimensions_from_ttype(
+                        array_type, section_dims);
+                    if (base_rank > 0 && section_rank > 0
+                            && static_cast<int>(section->n_args) == base_rank) {
+                        self().visit_expr(*section->m_v);
+                        std::string base_expr = get_c_descriptor_member_base_expr(src);
+                        std::string setup = drain_tmp_buffer();
+                        std::string saved_src = src;
+                        auto section_bound_src = [&](ASR::expr_t *expr,
+                                const std::string &fallback) -> std::string {
+                            if (expr == nullptr) {
+                                return fallback;
+                            }
+                            self().visit_expr(*expr);
+                            std::string expr_src = src;
+                            setup += drain_tmp_buffer();
+                            setup += extract_stmt_setup_from_expr(expr_src);
+                            return expr_src;
+                        };
+                        std::string is_contiguous = "true";
+                        std::string expected_stride = "1";
+                        int target_dim = 0;
+                        for (int source_dim = 0; source_dim < base_rank; source_dim++) {
+                            ASR::array_index_t idx = section->m_args[source_dim];
+                            bool is_slice = idx.m_left || idx.m_step || idx.m_right == nullptr;
+                            if (!is_slice) {
+                                continue;
+                            }
+                            if (target_dim >= section_rank) {
+                                target_dim = section_rank + 1;
+                                break;
+                            }
+                            std::string base_lb = base_expr + "->dims["
+                                + std::to_string(source_dim) + "].lower_bound";
+                            std::string base_ub = "(" + base_lb + " + "
+                                + base_expr + "->dims[" + std::to_string(source_dim)
+                                + "].length - 1)";
+                            std::string base_stride = base_expr + "->dims["
+                                + std::to_string(source_dim) + "].stride";
+                            std::string left = section_bound_src(idx.m_left, base_lb);
+                            std::string right = section_bound_src(idx.m_right, base_ub);
+                            std::string step = section_bound_src(idx.m_step, "1");
+                            std::string length = "((((" + right + ") - (" + left
+                                + ")) / (" + step + ")) + 1)";
+                            std::string stride = "(" + base_stride + " * (" + step + "))";
+                            is_contiguous += " && (" + stride + " == "
+                                + expected_stride + ")";
+                            expected_stride = "(" + expected_stride + " * "
+                                + length + ")";
+                            target_dim++;
+                        }
+                        src = saved_src;
+                        if (target_dim == section_rank) {
+                            if (!setup.empty()) {
+                                tmp_buffer_src.push_back(setup);
+                            }
+                            src = "(" + base_expr + "->is_allocated && ("
+                                + is_contiguous + "))";
+                            return;
+                        }
+                    }
+                }
+                std::string array_desc = get_c_descriptor_member_base_expr(array_expr);
                 ASR::dimension_t *m_dims = nullptr;
                 int n_dims = ASRUtils::extract_dimensions_from_ttype(array_type, m_dims);
                 std::string is_contiguous = "true";
                 std::string expected_stride = "1";
                 for (int i = 0; i < n_dims; i++) {
-                    is_contiguous += " && (" + array_expr + "->dims[" + std::to_string(i)
+                    is_contiguous += " && (" + array_desc + "->dims[" + std::to_string(i)
                         + "].stride == " + expected_stride + ")";
-                    expected_stride = "(" + expected_stride + " * " + array_expr
+                    expected_stride = "(" + expected_stride + " * " + array_desc
                         + "->dims[" + std::to_string(i) + "].length)";
                 }
-                src = "(" + array_expr + "->is_allocated && (" + is_contiguous + "))";
+                src = "(" + array_desc + "->is_allocated && (" + is_contiguous + "))";
                 return;
             }
             case ASR::array_physical_typeType::FixedSizeArray:

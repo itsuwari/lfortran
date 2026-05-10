@@ -1,0 +1,13 @@
+{
+    "basename": "c_require_pattern-c_backend_contiguous_section_temp_01-3d2a4ba",
+    "cmd": "lfortran --no-color --show-c {infile} | grep -F -q \"__libasr_created__subroutine_call_\" #",
+    "infile": "tests/c_backend_contiguous_section_temp_01.f90",
+    "infile_hash": "7df2592a11625ac02cd18d7037d9acb603e748c66edc56fa74d114cc",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}
