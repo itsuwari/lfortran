@@ -1,0 +1,13 @@
+{
+    "basename": "c_forbid_pattern-c_backend_iso_fortran_env_no_data_01-54183d9",
+    "cmd": "lfortran --no-color --show-c {infile} | (! grep -F -q \"lfortran_intrinsic_iso_fortran_env__integer_kinds\") #",
+    "infile": "tests/c_backend_iso_fortran_env_no_data_01.f90",
+    "infile_hash": "f4ce3c6328d95bf3e44c75905c60e541b41a17aebdebe84cb380930c",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

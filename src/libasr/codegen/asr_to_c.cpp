@@ -550,6 +550,12 @@ R"(
         return get_split_visible_definition(v) + ";\n";
     }
 
+    bool is_iso_fortran_env_module(const ASR::Module_t &x) const {
+        std::string module_name_lower = to_lower(x.m_name);
+        return module_name_lower == "iso_fortran_env"
+            || module_name_lower == "lfortran_intrinsic_iso_fortran_env";
+    }
+
     void hoist_split_header_enum_name_defs(std::string &type_decls,
             std::string &shared_defs) {
         std::string kept_decls;
@@ -585,7 +591,8 @@ R"(
             ASR::Module_t *mod = ASR::down_cast<ASR::Module_t>(mod_sym);
             if (to_lower(mod->m_name) == "omp_lib"
                     || to_lower(mod->m_name) == "iso_c_binding"
-                    || to_lower(mod->m_name) == "lfortran_intrinsic_iso_c_binding") {
+                    || to_lower(mod->m_name) == "lfortran_intrinsic_iso_c_binding"
+                    || is_iso_fortran_env_module(*mod)) {
                 continue;
             }
             for (auto &scope_item : mod->m_symtab->get_scope()) {
@@ -678,6 +685,9 @@ R"(
 
     std::string emit_module_variable_defs(const ASR::Module_t &x) {
         std::string unit_src;
+        if (is_iso_fortran_env_module(x)) {
+            return unit_src;
+        }
         for (auto &item : x.m_symtab->get_scope()) {
             if (!ASR::is_a<ASR::Variable_t>(*item.second)) {
                 continue;
@@ -4410,15 +4420,17 @@ R"(
         }
 
         std::string unit_src = "";
-        for (auto &item : x.m_symtab->get_scope()) {
-            if (ASR::is_a<ASR::Variable_t>(*item.second)) {
-                std::string unit_src_tmp;
-                ASR::Variable_t *v = ASR::down_cast<ASR::Variable_t>(
-                    item.second);
-                unit_src_tmp = convert_variable_decl(*v);
-                unit_src += unit_src_tmp;
-                if(unit_src_tmp.size() > 0) {
-                    unit_src += ";\n";
+        if (!is_iso_fortran_env_module(x)) {
+            for (auto &item : x.m_symtab->get_scope()) {
+                if (ASR::is_a<ASR::Variable_t>(*item.second)) {
+                    std::string unit_src_tmp;
+                    ASR::Variable_t *v = ASR::down_cast<ASR::Variable_t>(
+                        item.second);
+                    unit_src_tmp = convert_variable_decl(*v);
+                    unit_src += unit_src_tmp;
+                    if(unit_src_tmp.size() > 0) {
+                        unit_src += ";\n";
+                    }
                 }
             }
         }
