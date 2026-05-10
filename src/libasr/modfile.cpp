@@ -295,8 +295,7 @@ class ModfileBodyStripper {
                 }
                 case ASR::symbolType::Function: {
                     ASR::Function_t *x = ASR::down_cast<ASR::Function_t>(sym);
-                    bool preserve_function_body = is_inline_function(*x)
-                        || x->m_access == ASR::accessType::Public;
+                    bool preserve_function_body = is_inline_function(*x);
                     strip_symbol_table(x->m_symtab, preserve_function_body);
                     if (!preserve_function_body) {
                         InterfaceDependencyCollector collector(*x);

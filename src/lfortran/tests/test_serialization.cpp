@@ -118,11 +118,7 @@ void check_module_function_bodies(LCompilers::ASR::TranslationUnit_t *asr,
             LCompilers::ASR::Function_t *function
                 = LCompilers::ASR::down_cast<LCompilers::ASR::Function_t>(function_item.second);
             if (expect_empty_body) {
-                if (function->m_access == LCompilers::ASR::accessType::Public) {
-                    CHECK(function->n_body > 0);
-                } else {
-                    CHECK(function->n_body == 0);
-                }
+                CHECK(function->n_body == 0);
             } else {
                 CHECK(function->n_body > 0);
             }
@@ -435,7 +431,7 @@ end function
 
 subroutine api(x, arr)
     type(payload), intent(in) :: x
-    integer, intent(in) :: arr(iface_len())
+    integer, intent(in) :: arr(iface_len(), x%i)
     block
         call worker(x, arr)
     end block
@@ -443,7 +439,7 @@ end subroutine
 
 subroutine worker(x, arr)
     type(payload), intent(in) :: x
-    integer, intent(in) :: arr(iface_len())
+    integer, intent(in) :: arr(iface_len(), x%i)
     integer :: body_local
     body_local = body_only()
     if (body_local /= 4) error stop
@@ -486,7 +482,9 @@ end module
 
     LCompilers::ASR::Function_t *api2 = get_module_function(asr2,
         "modfile_interface_dependencies", "api");
-    CHECK(api2->n_body > 0);
+    CHECK(api2->n_body == 0);
+    CHECK(function_has_dependency(api2, "iface_len"));
+    CHECK(!function_has_dependency(api2, "worker"));
     LCompilers::ASR::Function_t *worker2 = get_module_function(asr2,
         "modfile_interface_dependencies", "worker");
     CHECK(worker2->n_body == 0);
