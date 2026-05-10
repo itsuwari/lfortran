@@ -1,4 +1,6 @@
 #include <string>
+#include <set>
+#include <vector>
 
 #include <libasr/config.h>
 #include <libasr/asr_utils.h>
@@ -12,6 +14,277 @@ namespace LCompilers {
 
 const std::string lfortran_modfile_type_string = "LCompilers Modfile";
 static constexpr uint32_t lfortran_modfile_format_version = 0x4D4F4432; // "MOD2"
+
+namespace {
+
+struct SavedStmtBody {
+    ASR::stmt_t ***body_ptr;
+    size_t *n_body_ptr;
+    ASR::stmt_t **body;
+    size_t n_body;
+};
+
+struct SavedDependencies {
+    char ***dependencies_ptr;
+    size_t *n_dependencies_ptr;
+    char **dependencies;
+    size_t n_dependencies;
+    std::vector<char*> filtered_dependencies;
+};
+
+struct SavedSymbol {
+    SymbolTable *symtab;
+    std::string name;
+    ASR::symbol_t *symbol;
+};
+
+class ModfileBodyStripper {
+    std::vector<SavedStmtBody> saved_bodies;
+    std::vector<SavedDependencies> saved_dependencies;
+    std::vector<SavedSymbol> saved_symbols;
+
+    void save_body(ASR::stmt_t **&body, size_t &n_body) {
+        if (n_body == 0) {
+            return;
+        }
+        saved_bodies.push_back({&body, &n_body, body, n_body});
+        body = nullptr;
+        n_body = 0;
+    }
+
+    void filter_dependencies(char **&dependencies, size_t &n_dependencies,
+            const std::set<std::string> &interface_dependencies) {
+        if (n_dependencies == 0) {
+            return;
+        }
+        std::vector<char*> filtered;
+        filtered.reserve(n_dependencies);
+        for (size_t i = 0; i < n_dependencies; i++) {
+            if (interface_dependencies.find(std::string(dependencies[i]))
+                    != interface_dependencies.end()) {
+                filtered.push_back(dependencies[i]);
+            }
+        }
+        if (filtered.size() == n_dependencies) {
+            return;
+        }
+        saved_dependencies.push_back({&dependencies, &n_dependencies,
+            dependencies, n_dependencies, std::move(filtered)});
+        SavedDependencies &saved = saved_dependencies.back();
+        if (saved.filtered_dependencies.empty()) {
+            dependencies = nullptr;
+            n_dependencies = 0;
+        } else {
+            dependencies = saved.filtered_dependencies.data();
+            n_dependencies = saved.filtered_dependencies.size();
+        }
+    }
+
+    bool is_inline_function(const ASR::Function_t &x) const {
+        if (x.m_function_signature &&
+                ASR::is_a<ASR::FunctionType_t>(*x.m_function_signature)) {
+            ASR::FunctionType_t *ft = ASR::down_cast<ASR::FunctionType_t>(x.m_function_signature);
+            return ft->m_inline;
+        }
+        return false;
+    }
+
+    class InterfaceDependencyCollector
+        : public ASR::BaseWalkVisitor<InterfaceDependencyCollector> {
+        ASR::Function_t &function;
+        SymbolTable *function_symtab;
+        SymbolTable *parent_symtab;
+
+        void add_symbol(ASR::symbol_t *sym) {
+            if (sym == nullptr) {
+                return;
+            }
+            std::string name = ASRUtils::symbol_name(sym);
+            if (ASRUtils::symbol_parent_symtab(sym) == function_symtab) {
+                local_symbols.insert(name);
+            }
+            if (parent_symtab && parent_symtab->get_symbol(name)) {
+                dependencies.insert(name);
+            }
+        }
+
+    public:
+        std::set<std::string> dependencies;
+        std::set<std::string> local_symbols;
+
+        InterfaceDependencyCollector(ASR::Function_t &function) :
+            function(function), function_symtab(function.m_symtab),
+            parent_symtab(function.m_symtab ? function.m_symtab->parent : nullptr) {
+            this->visit_compile_time_value = true;
+        }
+
+        void collect() {
+            if (function.m_function_signature) {
+                this->visit_ttype(*function.m_function_signature);
+            }
+            for (size_t i = 0; i < function.n_args; i++) {
+                this->visit_expr(*function.m_args[i]);
+                if (ASR::is_a<ASR::Var_t>(*function.m_args[i])) {
+                    ASR::symbol_t *sym = ASR::down_cast<ASR::Var_t>(
+                        function.m_args[i])->m_v;
+                    this->visit_symbol(*sym);
+                }
+            }
+            if (function.m_return_var) {
+                this->visit_expr(*function.m_return_var);
+                if (ASR::is_a<ASR::Var_t>(*function.m_return_var)) {
+                    ASR::symbol_t *sym = ASR::down_cast<ASR::Var_t>(
+                        function.m_return_var)->m_v;
+                    this->visit_symbol(*sym);
+                }
+            }
+        }
+
+        void visit_Variable(const ASR::Variable_t &x) {
+            add_symbol(x.m_type_declaration);
+            ASR::BaseWalkVisitor<InterfaceDependencyCollector>::visit_Variable(x);
+        }
+
+        void visit_FunctionCall(const ASR::FunctionCall_t &x) {
+            add_symbol(x.m_name);
+            if (x.m_original_name) {
+                add_symbol(x.m_original_name);
+            }
+            ASR::BaseWalkVisitor<InterfaceDependencyCollector>::visit_FunctionCall(x);
+        }
+
+        void visit_SubroutineCall(const ASR::SubroutineCall_t &x) {
+            add_symbol(x.m_name);
+            if (x.m_original_name) {
+                add_symbol(x.m_original_name);
+            }
+            ASR::BaseWalkVisitor<InterfaceDependencyCollector>::visit_SubroutineCall(x);
+        }
+
+        void visit_Var(const ASR::Var_t &x) {
+            add_symbol(x.m_v);
+        }
+
+        void visit_StructConstructor(const ASR::StructConstructor_t &x) {
+            add_symbol(x.m_dt_sym);
+            ASR::BaseWalkVisitor<InterfaceDependencyCollector>::visit_StructConstructor(x);
+        }
+
+        void visit_StructConstant(const ASR::StructConstant_t &x) {
+            add_symbol(x.m_dt_sym);
+            ASR::BaseWalkVisitor<InterfaceDependencyCollector>::visit_StructConstant(x);
+        }
+
+        void visit_EnumConstructor(const ASR::EnumConstructor_t &x) {
+            add_symbol(x.m_dt_sym);
+            ASR::BaseWalkVisitor<InterfaceDependencyCollector>::visit_EnumConstructor(x);
+        }
+
+        void visit_UnionConstructor(const ASR::UnionConstructor_t &x) {
+            add_symbol(x.m_dt_sym);
+            ASR::BaseWalkVisitor<InterfaceDependencyCollector>::visit_UnionConstructor(x);
+        }
+    };
+
+    void strip_unreferenced_function_symbols(ASR::Function_t &function,
+            const std::set<std::string> &local_symbols) {
+        if (function.m_symtab == nullptr) {
+            return;
+        }
+        std::vector<std::string> erase_names;
+        for (auto &item : function.m_symtab->get_scope()) {
+            if (local_symbols.find(item.first) == local_symbols.end()) {
+                erase_names.push_back(item.first);
+            }
+        }
+        for (std::string &name : erase_names) {
+            saved_symbols.push_back({function.m_symtab, name,
+                function.m_symtab->get_symbol(name)});
+            function.m_symtab->erase_symbol(name);
+        }
+    }
+
+    void strip_symbol_table(SymbolTable *symtab) {
+        for (auto &item : symtab->get_scope()) {
+            ASR::symbol_t *sym = item.second;
+            switch (sym->type) {
+                case ASR::symbolType::Module: {
+                    ASR::Module_t *x = ASR::down_cast<ASR::Module_t>(sym);
+                    strip_symbol_table(x->m_symtab);
+                    break;
+                }
+                case ASR::symbolType::Function: {
+                    ASR::Function_t *x = ASR::down_cast<ASR::Function_t>(sym);
+                    strip_symbol_table(x->m_symtab);
+                    if (!is_inline_function(*x)) {
+                        InterfaceDependencyCollector collector(*x);
+                        collector.collect();
+                        save_body(x->m_body, x->n_body);
+                        filter_dependencies(x->m_dependencies, x->n_dependencies,
+                            collector.dependencies);
+                        strip_unreferenced_function_symbols(*x, collector.local_symbols);
+                    }
+                    break;
+                }
+                case ASR::symbolType::Struct: {
+                    ASR::Struct_t *x = ASR::down_cast<ASR::Struct_t>(sym);
+                    strip_symbol_table(x->m_symtab);
+                    break;
+                }
+                case ASR::symbolType::Enum: {
+                    ASR::Enum_t *x = ASR::down_cast<ASR::Enum_t>(sym);
+                    strip_symbol_table(x->m_symtab);
+                    break;
+                }
+                case ASR::symbolType::Union: {
+                    ASR::Union_t *x = ASR::down_cast<ASR::Union_t>(sym);
+                    strip_symbol_table(x->m_symtab);
+                    break;
+                }
+                case ASR::symbolType::AssociateBlock: {
+                    ASR::AssociateBlock_t *x = ASR::down_cast<ASR::AssociateBlock_t>(sym);
+                    strip_symbol_table(x->m_symtab);
+                    save_body(x->m_body, x->n_body);
+                    break;
+                }
+                case ASR::symbolType::Block: {
+                    ASR::Block_t *x = ASR::down_cast<ASR::Block_t>(sym);
+                    strip_symbol_table(x->m_symtab);
+                    save_body(x->m_body, x->n_body);
+                    break;
+                }
+                case ASR::symbolType::GpuKernelFunction: {
+                    ASR::GpuKernelFunction_t *x = ASR::down_cast<ASR::GpuKernelFunction_t>(sym);
+                    strip_symbol_table(x->m_symtab);
+                    break;
+                }
+                default:
+                    break;
+            }
+        }
+    }
+
+public:
+    ModfileBodyStripper(const ASR::TranslationUnit_t &m) {
+        strip_symbol_table(m.m_symtab);
+    }
+
+    ~ModfileBodyStripper() {
+        for (auto it = saved_symbols.rbegin(); it != saved_symbols.rend(); ++it) {
+            it->symtab->add_symbol(it->name, it->symbol);
+        }
+        for (auto it = saved_dependencies.rbegin(); it != saved_dependencies.rend(); ++it) {
+            *it->dependencies_ptr = it->dependencies;
+            *it->n_dependencies_ptr = it->n_dependencies;
+        }
+        for (auto it = saved_bodies.rbegin(); it != saved_bodies.rend(); ++it) {
+            *it->body_ptr = it->body;
+            *it->n_body_ptr = it->n_body;
+        }
+    }
+};
+
+} // namespace
 
 inline void save_asr(const ASR::TranslationUnit_t &m, std::string& asr_string, LCompilers::LocationManager lm) {
     #ifdef WITH_LFORTRAN_BINARY_MODFILES
@@ -139,6 +412,10 @@ std::string save_modfile(const ASR::TranslationUnit_t &m, LCompilers::LocationMa
     }
 
     std::string asr_string;
+    // A module file is an interface artifact. Procedure bodies are emitted in
+    // the owning object file; keeping them in every dependent .mod file makes
+    // downstream compiles repeatedly deserialize and walk implementation ASR.
+    ModfileBodyStripper strip_bodies(m);
     save_asr(m, asr_string, lm);
     return asr_string;
 }

@@ -103,6 +103,53 @@ void asr_ser(const std::string &src) {
     CHECK(asr_orig == asr_new);
 }
 
+void check_module_function_bodies(LCompilers::ASR::TranslationUnit_t *asr,
+        bool expect_empty_body) {
+    for (auto &module_item : asr->m_symtab->get_scope()) {
+        if (!LCompilers::ASR::is_a<LCompilers::ASR::Module_t>(*module_item.second)) {
+            continue;
+        }
+        LCompilers::ASR::Module_t *module
+            = LCompilers::ASR::down_cast<LCompilers::ASR::Module_t>(module_item.second);
+        for (auto &function_item : module->m_symtab->get_scope()) {
+            if (!LCompilers::ASR::is_a<LCompilers::ASR::Function_t>(*function_item.second)) {
+                continue;
+            }
+            LCompilers::ASR::Function_t *function
+                = LCompilers::ASR::down_cast<LCompilers::ASR::Function_t>(function_item.second);
+            if (expect_empty_body) {
+                CHECK(function->n_body == 0);
+            } else {
+                CHECK(function->n_body > 0);
+            }
+        }
+    }
+}
+
+LCompilers::ASR::Function_t *get_module_function(
+        LCompilers::ASR::TranslationUnit_t *asr,
+        const std::string &module_name, const std::string &function_name) {
+    LCompilers::ASR::symbol_t *module_sym = asr->m_symtab->get_symbol(module_name);
+    REQUIRE(module_sym != nullptr);
+    REQUIRE(LCompilers::ASR::is_a<LCompilers::ASR::Module_t>(*module_sym));
+    LCompilers::ASR::Module_t *module
+        = LCompilers::ASR::down_cast<LCompilers::ASR::Module_t>(module_sym);
+    LCompilers::ASR::symbol_t *function_sym = module->m_symtab->get_symbol(function_name);
+    REQUIRE(function_sym != nullptr);
+    REQUIRE(LCompilers::ASR::is_a<LCompilers::ASR::Function_t>(*function_sym));
+    return LCompilers::ASR::down_cast<LCompilers::ASR::Function_t>(function_sym);
+}
+
+bool function_has_dependency(LCompilers::ASR::Function_t *function,
+        const std::string &dependency) {
+    for (size_t i = 0; i < function->n_dependencies; i++) {
+        if (dependency == function->m_dependencies[i]) {
+            return true;
+        }
+    }
+    return false;
+}
+
 void asr_mod(const std::string &src) {
     Allocator al(4*1024);
 
@@ -120,8 +167,10 @@ void asr_mod(const std::string &src) {
     lm.files.push_back(file);
     LCompilers::ASR::TranslationUnit_t* asr = TRY(LCompilers::LFortran::ast_to_asr(al, *ast0,
         diagnostics, nullptr, false, compiler_options, lm));
+    check_module_function_bodies(asr, false);
 
     std::string modfile = LCompilers::save_modfile(*asr, lm);
+    check_module_function_bodies(asr, false);
     LCompilers::SymbolTable symtab(nullptr);
     LCompilers::Result<LCompilers::ASR::TranslationUnit_t*, LCompilers::ErrorMessage> res
         = LCompilers::load_modfile(al, modfile, true, symtab, lm);
@@ -129,8 +178,7 @@ void asr_mod(const std::string &src) {
     LCompilers::ASR::TranslationUnit_t* asr2 = res.result;
     fix_external_symbols(*asr2, symtab);
     LCOMPILERS_ASSERT(LCompilers::asr_verify(*asr2, true, diagnostics));
-
-    CHECK(LCompilers::pickle(*asr) == LCompilers::pickle(*asr2));
+    check_module_function_bodies(asr2, true);
 }
 
 TEST_CASE("AST Tests") {
@@ -353,6 +401,81 @@ end subroutine
 
 end module
 )""");
+}
+
+TEST_CASE("ASR modfile strips only implementation dependencies") {
+    Allocator al(4*1024);
+
+    LCompilers::LFortran::AST::TranslationUnit_t* ast0;
+    LCompilers::diag::Diagnostics diagnostics;
+    LCompilers::CompilerOptions compiler_options;
+    const std::string src = R"""(
+module modfile_interface_dependencies
+implicit none
+
+type :: payload
+    integer :: i
+end type
+
+contains
+
+pure integer function iface_len()
+    iface_len = 3
+end function
+
+integer function body_only()
+    body_only = 4
+end function
+
+subroutine api(x, arr)
+    type(payload), intent(in) :: x
+    integer, intent(in) :: arr(iface_len())
+    integer :: body_local
+    body_local = body_only()
+    if (body_local /= 4) error stop
+end subroutine
+
+end module
+)""";
+    ast0 = TRY(LCompilers::LFortran::parse(al, src, diagnostics, compiler_options));
+    LCompilers::LocationManager lm;
+    lm.file_ends.push_back(0);
+    LCompilers::LocationManager::FileLocations file;
+    file.out_start.push_back(0); file.in_start.push_back(0); file.in_newlines.push_back(0);
+    file.in_filename = "test"; file.current_line = 1; file.preprocessor = false; file.out_start0.push_back(0);
+    file.in_start0.push_back(0); file.in_size0.push_back(0); file.interval_type0.push_back(0);
+    file.in_newlines0.push_back(0);
+    lm.files.push_back(file);
+    LCompilers::ASR::TranslationUnit_t* asr = TRY(LCompilers::LFortran::ast_to_asr(al, *ast0,
+        diagnostics, nullptr, false, compiler_options, lm));
+
+    LCompilers::ASR::Function_t *api = get_module_function(asr,
+        "modfile_interface_dependencies", "api");
+    CHECK(api->n_body > 0);
+    CHECK(api->m_symtab->get_symbol("body_local") != nullptr);
+    CHECK(function_has_dependency(api, "iface_len"));
+    CHECK(function_has_dependency(api, "body_only"));
+
+    std::string modfile = LCompilers::save_modfile(*asr, lm);
+    CHECK(api->n_body > 0);
+    CHECK(api->m_symtab->get_symbol("body_local") != nullptr);
+    CHECK(function_has_dependency(api, "iface_len"));
+    CHECK(function_has_dependency(api, "body_only"));
+
+    LCompilers::SymbolTable symtab(nullptr);
+    LCompilers::Result<LCompilers::ASR::TranslationUnit_t*, LCompilers::ErrorMessage> res
+        = LCompilers::load_modfile(al, modfile, true, symtab, lm);
+    CHECK(res.ok);
+    LCompilers::ASR::TranslationUnit_t* asr2 = res.result;
+    fix_external_symbols(*asr2, symtab);
+    LCOMPILERS_ASSERT(LCompilers::asr_verify(*asr2, true, diagnostics));
+
+    LCompilers::ASR::Function_t *api2 = get_module_function(asr2,
+        "modfile_interface_dependencies", "api");
+    CHECK(api2->n_body == 0);
+    CHECK(api2->m_symtab->get_symbol("body_local") == nullptr);
+    CHECK(function_has_dependency(api2, "iface_len"));
+    CHECK(!function_has_dependency(api2, "body_only"));
 }
 
 TEST_CASE("ASR modfile accepts compiler version drift when schema matches") {
