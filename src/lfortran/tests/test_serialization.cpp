@@ -150,6 +150,16 @@ bool function_has_dependency(LCompilers::ASR::Function_t *function,
     return false;
 }
 
+bool module_has_dependency(LCompilers::ASR::Module_t *module,
+        const std::string &dependency) {
+    for (size_t i = 0; i < module->n_dependencies; i++) {
+        if (dependency == module->m_dependencies[i]) {
+            return true;
+        }
+    }
+    return false;
+}
+
 void asr_mod(const std::string &src) {
     Allocator al(4*1024);
 
@@ -507,6 +517,111 @@ end module
     CHECK(module->m_symtab->get_symbol("public_unused") != nullptr);
     CHECK(module->m_symtab->get_symbol("worker") == nullptr);
     CHECK(module->m_symtab->get_symbol("body_only") == nullptr);
+}
+
+TEST_CASE("ASR modfile filters body-only module dependencies") {
+    Allocator al(4*1024);
+
+    LCompilers::LFortran::AST::TranslationUnit_t* ast0;
+    LCompilers::diag::Diagnostics diagnostics;
+    LCompilers::CompilerOptions compiler_options;
+    const std::string src = R"""(
+module modfile_sig_dep
+implicit none
+
+type :: payload
+    integer :: i
+end type
+
+end module
+
+module modfile_body_dep
+implicit none
+
+contains
+
+integer function body_value()
+    body_value = 4
+end function
+
+end module
+
+module modfile_dependency_api
+use modfile_sig_dep, only: payload
+use modfile_body_dep, only: body_value
+implicit none
+private
+public :: payload, api
+
+contains
+
+pure integer function iface_len()
+    iface_len = 3
+end function
+
+subroutine api(x, arr)
+    type(payload), intent(in) :: x
+    integer, intent(in) :: arr(iface_len(), x%i)
+    call worker(x, arr)
+end subroutine
+
+subroutine worker(x, arr)
+    type(payload), intent(in) :: x
+    integer, intent(in) :: arr(iface_len(), x%i)
+    if (body_value() /= 4) error stop
+end subroutine
+
+end module
+)""";
+    ast0 = TRY(LCompilers::LFortran::parse(al, src, diagnostics, compiler_options));
+    LCompilers::LocationManager lm;
+    lm.file_ends.push_back(0);
+    LCompilers::LocationManager::FileLocations file;
+    file.out_start.push_back(0); file.in_start.push_back(0); file.in_newlines.push_back(0);
+    file.in_filename = "test"; file.current_line = 1; file.preprocessor = false; file.out_start0.push_back(0);
+    file.in_start0.push_back(0); file.in_size0.push_back(0); file.interval_type0.push_back(0);
+    file.in_newlines0.push_back(0);
+    lm.files.push_back(file);
+    LCompilers::ASR::TranslationUnit_t* asr = TRY(LCompilers::LFortran::ast_to_asr(al, *ast0,
+        diagnostics, nullptr, false, compiler_options, lm));
+
+    LCompilers::ASR::symbol_t *api_module_sym = asr->m_symtab->get_symbol(
+        "modfile_dependency_api");
+    REQUIRE(api_module_sym != nullptr);
+    REQUIRE(LCompilers::ASR::is_a<LCompilers::ASR::Module_t>(*api_module_sym));
+    LCompilers::ASR::Module_t *api_module
+        = LCompilers::ASR::down_cast<LCompilers::ASR::Module_t>(api_module_sym);
+    CHECK(module_has_dependency(api_module, "modfile_sig_dep"));
+    CHECK(module_has_dependency(api_module, "modfile_body_dep"));
+
+    LCompilers::SymbolTable save_symtab(nullptr);
+    save_symtab.add_symbol("modfile_dependency_api", api_module_sym);
+    LCompilers::ASR::TranslationUnit_t *save_tu
+        = LCompilers::ASR::down_cast2<LCompilers::ASR::TranslationUnit_t>(
+            LCompilers::ASR::make_TranslationUnit_t(al, api_module->base.base.loc,
+                &save_symtab, nullptr, 0));
+
+    std::string modfile = LCompilers::save_modfile(*save_tu, lm);
+    CHECK(module_has_dependency(api_module, "modfile_sig_dep"));
+    CHECK(module_has_dependency(api_module, "modfile_body_dep"));
+
+    LCompilers::SymbolTable symtab(nullptr);
+    LCompilers::Result<LCompilers::ASR::TranslationUnit_t*, LCompilers::ErrorMessage> res
+        = LCompilers::load_modfile(al, modfile, true, symtab, lm);
+    CHECK(res.ok);
+    LCompilers::ASR::TranslationUnit_t* asr2 = res.result;
+
+    LCompilers::ASR::symbol_t *module_sym = asr2->m_symtab->get_symbol(
+        "modfile_dependency_api");
+    REQUIRE(module_sym != nullptr);
+    LCompilers::ASR::Module_t *module
+        = LCompilers::ASR::down_cast<LCompilers::ASR::Module_t>(module_sym);
+    CHECK(module_has_dependency(module, "modfile_sig_dep"));
+    CHECK(!module_has_dependency(module, "modfile_body_dep"));
+    CHECK(module->m_symtab->get_symbol("payload") != nullptr);
+    CHECK(module->m_symtab->get_symbol("api") != nullptr);
+    CHECK(module->m_symtab->get_symbol("worker") == nullptr);
+    CHECK(module->m_symtab->get_symbol("body_value") == nullptr);
 }
 
 TEST_CASE("ASR modfile preserves intrinsic helper bodies") {

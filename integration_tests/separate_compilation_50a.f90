@@ -1,5 +1,6 @@
 module separate_compilation_50a
 use separate_compilation_50dep, only: payload
+use separate_compilation_50bodydep, only: body_value
 implicit none
 private
 public :: payload, api
@@ -25,7 +26,7 @@ subroutine worker(x, arr)
     integer, intent(in) :: arr(iface_len(), x%i)
     integer :: body_local
 
-    body_local = body_only()
+    body_local = body_only() + body_value() - 4
     if (body_local /= 4) error stop
     if (x%i /= 7) error stop
     if (sum(arr) /= 168) error stop

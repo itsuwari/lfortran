@@ -244,6 +244,7 @@ class ModfileBodyStripper {
                 stripper.keep_symbol_key(reachable_symbols, parent, sym);
                 if (ASR::is_a<ASR::ExternalSymbol_t>(*sym)) {
                     ASR::ExternalSymbol_t *es = ASR::down_cast<ASR::ExternalSymbol_t>(sym);
+                    reachable_module_dependencies.insert(es->m_module_name);
                     for (SymbolTable *scope = parent; scope; scope = scope->parent) {
                         if (ASR::symbol_t *owner = scope->get_symbol(es->m_module_name)) {
                             add_symbol(owner);
@@ -294,6 +295,7 @@ class ModfileBodyStripper {
 
     public:
         std::map<SymbolTable*, std::set<std::string>> reachable_symbols;
+        std::set<std::string> reachable_module_dependencies;
 
         ModuleInterfaceCollector(ModfileBodyStripper &stripper_,
                 ASR::Module_t &module_) : stripper(stripper_), module(module_) {
@@ -314,6 +316,9 @@ class ModfileBodyStripper {
 
         void visit_Function(const ASR::Function_t &x) {
             collect_function_interface(x);
+            if (stripper.is_inline_function(x)) {
+                ASR::BaseWalkVisitor<ModuleInterfaceCollector>::visit_Function(x);
+            }
         }
 
         void visit_GpuKernelFunction(const ASR::GpuKernelFunction_t &x) {
@@ -709,6 +714,8 @@ class ModfileBodyStripper {
             }
             ModuleInterfaceCollector collector(*this, *module);
             collector.collect();
+            filter_dependencies(module->m_dependencies, module->n_dependencies,
+                collector.reachable_module_dependencies);
             auto keep_it = collector.reachable_symbols.find(module->m_symtab);
             if (keep_it != collector.reachable_symbols.end()) {
                 strip_unreachable_symbols(module->m_symtab, keep_it->second);
