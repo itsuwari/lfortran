@@ -624,6 +624,82 @@ end module
     CHECK(module->m_symtab->get_symbol("body_value") == nullptr);
 }
 
+TEST_CASE("ASR modfile derives dependencies from surviving external symbols") {
+    Allocator al(4*1024);
+
+    LCompilers::LFortran::AST::TranslationUnit_t* ast0;
+    LCompilers::diag::Diagnostics diagnostics;
+    LCompilers::CompilerOptions compiler_options;
+    const std::string src = R"""(
+module modfile_surviving_dep
+implicit none
+
+type :: payload
+    integer :: i
+end type
+
+end module
+
+module modfile_surviving_api
+use modfile_surviving_dep, only: payload
+implicit none
+private
+public :: api_payload
+
+type :: api_payload
+    type(payload) :: value
+end type
+
+end module
+)""";
+    ast0 = TRY(LCompilers::LFortran::parse(al, src, diagnostics, compiler_options));
+    LCompilers::LocationManager lm;
+    lm.file_ends.push_back(0);
+    LCompilers::LocationManager::FileLocations file;
+    file.out_start.push_back(0); file.in_start.push_back(0); file.in_newlines.push_back(0);
+    file.in_filename = "test"; file.current_line = 1; file.preprocessor = false; file.out_start0.push_back(0);
+    file.in_start0.push_back(0); file.in_size0.push_back(0); file.interval_type0.push_back(0);
+    file.in_newlines0.push_back(0);
+    lm.files.push_back(file);
+    LCompilers::ASR::TranslationUnit_t* asr = TRY(LCompilers::LFortran::ast_to_asr(al, *ast0,
+        diagnostics, nullptr, false, compiler_options, lm));
+
+    LCompilers::ASR::symbol_t *api_module_sym = asr->m_symtab->get_symbol(
+        "modfile_surviving_api");
+    REQUIRE(api_module_sym != nullptr);
+    REQUIRE(LCompilers::ASR::is_a<LCompilers::ASR::Module_t>(*api_module_sym));
+    LCompilers::ASR::Module_t *api_module
+        = LCompilers::ASR::down_cast<LCompilers::ASR::Module_t>(api_module_sym);
+    CHECK(module_has_dependency(api_module, "modfile_surviving_dep"));
+
+    api_module->m_dependencies = nullptr;
+    api_module->n_dependencies = 0;
+
+    LCompilers::SymbolTable save_symtab(nullptr);
+    save_symtab.add_symbol("modfile_surviving_api", api_module_sym);
+    LCompilers::ASR::TranslationUnit_t *save_tu
+        = LCompilers::ASR::down_cast2<LCompilers::ASR::TranslationUnit_t>(
+            LCompilers::ASR::make_TranslationUnit_t(al, api_module->base.base.loc,
+                &save_symtab, nullptr, 0));
+
+    std::string modfile = LCompilers::save_modfile(*save_tu, lm);
+
+    LCompilers::SymbolTable symtab(nullptr);
+    LCompilers::Result<LCompilers::ASR::TranslationUnit_t*, LCompilers::ErrorMessage> res
+        = LCompilers::load_modfile(al, modfile, true, symtab, lm);
+    CHECK(res.ok);
+    LCompilers::ASR::TranslationUnit_t* asr2 = res.result;
+
+    LCompilers::ASR::symbol_t *module_sym = asr2->m_symtab->get_symbol(
+        "modfile_surviving_api");
+    REQUIRE(module_sym != nullptr);
+    LCompilers::ASR::Module_t *module
+        = LCompilers::ASR::down_cast<LCompilers::ASR::Module_t>(module_sym);
+    CHECK(module_has_dependency(module, "modfile_surviving_dep"));
+    CHECK(module->m_symtab->get_symbol("api_payload") != nullptr);
+    CHECK(module->m_symtab->get_symbol("payload") != nullptr);
+}
+
 TEST_CASE("ASR modfile preserves intrinsic helper bodies") {
     Allocator al(4*1024);
 

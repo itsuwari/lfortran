@@ -30,6 +30,7 @@ struct SavedDependencies {
     size_t *n_dependencies_ptr;
     char **dependencies;
     size_t n_dependencies;
+    std::vector<std::string> owned_dependencies;
     std::vector<char*> filtered_dependencies;
 };
 
@@ -70,9 +71,57 @@ class ModfileBodyStripper {
             return;
         }
         saved_dependencies.push_back({&dependencies, &n_dependencies,
-            dependencies, n_dependencies, std::move(filtered)});
+            dependencies, n_dependencies, {}, std::move(filtered)});
         SavedDependencies &saved = saved_dependencies.back();
         if (saved.filtered_dependencies.empty()) {
+            dependencies = nullptr;
+            n_dependencies = 0;
+        } else {
+            dependencies = saved.filtered_dependencies.data();
+            n_dependencies = saved.filtered_dependencies.size();
+        }
+    }
+
+    void set_module_dependencies(char **&dependencies, size_t &n_dependencies,
+            const std::set<std::string> &interface_dependencies) {
+        if (n_dependencies == 0 && interface_dependencies.empty()) {
+            return;
+        }
+        std::vector<std::string> dependency_names;
+        dependency_names.reserve(n_dependencies + interface_dependencies.size());
+        std::set<std::string> emitted_dependencies;
+        for (size_t i = 0; i < n_dependencies; i++) {
+            std::string dependency = dependencies[i];
+            if (interface_dependencies.find(dependency) != interface_dependencies.end()
+                    && emitted_dependencies.insert(dependency).second) {
+                dependency_names.push_back(dependency);
+            }
+        }
+        for (const std::string &dependency : interface_dependencies) {
+            if (emitted_dependencies.insert(dependency).second) {
+                dependency_names.push_back(dependency);
+            }
+        }
+        bool unchanged = dependency_names.size() == n_dependencies;
+        if (unchanged) {
+            for (size_t i = 0; i < n_dependencies; i++) {
+                if (dependency_names[i] != dependencies[i]) {
+                    unchanged = false;
+                    break;
+                }
+            }
+        }
+        if (unchanged) {
+            return;
+        }
+        saved_dependencies.push_back({&dependencies, &n_dependencies,
+            dependencies, n_dependencies, std::move(dependency_names), {}});
+        SavedDependencies &saved = saved_dependencies.back();
+        saved.filtered_dependencies.reserve(saved.owned_dependencies.size());
+        for (std::string &dependency : saved.owned_dependencies) {
+            saved.filtered_dependencies.push_back(const_cast<char*>(dependency.c_str()));
+        }
+        if (saved.owned_dependencies.empty()) {
             dependencies = nullptr;
             n_dependencies = 0;
         } else {
@@ -116,6 +165,61 @@ class ModfileBodyStripper {
     bool is_intrinsic_runtime_module(const ASR::Module_t &x) const {
         return x.m_intrinsic
             || std::string(x.m_name).rfind("lfortran_intrinsic", 0) == 0;
+    }
+
+    static void add_external_module_dependency(
+            std::set<std::string> &dependencies, const char *module_name) {
+        if (module_name == nullptr) {
+            return;
+        }
+        std::string name(module_name);
+        const std::string intrinsic_iso_prefix = "lfortran_intrinsic_iso_";
+        if (name.rfind(intrinsic_iso_prefix, 0) == 0) {
+            const std::string intrinsic_prefix = "lfortran_intrinsic_";
+            dependencies.insert(name.substr(intrinsic_prefix.size()));
+        } else {
+            dependencies.insert(name);
+        }
+    }
+
+    static std::string comparable_external_module_name(const std::string &name) {
+        const std::string intrinsic_iso_prefix = "lfortran_intrinsic_iso_";
+        const std::string intrinsic_prefix = "lfortran_intrinsic_";
+        if (name.rfind(intrinsic_iso_prefix, 0) == 0) {
+            return name.substr(intrinsic_prefix.size());
+        }
+        return name;
+    }
+
+    static bool is_loadable_external_module_dependency(
+            const ASR::ExternalSymbol_t &x) {
+        if (x.m_module_name == nullptr) {
+            return false;
+        }
+        if (x.m_external == nullptr) {
+            return true;
+        }
+        ASR::symbol_t *external = ASRUtils::symbol_get_past_external(x.m_external);
+        if (external == nullptr) {
+            external = x.m_external;
+        }
+        ASR::Module_t *owner = ASRUtils::get_sym_module(external);
+        if (owner == nullptr) {
+            return true;
+        }
+        std::string module_name = x.m_module_name;
+        std::string owner_name = owner->m_name;
+        return module_name == owner_name
+            || comparable_external_module_name(module_name)
+                == comparable_external_module_name(owner_name);
+    }
+
+    static void add_external_symbol_module_dependency(
+            std::set<std::string> &dependencies,
+            const ASR::ExternalSymbol_t &x) {
+        if (is_loadable_external_module_dependency(x)) {
+            add_external_module_dependency(dependencies, x.m_module_name);
+        }
     }
 
     SymbolTable *parent_symtab_for_symbol(ASR::symbol_t *sym) const {
@@ -244,7 +348,6 @@ class ModfileBodyStripper {
                 stripper.keep_symbol_key(reachable_symbols, parent, sym);
                 if (ASR::is_a<ASR::ExternalSymbol_t>(*sym)) {
                     ASR::ExternalSymbol_t *es = ASR::down_cast<ASR::ExternalSymbol_t>(sym);
-                    reachable_module_dependencies.insert(es->m_module_name);
                     for (SymbolTable *scope = parent; scope; scope = scope->parent) {
                         if (ASR::symbol_t *owner = scope->get_symbol(es->m_module_name)) {
                             add_symbol(owner);
@@ -295,7 +398,6 @@ class ModfileBodyStripper {
 
     public:
         std::map<SymbolTable*, std::set<std::string>> reachable_symbols;
-        std::set<std::string> reachable_module_dependencies;
 
         ModuleInterfaceCollector(ModfileBodyStripper &stripper_,
                 ASR::Module_t &module_) : stripper(stripper_), module(module_) {
@@ -451,6 +553,132 @@ class ModfileBodyStripper {
         void visit_UnionConstructor(const ASR::UnionConstructor_t &x) {
             add_symbol(x.m_dt_sym);
             ASR::BaseWalkVisitor<ModuleInterfaceCollector>::visit_UnionConstructor(x);
+        }
+    };
+
+    class SerializedModuleDependencyCollector
+        : public ASR::BaseWalkVisitor<SerializedModuleDependencyCollector> {
+        std::vector<ASR::symbol_t*> pending_symbols;
+        std::set<ASR::symbol_t*> visited_symbols;
+
+        void add_symbol(ASR::symbol_t *sym) {
+            if (sym == nullptr) {
+                return;
+            }
+            if (ASR::is_a<ASR::ExternalSymbol_t>(*sym)) {
+                ASR::ExternalSymbol_t *es = ASR::down_cast<ASR::ExternalSymbol_t>(sym);
+                ModfileBodyStripper::add_external_symbol_module_dependency(
+                    dependencies, *es);
+            }
+            if (visited_symbols.insert(sym).second) {
+                pending_symbols.push_back(sym);
+            }
+        }
+
+    public:
+        std::set<std::string> dependencies;
+
+        void collect(const ASR::Module_t &module) {
+            for (auto &item : module.m_symtab->get_scope()) {
+                add_symbol(item.second);
+            }
+            while (!pending_symbols.empty()) {
+                ASR::symbol_t *sym = pending_symbols.back();
+                pending_symbols.pop_back();
+                this->visit_symbol(*sym);
+            }
+        }
+
+        void visit_ExternalSymbol(const ASR::ExternalSymbol_t &x) {
+            ModfileBodyStripper::add_external_symbol_module_dependency(
+                dependencies, x);
+        }
+
+        void visit_GenericProcedure(const ASR::GenericProcedure_t &x) {
+            for (size_t i = 0; i < x.n_procs; i++) {
+                add_symbol(x.m_procs[i]);
+            }
+        }
+
+        void visit_CustomOperator(const ASR::CustomOperator_t &x) {
+            for (size_t i = 0; i < x.n_procs; i++) {
+                add_symbol(x.m_procs[i]);
+            }
+        }
+
+        void visit_StructMethodDeclaration(const ASR::StructMethodDeclaration_t &x) {
+            add_symbol(x.m_proc);
+        }
+
+        void visit_Namelist(const ASR::Namelist_t &x) {
+            for (size_t i = 0; i < x.n_var_list; i++) {
+                add_symbol(x.m_var_list[i]);
+            }
+        }
+
+        void visit_Variable(const ASR::Variable_t &x) {
+            add_symbol(x.m_type_declaration);
+            ASR::BaseWalkVisitor<SerializedModuleDependencyCollector>::visit_Variable(x);
+        }
+
+        void visit_StructInstanceMember(const ASR::StructInstanceMember_t &x) {
+            add_symbol(x.m_m);
+            ASR::BaseWalkVisitor<SerializedModuleDependencyCollector>::visit_StructInstanceMember(x);
+        }
+
+        void visit_StructStaticMember(const ASR::StructStaticMember_t &x) {
+            add_symbol(x.m_m);
+            ASR::BaseWalkVisitor<SerializedModuleDependencyCollector>::visit_StructStaticMember(x);
+        }
+
+        void visit_EnumStaticMember(const ASR::EnumStaticMember_t &x) {
+            add_symbol(x.m_m);
+            ASR::BaseWalkVisitor<SerializedModuleDependencyCollector>::visit_EnumStaticMember(x);
+        }
+
+        void visit_UnionInstanceMember(const ASR::UnionInstanceMember_t &x) {
+            add_symbol(x.m_m);
+            ASR::BaseWalkVisitor<SerializedModuleDependencyCollector>::visit_UnionInstanceMember(x);
+        }
+
+        void visit_FunctionCall(const ASR::FunctionCall_t &x) {
+            add_symbol(x.m_name);
+            if (x.m_original_name) {
+                add_symbol(x.m_original_name);
+            }
+            ASR::BaseWalkVisitor<SerializedModuleDependencyCollector>::visit_FunctionCall(x);
+        }
+
+        void visit_SubroutineCall(const ASR::SubroutineCall_t &x) {
+            add_symbol(x.m_name);
+            if (x.m_original_name) {
+                add_symbol(x.m_original_name);
+            }
+            ASR::BaseWalkVisitor<SerializedModuleDependencyCollector>::visit_SubroutineCall(x);
+        }
+
+        void visit_Var(const ASR::Var_t &x) {
+            add_symbol(x.m_v);
+        }
+
+        void visit_StructConstructor(const ASR::StructConstructor_t &x) {
+            add_symbol(x.m_dt_sym);
+            ASR::BaseWalkVisitor<SerializedModuleDependencyCollector>::visit_StructConstructor(x);
+        }
+
+        void visit_StructConstant(const ASR::StructConstant_t &x) {
+            add_symbol(x.m_dt_sym);
+            ASR::BaseWalkVisitor<SerializedModuleDependencyCollector>::visit_StructConstant(x);
+        }
+
+        void visit_EnumConstructor(const ASR::EnumConstructor_t &x) {
+            add_symbol(x.m_dt_sym);
+            ASR::BaseWalkVisitor<SerializedModuleDependencyCollector>::visit_EnumConstructor(x);
+        }
+
+        void visit_UnionConstructor(const ASR::UnionConstructor_t &x) {
+            add_symbol(x.m_dt_sym);
+            ASR::BaseWalkVisitor<SerializedModuleDependencyCollector>::visit_UnionConstructor(x);
         }
     };
 
@@ -714,12 +942,14 @@ class ModfileBodyStripper {
             }
             ModuleInterfaceCollector collector(*this, *module);
             collector.collect();
-            filter_dependencies(module->m_dependencies, module->n_dependencies,
-                collector.reachable_module_dependencies);
             auto keep_it = collector.reachable_symbols.find(module->m_symtab);
             if (keep_it != collector.reachable_symbols.end()) {
                 strip_unreachable_symbols(module->m_symtab, keep_it->second);
             }
+            SerializedModuleDependencyCollector dependency_collector;
+            dependency_collector.collect(*module);
+            set_module_dependencies(module->m_dependencies, module->n_dependencies,
+                dependency_collector.dependencies);
         }
     }
 
