@@ -1563,8 +1563,10 @@ R"(
     std::vector<std::pair<std::string, std::string>> pack_split_units_by_budget(
             const std::vector<std::pair<std::string, std::string>> &units,
             const std::string &project_name) const {
-        static const size_t pack_line_budget = 12000;
-        static const size_t max_packable_unit_lines = 4000;
+        // Coarser packs reduce host C compiler/linker fan-in; unsafe units
+        // with file-scope static state or preprocessor lines still stay split.
+        static const size_t pack_line_budget = 48000;
+        static const size_t max_packable_unit_lines = 20000;
         static const size_t max_inline_hint_unit_lines = 250;
 
         struct PackState {
