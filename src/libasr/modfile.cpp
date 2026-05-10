@@ -32,9 +32,16 @@ struct SavedDependencies {
     std::vector<char*> filtered_dependencies;
 };
 
+struct SavedSymbol {
+    SymbolTable *symtab;
+    std::string name;
+    ASR::symbol_t *symbol;
+};
+
 class ModfileBodyStripper {
     std::vector<SavedStmtBody> saved_bodies;
     std::vector<SavedDependencies> saved_dependencies;
+    std::vector<SavedSymbol> saved_symbols;
 
     void save_body(ASR::stmt_t **&body, size_t &n_body) {
         if (n_body == 0) {
@@ -73,6 +80,20 @@ class ModfileBodyStripper {
         }
     }
 
+    void strip_unreachable_symbols(SymbolTable *symtab,
+            const std::set<std::string> &interface_symbols) {
+        std::vector<SavedSymbol> stripped_symbols;
+        for (auto &item : symtab->get_scope()) {
+            if (interface_symbols.find(item.first) == interface_symbols.end()) {
+                stripped_symbols.push_back({symtab, item.first, item.second});
+            }
+        }
+        for (auto &item : stripped_symbols) {
+            item.symtab->erase_symbol(item.name);
+            saved_symbols.push_back(item);
+        }
+    }
+
     bool is_inline_function(const ASR::Function_t &x) const {
         if (x.m_function_signature &&
                 ASR::is_a<ASR::FunctionType_t>(*x.m_function_signature)) {
@@ -87,6 +108,17 @@ class ModfileBodyStripper {
         ASR::Function_t &function;
         SymbolTable *function_symtab;
         SymbolTable *parent_symtab;
+
+        void add_symbol_table_key(SymbolTable *symtab, ASR::symbol_t *sym) {
+            if (symtab == nullptr || sym == nullptr) {
+                return;
+            }
+            for (auto &item : symtab->get_scope()) {
+                if (item.second == sym) {
+                    dependencies.insert(item.first);
+                }
+            }
+        }
 
         void add_symbol(ASR::symbol_t *sym, bool keep_procedure_dependency=false) {
             if (sym == nullptr) {
@@ -104,6 +136,47 @@ class ModfileBodyStripper {
             if (parent_symtab && parent_symtab->get_symbol(name)) {
                 dependencies.insert(name);
             }
+            add_symbol_table_key(function_symtab, sym);
+            add_symbol_table_key(parent_symtab, sym);
+        }
+
+        void collect_function_interface(const ASR::Function_t &x) {
+            if (x.m_function_signature) {
+                this->visit_ttype(*x.m_function_signature);
+            }
+            for (size_t i = 0; i < x.n_args; i++) {
+                this->visit_expr(*x.m_args[i]);
+                if (ASR::is_a<ASR::Var_t>(*x.m_args[i])) {
+                    ASR::symbol_t *sym = ASR::down_cast<ASR::Var_t>(
+                        x.m_args[i])->m_v;
+                    this->visit_symbol(*sym);
+                }
+            }
+            if (x.m_return_var) {
+                this->visit_expr(*x.m_return_var);
+                if (ASR::is_a<ASR::Var_t>(*x.m_return_var)) {
+                    ASR::symbol_t *sym = ASR::down_cast<ASR::Var_t>(
+                        x.m_return_var)->m_v;
+                    this->visit_symbol(*sym);
+                }
+            }
+        }
+
+        void collect_dependency_closure() {
+            bool changed = true;
+            while (changed) {
+                size_t n_dependencies = dependencies.size();
+                std::vector<std::string> current_dependencies(
+                    dependencies.begin(), dependencies.end());
+                for (const std::string &name : current_dependencies) {
+                    if (function_symtab) {
+                        if (ASR::symbol_t *sym = function_symtab->get_symbol(name)) {
+                            this->visit_symbol(*sym);
+                        }
+                    }
+                }
+                changed = dependencies.size() != n_dependencies;
+            }
         }
 
     public:
@@ -115,30 +188,59 @@ class ModfileBodyStripper {
         }
 
         void collect() {
-            if (function.m_function_signature) {
-                this->visit_ttype(*function.m_function_signature);
+            collect_function_interface(function);
+            collect_dependency_closure();
+        }
+
+        void visit_Function(const ASR::Function_t &x) {
+            collect_function_interface(x);
+        }
+
+        void visit_GenericProcedure(const ASR::GenericProcedure_t &x) {
+            for (size_t i = 0; i < x.n_procs; i++) {
+                add_symbol(x.m_procs[i], true);
             }
-            for (size_t i = 0; i < function.n_args; i++) {
-                this->visit_expr(*function.m_args[i]);
-                if (ASR::is_a<ASR::Var_t>(*function.m_args[i])) {
-                    ASR::symbol_t *sym = ASR::down_cast<ASR::Var_t>(
-                        function.m_args[i])->m_v;
-                    this->visit_symbol(*sym);
-                }
+        }
+
+        void visit_CustomOperator(const ASR::CustomOperator_t &x) {
+            for (size_t i = 0; i < x.n_procs; i++) {
+                add_symbol(x.m_procs[i], true);
             }
-            if (function.m_return_var) {
-                this->visit_expr(*function.m_return_var);
-                if (ASR::is_a<ASR::Var_t>(*function.m_return_var)) {
-                    ASR::symbol_t *sym = ASR::down_cast<ASR::Var_t>(
-                        function.m_return_var)->m_v;
-                    this->visit_symbol(*sym);
-                }
+        }
+
+        void visit_StructMethodDeclaration(const ASR::StructMethodDeclaration_t &x) {
+            add_symbol(x.m_proc, true);
+        }
+
+        void visit_Namelist(const ASR::Namelist_t &x) {
+            for (size_t i = 0; i < x.n_var_list; i++) {
+                add_symbol(x.m_var_list[i]);
             }
         }
 
         void visit_Variable(const ASR::Variable_t &x) {
             add_symbol(x.m_type_declaration);
             ASR::BaseWalkVisitor<InterfaceDependencyCollector>::visit_Variable(x);
+        }
+
+        void visit_StructInstanceMember(const ASR::StructInstanceMember_t &x) {
+            add_symbol(x.m_m);
+            ASR::BaseWalkVisitor<InterfaceDependencyCollector>::visit_StructInstanceMember(x);
+        }
+
+        void visit_StructStaticMember(const ASR::StructStaticMember_t &x) {
+            add_symbol(x.m_m);
+            ASR::BaseWalkVisitor<InterfaceDependencyCollector>::visit_StructStaticMember(x);
+        }
+
+        void visit_EnumStaticMember(const ASR::EnumStaticMember_t &x) {
+            add_symbol(x.m_m);
+            ASR::BaseWalkVisitor<InterfaceDependencyCollector>::visit_EnumStaticMember(x);
+        }
+
+        void visit_UnionInstanceMember(const ASR::UnionInstanceMember_t &x) {
+            add_symbol(x.m_m);
+            ASR::BaseWalkVisitor<InterfaceDependencyCollector>::visit_UnionInstanceMember(x);
         }
 
         void visit_FunctionCall(const ASR::FunctionCall_t &x) {
@@ -202,6 +304,7 @@ class ModfileBodyStripper {
                         save_body(x->m_body, x->n_body);
                         filter_dependencies(x->m_dependencies, x->n_dependencies,
                             collector.dependencies);
+                        strip_unreachable_symbols(x->m_symtab, collector.dependencies);
                     }
                     break;
                 }
@@ -253,6 +356,9 @@ public:
     }
 
     ~ModfileBodyStripper() {
+        for (auto it = saved_symbols.rbegin(); it != saved_symbols.rend(); ++it) {
+            it->symtab->add_symbol(it->name, it->symbol);
+        }
         for (auto it = saved_dependencies.rbegin(); it != saved_dependencies.rend(); ++it) {
             *it->dependencies_ptr = it->dependencies;
             *it->n_dependencies_ptr = it->n_dependencies;

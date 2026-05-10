@@ -407,7 +407,7 @@ end module
 )""");
 }
 
-TEST_CASE("ASR modfile strips only implementation dependencies") {
+TEST_CASE("ASR modfile strips only implementation payload") {
     Allocator al(4*1024);
 
     LCompilers::LFortran::AST::TranslationUnit_t* ast0;
@@ -490,7 +490,7 @@ end module
     LCompilers::ASR::Function_t *worker2 = get_module_function(asr2,
         "modfile_interface_dependencies", "worker");
     CHECK(worker2->n_body == 0);
-    CHECK(worker2->m_symtab->get_symbol("body_local") != nullptr);
+    CHECK(worker2->m_symtab->get_symbol("body_local") == nullptr);
     CHECK(function_has_dependency(worker2, "iface_len"));
     CHECK(!function_has_dependency(worker2, "body_only"));
 }
