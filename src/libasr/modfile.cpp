@@ -32,16 +32,9 @@ struct SavedDependencies {
     std::vector<char*> filtered_dependencies;
 };
 
-struct SavedSymbol {
-    SymbolTable *symtab;
-    std::string name;
-    ASR::symbol_t *symbol;
-};
-
 class ModfileBodyStripper {
     std::vector<SavedStmtBody> saved_bodies;
     std::vector<SavedDependencies> saved_dependencies;
-    std::vector<SavedSymbol> saved_symbols;
 
     void save_body(ASR::stmt_t **&body, size_t &n_body) {
         if (n_body == 0) {
@@ -95,13 +88,18 @@ class ModfileBodyStripper {
         SymbolTable *function_symtab;
         SymbolTable *parent_symtab;
 
-        void add_symbol(ASR::symbol_t *sym) {
+        void add_symbol(ASR::symbol_t *sym, bool keep_procedure_dependency=false) {
             if (sym == nullptr) {
                 return;
             }
+            ASR::symbol_t *past_external = ASRUtils::symbol_get_past_external(sym);
+            if (!keep_procedure_dependency && past_external != nullptr
+                    && ASR::is_a<ASR::Function_t>(*past_external)) {
+                return;
+            }
             std::string name = ASRUtils::symbol_name(sym);
-            if (ASRUtils::symbol_parent_symtab(sym) == function_symtab) {
-                local_symbols.insert(name);
+            if (function_symtab && function_symtab->get_symbol(name)) {
+                dependencies.insert(name);
             }
             if (parent_symtab && parent_symtab->get_symbol(name)) {
                 dependencies.insert(name);
@@ -110,12 +108,10 @@ class ModfileBodyStripper {
 
     public:
         std::set<std::string> dependencies;
-        std::set<std::string> local_symbols;
 
         InterfaceDependencyCollector(ASR::Function_t &function) :
             function(function), function_symtab(function.m_symtab),
             parent_symtab(function.m_symtab ? function.m_symtab->parent : nullptr) {
-            this->visit_compile_time_value = true;
         }
 
         void collect() {
@@ -146,17 +142,17 @@ class ModfileBodyStripper {
         }
 
         void visit_FunctionCall(const ASR::FunctionCall_t &x) {
-            add_symbol(x.m_name);
+            add_symbol(x.m_name, true);
             if (x.m_original_name) {
-                add_symbol(x.m_original_name);
+                add_symbol(x.m_original_name, true);
             }
             ASR::BaseWalkVisitor<InterfaceDependencyCollector>::visit_FunctionCall(x);
         }
 
         void visit_SubroutineCall(const ASR::SubroutineCall_t &x) {
-            add_symbol(x.m_name);
+            add_symbol(x.m_name, true);
             if (x.m_original_name) {
-                add_symbol(x.m_original_name);
+                add_symbol(x.m_original_name, true);
             }
             ASR::BaseWalkVisitor<InterfaceDependencyCollector>::visit_SubroutineCall(x);
         }
@@ -186,25 +182,7 @@ class ModfileBodyStripper {
         }
     };
 
-    void strip_unreferenced_function_symbols(ASR::Function_t &function,
-            const std::set<std::string> &local_symbols) {
-        if (function.m_symtab == nullptr) {
-            return;
-        }
-        std::vector<std::string> erase_names;
-        for (auto &item : function.m_symtab->get_scope()) {
-            if (local_symbols.find(item.first) == local_symbols.end()) {
-                erase_names.push_back(item.first);
-            }
-        }
-        for (std::string &name : erase_names) {
-            saved_symbols.push_back({function.m_symtab, name,
-                function.m_symtab->get_symbol(name)});
-            function.m_symtab->erase_symbol(name);
-        }
-    }
-
-    void strip_symbol_table(SymbolTable *symtab) {
+    void strip_symbol_table(SymbolTable *symtab, bool preserve_bodies=false) {
         for (auto &item : symtab->get_scope()) {
             ASR::symbol_t *sym = item.second;
             switch (sym->type) {
@@ -215,47 +193,52 @@ class ModfileBodyStripper {
                 }
                 case ASR::symbolType::Function: {
                     ASR::Function_t *x = ASR::down_cast<ASR::Function_t>(sym);
-                    strip_symbol_table(x->m_symtab);
-                    if (!is_inline_function(*x)) {
+                    bool preserve_function_body = is_inline_function(*x)
+                        || x->m_access == ASR::accessType::Public;
+                    strip_symbol_table(x->m_symtab, preserve_function_body);
+                    if (!preserve_function_body) {
                         InterfaceDependencyCollector collector(*x);
                         collector.collect();
                         save_body(x->m_body, x->n_body);
                         filter_dependencies(x->m_dependencies, x->n_dependencies,
                             collector.dependencies);
-                        strip_unreferenced_function_symbols(*x, collector.local_symbols);
                     }
                     break;
                 }
                 case ASR::symbolType::Struct: {
                     ASR::Struct_t *x = ASR::down_cast<ASR::Struct_t>(sym);
-                    strip_symbol_table(x->m_symtab);
+                    strip_symbol_table(x->m_symtab, preserve_bodies);
                     break;
                 }
                 case ASR::symbolType::Enum: {
                     ASR::Enum_t *x = ASR::down_cast<ASR::Enum_t>(sym);
-                    strip_symbol_table(x->m_symtab);
+                    strip_symbol_table(x->m_symtab, preserve_bodies);
                     break;
                 }
                 case ASR::symbolType::Union: {
                     ASR::Union_t *x = ASR::down_cast<ASR::Union_t>(sym);
-                    strip_symbol_table(x->m_symtab);
+                    strip_symbol_table(x->m_symtab, preserve_bodies);
                     break;
                 }
                 case ASR::symbolType::AssociateBlock: {
                     ASR::AssociateBlock_t *x = ASR::down_cast<ASR::AssociateBlock_t>(sym);
-                    strip_symbol_table(x->m_symtab);
-                    save_body(x->m_body, x->n_body);
+                    strip_symbol_table(x->m_symtab, preserve_bodies);
+                    if (!preserve_bodies) {
+                        save_body(x->m_body, x->n_body);
+                    }
                     break;
                 }
                 case ASR::symbolType::Block: {
                     ASR::Block_t *x = ASR::down_cast<ASR::Block_t>(sym);
-                    strip_symbol_table(x->m_symtab);
-                    save_body(x->m_body, x->n_body);
+                    strip_symbol_table(x->m_symtab, preserve_bodies);
+                    if (!preserve_bodies) {
+                        save_body(x->m_body, x->n_body);
+                    }
                     break;
                 }
                 case ASR::symbolType::GpuKernelFunction: {
                     ASR::GpuKernelFunction_t *x = ASR::down_cast<ASR::GpuKernelFunction_t>(sym);
-                    strip_symbol_table(x->m_symtab);
+                    strip_symbol_table(x->m_symtab, preserve_bodies);
                     break;
                 }
                 default:
@@ -270,9 +253,6 @@ public:
     }
 
     ~ModfileBodyStripper() {
-        for (auto it = saved_symbols.rbegin(); it != saved_symbols.rend(); ++it) {
-            it->symtab->add_symbol(it->name, it->symbol);
-        }
         for (auto it = saved_dependencies.rbegin(); it != saved_dependencies.rend(); ++it) {
             *it->dependencies_ptr = it->dependencies;
             *it->n_dependencies_ptr = it->n_dependencies;

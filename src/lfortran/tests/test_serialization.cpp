@@ -118,7 +118,11 @@ void check_module_function_bodies(LCompilers::ASR::TranslationUnit_t *asr,
             LCompilers::ASR::Function_t *function
                 = LCompilers::ASR::down_cast<LCompilers::ASR::Function_t>(function_item.second);
             if (expect_empty_body) {
-                CHECK(function->n_body == 0);
+                if (function->m_access == LCompilers::ASR::accessType::Public) {
+                    CHECK(function->n_body > 0);
+                } else {
+                    CHECK(function->n_body == 0);
+                }
             } else {
                 CHECK(function->n_body > 0);
             }
@@ -412,6 +416,8 @@ TEST_CASE("ASR modfile strips only implementation dependencies") {
     const std::string src = R"""(
 module modfile_interface_dependencies
 implicit none
+private
+public :: payload, api
 
 type :: payload
     integer :: i
@@ -428,6 +434,14 @@ integer function body_only()
 end function
 
 subroutine api(x, arr)
+    type(payload), intent(in) :: x
+    integer, intent(in) :: arr(iface_len())
+    block
+        call worker(x, arr)
+    end block
+end subroutine
+
+subroutine worker(x, arr)
     type(payload), intent(in) :: x
     integer, intent(in) :: arr(iface_len())
     integer :: body_local
@@ -449,18 +463,18 @@ end module
     LCompilers::ASR::TranslationUnit_t* asr = TRY(LCompilers::LFortran::ast_to_asr(al, *ast0,
         diagnostics, nullptr, false, compiler_options, lm));
 
-    LCompilers::ASR::Function_t *api = get_module_function(asr,
-        "modfile_interface_dependencies", "api");
-    CHECK(api->n_body > 0);
-    CHECK(api->m_symtab->get_symbol("body_local") != nullptr);
-    CHECK(function_has_dependency(api, "iface_len"));
-    CHECK(function_has_dependency(api, "body_only"));
+    LCompilers::ASR::Function_t *worker = get_module_function(asr,
+        "modfile_interface_dependencies", "worker");
+    CHECK(worker->n_body > 0);
+    CHECK(worker->m_symtab->get_symbol("body_local") != nullptr);
+    CHECK(function_has_dependency(worker, "iface_len"));
+    CHECK(function_has_dependency(worker, "body_only"));
 
     std::string modfile = LCompilers::save_modfile(*asr, lm);
-    CHECK(api->n_body > 0);
-    CHECK(api->m_symtab->get_symbol("body_local") != nullptr);
-    CHECK(function_has_dependency(api, "iface_len"));
-    CHECK(function_has_dependency(api, "body_only"));
+    CHECK(worker->n_body > 0);
+    CHECK(worker->m_symtab->get_symbol("body_local") != nullptr);
+    CHECK(function_has_dependency(worker, "iface_len"));
+    CHECK(function_has_dependency(worker, "body_only"));
 
     LCompilers::SymbolTable symtab(nullptr);
     LCompilers::Result<LCompilers::ASR::TranslationUnit_t*, LCompilers::ErrorMessage> res
@@ -472,10 +486,13 @@ end module
 
     LCompilers::ASR::Function_t *api2 = get_module_function(asr2,
         "modfile_interface_dependencies", "api");
-    CHECK(api2->n_body == 0);
-    CHECK(api2->m_symtab->get_symbol("body_local") == nullptr);
-    CHECK(function_has_dependency(api2, "iface_len"));
-    CHECK(!function_has_dependency(api2, "body_only"));
+    CHECK(api2->n_body > 0);
+    LCompilers::ASR::Function_t *worker2 = get_module_function(asr2,
+        "modfile_interface_dependencies", "worker");
+    CHECK(worker2->n_body == 0);
+    CHECK(worker2->m_symtab->get_symbol("body_local") != nullptr);
+    CHECK(function_has_dependency(worker2, "iface_len"));
+    CHECK(!function_has_dependency(worker2, "body_only"));
 }
 
 TEST_CASE("ASR modfile accepts compiler version drift when schema matches") {

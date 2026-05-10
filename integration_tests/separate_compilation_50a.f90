@@ -1,9 +1,16 @@
-module separate_compilation_50a
+module separate_compilation_50dep
 implicit none
 
 type :: payload
     integer :: i
 end type
+
+end module
+
+module separate_compilation_50a
+use separate_compilation_50dep, only: payload
+implicit none
+public :: payload, api
 
 contains
 
