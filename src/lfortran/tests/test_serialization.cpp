@@ -160,6 +160,18 @@ bool module_has_dependency(LCompilers::ASR::Module_t *module,
     return false;
 }
 
+LCompilers::LocationManager make_test_location_manager() {
+    LCompilers::LocationManager lm;
+    lm.file_ends.push_back(0);
+    LCompilers::LocationManager::FileLocations file;
+    file.out_start.push_back(0); file.in_start.push_back(0); file.in_newlines.push_back(0);
+    file.in_filename = "test"; file.current_line = 1; file.preprocessor = false; file.out_start0.push_back(0);
+    file.in_start0.push_back(0); file.in_size0.push_back(0); file.interval_type0.push_back(0);
+    file.in_newlines0.push_back(0);
+    lm.files.push_back(file);
+    return lm;
+}
+
 void asr_mod(const std::string &src) {
     Allocator al(4*1024);
 
@@ -622,6 +634,140 @@ end module
     CHECK(module->m_symtab->get_symbol("api") != nullptr);
     CHECK(module->m_symtab->get_symbol("worker") == nullptr);
     CHECK(module->m_symtab->get_symbol("body_value") == nullptr);
+}
+
+TEST_CASE("ASR modfile downstream compile does not require stripped body dependencies") {
+    Allocator al(4*1024);
+
+    LCompilers::LFortran::AST::TranslationUnit_t* ast0;
+    LCompilers::diag::Diagnostics diagnostics;
+    LCompilers::CompilerOptions compiler_options;
+    const std::string src = R"""(
+module modfile_downstream_sig_dep
+implicit none
+
+type :: payload
+    integer :: i
+end type
+
+end module
+
+module modfile_downstream_body_dep
+implicit none
+
+contains
+
+integer function body_value()
+    body_value = 4
+end function
+
+end module
+
+module modfile_downstream_api
+use modfile_downstream_sig_dep, only: payload
+use modfile_downstream_body_dep, only: body_value
+implicit none
+private
+public :: payload, api
+
+contains
+
+pure integer function iface_len()
+    iface_len = 3
+end function
+
+subroutine api(x, arr)
+    type(payload), intent(in) :: x
+    integer, intent(in) :: arr(iface_len(), x%i)
+    call worker(x, arr)
+end subroutine
+
+subroutine worker(x, arr)
+    type(payload), intent(in) :: x
+    integer, intent(in) :: arr(iface_len(), x%i)
+    if (body_value() /= 4) error stop
+end subroutine
+
+end module
+)""";
+    ast0 = TRY(LCompilers::LFortran::parse(al, src, diagnostics, compiler_options));
+    LCompilers::LocationManager lm = make_test_location_manager();
+    LCompilers::ASR::TranslationUnit_t* asr = TRY(LCompilers::LFortran::ast_to_asr(al, *ast0,
+        diagnostics, nullptr, false, compiler_options, lm));
+
+    LCompilers::ASR::symbol_t *sig_module_sym = asr->m_symtab->get_symbol(
+        "modfile_downstream_sig_dep");
+    LCompilers::ASR::symbol_t *api_module_sym = asr->m_symtab->get_symbol(
+        "modfile_downstream_api");
+    REQUIRE(sig_module_sym != nullptr);
+    REQUIRE(api_module_sym != nullptr);
+
+    LCompilers::SymbolTable sig_save_symtab(nullptr);
+    sig_save_symtab.add_symbol("modfile_downstream_sig_dep", sig_module_sym);
+    LCompilers::ASR::TranslationUnit_t *sig_save_tu
+        = LCompilers::ASR::down_cast2<LCompilers::ASR::TranslationUnit_t>(
+            LCompilers::ASR::make_TranslationUnit_t(al, sig_module_sym->base.loc,
+                &sig_save_symtab, nullptr, 0));
+
+    LCompilers::SymbolTable api_save_symtab(nullptr);
+    api_save_symtab.add_symbol("modfile_downstream_api", api_module_sym);
+    LCompilers::ASR::TranslationUnit_t *api_save_tu
+        = LCompilers::ASR::down_cast2<LCompilers::ASR::TranslationUnit_t>(
+            LCompilers::ASR::make_TranslationUnit_t(al, api_module_sym->base.loc,
+                &api_save_symtab, nullptr, 0));
+
+    std::string sig_modfile = LCompilers::save_modfile(*sig_save_tu, lm);
+    std::string api_modfile = LCompilers::save_modfile(*api_save_tu, lm);
+
+    LCompilers::SymbolTable downstream_symtab(nullptr);
+    LCompilers::LocationManager downstream_lm = make_test_location_manager();
+    LCompilers::Result<LCompilers::ASR::TranslationUnit_t*, LCompilers::ErrorMessage> sig_res
+        = LCompilers::load_modfile(al, sig_modfile, true, downstream_symtab, downstream_lm);
+    CHECK(sig_res.ok);
+    for (auto &item : sig_res.result->m_symtab->get_scope()) {
+        if (LCompilers::ASR::is_a<LCompilers::ASR::Module_t>(*item.second)) {
+            LCompilers::ASR::Module_t *module
+                = LCompilers::ASR::down_cast<LCompilers::ASR::Module_t>(item.second);
+            module->m_symtab->parent = &downstream_symtab;
+        }
+        downstream_symtab.add_symbol(item.first, item.second);
+    }
+    LCompilers::Result<LCompilers::ASR::TranslationUnit_t*, LCompilers::ErrorMessage> api_res
+        = LCompilers::load_modfile(al, api_modfile, true, downstream_symtab, downstream_lm);
+    CHECK(api_res.ok);
+    for (auto &item : api_res.result->m_symtab->get_scope()) {
+        if (LCompilers::ASR::is_a<LCompilers::ASR::Module_t>(*item.second)) {
+            LCompilers::ASR::Module_t *module
+                = LCompilers::ASR::down_cast<LCompilers::ASR::Module_t>(item.second);
+            module->m_symtab->parent = &downstream_symtab;
+        }
+        downstream_symtab.add_symbol(item.first, item.second);
+    }
+    CHECK(downstream_symtab.get_symbol("modfile_downstream_sig_dep") != nullptr);
+    CHECK(downstream_symtab.get_symbol("modfile_downstream_api") != nullptr);
+    CHECK(downstream_symtab.get_symbol("modfile_downstream_body_dep") == nullptr);
+
+    const std::string downstream_src = R"""(
+program modfile_downstream_user
+use modfile_downstream_api, only: payload, api
+implicit none
+type(payload) :: x
+integer :: arr(3, 7)
+
+x%i = 7
+arr = 8
+call api(x, arr)
+end program
+)""";
+    LCompilers::LFortran::AST::TranslationUnit_t* downstream_ast0;
+    downstream_ast0 = TRY(LCompilers::LFortran::parse(al, downstream_src,
+        diagnostics, compiler_options));
+    LCompilers::ASR::TranslationUnit_t* downstream_asr = TRY(
+        LCompilers::LFortran::ast_to_asr(al, *downstream_ast0, diagnostics,
+            &downstream_symtab, false, compiler_options, downstream_lm));
+    fix_external_symbols(*downstream_asr, downstream_symtab);
+    LCOMPILERS_ASSERT(LCompilers::asr_verify(*downstream_asr, true, diagnostics));
+    CHECK(downstream_symtab.get_symbol("modfile_downstream_body_dep") == nullptr);
 }
 
 TEST_CASE("ASR modfile derives dependencies from surviving external symbols") {
