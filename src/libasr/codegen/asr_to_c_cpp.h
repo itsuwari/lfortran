@@ -4063,6 +4063,9 @@ R"(#include <stdio.h>
         if (f_type->m_deftype == ASR::deftypeType::Interface) {
             return;
         }
+        if (std::string(x.m_name).find("_lcompilers_stringconcat") != std::string::npos) {
+            return;
+        }
         bool has_typevar = false;
         std::string decl = get_function_declaration(x, has_typevar, false, false);
         if (has_typevar || decl.empty()) {
@@ -4631,22 +4634,14 @@ R"(#include <stdio.h>
         }
         bool has_typevar = false;
         ASR::FunctionType_t *f_type = ASRUtils::get_FunctionType(x);
+        if (is_c && std::string(x.m_name).find("_lcompilers_stringconcat") != std::string::npos) {
+            src = "";
+            current_scope = current_scope_copy;
+            return;
+        }
         sub += get_function_declaration(x, has_typevar);
         if (has_typevar) {
             src = "";
-            return;
-        }
-        if (is_c && std::string(x.m_name).find("_lcompilers_stringconcat") != std::string::npos) {
-            sub += "\n{\n";
-            indentation_level += 1;
-            std::string indent(indentation_level*indentation_spaces, ' ');
-            sub += indent
-                + "(*concat_result) = _lfortran_strcat_alloc(_lfortran_get_default_allocator(), "
-                + "s1, s1_len, s2, s2_len);\n";
-            indentation_level -= 1;
-            sub += "}\n";
-            src = sub;
-            current_scope = current_scope_copy;
             return;
         }
         bool generate_body = true;
@@ -12191,8 +12186,9 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             get_addressable_call_arg_src(shape_result_expr, result);
 
         std::string indent(indentation_level * indentation_spaces, ' ');
-        out = setup + indent + sym_name + "(" + left + ", " + right + ", "
-            + left_len + ", " + right_len + ", &" + result_lvalue + ");\n"
+        out = setup + indent + result_lvalue
+            + " = _lfortran_strcat_alloc(_lfortran_get_default_allocator(), "
+            + left + ", " + left_len + ", " + right + ", " + right_len + ");\n"
             + cleanup;
         return true;
     }
@@ -17585,7 +17581,6 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                     *ASR::down_cast<ASR::Variable_t>(callee_sym));
             }
         } else {
-            record_forward_decl_for_function(*s);
             sym_name = get_c_function_target_name(*s);
         }
         if (is_c) {
@@ -17601,6 +17596,9 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 src = string_trim_call;
                 return;
             }
+        }
+        if (!ASR::is_a<ASR::Variable_t>(*callee_sym)) {
+            record_forward_decl_for_function(*s);
         }
         std::string function_result_slot_setup;
         if (is_c && x.n_args > 0) {

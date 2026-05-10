@@ -1,0 +1,13 @@
+{
+    "basename": "c_forbid_pattern-c_backend_string_concat_section_view_01-b077c01",
+    "cmd": "lfortran --no-color --show-c {infile} | (! grep -F -q \"void __lfortran__lcompilers_stringconcat\") #",
+    "infile": "tests/c_backend_string_concat_section_view_01.f90",
+    "infile_hash": "48ddaba7216705b69505f5ba9656083eb8845c2f248adec813b8ca37",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

@@ -21,56 +21,96 @@
 #define LFORTRAN_C_BACKEND_WEAK static
 #endif
 #endif
-
-void __lfortran__lcompilers_stringconcat(char * s1, char * s2, int32_t s1_len, int32_t s2_len, char * *concat_result);
+#ifndef LFORTRAN_C_BACKEND_COMMON
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_COMMON __attribute__((common))
+#else
+#define LFORTRAN_C_BACKEND_COMMON
+#endif
+#endif
 
 
 
 
 // Implementations
-void __lfortran__lcompilers_stringconcat(char * s1, char * s2, int32_t s1_len, int32_t s2_len, char * *concat_result)
-{
-    (*concat_result) = _lfortran_strcat_alloc(_lfortran_get_default_allocator(), s1, s1_len, s2, s2_len);
-}
 int main(int argc, char* argv[])
 {
     _lpython_set_argv(argc, argv);
+    lfortran_allocator_t* __lfortran_default_allocator = _lfortran_get_default_allocator();
     char * __libasr__created__var__0_return_slot = NULL;
     char * __libasr__created__var__1_return_slot = NULL;
-    char * buffer = NULL;
+    char __lfortran_fixed_char_buffer[16] = {0}; char *buffer = __lfortran_fixed_char_buffer;
     char * line = NULL;
     int32_t size;
-    line = (char*) _lfortran_string_malloc_alloc(_lfortran_get_default_allocator(), 0);
-    _lfortran_strcpy_alloc(_lfortran_get_default_allocator(), &buffer, NULL, true, true, (char*)"abcdef", strlen((char*)"abcdef"));
+    line = (char*) _lfortran_string_malloc_alloc(__lfortran_default_allocator, 0);
+    if ((char*)"abcdef" != NULL) {
+    _lfortran_strcpy_alloc(__lfortran_default_allocator, &buffer, &((int64_t){16}), true, false, (char*)"abcdef", _lfortran_str_len((char*)"abcdef"));
+} else {
+    if (buffer != NULL) {
+        _lfortran_free_alloc(__lfortran_default_allocator, buffer);
+        buffer = NULL;
+    }
+}
     size = 3;
     if (__libasr__created__var__0_return_slot != NULL) {
-        _lfortran_free_alloc(_lfortran_get_default_allocator(), __libasr__created__var__0_return_slot);
+        _lfortran_free_alloc(__lfortran_default_allocator, __libasr__created__var__0_return_slot);
         __libasr__created__var__0_return_slot = NULL;
     }
-    __lfortran__lcompilers_stringconcat(line, (buffer + (((1) - 1))), ((line) != NULL ? strlen(line) : 0), size - 1 + 1, &__libasr__created__var__0_return_slot);
-    _lfortran_strcpy_alloc(_lfortran_get_default_allocator(), &line, NULL, true, true, __libasr__created__var__0_return_slot, strlen(__libasr__created__var__0_return_slot));
+    char* __lfortran_string_tmp = _lfortran_str_slice_alloc(__lfortran_default_allocator, buffer, 16, ((1) - 1), ((1) > 0 ? (size) : ((size) - 2)), 1, true, true);
+    __libasr__created__var__0_return_slot = _lfortran_strcat_alloc(__lfortran_default_allocator, line, ((line) != NULL ? _lfortran_str_len(line) : 0), __lfortran_string_tmp, ((__lfortran_string_tmp) != NULL ? _lfortran_str_len(__lfortran_string_tmp) : 0));
+    _lfortran_free_alloc(__lfortran_default_allocator, __lfortran_string_tmp);
     if (__libasr__created__var__0_return_slot != NULL) {
-        _lfortran_free_alloc(_lfortran_get_default_allocator(), __libasr__created__var__0_return_slot);
+    _lfortran_strcpy_alloc(__lfortran_default_allocator, &line, NULL, true, true, __libasr__created__var__0_return_slot, _lfortran_str_len(__libasr__created__var__0_return_slot));
+} else {
+    if (line != NULL) {
+        _lfortran_free_alloc(__lfortran_default_allocator, line);
+        line = NULL;
+    }
+}
+    if (__libasr__created__var__0_return_slot != NULL) {
+        _lfortran_free_alloc(__lfortran_default_allocator, __libasr__created__var__0_return_slot);
         __libasr__created__var__0_return_slot = NULL;
     }
-    if (str_compare(line, ((line) != NULL ? strlen(line) : 0), (char*)"abc", 3)  !=  0) {
+    if (str_compare(line, ((line) != NULL ? _lfortran_str_len(line) : 0), (char*)"abc", 3)  !=  0) {
         fprintf(stderr, "ERROR STOP");
         exit(1);
     }
     size = 6;
     if (__libasr__created__var__1_return_slot != NULL) {
-        _lfortran_free_alloc(_lfortran_get_default_allocator(), __libasr__created__var__1_return_slot);
+        _lfortran_free_alloc(__lfortran_default_allocator, __libasr__created__var__1_return_slot);
         __libasr__created__var__1_return_slot = NULL;
     }
-    __lfortran__lcompilers_stringconcat(line, (buffer + (((4) - 1))), ((line) != NULL ? strlen(line) : 0), size - 4 + 1, &__libasr__created__var__1_return_slot);
-    _lfortran_strcpy_alloc(_lfortran_get_default_allocator(), &line, NULL, true, true, __libasr__created__var__1_return_slot, strlen(__libasr__created__var__1_return_slot));
+    char* __lfortran_string_tmp1 = _lfortran_str_slice_alloc(__lfortran_default_allocator, buffer, 16, ((4) - 1), ((1) > 0 ? (size) : ((size) - 2)), 1, true, true);
+    __libasr__created__var__1_return_slot = _lfortran_strcat_alloc(__lfortran_default_allocator, line, ((line) != NULL ? _lfortran_str_len(line) : 0), __lfortran_string_tmp1, ((__lfortran_string_tmp1) != NULL ? _lfortran_str_len(__lfortran_string_tmp1) : 0));
+    _lfortran_free_alloc(__lfortran_default_allocator, __lfortran_string_tmp1);
     if (__libasr__created__var__1_return_slot != NULL) {
-        _lfortran_free_alloc(_lfortran_get_default_allocator(), __libasr__created__var__1_return_slot);
+    _lfortran_strcpy_alloc(__lfortran_default_allocator, &line, NULL, true, true, __libasr__created__var__1_return_slot, _lfortran_str_len(__libasr__created__var__1_return_slot));
+} else {
+    if (line != NULL) {
+        _lfortran_free_alloc(__lfortran_default_allocator, line);
+        line = NULL;
+    }
+}
+    if (__libasr__created__var__1_return_slot != NULL) {
+        _lfortran_free_alloc(__lfortran_default_allocator, __libasr__created__var__1_return_slot);
         __libasr__created__var__1_return_slot = NULL;
     }
-    if (str_compare(line, ((line) != NULL ? strlen(line) : 0), (char*)"abcdef", 6)  !=  0) {
+    if (str_compare(line, ((line) != NULL ? _lfortran_str_len(line) : 0), (char*)"abcdef", 6)  !=  0) {
         fprintf(stderr, "ERROR STOP");
         exit(1);
     }
+    if (line != NULL) {
+        _lfortran_free_alloc(__lfortran_default_allocator, line);
+        line = NULL;
+    }
+    if (__libasr__created__var__1_return_slot != NULL) {
+        _lfortran_free_alloc(__lfortran_default_allocator, __libasr__created__var__1_return_slot);
+        __libasr__created__var__1_return_slot = NULL;
+    }
+    if (__libasr__created__var__0_return_slot != NULL) {
+        _lfortran_free_alloc(__lfortran_default_allocator, __libasr__created__var__0_return_slot);
+        __libasr__created__var__0_return_slot = NULL;
+    }
+    _lfortran_string_len_unregister(buffer);
     return 0;
 }

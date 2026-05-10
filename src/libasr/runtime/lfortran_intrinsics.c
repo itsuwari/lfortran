@@ -5043,8 +5043,8 @@ LFORTRAN_API double _lfortran_zphase(double_complex_t x)
 
 LFORTRAN_API char* _lfortran_strcat_alloc(
     lfortran_allocator_t* al,
-    char* s1, int64_t s1_len,
-    char* s2, int64_t s2_len)
+    const char* s1, int64_t s1_len,
+    const char* s2, int64_t s2_len)
 {
     int cntr = 0;
     char* dest_char = (char*)ALLOCATOR_ALLOC(al, s1_len+s2_len+1);

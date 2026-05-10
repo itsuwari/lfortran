@@ -303,7 +303,7 @@ LFORTRAN_API void _lfortran_strrepeat_alloc(lfortran_allocator_t* al, char** s, 
 LFORTRAN_API char* _lfortran_strrepeat_c_alloc(lfortran_allocator_t* al, char* s, int32_t n);
 LFORTRAN_API char* _lfortran_strrepeat_c_len_alloc(lfortran_allocator_t* al,
     char* s, int64_t s_len, int32_t n);
-LFORTRAN_API char* _lfortran_strcat_alloc(lfortran_allocator_t* al, char* s1, int64_t s1_len, char* s2, int64_t s2_len);
+LFORTRAN_API char* _lfortran_strcat_alloc(lfortran_allocator_t* al, const char* s1, int64_t s1_len, const char* s2, int64_t s2_len);
 LFORTRAN_API void _lfortran_strcpy_alloc(lfortran_allocator_t* al, char** lhs, int64_t* lhs_len, bool is_lhs_allocatable, bool is_lhs_deferred, char* rhs, int64_t rhs_len);
 LFORTRAN_API void _lfortran_string_len_unregister(char *ptr);
 static inline int64_t _lfortran_cstr_len0(const char *s) {
