@@ -534,6 +534,9 @@ public:
                 ASR::symbol_t* sym = it.second;
                 if (ASR::is_a<ASR::Variable_t>(*sym)) {
                     ASR::Variable_t* var = ASR::down_cast<ASR::Variable_t>(sym);
+                    if (ASRUtils::is_arg_dummy(var->m_intent)) {
+                        continue;
+                    }
                     var->m_storage = ASR::storage_typeType::Save;
                 }
             }
@@ -2616,7 +2619,6 @@ public:
             }
             parent_sym = current_scope->get_symbol(parent_sym_name);
         }
-
         // Parameterized Derived Type: store as template for later monomorphization
         if (x.n_namelist > 0) {
 

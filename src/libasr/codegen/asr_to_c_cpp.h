@@ -223,6 +223,7 @@ public:
     std::vector<std::string> current_function_local_allocatable_strings;
     std::vector<std::string> current_function_local_allocatable_scalars;
     std::vector<std::string> current_function_local_character_strings;
+    std::vector<std::string> current_function_local_stack_character_strings;
     std::vector<CLocalScalarStructCleanup> current_function_local_allocatable_structs;
     std::vector<CLocalStructCleanup> current_function_local_structs;
     std::vector<CLocalDescriptorCleanup> current_function_local_descriptors;
@@ -450,6 +451,10 @@ public:
                 + indent + "    " + *it + " = NULL;\n"
                 + indent + "}\n";
         }
+        for (auto it = current_function_local_stack_character_strings.rbegin();
+                it != current_function_local_stack_character_strings.rend(); ++it) {
+            cleanup += indent + "_lfortran_string_len_unregister(" + *it + ");\n";
+        }
         for (auto it = current_function_heap_array_data.rbegin();
                 it != current_function_heap_array_data.rend(); ++it) {
             cleanup += indent + "free(" + *it + ");\n";
@@ -472,6 +477,7 @@ public:
         current_function_local_allocatable_strings.clear();
         current_function_local_allocatable_scalars.clear();
         current_function_local_character_strings.clear();
+        current_function_local_stack_character_strings.clear();
         current_function_local_allocatable_structs.clear();
         current_function_local_structs.clear();
         current_function_local_descriptors.clear();
@@ -543,6 +549,16 @@ public:
             }
         }
         current_function_local_character_strings.push_back(target);
+    }
+
+    void register_current_function_local_stack_character_string_cleanup(
+            const std::string &target) {
+        for (const std::string &existing: current_function_local_stack_character_strings) {
+            if (existing == target) {
+                return;
+            }
+        }
+        current_function_local_stack_character_strings.push_back(target);
     }
 
     void register_current_function_local_allocatable_struct_cleanup(
@@ -1071,8 +1087,13 @@ public:
             ASR::ttype_t *v_type_unwrapped =
                 ASRUtils::type_get_past_allocatable_pointer(v.m_type);
             if (ASRUtils::is_character(*v_type_unwrapped)) {
-                register_current_function_local_character_string_cleanup(
-                    emitted_name);
+                if (CUtils::use_stack_storage_for_fixed_character_scalar(v)) {
+                    register_current_function_local_stack_character_string_cleanup(
+                        emitted_name);
+                } else {
+                    register_current_function_local_character_string_cleanup(
+                        emitted_name);
+                }
             } else if (ASR::is_a<ASR::StructType_t>(*v_type_unwrapped)
                     && !ASRUtils::is_class_type(v_type_unwrapped)
                     && v.m_type_declaration != nullptr) {
@@ -1602,6 +1623,13 @@ public:
                 "#else\n"
                 "#define LFORTRAN_C_BACKEND_WEAK static\n"
                 "#endif\n"
+                "#endif\n"
+                "#ifndef LFORTRAN_C_BACKEND_COMMON\n"
+                "#if defined(__GNUC__) || defined(__clang__)\n"
+                "#define LFORTRAN_C_BACKEND_COMMON __attribute__((common))\n"
+                "#else\n"
+                "#define LFORTRAN_C_BACKEND_COMMON\n"
+                "#endif\n"
                 "#endif\n\n";
         }
         if( is_string_concat_present ) {
@@ -1656,6 +1684,13 @@ public:
             "#define LFORTRAN_C_BACKEND_WEAK __attribute__((weak))\n"
             "#else\n"
             "#define LFORTRAN_C_BACKEND_WEAK static\n"
+            "#endif\n"
+            "#endif\n"
+            "#ifndef LFORTRAN_C_BACKEND_COMMON\n"
+            "#if defined(__GNUC__) || defined(__clang__)\n"
+            "#define LFORTRAN_C_BACKEND_COMMON __attribute__((common))\n"
+            "#else\n"
+            "#define LFORTRAN_C_BACKEND_COMMON\n"
             "#endif\n"
             "#endif\n\n";
         if (array_types_decls.find("#ifndef LFORTRAN_C_BACKEND_CONSTRUCTOR\n")
@@ -3081,11 +3116,22 @@ R"(#include <stdio.h>
         std::string sym_name = "__lfortran_"
             + get_c_function_symbol_name(x);
         if (x.n_args > 0) {
-            ASR::Variable_t *arg0 = ASRUtils::EXPR2VAR(x.m_args[0]);
-            ASR::ttype_t *arg0_type = ASRUtils::type_get_past_allocatable_pointer(arg0->m_type);
-            if (ASR::is_a<ASR::StructType_t>(*ASRUtils::extract_type(arg0_type))
-                    || ASRUtils::is_class_type(arg0_type)) {
-                sym_name += "__" + CUtils::get_c_type_code(arg0->m_type);
+            ASR::Variable_t *arg0 = nullptr;
+            if (x.m_args[0] != nullptr && ASR::is_a<ASR::Var_t>(*x.m_args[0])) {
+                ASR::symbol_t *arg0_sym = ASRUtils::symbol_get_past_external(
+                    ASR::down_cast<ASR::Var_t>(x.m_args[0])->m_v);
+                if (arg0_sym != nullptr && ASR::is_a<ASR::Variable_t>(*arg0_sym)) {
+                    arg0 = ASR::down_cast<ASR::Variable_t>(arg0_sym);
+                }
+            }
+            if (arg0 != nullptr) {
+                ASR::ttype_t *arg0_type = ASRUtils::type_get_past_allocatable_pointer(arg0->m_type);
+                ASR::ttype_t *arg0_base = arg0_type != nullptr
+                    ? ASRUtils::extract_type(arg0_type) : nullptr;
+                if ((arg0_base != nullptr && ASR::is_a<ASR::StructType_t>(*arg0_base))
+                        || (arg0_type != nullptr && ASRUtils::is_class_type(arg0_type))) {
+                    sym_name += "__" + CUtils::get_c_type_code(arg0->m_type);
+                }
             }
         }
         if (sym_name == "main") {
@@ -3520,6 +3566,173 @@ R"(#include <stdio.h>
         return wrapper_src;
     }
 
+    bool is_global_source_implementation_function(const ASR::Function_t &x) {
+        ASR::FunctionType_t *f_type = ASRUtils::get_FunctionType(x);
+        if (f_type->m_abi != ASR::abiType::Source
+                || f_type->m_deftype != ASR::deftypeType::Implementation
+                || CUtils::is_translation_unit_local_helper_symbol(
+                    reinterpret_cast<const ASR::symbol_t*>(&x))
+                || std::string(x.m_name) == "main") {
+            return false;
+        }
+        SymbolTable *parent = ASRUtils::symbol_parent_symtab(
+            reinterpret_cast<ASR::symbol_t*>(
+                const_cast<ASR::Function_t*>(&x)));
+        return parent != nullptr
+            && !(parent->asr_owner != nullptr
+                && ASR::is_a<ASR::symbol_t>(*parent->asr_owner));
+    }
+
+    std::string get_fortran_external_wrapper_arg_decl(
+            const ASR::Variable_t &arg, bool &has_typevar,
+            std::string &public_name) {
+        std::string arg_name = CUtils::sanitize_c_identifier(arg.m_name);
+        public_name = arg_name;
+        ASR::ttype_t *arg_type =
+            ASRUtils::type_get_past_allocatable_pointer(arg.m_type);
+        if (arg_type == nullptr || ASR::is_a<ASR::TypeParameter_t>(*arg_type)) {
+            has_typevar = true;
+            return "";
+        }
+        if (ASRUtils::is_array(arg.m_type)) {
+            std::string type_name = get_fortran_external_value_type(arg_type);
+            return format_type_c("", type_name + " *", arg_name, false, true);
+        }
+        if (ASRUtils::is_character(*arg_type)) {
+            return format_type_c("", "char *", arg_name, false, true);
+        }
+        std::string type_name = get_fortran_external_value_type(arg_type);
+        if (expects_c_scalar_ref_actual(&arg)) {
+            return format_type_c("", type_name + " *", arg_name, false, true);
+        }
+        public_name = "__lfortran_f77_" + arg_name + "_ptr";
+        return format_type_c("", type_name + " *", public_name, false, true);
+    }
+
+    std::string get_fortran_external_wrapper_dim_expr(ASR::expr_t *expr,
+            const std::string &fallback) {
+        if (expr == nullptr) {
+            return fallback;
+        }
+        std::string saved_src = src;
+        self().visit_expr(*expr);
+        std::string result = src;
+        src = saved_src;
+        return result.empty() ? fallback : result;
+    }
+
+    std::string get_fortran_external_abi_wrapper(const ASR::Function_t &x) {
+        if (!is_c || !compiler_options.implicit_interface
+                || !is_global_source_implementation_function(x)) {
+            return "";
+        }
+        bool has_typevar = false;
+        std::string wrapper_name = CUtils::sanitize_c_identifier(x.m_name);
+        if (wrapper_name.empty()
+                || wrapper_name == get_emitted_function_name(x)) {
+            return "";
+        }
+
+        std::string return_type = "void ";
+        if (x.m_return_var) {
+            return_type = get_return_var_type(ASRUtils::EXPR2VAR(x.m_return_var));
+        }
+        std::string wrapper = return_type + wrapper_name + "(";
+        std::string scalar_setup;
+        std::string descriptor_setup;
+        std::string call_args;
+        std::string indent = "    ";
+
+        for (size_t i = 0; i < x.n_args; i++) {
+            if (!ASR::is_a<ASR::Var_t>(*x.m_args[i])) {
+                return "";
+            }
+            ASR::symbol_t *sym = ASRUtils::symbol_get_past_external(
+                ASR::down_cast<ASR::Var_t>(x.m_args[i])->m_v);
+            std::string arg_call;
+            if (ASR::is_a<ASR::Variable_t>(*sym)) {
+                ASR::Variable_t *arg = ASR::down_cast<ASR::Variable_t>(sym);
+                std::string public_name;
+                std::string arg_decl =
+                    get_fortran_external_wrapper_arg_decl(*arg, has_typevar, public_name);
+                if (has_typevar || arg_decl.empty()) {
+                    return "";
+                }
+                if (i > 0) {
+                    wrapper += ", ";
+                    call_args += ", ";
+                }
+                wrapper += arg_decl;
+                std::string arg_name = CUtils::sanitize_c_identifier(arg->m_name);
+                ASR::ttype_t *arg_type =
+                    ASRUtils::type_get_past_allocatable_pointer(arg->m_type);
+                if (ASRUtils::is_array(arg->m_type)) {
+                    ASR::dimension_t *dims = nullptr;
+                    int n_dims = ASRUtils::extract_dimensions_from_ttype(arg->m_type, dims);
+                    if (n_dims <= 0) {
+                        return "";
+                    }
+                    std::string wrapper_type =
+                        get_c_array_wrapper_type_name(arg->m_type, arg->m_type_declaration);
+                    std::string desc_name = "__lfortran_f77_" + arg_name + "_desc";
+                    std::string dim_entries;
+                    std::string stride = "1";
+                    for (int d = 0; d < n_dims; d++) {
+                        std::string lower =
+                            get_fortran_external_wrapper_dim_expr(dims[d].m_start, "1");
+                        std::string length =
+                            get_fortran_external_wrapper_dim_expr(dims[d].m_length, "1");
+                        if (d > 0) {
+                            dim_entries += ", ";
+                        }
+                        dim_entries += "{" + lower + ", " + length + ", " + stride + "}";
+                        stride = "(" + stride + " * " + length + ")";
+                    }
+                    descriptor_setup += indent + wrapper_type + " " + desc_name
+                        + " = { .data = " + arg_name + ", .dims = {"
+                        + dim_entries + "}, .n_dims = " + std::to_string(n_dims)
+                        + ", .offset = 0, .is_allocated = false };\n";
+                    arg_call = "&" + desc_name;
+                } else if (arg_type != nullptr && ASRUtils::is_character(*arg_type)) {
+                    arg_call = arg_name;
+                } else if (expects_c_scalar_ref_actual(arg)) {
+                    arg_call = arg_name;
+                } else {
+                    std::string type_name = get_fortran_external_value_type(arg->m_type);
+                    scalar_setup += indent + type_name + " " + arg_name + " = *"
+                        + public_name + ";\n";
+                    arg_call = arg_name;
+                }
+            } else if (ASR::is_a<ASR::Function_t>(*sym)) {
+                ASR::Function_t *fun = ASR::down_cast<ASR::Function_t>(sym);
+                if (i > 0) {
+                    wrapper += ", ";
+                    call_args += ", ";
+                }
+                wrapper += get_function_declaration(*fun, has_typevar, true, false);
+                if (has_typevar) {
+                    return "";
+                }
+                arg_call = get_c_function_target_name(*fun);
+            } else {
+                return "";
+            }
+            call_args += arg_call;
+        }
+        wrapper += ")\n{\n";
+        wrapper += scalar_setup;
+        wrapper += descriptor_setup;
+        if (x.m_return_var) {
+            wrapper += indent + "return " + get_emitted_function_name(x)
+                + "(" + call_args + ");\n";
+        } else {
+            wrapper += indent + get_emitted_function_name(x)
+                + "(" + call_args + ");\n";
+        }
+        wrapper += "}\n";
+        return wrapper;
+    }
+
     std::string get_c_function_target_name(const ASR::Function_t &x) {
         ASR::FunctionType_t *f_type = ASRUtils::get_FunctionType(x);
         if (f_type->m_abi == ASR::abiType::BindC) {
@@ -3535,12 +3748,21 @@ R"(#include <stdio.h>
             // otherwise collide in C as raw `destroy/get/...` prototypes.
             bool keep_external_name = true;
             if (x.n_args > 0) {
-                ASR::Variable_t *arg0 = ASRUtils::EXPR2VAR(x.m_args[0]);
-                ASR::ttype_t *arg0_type = ASRUtils::type_get_past_allocatable_pointer(arg0->m_type);
-                if (arg0_type != nullptr) {
-                    ASR::ttype_t *arg0_base = ASRUtils::extract_type(arg0_type);
-                    keep_external_name = !(ASRUtils::is_class_type(arg0_type)
-                        || (arg0_base != nullptr && ASR::is_a<ASR::StructType_t>(*arg0_base)));
+                ASR::Variable_t *arg0 = nullptr;
+                if (x.m_args[0] != nullptr && ASR::is_a<ASR::Var_t>(*x.m_args[0])) {
+                    ASR::symbol_t *arg0_sym = ASRUtils::symbol_get_past_external(
+                        ASR::down_cast<ASR::Var_t>(x.m_args[0])->m_v);
+                    if (arg0_sym != nullptr && ASR::is_a<ASR::Variable_t>(*arg0_sym)) {
+                        arg0 = ASR::down_cast<ASR::Variable_t>(arg0_sym);
+                    }
+                }
+                if (arg0 != nullptr) {
+                    ASR::ttype_t *arg0_type = ASRUtils::type_get_past_allocatable_pointer(arg0->m_type);
+                    if (arg0_type != nullptr) {
+                        ASR::ttype_t *arg0_base = ASRUtils::extract_type(arg0_type);
+                        keep_external_name = !(ASRUtils::is_class_type(arg0_type)
+                            || (arg0_base != nullptr && ASR::is_a<ASR::StructType_t>(*arg0_base)));
+                    }
                 }
             }
             if (keep_external_name) {
@@ -3578,6 +3800,42 @@ R"(#include <stdio.h>
             && !ASRUtils::is_allocatable(v->m_type);
     }
 
+    bool is_c_unspecified_scalar_ref_dummy(const ASR::Variable_t *v) {
+        if (!is_c || v == nullptr || v->m_intent != ASRUtils::intent_unspecified
+                || v->m_value_attr || !ASRUtils::is_arg_dummy(v->m_intent)
+                || ASRUtils::is_array(v->m_type)
+                || ASRUtils::is_allocatable(v->m_type)
+                || ASRUtils::is_pointer(v->m_type)
+                || ASRUtils::is_aggregate_type(v->m_type)) {
+            return false;
+        }
+        ASR::ttype_t *type =
+            ASRUtils::type_get_past_allocatable_pointer(v->m_type);
+        if (type == nullptr || ASRUtils::is_character(*type)
+                || ASR::is_a<ASR::FunctionType_t>(*type)
+                || ASR::is_a<ASR::CPtr_t>(*type)) {
+            return false;
+        }
+        return ASRUtils::is_integer(*type)
+            || ASRUtils::is_unsigned_integer(*type)
+            || ASRUtils::is_real(*type)
+            || ASRUtils::is_complex(*type)
+            || ASRUtils::is_logical(*type);
+    }
+
+    bool expects_c_scalar_ref_actual(const ASR::Variable_t *v) {
+        ASR::ttype_t *type = v == nullptr ? nullptr
+            : ASRUtils::type_get_past_allocatable_pointer(v->m_type);
+        if (!is_c || v == nullptr || !ASRUtils::is_arg_dummy(v->m_intent)
+                || ASRUtils::is_array(v->m_type)
+                || type == nullptr || ASRUtils::is_character(*type)) {
+            return false;
+        }
+        return v->m_intent == ASRUtils::intent_out
+            || v->m_intent == ASRUtils::intent_inout
+            || is_c_unspecified_scalar_ref_dummy(v);
+    }
+
     bool is_raw_c_char_array_dummy(const ASR::Variable_t *v) {
         if (!is_c || v == nullptr || !ASRUtils::is_arg_dummy(v->m_intent)
                 || !CUtils::is_len_one_character_array_type(v->m_type)) {
@@ -3609,8 +3867,18 @@ R"(#include <stdio.h>
             return false;
         }
         ASR::FunctionType_t *f_type = ASRUtils::get_FunctionType(x);
-        if (f_type->m_abi != ASR::abiType::Source
-                || f_type->m_deftype != ASR::deftypeType::Interface) {
+        if (f_type->m_abi == ASR::abiType::Source
+                && is_procedure_dummy_function_argument(x)) {
+            return false;
+        }
+        if (f_type->m_deftype != ASR::deftypeType::Interface) {
+            return false;
+        }
+        if (f_type->m_abi == ASR::abiType::BindC) {
+            if (!compiler_options.implicit_interface || f_type->m_bindc_name) {
+                return false;
+            }
+        } else if (f_type->m_abi != ASR::abiType::Source) {
             return false;
         }
         if (x.n_args == 0) {
@@ -3625,6 +3893,37 @@ R"(#include <stdio.h>
         ASR::ttype_t *arg0_base = ASRUtils::extract_type(arg0_type);
         return !(ASRUtils::is_class_type(arg0_type)
             || (arg0_base != nullptr && ASR::is_a<ASR::StructType_t>(*arg0_base)));
+    }
+
+    bool is_procedure_dummy_function_argument(const ASR::Function_t &x) {
+        if (x.m_symtab == nullptr || x.m_symtab->parent == nullptr
+                || x.m_symtab->parent->asr_owner == nullptr
+                || !ASR::is_a<ASR::symbol_t>(*x.m_symtab->parent->asr_owner)) {
+            return false;
+        }
+        ASR::symbol_t *owner_sym = ASRUtils::symbol_get_past_external(
+            ASR::down_cast<ASR::symbol_t>(x.m_symtab->parent->asr_owner));
+        if (owner_sym == nullptr || !ASR::is_a<ASR::Function_t>(*owner_sym)) {
+            return false;
+        }
+        ASR::Function_t *owner_fn = ASR::down_cast<ASR::Function_t>(owner_sym);
+        uint64_t target_hash = get_hash(reinterpret_cast<ASR::asr_t*>(
+            const_cast<ASR::Function_t*>(&x)));
+        for (size_t i=0; i<owner_fn->n_args; i++) {
+            if (!ASR::is_a<ASR::Var_t>(*owner_fn->m_args[i])) {
+                continue;
+            }
+            ASR::symbol_t *arg_sym = ASRUtils::symbol_get_past_external(
+                ASR::down_cast<ASR::Var_t>(owner_fn->m_args[i])->m_v);
+            if (arg_sym == nullptr || !ASR::is_a<ASR::Function_t>(*arg_sym)) {
+                continue;
+            }
+            uint64_t arg_hash = get_hash(reinterpret_cast<ASR::asr_t*>(arg_sym));
+            if (arg_hash == target_hash) {
+                return true;
+            }
+        }
+        return false;
     }
 
     std::string get_fortran_external_value_type(ASR::ttype_t *type) {
@@ -4205,6 +4504,9 @@ R"(#include <stdio.h>
         for (auto &item : scope.get_scope()) {
             if (ASR::is_a<ASR::Function_t>(*item.second)) {
                 ASR::Function_t *s = ASR::down_cast<ASR::Function_t>(item.second);
+                if (is_procedure_dummy_function_argument(*s)) {
+                    continue;
+                }
                 t = declare_all_functions(*s->m_symtab);
                 bool has_typevar = false;
                 std::string decl = get_function_declaration(*s, has_typevar, false, false);
@@ -4277,6 +4579,7 @@ R"(#include <stdio.h>
         current_function_local_allocatable_strings.clear();
         current_function_local_allocatable_scalars.clear();
         current_function_local_character_strings.clear();
+        current_function_local_stack_character_strings.clear();
         current_function_local_allocatable_structs.clear();
         current_function_local_structs.clear();
         current_function_local_descriptors.clear();
@@ -4466,8 +4769,13 @@ R"(#include <stdio.h>
                             ASR::ttype_t *v_type_unwrapped =
                                 ASRUtils::type_get_past_allocatable_pointer(v->m_type);
                             if (ASRUtils::is_character(*v_type_unwrapped)) {
-                                register_current_function_local_character_string_cleanup(
-                                    emitted_name);
+                                if (CUtils::use_stack_storage_for_fixed_character_scalar(*v)) {
+                                    register_current_function_local_stack_character_string_cleanup(
+                                        emitted_name);
+                                } else {
+                                    register_current_function_local_character_string_cleanup(
+                                        emitted_name);
+                                }
                             } else if (ASR::is_a<ASR::StructType_t>(*v_type_unwrapped)
                                     && !ASRUtils::is_class_type(v_type_unwrapped)
                                     && v->m_type_declaration != nullptr) {
@@ -4580,6 +4888,7 @@ R"(#include <stdio.h>
             current_function_local_allocatable_strings.clear();
             current_function_local_allocatable_scalars.clear();
             current_function_local_character_strings.clear();
+            current_function_local_stack_character_strings.clear();
             current_function_local_allocatable_structs.clear();
             current_function_local_structs.clear();
             current_function_local_descriptors.clear();
@@ -4592,6 +4901,11 @@ R"(#include <stdio.h>
         std::string pass_array_by_data_wrapper = get_pass_array_by_data_wrapper(x);
         if (!pass_array_by_data_wrapper.empty()) {
             sub += pass_array_by_data_wrapper + "\n";
+        }
+        std::string fortran_external_abi_wrapper =
+            get_fortran_external_abi_wrapper(x);
+        if (!fortran_external_abi_wrapper.empty()) {
+            sub += fortran_external_abi_wrapper + "\n";
         }
         // Some helpers, such as lowered intrinsic wrappers, are materialized in
         // the function symbol table while visiting the body. Emit any such late
@@ -4912,10 +5226,16 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 emitted_pointer_backed_struct_names.find(emitted_name)
                 != emitted_pointer_backed_struct_names.end();
             ASR::asr_t *owner = v->m_parent_symtab ? v->m_parent_symtab->asr_owner : nullptr;
+            bool common_block_struct_instance = owner
+                && ASR::is_a<ASR::Module_t>(*owner)
+                && std::string(ASR::down_cast<ASR::Module_t>(owner)->m_name)
+                    .find("file_common_block_") == 0
+                && std::string(v->m_name).find("struct_instance_") == 0;
             return ASRUtils::is_arg_dummy(v->m_intent)
                 || ASRUtils::is_pointer(v->m_type)
                 || ASRUtils::is_allocatable(v->m_type)
                 || emitted_pointer_backed_struct
+                || common_block_struct_instance
                 || (owner
                     && !force_value_struct_temp
                     && (CUtils::is_symbol_owner<ASR::Function_t>(owner)
@@ -7130,6 +7450,63 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         }
     }
 
+    bool is_c_plain_scalar_expr_for_section_fill(ASR::expr_t *expr) {
+        expr = unwrap_c_array_expr(expr);
+        if (expr == nullptr) {
+            return false;
+        }
+        ASR::ttype_t *type = ASRUtils::type_get_past_allocatable_pointer(
+            ASRUtils::expr_type(expr));
+        if (type == nullptr || ASRUtils::is_array(type)
+                || ASRUtils::is_character(*type)) {
+            return false;
+        }
+        switch (expr->type) {
+            case ASR::exprType::IntegerConstant:
+            case ASR::exprType::UnsignedIntegerConstant:
+            case ASR::exprType::RealConstant:
+            case ASR::exprType::LogicalConstant:
+            case ASR::exprType::Var:
+            case ASR::exprType::StructInstanceMember: {
+                return true;
+            }
+            case ASR::exprType::IntegerUnaryMinus: {
+                return is_c_plain_scalar_expr_for_section_fill(
+                    ASR::down_cast<ASR::IntegerUnaryMinus_t>(expr)->m_arg);
+            }
+            case ASR::exprType::RealUnaryMinus: {
+                return is_c_plain_scalar_expr_for_section_fill(
+                    ASR::down_cast<ASR::RealUnaryMinus_t>(expr)->m_arg);
+            }
+            case ASR::exprType::IntegerBinOp: {
+                ASR::IntegerBinOp_t *binop = ASR::down_cast<ASR::IntegerBinOp_t>(expr);
+                return binop->m_op != ASR::binopType::Pow
+                    && is_c_plain_scalar_expr_for_section_fill(binop->m_left)
+                    && is_c_plain_scalar_expr_for_section_fill(binop->m_right);
+            }
+            case ASR::exprType::UnsignedIntegerBinOp: {
+                ASR::UnsignedIntegerBinOp_t *binop =
+                    ASR::down_cast<ASR::UnsignedIntegerBinOp_t>(expr);
+                return binop->m_op != ASR::binopType::Pow
+                    && is_c_plain_scalar_expr_for_section_fill(binop->m_left)
+                    && is_c_plain_scalar_expr_for_section_fill(binop->m_right);
+            }
+            case ASR::exprType::RealBinOp: {
+                ASR::RealBinOp_t *binop = ASR::down_cast<ASR::RealBinOp_t>(expr);
+                return binop->m_op != ASR::binopType::Pow
+                    && is_c_plain_scalar_expr_for_section_fill(binop->m_left)
+                    && is_c_plain_scalar_expr_for_section_fill(binop->m_right);
+            }
+            case ASR::exprType::Cast: {
+                return is_c_plain_scalar_expr_for_section_fill(
+                    ASR::down_cast<ASR::Cast_t>(expr)->m_arg);
+            }
+            default: {
+                return false;
+            }
+        }
+    }
+
     bool is_c_rank1_unit_slice_array_expr(ASR::expr_t *expr) {
         expr = unwrap_c_array_expr(expr);
         if (expr == nullptr || !ASRUtils::is_array(ASRUtils::expr_type(expr))) {
@@ -7211,6 +7588,13 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             && is_c_scalarizable_element_type(value_element_type)
             && ASRUtils::types_equal(
                 target_element_type, value_element_type, nullptr, nullptr);
+    }
+
+    bool is_c_reallocated_temp_plain_copy_context(
+            ASR::expr_t *target_expr, ASR::expr_t *value_expr) {
+        return is_c_compiler_created_array_temp_expr(target_expr)
+            || is_c_compiler_created_array_temp_expr(value_expr)
+            || is_c_array_section_association_temp_expr(value_expr);
     }
 
     bool is_c_pointer_array_base_expr(ASR::expr_t *expr) {
@@ -7955,17 +8339,27 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         value_expr = unwrap_c_lvalue_expr(value_expr);
         bool target_is_whole_alloc_pointer =
             target_expr != nullptr && is_c_whole_allocatable_or_pointer_array_expr(target_expr);
+        bool target_is_whole_allocatable =
+            target_is_whole_alloc_pointer
+            && ASRUtils::is_allocatable(ASRUtils::expr_type(target_expr));
+        bool target_is_reallocated_temp_copy =
+            target_is_whole_allocatable
+            && is_c_reallocated_temp_plain_copy_context(target_expr, value_expr);
+        bool value_is_pointer_base = value_expr != nullptr
+            && is_c_pointer_array_base_expr(value_expr);
         bool target_is_rank2_unit =
             target_expr != nullptr && is_c_rank2_unit_slice_array_expr(target_expr);
         bool value_is_plain_copy =
             value_expr != nullptr && is_c_rank2_plain_data_copy_expr(value_expr);
         if (!is_c || target_expr == nullptr || value_expr == nullptr
-                || target_is_whole_alloc_pointer
+                || (target_is_whole_alloc_pointer
+                    && !target_is_reallocated_temp_copy)
                 || !target_is_rank2_unit
                 || !value_is_plain_copy
                 || !c_plain_array_copy_element_types_match(target_expr, value_expr)
                 || is_c_pointer_array_base_expr(target_expr)
-                || is_c_pointer_array_base_expr(value_expr)) {
+                || (value_is_pointer_base
+                    && !is_c_array_section_association_temp_expr(value_expr))) {
             return false;
         }
         ASR::symbol_t *target_root = get_c_array_assignment_root_symbol(target_expr);
@@ -8055,17 +8449,27 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         value_expr = unwrap_c_lvalue_expr(value_expr);
         bool target_is_whole_alloc_pointer =
             target_expr != nullptr && is_c_whole_allocatable_or_pointer_array_expr(target_expr);
+        bool target_is_whole_allocatable =
+            target_is_whole_alloc_pointer
+            && ASRUtils::is_allocatable(ASRUtils::expr_type(target_expr));
+        bool target_is_reallocated_temp_copy =
+            target_is_whole_allocatable
+            && is_c_reallocated_temp_plain_copy_context(target_expr, value_expr);
+        bool value_is_pointer_base = value_expr != nullptr
+            && is_c_pointer_array_base_expr(value_expr);
         bool target_is_rank1_unit =
             target_expr != nullptr && is_c_rank1_unit_slice_array_expr(target_expr);
         bool value_is_plain_copy =
             value_expr != nullptr && is_c_rank1_plain_data_copy_expr(value_expr);
         if (!is_c || target_expr == nullptr || value_expr == nullptr
-                || target_is_whole_alloc_pointer
+                || (target_is_whole_alloc_pointer
+                    && !target_is_reallocated_temp_copy)
                 || !target_is_rank1_unit
                 || !value_is_plain_copy
                 || !c_plain_array_copy_element_types_match(target_expr, value_expr)
                 || is_c_pointer_array_base_expr(target_expr)
-                || is_c_pointer_array_base_expr(value_expr)) {
+                || (value_is_pointer_base
+                    && !is_c_array_section_association_temp_expr(value_expr))) {
             return false;
         }
         ASR::symbol_t *target_root = get_c_array_assignment_root_symbol(target_expr);
@@ -8186,6 +8590,72 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         src += loop2_indent + target_element + " = " + value_expr + ";\n";
         indentation_level--;
         src += loop1_indent + "}\n";
+        indentation_level--;
+        src += inner_indent + "}\n";
+        indentation_level--;
+        src += indent + "}\n";
+        return true;
+    }
+
+    bool try_emit_c_rank2_section_scalar_assignment(
+            ASR::expr_t *target_expr, ASR::expr_t *value_expr) {
+        target_expr = unwrap_c_lvalue_expr(target_expr);
+        if (!is_c || target_expr == nullptr || value_expr == nullptr
+                || !ASR::is_a<ASR::ArraySection_t>(*target_expr)
+                || !is_c_rank2_unit_slice_array_expr(target_expr)
+                || !is_c_plain_scalar_expr_for_section_fill(value_expr)) {
+            return false;
+        }
+        ASR::ttype_t *target_type = ASRUtils::type_get_past_allocatable_pointer(
+            ASRUtils::expr_type(target_expr));
+        ASR::ttype_t *target_element_type = target_type
+            ? ASRUtils::type_get_past_array(target_type) : nullptr;
+        ASR::ttype_t *value_type = ASRUtils::type_get_past_allocatable_pointer(
+            ASRUtils::expr_type(value_expr));
+        if (target_element_type == nullptr || value_type == nullptr
+                || !ASRUtils::types_equal(
+                    target_element_type, value_type, nullptr, nullptr)) {
+            return false;
+        }
+
+        std::string setup;
+        std::string target_data, target_offset, target_stride1, target_stride2;
+        std::string target_length1, target_length2;
+        if (!get_c_rank2_full_array_access(target_expr, "__lfortran_lhs2fill",
+                setup, target_data, target_offset, target_stride1, target_stride2,
+                target_length1, target_length2)) {
+            return false;
+        }
+        std::string index1_name = get_unique_local_name("__lfortran_i");
+        std::string index2_name = get_unique_local_name("__lfortran_j");
+        std::string value;
+        if (!get_c_rank2_scalarized_expr(value_expr, index1_name,
+                index2_name, setup, value)) {
+            return false;
+        }
+
+        std::string indent(indentation_level * indentation_spaces, ' ');
+        src = check_tmp_buffer();
+        src += indent + "{\n";
+        indentation_level++;
+        std::string inner_indent(indentation_level * indentation_spaces, ' ');
+        src += setup;
+        src += inner_indent + "for (int64_t " + index2_name + " = 0; "
+            + index2_name + " < " + target_length2 + "; "
+            + index2_name + "++) {\n";
+        indentation_level++;
+        std::string row_indent(indentation_level * indentation_spaces, ' ');
+        src += row_indent + "for (int64_t " + index1_name + " = 0; "
+            + index1_name + " < " + target_length1 + "; "
+            + index1_name + "++) {\n";
+        indentation_level++;
+        std::string item_indent(indentation_level * indentation_spaces, ' ');
+        src += item_indent + target_data + "[" + target_offset
+            + " + " + index1_name + " * " + target_stride1
+            + " + " + index2_name + " * " + target_stride2 + "] = "
+            + value + ";\n";
+        indentation_level--;
+        src += row_indent + "}\n";
         indentation_level--;
         src += inner_indent + "}\n";
         indentation_level--;
@@ -10263,6 +10733,37 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 || ASR::is_a<ASR::UnionInstanceMember_t>(*expr));
     }
 
+    bool has_c_value_cast_wrapper(ASR::expr_t *expr) {
+        while (expr != nullptr) {
+            if (ASR::is_a<ASR::Cast_t>(*expr)
+                    || ASR::is_a<ASR::BitCast_t>(*expr)) {
+                return true;
+            }
+            if (ASR::is_a<ASR::GetPointer_t>(*expr)) {
+                expr = ASR::down_cast<ASR::GetPointer_t>(expr)->m_arg;
+            } else if (ASR::is_a<ASR::ArrayPhysicalCast_t>(*expr)) {
+                expr = ASR::down_cast<ASR::ArrayPhysicalCast_t>(expr)->m_arg;
+            } else {
+                return false;
+            }
+        }
+        return false;
+    }
+
+    bool can_take_fortran_external_scalar_actual_address(
+            ASR::expr_t *call_arg, ASR::expr_t *shape_call_arg) {
+        if (!is_addressable_fortran_external_actual(shape_call_arg)
+                || has_c_value_cast_wrapper(call_arg)) {
+            return false;
+        }
+        ASR::ttype_t *call_type = ASRUtils::type_get_past_allocatable_pointer(
+            ASRUtils::expr_type(call_arg));
+        ASR::ttype_t *shape_type = ASRUtils::type_get_past_allocatable_pointer(
+            ASRUtils::expr_type(shape_call_arg));
+        return call_type != nullptr && shape_type != nullptr
+            && ASRUtils::check_equal_type(call_type, shape_type, nullptr, nullptr);
+    }
+
     std::string get_fortran_external_scalar_actual(
             ASR::Variable_t *param, ASR::expr_t *call_arg,
             ASR::expr_t *shape_call_arg, const std::string &arg_src) {
@@ -10273,11 +10774,100 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 && ASRUtils::is_character(*param_type_unwrapped)) {
             return arg_src;
         }
-        if (is_addressable_fortran_external_actual(shape_call_arg)) {
+        if (can_take_fortran_external_scalar_actual_address(
+                    call_arg, shape_call_arg)) {
             return "&" + get_addressable_call_arg_src(shape_call_arg, arg_src);
         }
         std::string type_name = get_fortran_external_value_type(param_type);
         return "&((" + type_name + "){" + arg_src + "})";
+    }
+
+    bool is_scalar_array_item_sequence_actual(ASR::expr_t *expr) {
+        expr = unwrap_c_lvalue_expr(expr);
+        return expr != nullptr
+            && ASR::is_a<ASR::ArrayItem_t>(*expr)
+            && !ASRUtils::is_array(ASRUtils::expr_type(expr));
+    }
+
+    bool try_get_fortran_external_array_section_actual(
+            ASR::expr_t *shape_call_arg, std::string &out) {
+        ASR::expr_t *expr = unwrap_c_lvalue_expr(shape_call_arg);
+        if (expr == nullptr || !ASR::is_a<ASR::ArraySection_t>(*expr)) {
+            return false;
+        }
+        ASR::ArraySection_t *section = ASR::down_cast<ASR::ArraySection_t>(expr);
+        ASR::expr_t *base_expr = unwrap_c_lvalue_expr(section->m_v);
+        if (base_expr == nullptr) {
+            return false;
+        }
+        if (is_data_only_array_expr(base_expr)
+                || is_fixed_size_array_storage_expr(base_expr)) {
+            return false;
+        }
+        ASR::ttype_t *base_type = ASRUtils::type_get_past_allocatable_pointer(
+            ASRUtils::expr_type(base_expr));
+        int base_rank = ASRUtils::extract_n_dims_from_ttype(base_type);
+        if (base_rank <= 0 || section->n_args != static_cast<size_t>(base_rank)) {
+            return false;
+        }
+
+        std::string saved_src = src;
+        self().visit_expr(*base_expr);
+        std::string base = src;
+        std::string setup = drain_tmp_buffer();
+        setup += extract_stmt_setup_from_expr(base);
+
+        std::vector<std::string> indices;
+        indices.reserve(section->n_args);
+        for (size_t i = 0; i < section->n_args; i++) {
+            ASR::array_index_t idx = section->m_args[i];
+            bool is_slice = idx.m_left || idx.m_step || idx.m_right == nullptr;
+            ASR::expr_t *idx_expr = is_slice ? idx.m_left : get_array_index_expr(idx);
+            if (idx_expr != nullptr) {
+                self().visit_expr(*idx_expr);
+                std::string idx_src = src;
+                setup += drain_tmp_buffer();
+                setup += extract_stmt_setup_from_expr(idx_src);
+                indices.push_back(idx_src);
+            } else {
+                indices.push_back(base + "->dims[" + std::to_string(i)
+                    + "].lower_bound");
+            }
+        }
+        src = saved_src;
+        if (!setup.empty()) {
+            tmp_buffer_src.push_back(setup);
+        }
+        std::string index = cmo_convertor_single_element(
+            base, indices, base_rank, false);
+        out = "(" + get_c_array_data_expr(base_expr, base) + " + " + index + ")";
+        return true;
+    }
+
+    std::string get_fortran_external_array_actual(
+            ASR::expr_t *call_arg, ASR::expr_t *shape_call_arg,
+            const std::string &arg_src) {
+        if (is_scalar_array_item_sequence_actual(shape_call_arg)) {
+            return "&" + get_addressable_call_arg_src(shape_call_arg, arg_src);
+        }
+        return get_c_array_data_pointer_expr(call_arg, arg_src);
+    }
+
+    std::string get_c_procedure_actual_arg(ASR::expr_t *call_arg,
+            const std::string &arg_src, bool for_fortran_external_abi) {
+        if (call_arg != nullptr && ASR::is_a<ASR::Var_t>(*call_arg)) {
+            ASR::symbol_t *actual_sym = ASRUtils::symbol_get_past_external(
+                ASR::down_cast<ASR::Var_t>(call_arg)->m_v);
+            if (actual_sym != nullptr && ASR::is_a<ASR::Function_t>(*actual_sym)) {
+                ASR::Function_t *actual_fn = ASR::down_cast<ASR::Function_t>(actual_sym);
+                if (for_fortran_external_abi
+                        || is_fortran_external_interface_function(*actual_fn)) {
+                    return CUtils::sanitize_c_identifier(actual_fn->m_name);
+                }
+                return get_c_function_target_name(*actual_fn);
+            }
+        }
+        return arg_src;
     }
 
     std::string construct_fortran_external_call_args(ASR::Function_t* f,
@@ -10288,6 +10878,26 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             ASR::expr_t *call_arg = m_args[i].m_value;
             ASR::expr_t *raw_call_arg = unwrap_c_lvalue_expr(call_arg);
             ASR::expr_t *shape_call_arg = raw_call_arg ? raw_call_arg : call_arg;
+            ASR::Variable_t *param = nullptr;
+            ASR::symbol_t *param_sym = nullptr;
+            if (i < f->n_args && f->m_args[i] != nullptr
+                    && ASR::is_a<ASR::Var_t>(*f->m_args[i])) {
+                param_sym = ASRUtils::symbol_get_past_external(
+                    ASR::down_cast<ASR::Var_t>(f->m_args[i])->m_v);
+            }
+            if (param_sym != nullptr && ASR::is_a<ASR::Variable_t>(*param_sym)) {
+                param = ASR::down_cast<ASR::Variable_t>(param_sym);
+            }
+            ASR::ttype_t *param_type = param ? param->m_type : ASRUtils::expr_type(call_arg);
+            std::string section_arg;
+            if (try_get_fortran_external_array_section_actual(
+                    shape_call_arg, section_arg)) {
+                args += section_arg;
+                if (i < n_args - 1) {
+                    args += ", ";
+                }
+                continue;
+            }
             visit_expr_without_c_pow_cache(*call_arg);
             std::string arg_src = src;
             std::string arg_setup = drain_tmp_buffer();
@@ -10295,10 +10905,16 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             if (!arg_setup.empty()) {
                 tmp_buffer_src.push_back(arg_setup);
             }
-            ASR::Variable_t *param = i < f->n_args ? ASRUtils::EXPR2VAR(f->m_args[i]) : nullptr;
-            ASR::ttype_t *param_type = param ? param->m_type : ASRUtils::expr_type(call_arg);
+            if (param_sym != nullptr && ASR::is_a<ASR::Function_t>(*param_sym)) {
+                args += get_c_procedure_actual_arg(call_arg, arg_src, true);
+                if (i < n_args - 1) {
+                    args += ", ";
+                }
+                continue;
+            }
             if (param_type != nullptr && ASRUtils::is_array(param_type)) {
-                args += get_c_array_data_pointer_expr(call_arg, arg_src);
+                args += get_fortran_external_array_actual(
+                    call_arg, shape_call_arg, arg_src);
             } else {
                 args += get_fortran_external_scalar_actual(
                     param, call_arg, shape_call_arg, arg_src);
@@ -10309,6 +10925,18 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         }
         bracket_open--;
         return args;
+    }
+
+    std::string get_c_scalar_ref_actual(ASR::Variable_t *param,
+            ASR::expr_t *call_arg, ASR::expr_t *shape_call_arg,
+            const std::string &arg_src) {
+        if (can_take_fortran_external_scalar_actual_address(
+                    call_arg, shape_call_arg)) {
+            return "&" + get_addressable_call_arg_src(shape_call_arg, arg_src);
+        }
+        ASR::ttype_t *param_type = param ? param->m_type : ASRUtils::expr_type(call_arg);
+        std::string type_name = get_fortran_external_value_type(param_type);
+        return "&((" + type_name + "){" + arg_src + "})";
     }
 
     std::string construct_call_args(ASR::Function_t* f, size_t n_args,
@@ -10343,7 +10971,27 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 continue;
             }
             ASR::expr_t* call_arg = m_args[i].m_value;
-            ASR::Variable_t *param = i < f->n_args ? ASRUtils::EXPR2VAR(f->m_args[i]) : nullptr;
+            ASR::symbol_t *param_sym = nullptr;
+            if (i < f->n_args && f->m_args[i] != nullptr
+                    && ASR::is_a<ASR::Var_t>(*f->m_args[i])) {
+                param_sym = ASRUtils::symbol_get_past_external(
+                    ASR::down_cast<ASR::Var_t>(f->m_args[i])->m_v);
+            }
+            if (param_sym != nullptr && ASR::is_a<ASR::Function_t>(*param_sym)) {
+                visit_expr_without_c_pow_cache(*call_arg);
+                std::string arg_src = src;
+                std::string arg_setup = drain_tmp_buffer();
+                arg_setup += extract_stmt_setup_from_expr(arg_src);
+                if (!arg_setup.empty()) {
+                    call_arg_setup += arg_setup;
+                }
+                args += get_c_procedure_actual_arg(call_arg, arg_src, false);
+                if (i < n_args - 1) args += ", ";
+                continue;
+            }
+            ASR::Variable_t *param = param_sym != nullptr
+                && ASR::is_a<ASR::Variable_t>(*param_sym)
+                ? ASR::down_cast<ASR::Variable_t>(param_sym) : nullptr;
             if (!no_copy_hidden_shape_src.empty() && no_copy_hidden_dim < no_copy_hidden_rank
                     && param != nullptr
                     && is_pass_array_by_data_hidden_arg_name(
@@ -10373,6 +11021,24 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             ASR::Variable_t *actual_var = nullptr;
             ASR::ttype_t *param_type_unwrapped = param_type ?
                 ASRUtils::type_get_past_allocatable_pointer(param_type) : nullptr;
+            ASR::FunctionType_t *f_type = ASRUtils::get_FunctionType(f);
+            bool implicit_external_array_section_actual = is_c
+                && compiler_options.implicit_interface
+                && compiler_options.legacy_array_sections
+                && f_type != nullptr
+                && f_type->m_deftype == ASR::deftypeType::Interface
+                && (f_type->m_abi == ASR::abiType::BindC
+                    || f_type->m_abi == ASR::abiType::Source)
+                && param_type != nullptr
+                && ASRUtils::is_array(param_type);
+            std::string section_arg;
+            if (implicit_external_array_section_actual
+                    && try_get_fortran_external_array_section_actual(
+                        shape_call_arg, section_arg)) {
+                args += section_arg;
+                if (i < n_args - 1) args += ", ";
+                continue;
+            }
             bool raw_pointer_actual = false;
             bool pointer_dummy_slot_actual = false;
             bool aggregate_dummy_slot_actual = false;
@@ -10749,11 +11415,19 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                     args += src;
                 } else if( (is_c && !param_is_c_array_wrapper
                     && (param->m_intent == ASRUtils::intent_inout
-                    || param->m_intent == ASRUtils::intent_out)
+                    || param->m_intent == ASRUtils::intent_out
+                    || is_c_unspecified_scalar_ref_dummy(param))
                     && (!ASRUtils::is_aggregate_type(param->m_type)
                         || (ASRUtils::is_pointer(param->m_type)
                             && !ASRUtils::is_array(param->m_type))))) {
-                    args += address_of_src(src);
+                    if (is_c_unspecified_scalar_ref_dummy(param)
+                            && !can_take_fortran_external_scalar_actual_address(
+                                call_arg, shape_call_arg)) {
+                        args += get_c_scalar_ref_actual(param, call_arg,
+                            shape_call_arg, src);
+                    } else {
+                        args += address_of_src(src);
+                    }
                 } else if (param->m_intent == ASRUtils::intent_out) {
                     if (ASR::is_a<ASR::List_t>(*param->m_type) || 
                         ASR::is_a<ASR::Dict_t>(*param->m_type) || 
@@ -10822,13 +11496,19 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                     }
                 } else if ((is_c && !param_is_c_array_wrapper
                         && (param->m_intent == ASRUtils::intent_inout
-                        || param->m_intent == ASRUtils::intent_out)
+                        || param->m_intent == ASRUtils::intent_out
+                        || is_c_unspecified_scalar_ref_dummy(param))
                         && (!ASRUtils::is_aggregate_type(param->m_type)
                             || (ASRUtils::is_pointer(param->m_type)
                                 && !ASRUtils::is_array(param->m_type))))
-                    || ASR::is_a<ASR::StructType_t>(*type_unwrapped)) {
+                        || ASR::is_a<ASR::StructType_t>(*type_unwrapped)) {
                     if (raw_pointer_actual) {
                         args += src;
+                    } else if (is_c_unspecified_scalar_ref_dummy(param)
+                            && !can_take_fortran_external_scalar_actual_address(
+                                call_arg, shape_call_arg)) {
+                        args += get_c_scalar_ref_actual(param, call_arg,
+                            shape_call_arg, src);
                     } else {
                         args += address_of_src(src);
                     }
@@ -10845,6 +11525,9 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                     args += address_of_src(src);
                 } else if (ASR::is_a<ASR::StructType_t>(*type_unwrapped)) {
                     args += address_of_src(src);
+                } else if (is_c_unspecified_scalar_ref_dummy(param)) {
+                    args += get_c_scalar_ref_actual(param, call_arg,
+                        shape_call_arg, src);
                 } else {
                     args += pass_wrapper_arg(src);
                 }
@@ -10926,6 +11609,24 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             ASR::Variable_t *actual_var = nullptr;
             ASR::ttype_t *param_type_unwrapped = param_type ?
                 ASRUtils::type_get_past_allocatable_pointer(param_type) : nullptr;
+            ASR::FunctionType_t *f_type = ASRUtils::get_FunctionType(f);
+            bool implicit_external_array_section_actual = is_c
+                && compiler_options.implicit_interface
+                && compiler_options.legacy_array_sections
+                && f_type != nullptr
+                && f_type->m_deftype == ASR::deftypeType::Interface
+                && (f_type->m_abi == ASR::abiType::BindC
+                    || f_type->m_abi == ASR::abiType::Source)
+                && param_type != nullptr
+                && ASRUtils::is_array(param_type);
+            std::string section_arg;
+            if (implicit_external_array_section_actual
+                    && try_get_fortran_external_array_section_actual(
+                        shape_call_arg, section_arg)) {
+                args += section_arg;
+                if (i < n_args - 1) args += ", ";
+                continue;
+            }
             bool raw_pointer_actual = false;
             bool pointer_dummy_slot_actual = false;
             bool aggregate_dummy_slot_actual = false;
@@ -11281,11 +11982,19 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                     args += src;
                 } else if( (is_c && !param_is_c_array_wrapper
                     && (param->m_intent == ASRUtils::intent_inout
-                    || param->m_intent == ASRUtils::intent_out)
+                    || param->m_intent == ASRUtils::intent_out
+                    || is_c_unspecified_scalar_ref_dummy(param))
                     && (!ASRUtils::is_aggregate_type(param->m_type)
                         || (ASRUtils::is_pointer(param->m_type)
                             && !ASRUtils::is_array(param->m_type))))) {
-                    args += address_of_src(src);
+                    if (is_c_unspecified_scalar_ref_dummy(param)
+                            && !can_take_fortran_external_scalar_actual_address(
+                                call_arg, shape_call_arg)) {
+                        args += get_c_scalar_ref_actual(param, call_arg,
+                            shape_call_arg, src);
+                    } else {
+                        args += address_of_src(src);
+                    }
                 } else if (param->m_intent == ASRUtils::intent_out) {
                     if (ASR::is_a<ASR::List_t>(*param->m_type) || 
                         ASR::is_a<ASR::Dict_t>(*param->m_type) || 
@@ -11354,13 +12063,19 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                     }
                 } else if ((is_c && !param_is_c_array_wrapper
                         && (param->m_intent == ASRUtils::intent_inout
-                        || param->m_intent == ASRUtils::intent_out)
+                        || param->m_intent == ASRUtils::intent_out
+                        || is_c_unspecified_scalar_ref_dummy(param))
                         && (!ASRUtils::is_aggregate_type(param->m_type)
                             || (ASRUtils::is_pointer(param->m_type)
                                 && !ASRUtils::is_array(param->m_type))))
-                    || ASR::is_a<ASR::StructType_t>(*type_unwrapped)) {
+                        || ASR::is_a<ASR::StructType_t>(*type_unwrapped)) {
                     if (raw_pointer_actual) {
                         args += src;
+                    } else if (is_c_unspecified_scalar_ref_dummy(param)
+                            && !can_take_fortran_external_scalar_actual_address(
+                                call_arg, shape_call_arg)) {
+                        args += get_c_scalar_ref_actual(param, call_arg,
+                            shape_call_arg, src);
                     } else {
                         args += address_of_src(src);
                     }
@@ -11377,6 +12092,9 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                     args += address_of_src(src);
                 } else if (ASR::is_a<ASR::StructType_t>(*type_unwrapped)) {
                     args += address_of_src(src);
+                } else if (is_c_unspecified_scalar_ref_dummy(param)) {
+                    args += get_c_scalar_ref_actual(param, call_arg,
+                        shape_call_arg, src);
                 } else {
                     args += pass_wrapper_arg(src);
                 }
@@ -11404,6 +12122,26 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         std::string fn_name = std::string(f->m_name);
         return fn_name.find("_lcompilers_stringconcat") != std::string::npos
             || sym_name.find("_lcompilers_stringconcat") != std::string::npos;
+    }
+
+    bool is_c_string_trim_callee(const ASR::Function_t *f,
+            const std::string &sym_name) const {
+        if (!is_c || f == nullptr) {
+            return false;
+        }
+        std::string fn_name = std::string(f->m_name);
+        return fn_name.find("_lcompilers_trim") != std::string::npos
+            || sym_name.find("_lcompilers_trim") != std::string::npos;
+    }
+
+    bool is_c_string_len_trim_callee(const ASR::Function_t *f,
+            const std::string &sym_name) const {
+        if (!is_c || f == nullptr) {
+            return false;
+        }
+        std::string fn_name = std::string(f->m_name);
+        return fn_name.find("_lcompilers_len_trim") != std::string::npos
+            || sym_name.find("_lcompilers_len_trim") != std::string::npos;
     }
 
     bool try_emit_c_string_concat_subroutine_call(const ASR::SubroutineCall_t &x,
@@ -11456,6 +12194,68 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         out = setup + indent + sym_name + "(" + left + ", " + right + ", "
             + left_len + ", " + right_len + ", &" + result_lvalue + ");\n"
             + cleanup;
+        return true;
+    }
+
+    bool try_emit_c_string_trim_subroutine_call(const ASR::SubroutineCall_t &x,
+            ASR::Function_t *f, const std::string &sym_name, std::string &out) {
+        if (!is_c_string_trim_callee(f, sym_name) || x.n_args != 2) {
+            return false;
+        }
+
+        ASR::expr_t *input_expr = x.m_args[0].m_value;
+        ASR::expr_t *result_expr = x.m_args[1].m_value;
+        if (input_expr == nullptr || result_expr == nullptr) {
+            return false;
+        }
+
+        self().visit_expr(*input_expr);
+        std::string input = src;
+        std::string setup = drain_tmp_buffer();
+        setup += extract_stmt_setup_from_expr(input);
+        std::string cleanup;
+        std::string input_len;
+        materialize_allocating_string_expr(input_expr, input, input_len, setup, cleanup);
+
+        self().visit_expr(*result_expr);
+        std::string result = src;
+        setup += drain_tmp_buffer();
+        setup += extract_stmt_setup_from_expr(result);
+        ASR::expr_t *raw_result_expr = unwrap_c_lvalue_expr(result_expr);
+        ASR::expr_t *shape_result_expr =
+            raw_result_expr ? raw_result_expr : result_expr;
+        std::string result_lvalue =
+            get_addressable_call_arg_src(shape_result_expr, result);
+
+        std::string indent(indentation_level * indentation_spaces, ' ');
+        std::string trim_len = get_unique_local_name("__lfortran_trim_len");
+        out = setup
+            + indent + "int64_t " + trim_len
+            + " = _lfortran_str_len_trim(" + input + ", " + input_len + ");\n"
+            + indent + "_lfortran_strcpy_alloc(_lfortran_get_default_allocator(), &"
+            + result_lvalue + ", NULL, true, true, " + input + ", "
+            + trim_len + ");\n"
+            + cleanup;
+        return true;
+    }
+
+    bool try_emit_c_string_len_trim_function_call(const ASR::FunctionCall_t &x,
+            ASR::Function_t *f, const std::string &fn_name, std::string &out) {
+        if (!is_c_string_len_trim_callee(f, fn_name) || x.n_args != 1
+                || x.m_args[0].m_value == nullptr) {
+            return false;
+        }
+
+        ASR::expr_t *input_expr = x.m_args[0].m_value;
+        self().visit_expr(*input_expr);
+        std::string input = src;
+        std::string setup = drain_tmp_buffer();
+        setup += extract_stmt_setup_from_expr(input);
+        std::string input_len = get_string_length_expr(input_expr, input, setup);
+        if (!setup.empty()) {
+            tmp_buffer_src.push_back(setup);
+        }
+        out = "_lfortran_str_len_trim(" + input + ", " + input_len + ")";
         return true;
     }
 
@@ -11795,13 +12595,19 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                     last_expr_precedence = 2;
                     return;
                 }
+                if (try_emit_c_string_len_trim_function_call(x, fn, fn_name, inline_call)) {
+                    src = check_tmp_buffer() + inline_call;
+                    last_expr_precedence = 2;
+                    return;
+                }
             }
             if (fn_name == "main") {
                 fn_name = "_xx_lcompilers_changed_main_xx";
             }
             bool callee_is_procedure_variable = ASR::is_a<ASR::Variable_t>(*callee_sym);
+            bool force_generated_call_abi = callee_is_procedure_variable;
             std::string call_args = construct_call_args(
-                fn, x.n_args, x.m_args, callee_is_procedure_variable,
+                fn, x.n_args, x.m_args, force_generated_call_abi,
                 true, false);
             src = drain_tmp_buffer() + fn_name + "(" + call_args + ")";
         }
@@ -11841,6 +12647,9 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         self().visit_expr(*x.m_arg);
         std::string arg, left, right, step, left_present, rig_present;
         arg = src;
+        std::string setup = drain_tmp_buffer();
+        setup += extract_stmt_setup_from_expr(arg);
+        std::string arg_len = get_string_length_expr(x.m_arg, arg, setup);
         std::string raw_left, raw_right;
         if (x.m_start) {
             self().visit_expr(*x.m_start);
@@ -11874,12 +12683,18 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         }
         if (is_c && left_present == "true" && rig_present == "true"
                 && step == "1" && raw_left == raw_right) {
+            if (!setup.empty()) {
+                tmp_buffer_src.push_back(setup);
+            }
             src = "_lfortran_str_item_alloc(_lfortran_get_default_allocator(), "
-                + arg + ", _lfortran_str_len(" + arg + "), " + raw_left + ")";
+                + arg + ", " + arg_len + ", " + raw_left + ")";
             return;
         }
+        if (!setup.empty()) {
+            tmp_buffer_src.push_back(setup);
+        }
         src = "_lfortran_str_slice_alloc(_lfortran_get_default_allocator(), "
-            + arg + ", _lfortran_str_len(" + arg + "), " + left + ", " + right + ", "
+            + arg + ", " + arg_len + ", " + left + ", " + right + ", "
             + step + ", " + left_present + ", " + rig_present + ")";
     }
 
@@ -12005,6 +12820,10 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             return;
         }
         if (try_emit_c_rank1_plain_data_copy_assignment(
+                unwrapped_target_expr, x.m_value)) {
+            return;
+        }
+        if (try_emit_c_rank2_section_scalar_assignment(
                 unwrapped_target_expr, x.m_value)) {
             return;
         }
@@ -12141,9 +12960,13 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 string_arg + ", " + string_len + ", " +
                 string_value + ", " + value_len + ", " +
                 idx + ", " + idx + ", 1, true, true)";
+            std::string target_len =
+                CUtils::get_fixed_character_length_arg(ASRUtils::expr_type(si->m_arg));
+            bool target_has_fixed_len = target_len != "NULL";
             src += indent + "char* " + updated_value_name + " = " + updated_value + ";\n";
             src += indent + "_lfortran_strcpy_alloc(_lfortran_get_default_allocator(), &"
-                + string_arg + ", NULL, true, true, " + updated_value_name
+                + string_arg + ", " + target_len + ", true, "
+                + (target_has_fixed_len ? "false" : "true") + ", " + updated_value_name
                 + ", " + string_len + ");\n";
             src += indent + "if (" + updated_value_name + " != " + string_arg + ") {\n";
             src += indent + std::string(indentation_spaces, ' ')
@@ -12206,9 +13029,13 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 string_value + ", " + value_len + ", " +
                 left + ", " + right + ", " + step + ", " +
                 left_present + ", " + right_present + ")";
+            std::string target_len =
+                CUtils::get_fixed_character_length_arg(ASRUtils::expr_type(ss->m_arg));
+            bool target_has_fixed_len = target_len != "NULL";
             src += indent + "char* " + updated_value_name + " = " + updated_value + ";\n";
             src += indent + "_lfortran_strcpy_alloc(_lfortran_get_default_allocator(), &"
-                + string_arg + ", NULL, true, true, " + updated_value_name
+                + string_arg + ", " + target_len + ", true, "
+                + (target_has_fixed_len ? "false" : "true") + ", " + updated_value_name
                 + ", " + string_len + ");\n";
             src += indent + "if (" + updated_value_name + " != " + string_arg + ") {\n";
             src += indent + std::string(indentation_spaces, ' ')
@@ -12844,9 +13671,13 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 ASR::ttype_t *m_value_type_unwrapped =
                     ASRUtils::type_get_past_allocatable_pointer(m_value_type);
                 if (value_is_string_view) {
+                    std::string target_len =
+                        CUtils::get_fixed_character_length_arg(m_target_type);
+                    bool target_has_fixed_len = target_len != "NULL";
                     src += alloc + indent
                         + "_lfortran_strcpy_alloc(_lfortran_get_default_allocator(), &"
-                        + target + ", NULL, true, true, " + value + ", "
+                        + target + ", " + target_len + ", true, "
+                        + (target_has_fixed_len ? "false" : "true") + ", " + value + ", "
                         + value_view_len + ");\n";
                     from_std_vector_helper.clear();
                     return;
@@ -13912,7 +14743,8 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             } else if (is_aggregate_dummy_slot_type(sv)) {
                 src = "(*" + var_name + ")";
             } else if ((sv->m_intent == ASRUtils::intent_inout
-                || sv->m_intent == ASRUtils::intent_out)
+                || sv->m_intent == ASRUtils::intent_out
+                || is_c_unspecified_scalar_ref_dummy(sv))
                 && !ASRUtils::is_aggregate_type(sv->m_type)) {
                 src = "(*" + var_name + ")";
             } else if (ASRUtils::is_pointer(sv->m_type)
@@ -14922,6 +15754,28 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         return true;
     }
 
+    bool try_emit_c_integer_power(ASR::expr_t *left_expr, ASR::expr_t *right_expr,
+            const std::string &left, const std::string &right) {
+        if (!is_c) {
+            return false;
+        }
+        ASR::ttype_t *left_type = ASRUtils::extract_type(ASRUtils::expr_type(left_expr));
+        ASR::ttype_t *right_type = ASRUtils::extract_type(ASRUtils::expr_type(right_expr));
+        if (!ASRUtils::is_integer(*left_type) || !ASRUtils::is_integer(*right_type)) {
+            return false;
+        }
+        int left_kind = ASRUtils::extract_kind_from_ttype_t(left_type);
+        if (left_kind == 4) {
+            src = "__lfortran_c_powi_i32(" + left + ", " + right + ")";
+        } else if (left_kind == 8) {
+            src = "__lfortran_c_powi_i64(" + left + ", " + right + ")";
+        } else {
+            return false;
+        }
+        last_expr_precedence = 2;
+        return true;
+    }
+
     bool try_emit_cached_c_real_power(ASR::expr_t *left_expr, ASR::expr_t *right_expr,
             ASR::ttype_t *result_type, const std::string &left,
             const std::string &right) {
@@ -14982,6 +15836,9 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                     return;
                 }
                 if (try_emit_c_real_integer_power(x.m_left, x.m_right, left, right)) {
+                    return;
+                }
+                if (try_emit_c_integer_power(x.m_left, x.m_right, left, right)) {
                     return;
                 }
                 if (try_emit_cached_c_real_power(
@@ -16377,12 +17234,27 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
     }
 
     void visit_Stop(const ASR::Stop_t &x) {
+        std::string indent(indentation_level*indentation_spaces, ' ');
         if (x.m_code) {
             self().visit_expr(*x.m_code);
+            std::string stop_code = src;
+            ASR::ttype_t *stop_type = ASRUtils::type_get_past_allocatable_pointer(
+                ASRUtils::expr_type(x.m_code));
+            if (stop_type != nullptr && ASRUtils::is_character(*stop_type)) {
+                if (is_c) {
+                    headers.insert("stdio.h");
+                    src = indent + "fprintf(stderr, \"STOP %s\\n\", "
+                        + stop_code + ");\n";
+                } else {
+                    src = indent + "std::cerr << \"STOP \" << " + stop_code
+                        + " << std::endl;\n";
+                }
+                src += indent + "exit(0);\n";
+                return;
+            }
         } else {
             src = "0";
         }
-        std::string indent(indentation_level*indentation_spaces, ' ');
         src = indent + "exit(" + src + ");\n";
     }
 
@@ -16422,10 +17294,24 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         std::string loop_end_decl = "";
         std::string indent(indentation_level*indentation_spaces, ' ');
         std::string out = indent + "for (";
-        ASR::symbol_t *loop_sym = ASRUtils::symbol_get_past_external(
-            ASR::down_cast<ASR::Var_t>(x.m_head.m_v)->m_v);
-        ASR::Variable_t *loop_var = ASR::down_cast<ASR::Variable_t>(loop_sym);
-        std::string lvname = CUtils::get_c_variable_name(*loop_var);
+        ASR::symbol_t *loop_sym = nullptr;
+        if (ASR::is_a<ASR::Var_t>(*x.m_head.m_v)) {
+            loop_sym = ASRUtils::symbol_get_past_external(
+                ASR::down_cast<ASR::Var_t>(x.m_head.m_v)->m_v);
+        }
+        std::string lvname;
+        if (loop_sym != nullptr && ASR::is_a<ASR::Variable_t>(*loop_sym)) {
+            ASR::Variable_t *loop_var = ASR::down_cast<ASR::Variable_t>(loop_sym);
+            if (expects_c_scalar_ref_actual(loop_var)) {
+                self().visit_expr(*x.m_head.m_v);
+                lvname = src;
+            } else {
+                lvname = CUtils::get_c_variable_name(*loop_var);
+            }
+        } else {
+            self().visit_expr(*x.m_head.m_v);
+            lvname = src;
+        }
         ASR::expr_t *a=x.m_head.m_start;
         ASR::expr_t *b=x.m_head.m_end;
         ASR::expr_t *c=x.m_head.m_increment;
@@ -16631,6 +17517,12 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             if (try_emit_c_string_concat_subroutine_call(
                     x, s, sym_name, string_concat_call)) {
                 src = string_concat_call;
+                return;
+            }
+            std::string string_trim_call;
+            if (try_emit_c_string_trim_subroutine_call(
+                    x, s, sym_name, string_trim_call)) {
+                src = string_trim_call;
                 return;
             }
         }
@@ -17132,6 +18024,31 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                     target_type_name, source_type_name, source_code, target_code, nbytes) + "(" + src + ")";
                 return;
             }
+        }
+        if (is_c && src_expr && target_type && source_type
+                && !ASRUtils::is_array(target_type)
+                && !ASRUtils::is_array(source_type)
+                && (ASRUtils::is_integer(*target_type)
+                    || ASRUtils::is_unsigned_integer(*target_type)
+                    || ASRUtils::is_real(*target_type)
+                    || ASRUtils::is_logical(*target_type))
+                && (ASRUtils::is_integer(*source_type)
+                    || ASRUtils::is_unsigned_integer(*source_type)
+                    || ASRUtils::is_real(*source_type)
+                    || ASRUtils::is_logical(*source_type))
+                && ASRUtils::get_type_byte_size(target_type)
+                    == ASRUtils::get_type_byte_size(source_type)) {
+            headers.insert("string.h");
+            self().visit_expr(*src_expr);
+            std::string source = src;
+            std::string target_c_type = CUtils::get_c_type_from_ttype_t(target_type);
+            std::string source_c_type = CUtils::get_c_type_from_ttype_t(source_type);
+            std::string target_code = CUtils::get_c_type_code(target_type, true, false);
+            std::string source_code = CUtils::get_c_type_code(source_type, true, false);
+            src = c_utils_functions->get_bitcast_scalar_to_scalar(
+                target_c_type, source_c_type, source_code, target_code)
+                + "(" + source + ")";
+            return;
         }
         if (x.m_value) {
             self().visit_expr(*x.m_value);

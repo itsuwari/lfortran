@@ -164,6 +164,34 @@ static inline double __lfortran_c_powi_f64(double base, int64_t exponent)
     return invert ? 1.0 / result : result;
 }
 
+static inline int32_t __lfortran_c_powi_i32(int32_t base, int64_t exponent)
+{
+    int32_t result = 1;
+    uint64_t n = (uint64_t)exponent;
+    while (n != 0) {
+        if ((n & 1) != 0) {
+            result *= base;
+        }
+        base *= base;
+        n >>= 1;
+    }
+    return result;
+}
+
+static inline int64_t __lfortran_c_powi_i64(int64_t base, int64_t exponent)
+{
+    int64_t result = 1;
+    uint64_t n = (uint64_t)exponent;
+    while (n != 0) {
+        if ((n & 1) != 0) {
+            result *= base;
+        }
+        base *= base;
+        n >>= 1;
+    }
+    return result;
+}
+
 static inline float __lfortran_c_powi_f32(float base, int64_t exponent)
 {
     float result = 1.0f;
@@ -277,6 +305,7 @@ LFORTRAN_API char* _lfortran_strrepeat_c_len_alloc(lfortran_allocator_t* al,
     char* s, int64_t s_len, int32_t n);
 LFORTRAN_API char* _lfortran_strcat_alloc(lfortran_allocator_t* al, char* s1, int64_t s1_len, char* s2, int64_t s2_len);
 LFORTRAN_API void _lfortran_strcpy_alloc(lfortran_allocator_t* al, char** lhs, int64_t* lhs_len, bool is_lhs_allocatable, bool is_lhs_deferred, char* rhs, int64_t rhs_len);
+LFORTRAN_API void _lfortran_string_len_unregister(char *ptr);
 static inline int64_t _lfortran_cstr_len0(const char *s) {
     int64_t n = 0;
     if (s == NULL) {
@@ -439,6 +468,7 @@ LFORTRAN_API void _lfortran_read_array_complex_float(struct _lfortran_complex_32
 LFORTRAN_API void _lfortran_read_array_complex_double(struct _lfortran_complex_64 *p, int array_size, int32_t stride, int32_t unit_num, int32_t *iostat);
 LFORTRAN_API void _lfortran_read_array_char(char *p, int64_t length, int array_size, int32_t unit_num, int32_t *iostat);
 LFORTRAN_API void _lfortran_read_char(char **p, int64_t p_len, int32_t unit_num, int32_t *iostat);
+LFORTRAN_API void _lfortran_read_end_record(int32_t unit_num, int32_t *iostat);
 LFORTRAN_API void _lfortran_string_write(lfortran_allocator_t* al, char **str_holder, bool is_allocatable, bool is_deferred,
         bool is_array_unit, int64_t array_size, int64_t* len, int32_t* iostat, const char* format,
         int64_t format_len, ...);

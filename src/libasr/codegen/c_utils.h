@@ -91,6 +91,44 @@ namespace LCompilers {
         return is_len_one_character_type(ASRUtils::extract_type(t));
     }
 
+    static inline bool get_fixed_character_length_value(ASR::ttype_t *t,
+            int64_t &len) {
+        if (t == nullptr) {
+            return false;
+        }
+        t = ASRUtils::type_get_past_allocatable_pointer(t);
+        if (!ASRUtils::is_character(*t)) {
+            return false;
+        }
+        ASR::String_t *string_type = ASRUtils::get_string_type(t);
+        return string_type && string_type->m_len
+            && ASRUtils::extract_value(string_type->m_len, len);
+    }
+
+    static inline std::string get_fixed_character_length_arg(ASR::ttype_t *t) {
+        int64_t len = 0;
+        if (get_fixed_character_length_value(t, len)) {
+            return "&((int64_t){" + std::to_string(len) + "})";
+        }
+        return "NULL";
+    }
+
+    static inline bool use_stack_storage_for_fixed_character_scalar(
+            const ASR::Variable_t &v) {
+        if (v.m_intent != ASRUtils::intent_local
+                || ASRUtils::is_allocatable(v.m_type)
+                || ASRUtils::is_pointer(v.m_type)
+                || ASRUtils::is_array(v.m_type)
+                || v.m_storage == ASR::storage_typeType::Parameter
+                || v.m_storage == ASR::storage_typeType::Save
+                || v.m_symbolic_value != nullptr
+                || v.m_value != nullptr) {
+            return false;
+        }
+        int64_t len = 0;
+        return get_fixed_character_length_value(v.m_type, len);
+    }
+
     static inline std::string sanitize_c_identifier(const std::string &name) {
         static const std::set<std::string> c_keywords = {
             "auto","break","case","char","const","continue","default","do","double",
@@ -555,17 +593,44 @@ namespace LCompilers {
                 body += indent + tab + "unsigned char bytes[" + std::to_string(nbytes) + "];\n";
                 body += indent + tab + "memcpy(bytes, &value, sizeof(" + source_type + "));\n";
                 body += indent + tab + "result->data = (char**) malloc(sizeof(char*)*" + std::to_string(nbytes) + ");\n";
+                body += indent + tab + "char *byte_data = (char*) malloc("
+                    + std::to_string(nbytes > 0 ? nbytes : 1) + ");\n";
                 body += indent + tab + "result->n_dims = 1;\n";
                 body += indent + tab + "result->offset = 0;\n";
                 body += indent + tab + "result->is_allocated = true;\n";
                 body += indent + tab + "result->dims[0].lower_bound = 1;\n";
                 body += indent + tab + "result->dims[0].length = " + std::to_string(nbytes) + ";\n";
                 body += indent + tab + "result->dims[0].stride = 1;\n";
+                body += indent + tab + "memcpy(byte_data, bytes, " + std::to_string(nbytes) + ");\n";
                 body += indent + tab + "for (int32_t i = 0; i < " + std::to_string(nbytes) + "; i++) {\n";
-                body += indent + tab + tab + "result->data[i] = (char*) malloc(2*sizeof(char));\n";
-                body += indent + tab + tab + "result->data[i][0] = (char) bytes[i];\n";
-                body += indent + tab + tab + "result->data[i][1] = '\\0';\n";
+                body += indent + tab + tab + "result->data[i] = byte_data + i;\n";
                 body += indent + tab + "}\n";
+                body += indent + tab + "return result;\n";
+                body += indent + "}\n\n";
+                util_funcs += body;
+                return helper_name;
+            }
+
+            std::string get_bitcast_scalar_to_scalar(std::string target_type,
+                std::string source_type, std::string source_code,
+                std::string target_code) {
+                std::string indent(indentation_level * indentation_spaces, ' ');
+                std::string tab(indentation_spaces, ' ');
+                std::string key = "bitcast_" + source_code + "_to_" + target_code;
+                std::string helper_name;
+                if (util2func.find(key) == util2func.end()) {
+                    helper_name = global_scope->get_unique_name(key);
+                    util2func[key] = helper_name;
+                } else {
+                    return util2func[key];
+                }
+                helper_name = util2func[key];
+                std::string signature = target_type + " " + helper_name + "("
+                    + source_type + " value)";
+                util_func_decls += indent + signature + ";\n";
+                std::string body = indent + signature + " {\n";
+                body += indent + tab + target_type + " result;\n";
+                body += indent + tab + "memcpy(&result, &value, sizeof(result));\n";
                 body += indent + tab + "return result;\n";
                 body += indent + "}\n\n";
                 util_funcs += body;
@@ -840,9 +905,12 @@ class CCPPDSUtils {
                 }
                 case ASR::ttypeType::String : {
                     if (is_c) {
+                        std::string target_len = CUtils::get_fixed_character_length_arg(t);
+                        bool target_has_fixed_len = target_len != "NULL";
                         result = "if (" + value + " != NULL) {\n";
                         result += "    _lfortran_strcpy_alloc(_lfortran_get_default_allocator(), &"
-                            + target + ", NULL, true, true, " + value
+                            + target + ", " + target_len + ", true, "
+                            + (target_has_fixed_len ? "false" : "true") + ", " + value
                             + ", _lfortran_str_len(" + value + "));\n";
                         result += "} else {\n";
                         result += "    if (" + target + " != NULL) {\n";

@@ -11,6 +11,8 @@ character(len=1) :: ibytes3(12 * 8)
 character(len=1) :: bytes2(6 * 8)
 character(len=1) :: bytes3(12 * 8)
 character(len=1) :: small(2)
+character(len=1) :: scalar_bytes(8)
+integer(int64) :: scalar_value
 integer :: pos
 
 call fill_i64_low_byte(ibytes2, size(int2))
@@ -21,6 +23,13 @@ small = achar(0)
 small(1) = achar(65)
 if (iachar(small(1)) /= 65) error stop "wrong small scalar character fill"
 if (iachar(small(2)) /= 0) error stop "wrong small nul character fill"
+
+scalar_value = 1_int64
+scalar_bytes = transfer(scalar_value, scalar_bytes)
+if (iachar(scalar_bytes(1)) /= 1) error stop "wrong scalar transfer low byte"
+do pos = 2, size(scalar_bytes)
+    if (iachar(scalar_bytes(pos)) /= 0) error stop "wrong scalar transfer high byte"
+end do
 
 expect_int2 = reshape([1_int64, 2_int64, 3_int64, 4_int64, 5_int64, 6_int64], shape(int2))
 expect_int3 = reshape([1_int64, 2_int64, 3_int64, 4_int64, 5_int64, 6_int64, &

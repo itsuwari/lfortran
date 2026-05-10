@@ -20,6 +20,7 @@
 #include <map>
 #include <set>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 
 #define CHECK_FAST_C(compiler_options, x)                         \
@@ -266,8 +267,25 @@ R"(
             std::string(fn.m_name) + "__" + std::to_string(fn_hash));
     }
 
+    struct SplitUnitDecl {
+        std::string name;
+        std::string text;
+        bool always_include = false;
+    };
+
     std::string get_unit_file_prelude(const std::string &header_name) const {
         return "#include \"" + header_name + "\"\n\n";
+    }
+
+    std::string get_unit_file_prelude(const std::string &header_name,
+            const std::string &unit_src,
+            const std::vector<SplitUnitDecl> &decls) const {
+        std::string prelude = get_unit_file_prelude(header_name);
+        std::string local_decls = select_split_unit_decls(unit_src, decls);
+        if (!local_decls.empty()) {
+            prelude += local_decls + "\n";
+        }
+        return prelude;
     }
 
     std::string get_global_extern_decl(const ASR::Variable_t &v) {
@@ -294,7 +312,56 @@ R"(
         return "extern " + primary_decl + ";\n";
     }
 
+    bool is_file_common_block_struct_instance_variable(
+            const ASR::Variable_t &v) const {
+        if (v.m_parent_symtab == nullptr || v.m_parent_symtab->asr_owner == nullptr) {
+            return false;
+        }
+        ASR::asr_t *owner = v.m_parent_symtab->asr_owner;
+        if (!ASR::is_a<ASR::Module_t>(*owner)) {
+            return false;
+        }
+        ASR::Module_t *mod = ASR::down_cast<ASR::Module_t>(owner);
+        if (std::string(mod->m_name).find("file_common_block_") != 0) {
+            return false;
+        }
+        if (std::string(v.m_name).find("struct_instance_") != 0) {
+            return false;
+        }
+        ASR::ttype_t *storage_type = ASRUtils::type_get_past_allocatable_pointer(v.m_type);
+        return storage_type != nullptr && ASR::is_a<ASR::StructType_t>(*storage_type)
+            && v.m_type_declaration != nullptr;
+    }
+
+    std::string get_common_block_struct_definition(const ASR::Variable_t &v) {
+        if (!is_file_common_block_struct_instance_variable(v)) {
+            return "";
+        }
+        ensure_c_backend_constructor_macro_decl();
+        std::string der_type_name = CUtils::get_c_symbol_name(
+            ASRUtils::symbol_get_past_external(v.m_type_declaration));
+        std::string emitted_name = CUtils::get_c_variable_name(v);
+        std::string value_name = emitted_name + "_value";
+        ASR::expr_t *init_expr = get_variable_init_value_expr(v);
+
+        std::string sub = "struct " + der_type_name + " " + value_name;
+        if (init_expr != nullptr) {
+            this->visit_expr(*init_expr);
+            sub += " = " + src;
+        } else {
+            sub += " LFORTRAN_C_BACKEND_COMMON";
+        }
+        sub += ";\n";
+        sub += "LFORTRAN_C_BACKEND_WEAK struct " + der_type_name + "* "
+            + emitted_name + " = &" + value_name;
+        return sub;
+    }
+
     std::string get_split_visible_definition(const ASR::Variable_t &v) {
+        std::string common_block_def = get_common_block_struct_definition(v);
+        if (!common_block_def.empty()) {
+            return common_block_def;
+        }
         std::string module_array_def = get_static_module_array_definition(v);
         if (!module_array_def.empty()) {
             return module_array_def;
@@ -546,6 +613,9 @@ R"(
             if (is_split_global_helper_function(fn)) {
                 return;
             }
+            if (is_procedure_dummy_function_argument(*fn)) {
+                return;
+            }
             ASR::FunctionType_t *f_type = ASRUtils::get_FunctionType(*fn);
             if (f_type->m_abi == ASR::abiType::Intrinsic) {
                 return;
@@ -656,6 +726,9 @@ R"(
 
         add_function = [&](ASR::Function_t *fn) {
             if (fn == nullptr) {
+                return;
+            }
+            if (is_procedure_dummy_function_argument(*fn)) {
                 return;
             }
             uint64_t key = get_hash(reinterpret_cast<ASR::asr_t*>(fn));
@@ -1244,6 +1317,139 @@ R"(
             stmts.push_back(current_stmt);
         }
         return stmts;
+    }
+
+    std::unordered_set<std::string> collect_c_identifier_tokens(
+            const std::string &text) const {
+        std::unordered_set<std::string> tokens;
+        size_t i = 0;
+        while (i < text.size()) {
+            unsigned char ch = static_cast<unsigned char>(text[i]);
+            if (!(std::isalpha(ch) || ch == '_')) {
+                i++;
+                continue;
+            }
+            size_t start = i++;
+            while (i < text.size()) {
+                unsigned char ch2 = static_cast<unsigned char>(text[i]);
+                if (!(std::isalnum(ch2) || ch2 == '_')) {
+                    break;
+                }
+                i++;
+            }
+            tokens.insert(text.substr(start, i - start));
+        }
+        return tokens;
+    }
+
+    std::string extract_c_function_decl_name(const std::string &stmt) const {
+        if (stmt.find('=') != std::string::npos) {
+            return "";
+        }
+        size_t lparen = stmt.find('(');
+        if (lparen == std::string::npos || lparen == 0) {
+            return "";
+        }
+        if (lparen >= 2 && stmt[lparen - 1] == '*'
+                && stmt[lparen - 2] == '(') {
+            return "";
+        }
+        size_t end = lparen;
+        while (end > 0 && std::isspace(static_cast<unsigned char>(stmt[end - 1]))) {
+            end--;
+        }
+        size_t begin = end;
+        while (begin > 0) {
+            unsigned char ch = static_cast<unsigned char>(stmt[begin - 1]);
+            if (!(std::isalnum(ch) || ch == '_')) {
+                break;
+            }
+            begin--;
+        }
+        if (begin == end) {
+            return "";
+        }
+        return stmt.substr(begin, end - begin);
+    }
+
+    std::string extract_c_extern_decl_name(const std::string &stmt) const {
+        std::string trimmed = trim_copy(stmt);
+        if (!startswith(trimmed, "extern ") || trimmed.find('(') != std::string::npos) {
+            return "";
+        }
+        size_t end = trimmed.find(';');
+        if (end == std::string::npos) {
+            return "";
+        }
+        while (end > 0 && std::isspace(static_cast<unsigned char>(trimmed[end - 1]))) {
+            end--;
+        }
+        while (end > 0 && trimmed[end - 1] == ']') {
+            int bracket_depth = 1;
+            end--;
+            while (end > 0 && bracket_depth > 0) {
+                end--;
+                if (trimmed[end] == ']') {
+                    bracket_depth++;
+                } else if (trimmed[end] == '[') {
+                    bracket_depth--;
+                }
+            }
+            while (end > 0 && std::isspace(static_cast<unsigned char>(trimmed[end - 1]))) {
+                end--;
+            }
+        }
+        size_t begin = end;
+        while (begin > 0) {
+            unsigned char ch = static_cast<unsigned char>(trimmed[begin - 1]);
+            if (!(std::isalnum(ch) || ch == '_')) {
+                break;
+            }
+            begin--;
+        }
+        if (begin == end) {
+            return "";
+        }
+        return trimmed.substr(begin, end - begin);
+    }
+
+    std::vector<SplitUnitDecl> collect_split_unit_decls(
+            const std::string &decl_src) const {
+        std::vector<SplitUnitDecl> decls;
+        std::set<std::string> seen;
+        for (const auto &stmt : split_top_level_statements(decl_src)) {
+            std::string trimmed = trim_copy(stmt);
+            if (trimmed.empty() || !seen.insert(trimmed).second) {
+                continue;
+            }
+            SplitUnitDecl decl;
+            decl.text = trimmed;
+            decl.name = extract_c_function_decl_name(trimmed);
+            if (decl.name.empty()) {
+                decl.name = extract_c_extern_decl_name(trimmed);
+            }
+            decl.always_include = decl.name.empty();
+            decls.push_back(std::move(decl));
+        }
+        return decls;
+    }
+
+    std::string select_split_unit_decls(const std::string &unit_src,
+            const std::vector<SplitUnitDecl> &decls) const {
+        if (decls.empty()) {
+            return "";
+        }
+        std::unordered_set<std::string> tokens = collect_c_identifier_tokens(unit_src);
+        std::string out;
+        for (const SplitUnitDecl &decl : decls) {
+            if (decl.always_include || tokens.find(decl.name) != tokens.end()) {
+                out += decl.text;
+                if (!endswith(out, "\n")) {
+                    out += "\n";
+                }
+            }
+        }
+        return out;
     }
 
     std::vector<std::string> group_statements_into_chunks(
@@ -2875,7 +3081,8 @@ R"(
         }
         std::string sub;
         bool use_ref = (v.m_intent == ASRUtils::intent_out ||
-                        v.m_intent == ASRUtils::intent_inout);
+                        v.m_intent == ASRUtils::intent_inout ||
+                        is_c_unspecified_scalar_ref_dummy(&v));
         if (is_c && is_pointer_dummy_slot_type(&v)) {
             use_ref = true;
         }
@@ -3378,6 +3585,20 @@ R"(
                 } else {
                     bool is_fixed_size = true;
                     dims = convert_dims_c(n_dims, m_dims, v_m_type, is_fixed_size);
+                    if (is_c && !declaration_only && !dummy
+                            && !is_struct_type_member && !do_not_initialize
+                            && CUtils::use_stack_storage_for_fixed_character_scalar(v)) {
+                        int64_t char_len = 0;
+                        CUtils::get_fixed_character_length_value(v_m_type, char_len);
+                        int64_t storage_len = char_len > 0 ? char_len : 1;
+                        std::string storage_name =
+                            CUtils::sanitize_c_identifier(
+                                "__lfortran_fixed_char_" + decl_name);
+                        sub = "char " + storage_name + "["
+                            + std::to_string(storage_len) + "] = {0}; char *"
+                            + decl_name + " = " + storage_name;
+                        return sub;
+                    }
                     sub = format_type_c(dims, "char *", decl_name, use_ref, dummy);
                     if((v.m_intent == ASRUtils::intent_local
                             || v.m_intent == ASRUtils::intent_return_var) &&
@@ -3969,6 +4190,9 @@ R"(
             if (is_split_global_helper_function(function)) {
                 continue;
             }
+            if (is_procedure_dummy_function_argument(*function)) {
+                continue;
+            }
             emitted_global_functions.insert(
                 get_hash(reinterpret_cast<ASR::asr_t*>(function)));
             visit_Function(*function);
@@ -4100,11 +4324,13 @@ R"(
             function_decls += "}\n\n";
         }
 
+        std::vector<SplitUnitDecl> split_unit_decls = collect_split_unit_decls(
+            function_decls + global_var_decls + module_var_decls);
+
         std::string header_src = "#ifndef " + header_guard + "\n#define "
             + header_guard + "\n\n"
             + get_include_block() + get_default_head() + "\n"
-            + header_array_type_decls + module_aggregate_decls + function_decls + global_var_decls
-            + module_var_decls
+            + header_array_type_decls + module_aggregate_decls
             + "\n#endif\n";
         write_text_file(fs::path(output_dir) / header_name, header_src);
 
@@ -4128,20 +4354,23 @@ R"(
         if (!shared_body.empty()) {
             std::string shared_name = safe_project_name + "_shared.c";
             write_text_file(fs::path(output_dir) / shared_name,
-                get_unit_file_prelude(header_name) + shared_body);
+                get_unit_file_prelude(header_name, shared_body, split_unit_decls)
+                    + shared_body);
             source_files.push_back(shared_name);
         }
 
         if (!compact_constant_data_body.empty()) {
             std::string data_name = safe_project_name + "_constants_data.c";
             write_text_file(fs::path(output_dir) / data_name,
-                get_unit_file_prelude(header_name) + compact_constant_data_body);
+                get_unit_file_prelude(header_name, compact_constant_data_body,
+                    split_unit_decls) + compact_constant_data_body);
             source_files.push_back(data_name);
         }
 
         for (const auto &unit : unit_bodies) {
             write_text_file(fs::path(output_dir) / unit.first,
-                get_unit_file_prelude(header_name) + unit.second);
+                get_unit_file_prelude(header_name, unit.second, split_unit_decls)
+                    + unit.second);
             source_files.push_back(unit.first);
         }
 
@@ -4661,6 +4890,10 @@ R"(    // Initialise Numpy
 
         auto visit_string_arg = [&](ASR::expr_t *expr) -> std::pair<std::string, std::string> {
             if (!expr) return {"NULL", "0"};
+            ASR::ttype_t *expr_type = ASRUtils::expr_type(expr);
+            if (!ASRUtils::is_character(*expr_type)) {
+                return {"NULL", "0"};
+            }
             this->visit_expr(*expr);
             std::string value = src;
             ASR::String_t *str_type = ASRUtils::get_string_type(expr);
@@ -4940,11 +5173,31 @@ R"(    // Initialise Numpy
             advance_arg = {"\"yes\"", "3"};
         }
 
-        std::pair<std::string, std::string> fmt_arg = visit_string_arg(x.m_fmt);
+        std::vector<ASR::expr_t*> read_values;
+        ASR::expr_t *fmt_expr = x.m_fmt;
+        if (x.m_is_formatted && x.n_values == 1
+                && ASR::is_a<ASR::StringFormat_t>(*x.m_values[0])) {
+            ASR::StringFormat_t *str_fmt =
+                ASR::down_cast<ASR::StringFormat_t>(x.m_values[0]);
+            if (str_fmt->m_fmt) {
+                fmt_expr = str_fmt->m_fmt;
+            }
+            for (size_t i=0; i<str_fmt->n_args; i++) {
+                read_values.push_back(str_fmt->m_args[i]);
+            }
+        } else {
+            for (size_t i=0; i<x.n_values; i++) {
+                read_values.push_back(x.m_values[i]);
+            }
+        }
+
+        std::pair<std::string, std::string> fmt_arg = visit_string_arg(fmt_expr);
         std::pair<std::string, std::string> iomsg_arg = visit_string_arg(x.m_iomsg);
 
         ASR::ttype_t *unit_type = x.m_unit ? ASRUtils::expr_type(x.m_unit) : nullptr;
         bool is_internal_string_read = unit_type && ASRUtils::is_character(*unit_type);
+        bool is_list_directed_external_formatted_read =
+            x.m_is_formatted && fmt_expr == nullptr && !is_internal_string_read;
 
         if (is_internal_string_read) {
             auto unit_arg = visit_string_arg(x.m_unit);
@@ -4977,7 +5230,7 @@ R"(    // Initialise Numpy
                     + iomsg_arg.second + ");\n";
             }
 
-            if (x.m_is_formatted && x.m_fmt) {
+            if (x.m_is_formatted && fmt_expr) {
                 std::string formatted_args;
                 std::string formatted_post;
                 int formatted_arg_count = 0;
@@ -5237,8 +5490,8 @@ R"(    // Initialise Numpy
                         value_expr->base.loc);
                 };
 
-                for (size_t i = 0; i < x.n_values; i++) {
-                    append_internal_formatted_arg(x.m_values[i], formatted_args, formatted_post,
+                for (ASR::expr_t *read_value : read_values) {
+                    append_internal_formatted_arg(read_value, formatted_args, formatted_post,
                         formatted_arg_count);
                 }
 
@@ -5879,8 +6132,8 @@ R"(    // Initialise Numpy
             };
 
             bool has_implied_do = false;
-            for (size_t i = 0; i < x.n_values; i++) {
-                if (ASR::is_a<ASR::ImpliedDoLoop_t>(*x.m_values[i])) {
+            for (ASR::expr_t *read_value : read_values) {
+                if (ASR::is_a<ASR::ImpliedDoLoop_t>(*read_value)) {
                     has_implied_do = true;
                     break;
                 }
@@ -5907,9 +6160,9 @@ R"(    // Initialise Numpy
                 };
 
                 src = formatted_setup;
-                for (size_t i = 0; i < x.n_values; i++) {
-                    if (ASR::is_a<ASR::ImpliedDoLoop_t>(*x.m_values[i])) {
-                        ASR::ImpliedDoLoop_t *idl = ASR::down_cast<ASR::ImpliedDoLoop_t>(x.m_values[i]);
+                for (ASR::expr_t *read_value : read_values) {
+                    if (ASR::is_a<ASR::ImpliedDoLoop_t>(*read_value)) {
+                        ASR::ImpliedDoLoop_t *idl = ASR::down_cast<ASR::ImpliedDoLoop_t>(read_value);
                         std::string accumulated_src = src;
                         this->visit_expr(*idl->m_var);
                         std::string loop_var = src;
@@ -5939,18 +6192,22 @@ R"(    // Initialise Numpy
                         indentation_level--;
                         src += std::string(indentation_level * indentation_spaces, ' ') + "}\n";
                     } else {
-                        emit_formatted_scalar_call(x.m_values[i]);
+                        emit_formatted_scalar_call(read_value);
                     }
                 }
                 if (x.m_iomsg && x.m_iostat) {
                     src += indent + "_lfortran_set_read_iomsg(" + iostat_val + ", "
                         + iomsg_arg.first + ", " + iomsg_arg.second + ");\n";
                 }
+                if (is_list_directed_external_formatted_read) {
+                    src += indent + "_lfortran_read_end_record(" + unit + ", "
+                        + iostat_ptr + ");\n";
+                }
                 return;
             }
 
-            for (size_t i = 0; i < x.n_values; i++) {
-                append_formatted_scalar(x.m_values[i], formatted_setup, formatted_args,
+            for (ASR::expr_t *read_value : read_values) {
+                append_formatted_scalar(read_value, formatted_setup, formatted_args,
                     formatted_post, formatted_arg_count);
             }
 
@@ -5962,6 +6219,10 @@ R"(    // Initialise Numpy
                 + std::to_string(formatted_arg_count) + ", NULL, 0"
                 + formatted_args + ");\n";
             src += formatted_post;
+            if (is_list_directed_external_formatted_read) {
+                src += indent + "_lfortran_read_end_record(" + unit + ", "
+                    + iostat_ptr + ");\n";
+            }
             if (x.m_iomsg && x.m_iostat) {
                 src += indent + "_lfortran_set_read_iomsg(" + iostat_val + ", "
                     + iomsg_arg.first + ", " + iomsg_arg.second + ");\n";
@@ -5979,6 +6240,8 @@ R"(    // Initialise Numpy
             emit_external_read_for_value(x.m_values[i]);
         }
         src = setup_code + read_code;
+        src += indent + "_lfortran_read_end_record(" + unit + ", "
+            + iostat_ptr + ");\n";
         if (x.m_iomsg && x.m_iostat) {
             src += indent + "_lfortran_set_read_iomsg(" + iostat_val + ", "
                 + iomsg_arg.first + ", " + iomsg_arg.second + ");\n";
@@ -6005,7 +6268,7 @@ R"(    // Initialise Numpy
             dim_set_code = indent + dest_src + "->offset = 0;\n";
             std::string stride = "1";
             for (int i = 0; i < n_dims; i++) {
-                std::string start = "0", length = "0";
+                std::string start = "1", length = "0";
                 if( lower_bounds ) {
                     start = ASRUtils::fetch_ArrayConstant_value(lower_bounds, i);
                 }
@@ -6560,6 +6823,133 @@ R"(    // Initialise Numpy
                 std::vector<std::string> string_lengths;
                 std::vector<std::string> array_temp_cleanups;
                 std::string format_arg_setup;
+                auto indent_at = [&](int level) -> std::string {
+                    return std::string(level * indentation_spaces, ' ');
+                };
+                auto visit_format_expr = [&](ASR::expr_t *expr,
+                        std::string &setup) -> std::string {
+                    this->visit_expr(*expr);
+                    std::string value = src;
+                    setup += drain_tmp_buffer();
+                    setup += extract_stmt_setup_from_expr(value);
+                    return value;
+                };
+                auto get_fixed_character_len = [&](ASR::ttype_t *type,
+                        ASR::expr_t *expr) -> int64_t {
+                    ASR::String_t *str_type = ASRUtils::get_string_type(type);
+                    int64_t fixed_len = 0;
+                    if (!str_type || !str_type->m_len
+                            || !ASRUtils::extract_value(str_type->m_len, fixed_len)
+                            || fixed_len <= 0) {
+                        throw CodeGenError("C backend FileWrite currently supports only fixed-length character implied-do values in Fortran formatted writes",
+                            expr->base.loc);
+                    }
+                    return fixed_len;
+                };
+                auto emit_character_element_to_temp = [&](ASR::expr_t *value_expr,
+                        int level, std::string &code, const std::string &temp_name,
+                        const std::string &size_name,
+                        const std::string &capacity_name,
+                        int64_t fixed_len) {
+                    if (!ASRUtils::is_character(*ASRUtils::expr_type(value_expr))) {
+                        throw CodeGenError("C backend FileWrite expected character values in character implied-do formatted write",
+                            value_expr->base.loc);
+                    }
+                    std::string value_setup;
+                    std::string value_src = visit_format_expr(value_expr, value_setup);
+                    std::string value_len_name =
+                        get_unique_local_name("__lfortran_fmt_char_len");
+                    std::string current_indent = indent_at(level);
+                    std::string inner_indent = indent_at(level + 1);
+                    code += value_setup;
+                    code += current_indent + "if (" + size_name + " >= "
+                        + capacity_name + ") {\n";
+                    code += inner_indent + capacity_name + " = " + capacity_name
+                        + " > 0 ? " + capacity_name + " * 2 : 1;\n";
+                    code += inner_indent + temp_name
+                        + " = (char*) _lfortran_realloc_alloc(_lfortran_get_default_allocator(), "
+                        + "(int8_t*) " + temp_name + ", (int64_t)("
+                        + capacity_name + " * " + std::to_string(fixed_len) + "));\n";
+                    code += current_indent + "}\n";
+                    int64_t value_fixed_len = get_fixed_character_len(
+                        ASRUtils::expr_type(value_expr), value_expr);
+                    int64_t copy_len = std::min(fixed_len, value_fixed_len);
+                    code += current_indent + "int64_t " + value_len_name
+                        + " = " + std::to_string(copy_len) + ";\n";
+                    code += current_indent + "memset(" + temp_name + " + "
+                        + size_name + " * " + std::to_string(fixed_len)
+                        + ", ' ', " + std::to_string(fixed_len) + ");\n";
+                    code += current_indent + "if (" + value_src + " != NULL) {\n";
+                    code += inner_indent + "memcpy(" + temp_name + " + "
+                        + size_name + " * " + std::to_string(fixed_len)
+                        + ", " + value_src + ", (size_t)" + value_len_name
+                        + ");\n";
+                    code += current_indent + "}\n";
+                    code += current_indent + size_name + " += 1;\n";
+                };
+                std::function<void(ASR::expr_t **, size_t, int, std::string&,
+                    const std::string&, const std::string&, const std::string&,
+                    int64_t)> emit_character_implied_do_values;
+                emit_character_implied_do_values = [&](ASR::expr_t **values,
+                        size_t n_values, int level, std::string &code,
+                        const std::string &temp_name,
+                        const std::string &size_name,
+                        const std::string &capacity_name,
+                        int64_t fixed_len) {
+                    for (size_t value_i = 0; value_i < n_values; value_i++) {
+                        ASR::expr_t *value_expr = values[value_i];
+                        if (ASR::is_a<ASR::ImpliedDoLoop_t>(*value_expr)) {
+                            ASR::ImpliedDoLoop_t *idl =
+                                ASR::down_cast<ASR::ImpliedDoLoop_t>(value_expr);
+                            std::string loop_setup;
+                            std::string loop_var = visit_format_expr(idl->m_var, loop_setup);
+                            std::string start_setup;
+                            std::string loop_start = visit_format_expr(idl->m_start, start_setup);
+                            std::string end_setup;
+                            std::string loop_end = visit_format_expr(idl->m_end, end_setup);
+                            std::string inc_setup;
+                            std::string loop_inc = "1";
+                            if (idl->m_increment != nullptr) {
+                                loop_inc = visit_format_expr(idl->m_increment, inc_setup);
+                            }
+                            std::string loop_var_type =
+                                CUtils::get_c_type_from_ttype_t(
+                                    ASRUtils::expr_type(idl->m_var));
+                            std::string save_name =
+                                get_unique_local_name(loop_var + "__saved");
+                            std::string start_name =
+                                get_unique_local_name("__lfortran_fmt_ido_start");
+                            std::string end_name =
+                                get_unique_local_name("__lfortran_fmt_ido_end");
+                            std::string inc_name =
+                                get_unique_local_name("__lfortran_fmt_ido_inc");
+                            std::string current_indent = indent_at(level);
+                            code += loop_setup + start_setup + end_setup + inc_setup;
+                            code += current_indent + loop_var_type + " " + save_name
+                                + " = " + loop_var + ";\n";
+                            code += current_indent + loop_var_type + " " + start_name
+                                + " = " + loop_start + ";\n";
+                            code += current_indent + loop_var_type + " " + end_name
+                                + " = " + loop_end + ";\n";
+                            code += current_indent + loop_var_type + " " + inc_name
+                                + " = " + loop_inc + ";\n";
+                            code += current_indent + "for (" + loop_var + " = "
+                                + start_name + "; (" + inc_name + " >= 0 ? "
+                                + loop_var + " <= " + end_name + " : "
+                                + loop_var + " >= " + end_name + "); "
+                                + loop_var + " += " + inc_name + ") {\n";
+                            emit_character_implied_do_values(idl->m_values,
+                                idl->n_values, level + 1, code, temp_name,
+                                size_name, capacity_name, fixed_len);
+                            code += current_indent + "}\n";
+                            code += current_indent + loop_var + " = " + save_name
+                                + ";\n";
+                        } else {
+                            emit_character_element_to_temp(value_expr, level, code,
+                                temp_name, size_name, capacity_name, fixed_len);
+                        }
+                    }
+                };
                 for (size_t i=0; i<str_fmt->n_args; i++) {
                     if (i != 0) {
                         serialization += ",";
@@ -6570,8 +6960,96 @@ R"(    // Initialise Numpy
                     if (ASRUtils::is_array(past_type)) {
                         ASR::ttype_t *element_type = ASRUtils::extract_type(past_type);
                         if (ASRUtils::is_character(*element_type)) {
-                            throw CodeGenError("C backend FileWrite does not support Fortran formatted character array writes yet",
-                                arg_expr->base.loc);
+                            ASR::expr_t *character_array_arg = unwrap_c_array_expr(arg_expr);
+                            if (ASR::is_a<ASR::ImpliedDoLoop_t>(*character_array_arg)) {
+                                int64_t fixed_len = get_fixed_character_len(
+                                    element_type, arg_expr);
+                                std::string temp_name =
+                                    get_unique_local_name("__lfortran_fmt_char_array");
+                                std::string size_name = temp_name + "_size";
+                                std::string capacity_name = temp_name + "_capacity";
+                                format_arg_setup += indent + "int64_t " + size_name
+                                    + " = 0;\n";
+                                format_arg_setup += indent + "int64_t "
+                                    + capacity_name + " = 16;\n";
+                                format_arg_setup += indent + "char *" + temp_name
+                                    + " = (char*) _lfortran_malloc_alloc(_lfortran_get_default_allocator(), "
+                                    + "(int64_t)(" + capacity_name + " * "
+                                    + std::to_string(fixed_len) + "));\n";
+                                ASR::ImpliedDoLoop_t *idl =
+                                    ASR::down_cast<ASR::ImpliedDoLoop_t>(
+                                        character_array_arg);
+                                emit_character_implied_do_values(idl->m_values,
+                                    idl->n_values, indentation_level,
+                                    format_arg_setup, temp_name, size_name,
+                                    capacity_name, fixed_len);
+                                serialization += "[" + serialize_fortran_format_type(
+                                    arg_expr, element_type) + "]";
+                                array_sizes.push_back(size_name);
+                                arg_ptrs.push_back("&((char*){" + temp_name + "})");
+                                array_temp_cleanups.push_back(indent
+                                    + "_lfortran_free_alloc_plain(_lfortran_get_default_allocator(), (char*) "
+                                    + temp_name + ");\n");
+                                continue;
+                            }
+                            int64_t fixed_len = get_fixed_character_len(
+                                element_type, arg_expr);
+                            this->visit_expr(*arg_expr);
+                            std::string arg_value = src;
+                            std::string setup = drain_tmp_buffer();
+                            setup += extract_stmt_setup_from_expr(arg_value);
+                            ASR::dimension_t *arg_dims = nullptr;
+                            int arg_n_dims = ASRUtils::extract_dimensions_from_ttype(
+                                past_type, arg_dims);
+                            if (arg_n_dims != 1) {
+                                throw CodeGenError("C backend FileWrite currently supports only rank-1 character arrays in Fortran formatted writes",
+                                    arg_expr->base.loc);
+                            }
+                            std::string temp_name =
+                                get_unique_local_name("__lfortran_fmt_char_array");
+                            std::string loop_index =
+                                get_unique_local_name("__lfortran_fmt_char_i");
+                            std::string elem_name =
+                                get_unique_local_name("__lfortran_fmt_char_elem");
+                            std::string temp_size = temp_name + "_size";
+                            setup += indent + "int64_t " + temp_size
+                                + " = (int64_t)(" + arg_value
+                                + "->dims[0].length);\n";
+                            setup += indent + "char *" + temp_name
+                                + " = (char*) _lfortran_malloc_alloc(_lfortran_get_default_allocator(), "
+                                + "(int64_t)(" + temp_size + " * "
+                                + std::to_string(fixed_len) + "));\n";
+                            setup += indent + "for (int64_t " + loop_index
+                                + " = 0; " + loop_index + " < " + temp_size
+                                + "; " + loop_index + "++) {\n";
+                            setup += indent + std::string(indentation_spaces, ' ')
+                                + "char *" + elem_name + " = " + arg_value
+                                + "->data[" + arg_value + "->offset + "
+                                + loop_index + " * " + arg_value
+                                + "->dims[0].stride];\n";
+                            setup += indent + std::string(indentation_spaces, ' ')
+                                + "memset(" + temp_name + " + " + loop_index
+                                + " * " + std::to_string(fixed_len) + ", ' ', "
+                                + std::to_string(fixed_len) + ");\n";
+                            setup += indent + std::string(indentation_spaces, ' ')
+                                + "if (" + elem_name + " != NULL) {\n";
+                            setup += indent + std::string(2 * indentation_spaces, ' ')
+                                + "memcpy(" + temp_name + " + " + loop_index
+                                + " * " + std::to_string(fixed_len) + ", "
+                                + elem_name + ", " + std::to_string(fixed_len)
+                                + ");\n";
+                            setup += indent + std::string(indentation_spaces, ' ')
+                                + "}\n";
+                            setup += indent + "}\n";
+                            format_arg_setup += setup;
+                            serialization += "[" + serialize_fortran_format_type(
+                                arg_expr, element_type) + "]";
+                            array_sizes.push_back(temp_size);
+                            arg_ptrs.push_back("&((char*){" + temp_name + "})");
+                            array_temp_cleanups.push_back(indent
+                                + "_lfortran_free_alloc_plain(_lfortran_get_default_allocator(), (char*) "
+                                + temp_name + ");\n");
+                            continue;
                         }
                         serialization += "[" + serialize_fortran_format_type(arg_expr, element_type) + "]";
 
@@ -7820,7 +8298,12 @@ R"(    // Initialise Numpy
         CHECK_FAST_C(compiler_options, x)
         this->visit_expr(*x.m_arg);
         std::string arg = src;
-        src = "((" + arg + ") != NULL ? _lfortran_str_len(" + arg + ") : 0)";
+        std::string setup = drain_tmp_buffer();
+        setup += extract_stmt_setup_from_expr(arg);
+        src = get_string_length_expr(x.m_arg, arg, setup);
+        if (!setup.empty()) {
+            tmp_buffer_src.push_back(setup);
+        }
     }
 
     void visit_OMPRegion(const ASR::OMPRegion_t &x) {

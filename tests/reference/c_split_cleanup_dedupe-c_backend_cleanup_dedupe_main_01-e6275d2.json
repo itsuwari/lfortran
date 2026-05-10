@@ -1,0 +1,13 @@
+{
+    "basename": "c_split_cleanup_dedupe-c_backend_cleanup_dedupe_main_01-e6275d2",
+    "cmd": "tmpdir=$(mktemp -d /tmp/lfortran-c-split-cleanup.XXXXXX); trap 'rm -rf \"$tmpdir\"' EXIT; lfortran --backend=c --separate-compilation -c tests/c_backend_cleanup_dedupe_module_01.f90 -o \"$tmpdir/mod.o\"; lfortran --backend=c --separate-compilation -I\"$tmpdir\" -c {infile} -o \"$tmpdir/main.o\"; count=$(grep -R \"cleanup_struct_c_backend_cleanup_dedupe_module_01__box\" \"$tmpdir\"/*.o.tmp.split/*.c | wc -l | tr -d ' '); printf \"%s\\n\" \"$count\"; test \"$count\" = \"2\" #",
+    "infile": "tests/c_backend_cleanup_dedupe_main_01.f90",
+    "infile_hash": "835cbe98ff81b0c247919d5a6b93147800bd55306e20fe25195ed300",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": "c_split_cleanup_dedupe-c_backend_cleanup_dedupe_main_01-e6275d2.stdout",
+    "stdout_hash": "7f04f368ab5b53d568c1590932a5ceebec89b14fcb03bf7f46197078",
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

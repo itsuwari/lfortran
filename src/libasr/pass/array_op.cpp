@@ -728,6 +728,35 @@ class ArrayOpVisitor: public ASR::CallReplacerOnExpressionsVisitor<ArrayOpVisito
         return needs_existing_assignment;
     }
 
+    bool allocation_stmt_targets_expr(ASR::stmt_t *stmt, ASR::expr_t *target) const {
+        ASR::alloc_arg_t *args = nullptr;
+        size_t n_args = 0;
+        if (ASR::is_a<ASR::Allocate_t>(*stmt)) {
+            ASR::Allocate_t *allocate = ASR::down_cast<ASR::Allocate_t>(stmt);
+            args = allocate->m_args;
+            n_args = allocate->n_args;
+        } else if (ASR::is_a<ASR::ReAlloc_t>(*stmt)) {
+            ASR::ReAlloc_t *realloc = ASR::down_cast<ASR::ReAlloc_t>(stmt);
+            args = realloc->m_args;
+            n_args = realloc->n_args;
+        } else {
+            return false;
+        }
+        for (size_t i = 0; i < n_args; i++) {
+            if (ASRUtils::expr_equal(args[i].m_a, target)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    bool previous_stmt_allocates_target(ASR::expr_t *target) const {
+        return parent_body != nullptr
+            && parent_body->size() > 0
+            && allocation_stmt_targets_expr(
+                parent_body->p[parent_body->size() - 1], target);
+    }
+
     ASR::expr_t* unwrap_array_op_lvalue(ASR::expr_t *expr) const {
         while (expr != nullptr) {
             if (ASR::is_a<ASR::ArrayPhysicalCast_t>(*expr)) {
@@ -868,6 +897,26 @@ class ArrayOpVisitor: public ASR::CallReplacerOnExpressionsVisitor<ArrayOpVisito
                 || ASRUtils::is_unsigned_integer(*type)
                 || ASRUtils::is_real(*type)
                 || ASRUtils::is_logical(*type));
+    }
+
+    bool c_plain_array_copy_element_types_match(
+            ASR::expr_t *target_expr, ASR::expr_t *value_expr) const {
+        ASR::ttype_t *target_type = target_expr
+            ? ASRUtils::type_get_past_allocatable_pointer(
+                ASRUtils::expr_type(target_expr)) : nullptr;
+        ASR::ttype_t *value_type = value_expr
+            ? ASRUtils::type_get_past_allocatable_pointer(
+                ASRUtils::expr_type(value_expr)) : nullptr;
+        ASR::ttype_t *target_element_type = target_type
+            ? ASRUtils::type_get_past_array(target_type) : nullptr;
+        ASR::ttype_t *value_element_type = value_type
+            ? ASRUtils::type_get_past_array(value_type) : nullptr;
+        return target_element_type != nullptr
+            && value_element_type != nullptr
+            && is_c_scalarizable_element_type(target_element_type)
+            && is_c_scalarizable_element_type(value_element_type)
+            && ASRUtils::types_equal(
+                target_element_type, value_element_type, nullptr, nullptr);
     }
 
     bool is_fixed_size_struct_member_array_expr(ASR::expr_t *expr) const {
@@ -1031,6 +1080,23 @@ class ArrayOpVisitor: public ASR::CallReplacerOnExpressionsVisitor<ArrayOpVisito
         }
     }
 
+    bool is_c_rank1_plain_data_copy_expr(ASR::expr_t *expr) const {
+        expr = ASRUtils::get_past_array_physical_cast(expr);
+        if (expr == nullptr) {
+            return false;
+        }
+        switch (expr->type) {
+            case ASR::exprType::Var:
+            case ASR::exprType::StructInstanceMember:
+            case ASR::exprType::ArraySection: {
+                return is_c_rank1_unit_array_expr(expr);
+            }
+            default: {
+                return false;
+            }
+        }
+    }
+
     bool is_c_pointer_array_base_expr(ASR::expr_t *expr) const {
         expr = ASRUtils::get_past_array_physical_cast(expr);
         if (expr == nullptr) {
@@ -1170,6 +1236,63 @@ class ArrayOpVisitor: public ASR::CallReplacerOnExpressionsVisitor<ArrayOpVisito
                         return false;
                     }
                 }
+            }
+            default: {
+                return false;
+            }
+        }
+    }
+
+    bool is_c_plain_scalar_expr_for_section_fill(ASR::expr_t *expr) const {
+        expr = ASRUtils::get_past_array_physical_cast(expr);
+        if (expr == nullptr) {
+            return false;
+        }
+        ASR::ttype_t *type = ASRUtils::type_get_past_allocatable_pointer(
+            ASRUtils::expr_type(expr));
+        if (type == nullptr || ASRUtils::is_array(type)
+                || ASRUtils::is_character(*type)) {
+            return false;
+        }
+        switch (expr->type) {
+            case ASR::exprType::IntegerConstant:
+            case ASR::exprType::UnsignedIntegerConstant:
+            case ASR::exprType::RealConstant:
+            case ASR::exprType::LogicalConstant:
+            case ASR::exprType::Var:
+            case ASR::exprType::StructInstanceMember: {
+                return true;
+            }
+            case ASR::exprType::IntegerUnaryMinus: {
+                return is_c_plain_scalar_expr_for_section_fill(
+                    ASR::down_cast<ASR::IntegerUnaryMinus_t>(expr)->m_arg);
+            }
+            case ASR::exprType::RealUnaryMinus: {
+                return is_c_plain_scalar_expr_for_section_fill(
+                    ASR::down_cast<ASR::RealUnaryMinus_t>(expr)->m_arg);
+            }
+            case ASR::exprType::IntegerBinOp: {
+                ASR::IntegerBinOp_t *binop = ASR::down_cast<ASR::IntegerBinOp_t>(expr);
+                return binop->m_op != ASR::binopType::Pow
+                    && is_c_plain_scalar_expr_for_section_fill(binop->m_left)
+                    && is_c_plain_scalar_expr_for_section_fill(binop->m_right);
+            }
+            case ASR::exprType::UnsignedIntegerBinOp: {
+                ASR::UnsignedIntegerBinOp_t *binop =
+                    ASR::down_cast<ASR::UnsignedIntegerBinOp_t>(expr);
+                return binop->m_op != ASR::binopType::Pow
+                    && is_c_plain_scalar_expr_for_section_fill(binop->m_left)
+                    && is_c_plain_scalar_expr_for_section_fill(binop->m_right);
+            }
+            case ASR::exprType::RealBinOp: {
+                ASR::RealBinOp_t *binop = ASR::down_cast<ASR::RealBinOp_t>(expr);
+                return binop->m_op != ASR::binopType::Pow
+                    && is_c_plain_scalar_expr_for_section_fill(binop->m_left)
+                    && is_c_plain_scalar_expr_for_section_fill(binop->m_right);
+            }
+            case ASR::exprType::Cast: {
+                return is_c_plain_scalar_expr_for_section_fill(
+                    ASR::down_cast<ASR::Cast_t>(expr)->m_arg);
             }
             default: {
                 return false;
@@ -1364,6 +1487,61 @@ class ArrayOpVisitor: public ASR::CallReplacerOnExpressionsVisitor<ArrayOpVisito
             && !is_c_pointer_array_base_expr(value)
             && is_c_rank2_unit_slice_array_expr(target)
             && is_c_rank2_plain_data_copy_expr(value)
+            && !c_expr_references_root_symbol(value,
+                get_c_array_assignment_root_symbol(target));
+    }
+
+    bool should_leave_rank2_section_scalar_assignment_for_c(
+            ASR::expr_t *target, ASR::expr_t *value) const {
+        target = ASRUtils::get_past_array_physical_cast(target);
+        if (!pass_options.c_backend
+                || target == nullptr
+                || value == nullptr
+                || !ASR::is_a<ASR::ArraySection_t>(*target)
+                || !is_c_rank2_unit_slice_array_expr(target)
+                || !is_c_plain_scalar_expr_for_section_fill(value)) {
+            return false;
+        }
+        ASR::ttype_t *target_type = ASRUtils::type_get_past_allocatable_pointer(
+            ASRUtils::expr_type(target));
+        ASR::ttype_t *target_element_type = target_type
+            ? ASRUtils::type_get_past_array(target_type) : nullptr;
+        ASR::ttype_t *value_type = ASRUtils::type_get_past_allocatable_pointer(
+            ASRUtils::expr_type(value));
+        return target_element_type != nullptr
+            && value_type != nullptr
+            && ASRUtils::types_equal(
+                target_element_type, value_type, nullptr, nullptr);
+    }
+
+    bool should_leave_reallocated_temp_plain_data_copy_assignment_for_c(
+            ASR::expr_t *target, ASR::expr_t *value) const {
+        if (!pass_options.c_backend || target == nullptr || value == nullptr) {
+            return false;
+        }
+        target = unwrap_array_op_lvalue(target);
+        value = unwrap_array_op_lvalue(value);
+        if (target == nullptr || value == nullptr
+                || !is_whole_allocatable_or_pointer_array_target(target)
+                || !ASRUtils::is_allocatable(ASRUtils::expr_type(target))) {
+            return false;
+        }
+        bool temp_copy_context = is_compiler_created_array_temp_expr(target)
+            || is_compiler_created_array_temp_expr(value);
+        if (!temp_copy_context
+                || !c_plain_array_copy_element_types_match(target, value)
+                || is_c_pointer_array_base_expr(target)) {
+            return false;
+        }
+        bool value_is_pointer_base = is_c_pointer_array_base_expr(value);
+        if (value_is_pointer_base && !is_compiler_created_array_temp_expr(target)) {
+            return false;
+        }
+        bool rank1_copy = is_c_rank1_unit_array_expr(target)
+            && is_c_rank1_plain_data_copy_expr(value);
+        bool rank2_copy = is_c_rank2_unit_slice_array_expr(target)
+            && is_c_rank2_plain_data_copy_expr(value);
+        return (rank1_copy || rank2_copy)
             && !c_expr_references_root_symbol(value,
                 get_c_array_assignment_root_symbol(target));
     }
@@ -2631,7 +2809,38 @@ class ArrayOpVisitor: public ASR::CallReplacerOnExpressionsVisitor<ArrayOpVisito
                     xx.m_move_allocation)));
             return;
         }
+        if (should_leave_reallocated_temp_plain_data_copy_assignment_for_c(
+                xx.m_target, xx.m_value)) {
+            bool target_is_compiler_alloc_temp =
+                is_compiler_created_array_temp_expr(xx.m_target)
+                && ASRUtils::is_allocatable(ASRUtils::expr_type(xx.m_target));
+            bool per_assign_realloc = xx.m_realloc_lhs ||
+                (!is_compiler_created_array_temp_expr(xx.m_target)
+                    && should_auto_realloc_component_assignment(xx.m_target))
+                || (target_is_compiler_alloc_temp
+                    && !previous_stmt_allocates_target(xx.m_target));
+            if (per_assign_realloc) {
+                Vec<ASR::expr_t**> realloc_vars;
+                realloc_vars.reserve(al, 1);
+                realloc_vars.push_back(al, const_cast<ASR::expr_t**>(&(xx.m_value)));
+                insert_realloc_for_target(
+                    xx.m_target, xx.m_value, realloc_vars, per_assign_realloc);
+            }
+            pass_result.push_back(al, ASRUtils::STMT(
+                ASRUtils::make_Assignment_t_util(al, loc, xx.m_target,
+                    xx.m_value, xx.m_overloaded, false,
+                    xx.m_move_allocation)));
+            return;
+        }
         if (should_leave_rank2_plain_data_copy_assignment_for_c(
+                xx.m_target, xx.m_value)) {
+            pass_result.push_back(al, ASRUtils::STMT(
+                ASRUtils::make_Assignment_t_util(al, loc, xx.m_target,
+                    xx.m_value, xx.m_overloaded, xx.m_realloc_lhs,
+                    xx.m_move_allocation)));
+            return;
+        }
+        if (should_leave_rank2_section_scalar_assignment_for_c(
                 xx.m_target, xx.m_value)) {
             pass_result.push_back(al, ASRUtils::STMT(
                 ASRUtils::make_Assignment_t_util(al, loc, xx.m_target,

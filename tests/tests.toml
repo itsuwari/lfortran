@@ -5138,6 +5138,12 @@ filename = "c_backend_spread_allocatable_assignment_01.f90"
 c = true
 
 [[test]]
+filename = "c_backend_cleanup_dedupe_main_01.f90"
+extrafiles = "c_backend_cleanup_dedupe_module_01.f90"
+c_split_cleanup_dedupe = true
+c_split_cleanup_dedupe_symbol = "cleanup_struct_c_backend_cleanup_dedupe_module_01__box"
+
+[[test]]
 filename = "c_backend_allocatable_char_component_deallocate_cleanup_ref_01.f90"
 c = true
 

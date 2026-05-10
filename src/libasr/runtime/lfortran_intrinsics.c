@@ -746,6 +746,11 @@ static void _lfortran_register_string_len(char *ptr, int64_t len)
     lfortran_string_len_entries = entry;
 }
 
+LFORTRAN_API void _lfortran_string_len_unregister(char *ptr)
+{
+    _lfortran_unregister_string_len(ptr);
+}
+
 static bool _lfortran_lookup_string_len(char *ptr, int64_t *len)
 {
     if (ptr == NULL) return false;
@@ -2607,9 +2612,10 @@ typedef struct serialization_info{
         bool is_complex;
         int64_t current_string_len; // Holds string length 'If Exist'
     } current_arg_info;
-    struct runtime_sizes_lengths{ // Passed array sizes or string legnths.
+    struct runtime_sizes_lengths{ // Passed array sizes or string lengths.
         int64_t* ptr;
         int32_t current_index;
+        int32_t count;
     } array_sizes, string_lengths;
     bool just_peeked; // Flag to indicate if we just peeked the next element.
     char* temp_char_pp; // Dummy container (Should be removed)
@@ -2632,13 +2638,21 @@ void set_string_length(Serialization_Info* s_info){
         s_info->current_stop++;
         s_info->current_arg_info.current_string_len = 
             transform_string_size_into_int(s_info);
+        return;
+    }
+    if (s_info->string_lengths.current_index < s_info->string_lengths.count) {
+        s_info->current_arg_info.current_string_len =
+            s_info->string_lengths.ptr[s_info->string_lengths.current_index++];
+        return;
+    }
+    if (s_info->current_element_type == STRING_DESCRIPTOR_TYPE) {
+        s_info->current_arg_info.current_string_len =
+            *(int64_t*)((char*)s_info->current_arg_info.current_arg
+                + sizeof(char*));
+        return;
     } else {
-        if(s_info->current_element_type == CHAR_PTR_TYPE ||
-            s_info->current_element_type == STRING_DESCRIPTOR_TYPE ) return; // Array. length already set (Consumed from array of lengths).
-            ASSERT_MSG(s_info->current_element_type != CHAR_PTR_TYPE,
-                    "ICE:%s\n","Not supported -- Can't deduce length for CCHAR");
-            s_info->current_arg_info.current_string_len = 
-                *(int64_t*)((char*)s_info->current_arg_info.current_arg + sizeof(char*)); // Get string len.
+        ASSERT_MSG(s_info->current_element_type != CHAR_PTR_TYPE,
+                "ICE:%s\n","Not supported -- Can't deduce length for CCHAR");
     }
 }
 // Deserialize to know the physical type of string
@@ -2809,8 +2823,8 @@ void set_current_PrimitiveType(Serialization_Info* s_info){
     }
     case 'S':{
         Primitive_Types str_phys_type = get_string_primitive_type(s_info);
-        set_string_length(s_info);
         *PrimitiveType = str_phys_type;
+        set_string_length(s_info);
         break;
     }
     case 'C':
@@ -3250,7 +3264,9 @@ LFORTRAN_API char* _lcompilers_string_format_fortran(lfortran_allocator_t* al, c
     s_info.current_element_type = NONE_TYPE;
     s_info.current_arg_info.is_complex = false;
     s_info.array_sizes.current_index = 0;
+    s_info.array_sizes.count = array_sizes_cnt;
     s_info.string_lengths.current_index = 0;
+    s_info.string_lengths.count = string_lengths_cnt;
     s_info.just_peeked = false;
 
     int64_t* array_sizes = (int64_t*) internal_malloc(array_sizes_cnt * sizeof(int64_t));
@@ -8929,6 +8945,39 @@ LFORTRAN_API void _lfortran_read_char(char **p, int64_t p_len, int32_t unit_num,
         memcpy(*p, tmp_buffer, len);
         pad_with_spaces(*p, len, p_len);
         internal_free(tmp_buffer);
+    }
+}
+
+LFORTRAN_API void _lfortran_read_end_record(int32_t unit_num, int32_t *iostat)
+{
+    if (iostat && *iostat != 0) {
+        return;
+    }
+    if (unit_num == -1) {
+        return;
+    }
+
+    bool unit_file_bin;
+    int access_id;
+    FILE *filep = get_file_pointer_from_unit(unit_num, &unit_file_bin,
+                                             &access_id, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
+    if (!filep) {
+        if (iostat) {
+            *iostat = 1;
+            return;
+        }
+        fprintf(stderr, "Internal Compiler Error: No file found with given unit number %d.\n", unit_num);
+        exit(1);
+    }
+    if (unit_file_bin) {
+        return;
+    }
+
+    int c;
+    while ((c = fgetc(filep)) != EOF) {
+        if (c == '\n') {
+            return;
+        }
     }
 }
 

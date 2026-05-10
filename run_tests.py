@@ -83,6 +83,7 @@ def single_test(test: Dict, verbose: bool, no_llvm: bool, skip_run_with_dbg: boo
     cpp = is_included("cpp")
     cpp_infer = is_included("cpp_infer")
     c = is_included("c")
+    c_split_cleanup_dedupe = is_included("c_split_cleanup_dedupe")
     is_cumulative_pass = is_included("cumulative")
     julia = is_included("julia")
     wat = is_included("wat")
@@ -94,6 +95,7 @@ def single_test(test: Dict, verbose: bool, no_llvm: bool, skip_run_with_dbg: boo
     print_leading_space = is_included("print_leading_space")
     interactive = is_included("interactive")
     options = test.get("options", "")
+    c_split_cleanup_dedupe_symbol = test.get("c_split_cleanup_dedupe_symbol", "")
     pass_ = test.get("pass", None)
     extrafiles = test.get("extrafiles", "").split(",")
     run = test.get("run")
@@ -712,6 +714,27 @@ def single_test(test: Dict, verbose: bool, no_llvm: bool, skip_run_with_dbg: boo
 
     if c:
         run_test(filename, "c", "lfortran --no-color --show-c {infile}",
+                filename,
+                update_reference,
+                verify_hash,
+                extra_args)
+
+    if c_split_cleanup_dedupe:
+        module_file = extrafiles[0].strip() if extrafiles else ""
+        if not module_file:
+            raise Exception("c_split_cleanup_dedupe requires extrafiles")
+        if not c_split_cleanup_dedupe_symbol:
+            raise Exception("c_split_cleanup_dedupe requires c_split_cleanup_dedupe_symbol")
+        cmd = (
+            "tmpdir=$(mktemp -d /tmp/lfortran-c-split-cleanup.XXXXXX); "
+            "trap 'rm -rf \"$tmpdir\"' EXIT; "
+            f"lfortran --backend=c --separate-compilation -c tests/{module_file} -o \"$tmpdir/mod.o\"; "
+            "lfortran --backend=c --separate-compilation -I\"$tmpdir\" -c {infile} -o \"$tmpdir/main.o\"; "
+            f"count=$(grep -R \"{c_split_cleanup_dedupe_symbol}\" \"$tmpdir\"/*.o.tmp.split/*.c | wc -l | tr -d ' '); "
+            "printf \"%s\\n\" \"$count\"; "
+            "test \"$count\" = \"2\" #"
+        )
+        run_test(filename, "c_split_cleanup_dedupe", cmd,
                 filename,
                 update_reference,
                 verify_hash,
