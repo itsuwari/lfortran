@@ -5256,6 +5256,51 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             arr, member_type, array_type->m_type, n);
     }
 
+    bool emit_c_fixed_character_array_constant_storage_init(ASR::expr_t *expr,
+            ASR::ttype_t *target_type, const std::string &storage_name,
+            std::string &storage_decl, std::string &pointer_init) {
+        storage_decl.clear();
+        pointer_init.clear();
+        if (!is_c || expr == nullptr || target_type == nullptr) {
+            return false;
+        }
+        ASR::ttype_t *member_type = ASRUtils::type_get_past_pointer(
+            ASRUtils::type_get_past_allocatable(target_type));
+        if (member_type == nullptr || !ASR::is_a<ASR::Array_t>(*member_type)) {
+            return false;
+        }
+        ASR::Array_t *array_type = ASR::down_cast<ASR::Array_t>(member_type);
+        int64_t len = 0;
+        if (!CUtils::get_fixed_character_length_value(array_type->m_type, len)
+                || len <= 1) {
+            return false;
+        }
+        int64_t n_int = ASRUtils::get_fixed_size_of_array(member_type);
+        if (n_int <= 0) {
+            return false;
+        }
+        ASR::ArrayConstant_t *arr = get_c_array_constant_expr(expr);
+        if (arr == nullptr) {
+            return false;
+        }
+        size_t n = static_cast<size_t>(n_int);
+        storage_decl = "char " + storage_name + "[" + std::to_string(n)
+            + "][" + std::to_string(len) + "] = {";
+        pointer_init = "{";
+        for (size_t i = 0; i < n; i++) {
+            if (i > 0) {
+                storage_decl += ", ";
+                pointer_init += ", ";
+            }
+            storage_decl += get_c_array_constant_init_element_for_c_index(
+                arr, member_type, array_type->m_type, i);
+            pointer_init += storage_name + "[" + std::to_string(i) + "]";
+        }
+        storage_decl += "};";
+        pointer_init += "}";
+        return true;
+    }
+
     size_t get_c_array_constant_element_size(ASR::ttype_t *element_type) {
         int64_t element_size = ASRUtils::get_type_byte_size(element_type);
         if (element_size <= 0) {

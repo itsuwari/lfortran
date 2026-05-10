@@ -1998,12 +1998,29 @@ R"(
                 std::string init_brace;
                 ASR::expr_t *init_expr = nullptr;
                 bool needs_runtime_init = false;
+                std::string direct_char_storage_decl;
+                std::string direct_char_pointer_init;
+                bool direct_char_static_data = false;
                 if (var != nullptr
                         && var->m_storage == ASR::storage_typeType::Parameter) {
                     init_expr = get_variable_init_value_expr(*var);
                     if (init_expr != nullptr && is_fixed_size) {
                         init_brace = emit_c_array_constant_brace_init(init_expr, var->m_type);
                         needs_runtime_init = init_brace.empty();
+                    }
+                }
+                if (var != nullptr && init_expr != nullptr && is_fixed_size
+                        && element_needs_null_init && !len_one_char_array
+                        && !dummy && indentation_level > 0) {
+                    std::string storage_name = get_unique_local_name(
+                        std::string(v_m_name) + "_char_storage");
+                    if (emit_c_fixed_character_array_constant_storage_init(
+                            init_expr, var->m_type, storage_name,
+                            direct_char_storage_decl, direct_char_pointer_init)) {
+                        needs_runtime_init = false;
+                        init_brace.clear();
+                        direct_char_static_data =
+                            var->m_storage == ASR::storage_typeType::Parameter;
                     }
                 }
                 bool static_parameter_data = var != nullptr
@@ -2097,12 +2114,21 @@ R"(
                     }
                 } else {
                     sub += indent;
-                    if (static_parameter_data) {
+                    if (!direct_char_storage_decl.empty()) {
+                        if (direct_char_static_data) {
+                            sub += "static ";
+                        }
+                        sub += direct_char_storage_decl + "\n";
+                        sub += indent;
+                    }
+                    if (static_parameter_data || direct_char_static_data) {
                         sub += "static ";
                     }
                     sub += format_type_c(dims, type_name_copy, std::string(v_m_name) + "_data",
                                          use_ref, dummy);
-                    if (!init_brace.empty()) {
+                    if (!direct_char_pointer_init.empty()) {
+                        sub += " = " + direct_char_pointer_init;
+                    } else if (!init_brace.empty()) {
                         sub += " = " + init_brace;
                     } else if (element_needs_null_init) {
                         sub += " = {0}";
