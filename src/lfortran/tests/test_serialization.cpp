@@ -413,10 +413,18 @@ TEST_CASE("ASR modfile strips only implementation payload") {
 module modfile_interface_dependencies
 implicit none
 private
-public :: payload, api
+public :: payload, public_unused, api
 
 type :: payload
     integer :: i
+end type
+
+type, public :: attr_public_payload
+    integer :: k
+end type
+
+type :: public_unused
+    integer :: j
 end type
 
 contains
@@ -485,12 +493,78 @@ end module
     CHECK(api2->n_body == 0);
     CHECK(function_has_dependency(api2, "iface_len"));
     CHECK(!function_has_dependency(api2, "worker"));
-    LCompilers::ASR::Function_t *worker2 = get_module_function(asr2,
-        "modfile_interface_dependencies", "worker");
-    CHECK(worker2->n_body == 0);
-    CHECK(worker2->m_symtab->get_symbol("body_local") == nullptr);
-    CHECK(function_has_dependency(worker2, "iface_len"));
-    CHECK(!function_has_dependency(worker2, "body_only"));
+    LCompilers::ASR::Function_t *iface_len2 = get_module_function(asr2,
+        "modfile_interface_dependencies", "iface_len");
+    CHECK(iface_len2->n_body == 0);
+
+    LCompilers::ASR::symbol_t *module_sym = asr2->m_symtab->get_symbol(
+        "modfile_interface_dependencies");
+    REQUIRE(module_sym != nullptr);
+    LCompilers::ASR::Module_t *module
+        = LCompilers::ASR::down_cast<LCompilers::ASR::Module_t>(module_sym);
+    CHECK(module->m_symtab->get_symbol("payload") != nullptr);
+    CHECK(module->m_symtab->get_symbol("attr_public_payload") != nullptr);
+    CHECK(module->m_symtab->get_symbol("public_unused") != nullptr);
+    CHECK(module->m_symtab->get_symbol("worker") == nullptr);
+    CHECK(module->m_symtab->get_symbol("body_only") == nullptr);
+}
+
+TEST_CASE("ASR modfile preserves intrinsic helper bodies") {
+    Allocator al(4*1024);
+
+    LCompilers::LFortran::AST::TranslationUnit_t* ast0;
+    LCompilers::diag::Diagnostics diagnostics;
+    LCompilers::CompilerOptions compiler_options;
+    std::string src = R"""(
+module lfortran_intrinsic_custom
+implicit none
+
+interface newunit
+    procedure :: newunit_int_4
+end interface
+
+contains
+
+integer function get_valid_newunit()
+    get_valid_newunit = 9
+end function
+
+subroutine newunit_int_4(unit)
+    integer(4), intent(out) :: unit
+    unit = get_valid_newunit()
+end subroutine
+
+end module
+)""";
+    ast0 = TRY(LCompilers::LFortran::parse(al, src, diagnostics, compiler_options));
+    LCompilers::LocationManager lm;
+    lm.file_ends.push_back(0);
+    LCompilers::LocationManager::FileLocations file;
+    file.out_start.push_back(0); file.in_start.push_back(0); file.in_newlines.push_back(0);
+    file.in_filename = "test"; file.current_line = 1; file.preprocessor = false; file.out_start0.push_back(0);
+    file.in_start0.push_back(0); file.in_size0.push_back(0); file.interval_type0.push_back(0);
+    file.in_newlines0.push_back(0);
+    lm.files.push_back(file);
+    LCompilers::ASR::TranslationUnit_t* asr = TRY(LCompilers::LFortran::ast_to_asr(al, *ast0,
+        diagnostics, nullptr, false, compiler_options, lm));
+
+    std::string modfile = LCompilers::save_modfile(*asr, lm);
+
+    LCompilers::SymbolTable symtab(nullptr);
+    LCompilers::Result<LCompilers::ASR::TranslationUnit_t*, LCompilers::ErrorMessage> res
+        = LCompilers::load_modfile(al, modfile, true, symtab, lm);
+    CHECK(res.ok);
+    LCompilers::ASR::TranslationUnit_t* asr2 = res.result;
+    fix_external_symbols(*asr2, symtab);
+    LCOMPILERS_ASSERT(LCompilers::asr_verify(*asr2, true, diagnostics));
+
+    LCompilers::ASR::Function_t *helper = get_module_function(asr2,
+        "lfortran_intrinsic_custom", "get_valid_newunit");
+    LCompilers::ASR::Function_t *newunit = get_module_function(asr2,
+        "lfortran_intrinsic_custom", "newunit_int_4");
+    CHECK(helper->n_body > 0);
+    CHECK(newunit->n_body > 0);
+    CHECK(function_has_dependency(newunit, "get_valid_newunit"));
 }
 
 TEST_CASE("ASR modfile accepts compiler version drift when schema matches") {

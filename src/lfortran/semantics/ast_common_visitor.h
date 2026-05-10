@@ -5490,6 +5490,39 @@ public:
                                 }
                             } else {
                                 std::string sym = to_lower(s.m_name);
+                                auto set_symbol_access = [](ASR::symbol_t *sym_,
+                                        ASR::accessType access) {
+                                    if (sym_ == nullptr) {
+                                        return;
+                                    }
+                                    if (ASR::is_a<ASR::ExternalSymbol_t>(*sym_)) {
+                                        ASR::ExternalSymbol_t *es = ASR::down_cast<ASR::ExternalSymbol_t>(sym_);
+                                        es->m_access = access;
+                                    }
+                                    sym_ = ASRUtils::symbol_get_past_external(sym_);
+                                    if (ASR::is_a<ASR::Variable_t>(*sym_)) {
+                                        ASR::Variable_t *v = ASR::down_cast<ASR::Variable_t>(sym_);
+                                        v->m_access = access;
+                                    } else if (ASR::is_a<ASR::Function_t>(*sym_)) {
+                                        ASR::Function_t *f = ASR::down_cast<ASR::Function_t>(sym_);
+                                        f->m_access = access;
+                                    } else if (ASR::is_a<ASR::Struct_t>(*sym_)) {
+                                        ASR::Struct_t *st = ASR::down_cast<ASR::Struct_t>(sym_);
+                                        st->m_access = access;
+                                    } else if (ASR::is_a<ASR::Enum_t>(*sym_)) {
+                                        ASR::Enum_t *en = ASR::down_cast<ASR::Enum_t>(sym_);
+                                        en->m_access = access;
+                                    } else if (ASR::is_a<ASR::Union_t>(*sym_)) {
+                                        ASR::Union_t *un = ASR::down_cast<ASR::Union_t>(sym_);
+                                        un->m_access = access;
+                                    } else if (ASR::is_a<ASR::GenericProcedure_t>(*sym_)) {
+                                        ASR::GenericProcedure_t *gp = ASR::down_cast<ASR::GenericProcedure_t>(sym_);
+                                        gp->m_access = access;
+                                    } else if (ASR::is_a<ASR::CustomOperator_t>(*sym_)) {
+                                        ASR::CustomOperator_t *op = ASR::down_cast<ASR::CustomOperator_t>(sym_);
+                                        op->m_access = access;
+                                    }
+                                };
                                 if (sa->m_attr == AST::simple_attributeType
                                         ::AttrPrivate) {
                                     ASR::symbol_t* sym_ = current_scope->get_symbol(sym);
@@ -5497,14 +5530,7 @@ public:
                                         assgnd_access[sym] = ASR::accessType::Private;
                                     } else {
                                         assgnd_access[sym] = ASR::accessType::Private;
-                                        sym_ = ASRUtils::symbol_get_past_external(sym_);
-                                        if (ASR::is_a<ASR::Variable_t>(*sym_)) {
-                                            ASR::Variable_t *v = ASR::down_cast<ASR::Variable_t>(sym_);
-                                            v->m_access = ASR::accessType::Private;
-                                        } else if (ASR::is_a<ASR::Function_t>(*sym_)) {
-                                            ASR::Function_t *f = ASR::down_cast<ASR::Function_t>(sym_);
-                                            f->m_access = ASR::accessType::Private;
-                                        }
+                                        set_symbol_access(sym_, ASR::accessType::Private);
                                     }
                                 } else if (sa->m_attr == AST::simple_attributeType
                                         ::AttrPublic) {
@@ -5513,14 +5539,7 @@ public:
                                         assgnd_access[sym] = ASR::accessType::Public;
                                     } else {
                                         assgnd_access[sym] = ASR::accessType::Public;
-                                        sym_ = ASRUtils::symbol_get_past_external(sym_);
-                                        if (ASR::is_a<ASR::Variable_t>(*sym_)) {
-                                            ASR::Variable_t *v = ASR::down_cast<ASR::Variable_t>(sym_);
-                                            v->m_access = ASR::accessType::Public;
-                                        } else if (ASR::is_a<ASR::Function_t>(*sym_)) {
-                                            ASR::Function_t *f = ASR::down_cast<ASR::Function_t>(sym_);
-                                            f->m_access = ASR::accessType::Public;
-                                        }
+                                        set_symbol_access(sym_, ASR::accessType::Public);
                                     }
                                 } else if (sa->m_attr == AST::simple_attributeType
                                                 ::AttrParameter) {

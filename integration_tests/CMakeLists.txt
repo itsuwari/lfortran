@@ -2935,6 +2935,7 @@ RUN(NAME file_open_05 LABELS gfortran llvm llvm_wasm llvm_wasm_emcc fortran)
 RUN(NAME file_open_06 LABELS gfortran llvm llvm_wasm llvm_wasm_emcc fortran)
 RUN(NAME file_open_07 LABELS gfortran llvm llvm_wasm llvm_wasm_emcc)
 RUN(NAME file_open_08 LABELS gfortran llvm)
+RUN(NAME file_open_09 LABELS gfortran llvm c)
 
 RUN(NAME file_overwrite LABELS gfortran llvm llvm_wasm llvm_wasm_emcc)
 
@@ -4354,6 +4355,7 @@ RUN(NAME separate_compilation_47 LABELS gfortran llvm EXTRAFILES separate_compil
 RUN(NAME separate_compilation_48 LABELS gfortran llvm EXTRAFILES separate_compilation_48a.f90 EXTRA_ARGS --separate-compilation)
 RUN(NAME separate_compilation_49 LABELS gfortran llvm EXTRAFILES separate_compilation_49a.f90 EXTRA_ARGS --separate-compilation)
 RUN(NAME separate_compilation_50 LABELS gfortran llvm c EXTRAFILES separate_compilation_50dep.f90 separate_compilation_50a.f90)
+RUN(NAME separate_compilation_51 LABELS gfortran llvm c EXTRAFILES separate_compilation_51dep.f90 separate_compilation_51a.f90)
 
 RUN(NAME no_explicit_return_type_01 LABELS gfortran llvm llvm_wasm llvm_wasm_emcc
     EXTRA_ARGS --implicit-typing)

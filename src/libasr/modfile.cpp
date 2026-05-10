@@ -1,4 +1,5 @@
 #include <string>
+#include <map>
 #include <set>
 #include <vector>
 
@@ -102,6 +103,351 @@ class ModfileBodyStripper {
         }
         return false;
     }
+
+    bool is_interface_function(const ASR::Function_t &x) const {
+        if (x.m_function_signature &&
+                ASR::is_a<ASR::FunctionType_t>(*x.m_function_signature)) {
+            ASR::FunctionType_t *ft = ASR::down_cast<ASR::FunctionType_t>(x.m_function_signature);
+            return ft->m_deftype == ASR::deftypeType::Interface;
+        }
+        return false;
+    }
+
+    bool is_intrinsic_runtime_module(const ASR::Module_t &x) const {
+        return x.m_intrinsic
+            || std::string(x.m_name).rfind("lfortran_intrinsic", 0) == 0;
+    }
+
+    SymbolTable *parent_symtab_for_symbol(ASR::symbol_t *sym) const {
+        switch (sym->type) {
+            case ASR::symbolType::Function: {
+                ASR::Function_t *x = ASR::down_cast<ASR::Function_t>(sym);
+                return x->m_symtab ? x->m_symtab->parent : nullptr;
+            }
+            case ASR::symbolType::GenericProcedure: {
+                return ASR::down_cast<ASR::GenericProcedure_t>(sym)->m_parent_symtab;
+            }
+            case ASR::symbolType::CustomOperator: {
+                return ASR::down_cast<ASR::CustomOperator_t>(sym)->m_parent_symtab;
+            }
+            case ASR::symbolType::ExternalSymbol: {
+                return ASR::down_cast<ASR::ExternalSymbol_t>(sym)->m_parent_symtab;
+            }
+            case ASR::symbolType::Struct: {
+                ASR::Struct_t *x = ASR::down_cast<ASR::Struct_t>(sym);
+                return x->m_symtab ? x->m_symtab->parent : nullptr;
+            }
+            case ASR::symbolType::Enum: {
+                ASR::Enum_t *x = ASR::down_cast<ASR::Enum_t>(sym);
+                return x->m_symtab ? x->m_symtab->parent : nullptr;
+            }
+            case ASR::symbolType::Union: {
+                ASR::Union_t *x = ASR::down_cast<ASR::Union_t>(sym);
+                return x->m_symtab ? x->m_symtab->parent : nullptr;
+            }
+            case ASR::symbolType::Variable: {
+                return ASR::down_cast<ASR::Variable_t>(sym)->m_parent_symtab;
+            }
+            case ASR::symbolType::StructMethodDeclaration: {
+                return ASR::down_cast<ASR::StructMethodDeclaration_t>(sym)->m_parent_symtab;
+            }
+            case ASR::symbolType::Namelist: {
+                return ASR::down_cast<ASR::Namelist_t>(sym)->m_parent_symtab;
+            }
+            case ASR::symbolType::AssociateBlock: {
+                ASR::AssociateBlock_t *x = ASR::down_cast<ASR::AssociateBlock_t>(sym);
+                return x->m_symtab ? x->m_symtab->parent : nullptr;
+            }
+            case ASR::symbolType::Block: {
+                ASR::Block_t *x = ASR::down_cast<ASR::Block_t>(sym);
+                return x->m_symtab ? x->m_symtab->parent : nullptr;
+            }
+            case ASR::symbolType::GpuKernelFunction: {
+                ASR::GpuKernelFunction_t *x = ASR::down_cast<ASR::GpuKernelFunction_t>(sym);
+                return x->m_symtab ? x->m_symtab->parent : nullptr;
+            }
+            default:
+                return nullptr;
+        }
+    }
+
+    bool is_public_symbol(ASR::symbol_t *sym) const {
+        switch (sym->type) {
+            case ASR::symbolType::Function: {
+                ASR::Function_t *x = ASR::down_cast<ASR::Function_t>(sym);
+                return x->m_access == ASR::accessType::Public
+                    || is_interface_function(*x);
+            }
+            case ASR::symbolType::GenericProcedure: {
+                return ASR::down_cast<ASR::GenericProcedure_t>(sym)->m_access
+                    == ASR::accessType::Public;
+            }
+            case ASR::symbolType::CustomOperator: {
+                return ASR::down_cast<ASR::CustomOperator_t>(sym)->m_access
+                    == ASR::accessType::Public;
+            }
+            case ASR::symbolType::ExternalSymbol: {
+                return ASR::down_cast<ASR::ExternalSymbol_t>(sym)->m_access
+                    == ASR::accessType::Public;
+            }
+            case ASR::symbolType::Struct: {
+                return ASR::down_cast<ASR::Struct_t>(sym)->m_access
+                    == ASR::accessType::Public;
+            }
+            case ASR::symbolType::Enum: {
+                return ASR::down_cast<ASR::Enum_t>(sym)->m_access
+                    == ASR::accessType::Public;
+            }
+            case ASR::symbolType::Union: {
+                return ASR::down_cast<ASR::Union_t>(sym)->m_access
+                    == ASR::accessType::Public;
+            }
+            case ASR::symbolType::Variable: {
+                return ASR::down_cast<ASR::Variable_t>(sym)->m_access
+                    == ASR::accessType::Public;
+            }
+            case ASR::symbolType::GpuKernelFunction: {
+                return ASR::down_cast<ASR::GpuKernelFunction_t>(sym)->m_access
+                    == ASR::accessType::Public;
+            }
+            default:
+                return true;
+        }
+    }
+
+    void keep_symbol_key(std::map<SymbolTable*, std::set<std::string>> &reachable,
+            SymbolTable *symtab, ASR::symbol_t *sym) {
+        if (symtab == nullptr || sym == nullptr) {
+            return;
+        }
+        for (auto &item : symtab->get_scope()) {
+            if (item.second == sym) {
+                reachable[symtab].insert(item.first);
+            }
+        }
+    }
+
+    class ModuleInterfaceCollector
+        : public ASR::BaseWalkVisitor<ModuleInterfaceCollector> {
+        ModfileBodyStripper &stripper;
+        ASR::Module_t &module;
+        std::vector<ASR::symbol_t*> pending_symbols;
+        std::set<ASR::symbol_t*> visited_symbols;
+
+        void add_symbol(ASR::symbol_t *sym) {
+            if (sym == nullptr) {
+                return;
+            }
+            bool first_visit = visited_symbols.insert(sym).second;
+            SymbolTable *parent = stripper.parent_symtab_for_symbol(sym);
+            if (parent) {
+                stripper.keep_symbol_key(reachable_symbols, parent, sym);
+                if (ASR::is_a<ASR::ExternalSymbol_t>(*sym)) {
+                    ASR::ExternalSymbol_t *es = ASR::down_cast<ASR::ExternalSymbol_t>(sym);
+                    for (SymbolTable *scope = parent; scope; scope = scope->parent) {
+                        if (ASR::symbol_t *owner = scope->get_symbol(es->m_module_name)) {
+                            add_symbol(owner);
+                            break;
+                        }
+                    }
+                }
+            }
+            if (first_visit) {
+                pending_symbols.push_back(sym);
+            }
+        }
+
+        void add_dependencies(SymbolTable *symtab, char **dependencies,
+                size_t n_dependencies) {
+            if (symtab == nullptr) {
+                return;
+            }
+            for (size_t i = 0; i < n_dependencies; i++) {
+                ASR::symbol_t *dep = symtab->get_symbol(dependencies[i]);
+                if (dep) {
+                    add_symbol(dep);
+                }
+            }
+        }
+
+        void collect_function_interface(const ASR::Function_t &x) {
+            if (x.m_function_signature) {
+                this->visit_ttype(*x.m_function_signature);
+            }
+            for (size_t i = 0; i < x.n_args; i++) {
+                this->visit_expr(*x.m_args[i]);
+                if (ASR::is_a<ASR::Var_t>(*x.m_args[i])) {
+                    ASR::symbol_t *sym = ASR::down_cast<ASR::Var_t>(
+                        x.m_args[i])->m_v;
+                    this->visit_symbol(*sym);
+                }
+            }
+            if (x.m_return_var) {
+                this->visit_expr(*x.m_return_var);
+                if (ASR::is_a<ASR::Var_t>(*x.m_return_var)) {
+                    ASR::symbol_t *sym = ASR::down_cast<ASR::Var_t>(
+                        x.m_return_var)->m_v;
+                    this->visit_symbol(*sym);
+                }
+            }
+        }
+
+    public:
+        std::map<SymbolTable*, std::set<std::string>> reachable_symbols;
+
+        ModuleInterfaceCollector(ModfileBodyStripper &stripper_,
+                ASR::Module_t &module_) : stripper(stripper_), module(module_) {
+        }
+
+        void collect() {
+            for (auto &item : module.m_symtab->get_scope()) {
+                if (stripper.is_public_symbol(item.second)) {
+                    add_symbol(item.second);
+                }
+            }
+            while (!pending_symbols.empty()) {
+                ASR::symbol_t *sym = pending_symbols.back();
+                pending_symbols.pop_back();
+                this->visit_symbol(*sym);
+            }
+        }
+
+        void visit_Function(const ASR::Function_t &x) {
+            collect_function_interface(x);
+        }
+
+        void visit_GpuKernelFunction(const ASR::GpuKernelFunction_t &x) {
+            if (x.m_function_signature) {
+                this->visit_ttype(*x.m_function_signature);
+            }
+            for (size_t i = 0; i < x.n_args; i++) {
+                this->visit_expr(*x.m_args[i]);
+                if (ASR::is_a<ASR::Var_t>(*x.m_args[i])) {
+                    ASR::symbol_t *sym = ASR::down_cast<ASR::Var_t>(
+                        x.m_args[i])->m_v;
+                    this->visit_symbol(*sym);
+                }
+            }
+        }
+
+        void visit_ExternalSymbol(const ASR::ExternalSymbol_t& /*x*/) {
+        }
+
+        void visit_GenericProcedure(const ASR::GenericProcedure_t &x) {
+            for (size_t i = 0; i < x.n_procs; i++) {
+                add_symbol(x.m_procs[i]);
+            }
+        }
+
+        void visit_CustomOperator(const ASR::CustomOperator_t &x) {
+            for (size_t i = 0; i < x.n_procs; i++) {
+                add_symbol(x.m_procs[i]);
+            }
+        }
+
+        void visit_StructMethodDeclaration(const ASR::StructMethodDeclaration_t &x) {
+            add_symbol(x.m_proc);
+        }
+
+        void visit_Namelist(const ASR::Namelist_t &x) {
+            for (size_t i = 0; i < x.n_var_list; i++) {
+                add_symbol(x.m_var_list[i]);
+            }
+        }
+
+        void visit_Variable(const ASR::Variable_t &x) {
+            add_dependencies(x.m_parent_symtab, x.m_dependencies, x.n_dependencies);
+            add_symbol(x.m_type_declaration);
+            ASR::BaseWalkVisitor<ModuleInterfaceCollector>::visit_Variable(x);
+        }
+
+        void visit_Struct(const ASR::Struct_t &x) {
+            add_dependencies(x.m_symtab ? x.m_symtab->parent : nullptr,
+                x.m_dependencies, x.n_dependencies);
+            if (x.m_parent) {
+                add_symbol(x.m_parent);
+            }
+            ASR::BaseWalkVisitor<ModuleInterfaceCollector>::visit_Struct(x);
+        }
+
+        void visit_Enum(const ASR::Enum_t &x) {
+            add_dependencies(x.m_symtab ? x.m_symtab->parent : nullptr,
+                x.m_dependencies, x.n_dependencies);
+            if (x.m_parent) {
+                add_symbol(x.m_parent);
+            }
+            ASR::BaseWalkVisitor<ModuleInterfaceCollector>::visit_Enum(x);
+        }
+
+        void visit_Union(const ASR::Union_t &x) {
+            add_dependencies(x.m_symtab ? x.m_symtab->parent : nullptr,
+                x.m_dependencies, x.n_dependencies);
+            if (x.m_parent) {
+                add_symbol(x.m_parent);
+            }
+            ASR::BaseWalkVisitor<ModuleInterfaceCollector>::visit_Union(x);
+        }
+
+        void visit_StructInstanceMember(const ASR::StructInstanceMember_t &x) {
+            add_symbol(x.m_m);
+            ASR::BaseWalkVisitor<ModuleInterfaceCollector>::visit_StructInstanceMember(x);
+        }
+
+        void visit_StructStaticMember(const ASR::StructStaticMember_t &x) {
+            add_symbol(x.m_m);
+            ASR::BaseWalkVisitor<ModuleInterfaceCollector>::visit_StructStaticMember(x);
+        }
+
+        void visit_EnumStaticMember(const ASR::EnumStaticMember_t &x) {
+            add_symbol(x.m_m);
+            ASR::BaseWalkVisitor<ModuleInterfaceCollector>::visit_EnumStaticMember(x);
+        }
+
+        void visit_UnionInstanceMember(const ASR::UnionInstanceMember_t &x) {
+            add_symbol(x.m_m);
+            ASR::BaseWalkVisitor<ModuleInterfaceCollector>::visit_UnionInstanceMember(x);
+        }
+
+        void visit_FunctionCall(const ASR::FunctionCall_t &x) {
+            add_symbol(x.m_name);
+            if (x.m_original_name) {
+                add_symbol(x.m_original_name);
+            }
+            ASR::BaseWalkVisitor<ModuleInterfaceCollector>::visit_FunctionCall(x);
+        }
+
+        void visit_SubroutineCall(const ASR::SubroutineCall_t &x) {
+            add_symbol(x.m_name);
+            if (x.m_original_name) {
+                add_symbol(x.m_original_name);
+            }
+            ASR::BaseWalkVisitor<ModuleInterfaceCollector>::visit_SubroutineCall(x);
+        }
+
+        void visit_Var(const ASR::Var_t &x) {
+            add_symbol(x.m_v);
+        }
+
+        void visit_StructConstructor(const ASR::StructConstructor_t &x) {
+            add_symbol(x.m_dt_sym);
+            ASR::BaseWalkVisitor<ModuleInterfaceCollector>::visit_StructConstructor(x);
+        }
+
+        void visit_StructConstant(const ASR::StructConstant_t &x) {
+            add_symbol(x.m_dt_sym);
+            ASR::BaseWalkVisitor<ModuleInterfaceCollector>::visit_StructConstant(x);
+        }
+
+        void visit_EnumConstructor(const ASR::EnumConstructor_t &x) {
+            add_symbol(x.m_dt_sym);
+            ASR::BaseWalkVisitor<ModuleInterfaceCollector>::visit_EnumConstructor(x);
+        }
+
+        void visit_UnionConstructor(const ASR::UnionConstructor_t &x) {
+            add_symbol(x.m_dt_sym);
+            ASR::BaseWalkVisitor<ModuleInterfaceCollector>::visit_UnionConstructor(x);
+        }
+    };
 
     class InterfaceDependencyCollector
         : public ASR::BaseWalkVisitor<InterfaceDependencyCollector> {
@@ -290,7 +636,9 @@ class ModfileBodyStripper {
             switch (sym->type) {
                 case ASR::symbolType::Module: {
                     ASR::Module_t *x = ASR::down_cast<ASR::Module_t>(sym);
-                    strip_symbol_table(x->m_symtab);
+                    if (!is_intrinsic_runtime_module(*x)) {
+                        strip_symbol_table(x->m_symtab);
+                    }
                     break;
                 }
                 case ASR::symbolType::Function: {
@@ -349,9 +697,29 @@ class ModfileBodyStripper {
         }
     }
 
+    void strip_unreachable_module_symbols(SymbolTable *symtab) {
+        for (auto &item : symtab->get_scope()) {
+            ASR::symbol_t *sym = item.second;
+            if (!ASR::is_a<ASR::Module_t>(*sym)) {
+                continue;
+            }
+            ASR::Module_t *module = ASR::down_cast<ASR::Module_t>(sym);
+            if (module->m_has_submodules || is_intrinsic_runtime_module(*module)) {
+                continue;
+            }
+            ModuleInterfaceCollector collector(*this, *module);
+            collector.collect();
+            auto keep_it = collector.reachable_symbols.find(module->m_symtab);
+            if (keep_it != collector.reachable_symbols.end()) {
+                strip_unreachable_symbols(module->m_symtab, keep_it->second);
+            }
+        }
+    }
+
 public:
     ModfileBodyStripper(const ASR::TranslationUnit_t &m) {
         strip_symbol_table(m.m_symtab);
+        strip_unreachable_module_symbols(m.m_symtab);
     }
 
     ~ModfileBodyStripper() {

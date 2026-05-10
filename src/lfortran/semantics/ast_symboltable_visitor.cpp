@@ -2559,6 +2559,10 @@ public:
         bool is_abstract = false;
         bool is_deferred = false;
         bool is_bindc = false;
+        ASR::accessType s_access = dflt_access;
+        if (assgnd_access.count(dt_name)) {
+            s_access = assgnd_access[dt_name];
+        }
         AST::AttrExtends_t *attr_extend = nullptr;
         for( size_t i = 0; i < x.n_attrtype; i++ ) {
             switch( x.m_attrtype[i]->type ) {
@@ -2582,6 +2586,11 @@ public:
                         AST::down_cast<AST::SimpleAttribute_t>(x.m_attrtype[i]);
                     if (!is_abstract) is_abstract = simple_attr->m_attr == AST::simple_attributeType::AttrAbstract;
                     if (!is_deferred) is_deferred = simple_attr->m_attr == AST::simple_attributeType::AttrDeferred;
+                    if (simple_attr->m_attr == AST::simple_attributeType::AttrPublic) {
+                        s_access = ASR::accessType::Public;
+                    } else if (simple_attr->m_attr == AST::simple_attributeType::AttrPrivate) {
+                        s_access = ASR::accessType::Private;
+                    }
                 }
                 default:
                     break;
@@ -2591,7 +2600,7 @@ public:
             ASR::asr_t *tp = ASR::make_TypeParameter_t(al, x.base.base.loc, s2c(al, dt_name));
             tmp = ASRUtils::make_Variable_t_util(al, x.base.base.loc, current_scope, s2c(al, dt_name),
                 nullptr, 0, ASRUtils::intent_in, nullptr, nullptr, ASR::storage_typeType::Default,
-                ASRUtils::TYPE(tp), nullptr, ASR::abiType::Source, dflt_access, ASR::presenceType::Required, false);
+                ASRUtils::TYPE(tp), nullptr, ASR::abiType::Source, s_access, ASR::presenceType::Required, false);
             current_scope->add_symbol(dt_name, ASR::down_cast<ASR::symbol_t>(tmp));
             return;
         }
@@ -2682,7 +2691,7 @@ public:
                 nullptr, 0,
                 nullptr, 0,
                 nullptr, 0,
-                is_bindc ? ASR::abiType::BindC : ASR::abiType::Source, dflt_access, false, is_abstract,
+                is_bindc ? ASR::abiType::BindC : ASR::abiType::Source, s_access, false, is_abstract,
                 nullptr, 0, nullptr, parent_sym,
                 kind_params.p, kind_params.size());
             ASR::symbol_t* derived_type_sym = ASR::down_cast<ASR::symbol_t>(tmp);
@@ -2769,7 +2778,7 @@ public:
             s2c(al, to_lower(x.m_name)), nullptr, struct_dependencies.p, struct_dependencies.size(),
             data_member_names.p, data_member_names.size(),
             final_proc_names.p, final_proc_names.size(),
-            is_bindc ? ASR::abiType::BindC : ASR::abiType::Source, dflt_access, false, is_abstract, nullptr, 0, nullptr, parent_sym,
+            is_bindc ? ASR::abiType::BindC : ASR::abiType::Source, s_access, false, is_abstract, nullptr, 0, nullptr, parent_sym,
             nullptr, 0);
 
         ASR::symbol_t* derived_type_sym = ASR::down_cast<ASR::symbol_t>(tmp);
@@ -2863,6 +2872,10 @@ public:
             throw SemanticAbort();
         }
         ASR::symbol_t* parent_sym = nullptr;
+        ASR::accessType s_access = dflt_access;
+        if (assgnd_access.count(sym_name)) {
+            s_access = assgnd_access[sym_name];
+        }
         SetChar union_dependencies;
         union_dependencies.reserve(al, 1);
         for( auto& item: current_scope->get_scope() ) {
@@ -2905,7 +2918,7 @@ public:
         tmp = ASR::make_Union_t(al, x.base.base.loc, current_scope, 
                                 s2c(al, to_lower(x.m_name)), union_dependencies.p, union_dependencies.n,
                                 data_member_names.p, data_member_names.n, ASR::abiType::Source,
-                                dflt_access,  nullptr, 0, parent_sym);
+                                s_access,  nullptr, 0, parent_sym);
 
         ASR::symbol_t* union_type_sym = ASR::down_cast<ASR::symbol_t>(tmp);
         if (compiler_options.implicit_typing) {
