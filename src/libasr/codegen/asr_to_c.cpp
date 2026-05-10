@@ -2010,7 +2010,7 @@ R"(
                     }
                 }
                 if (var != nullptr && init_expr != nullptr && is_fixed_size
-                        && element_needs_null_init && !len_one_char_array
+                        && element_needs_null_init
                         && !dummy && indentation_level > 0) {
                     std::string storage_name = get_unique_local_name(
                         std::string(v_m_name) + "_char_storage");
@@ -2135,7 +2135,8 @@ R"(
                     }
                     sub += ";\n";
                     int64_t fixed_size = ASRUtils::get_fixed_size_of_array(m_dims, n_dims);
-                    if (len_one_char_array && fixed_size >= 0 && indentation_level > 0) {
+                    if (len_one_char_array && direct_char_pointer_init.empty()
+                            && fixed_size >= 0 && indentation_level > 0) {
                         sub += indent + format_type_c(dims, "char",
                             std::string(v_m_name) + "_byte_data", use_ref, dummy)
                             + " = {0};\n";

@@ -5272,7 +5272,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         ASR::Array_t *array_type = ASR::down_cast<ASR::Array_t>(member_type);
         int64_t len = 0;
         if (!CUtils::get_fixed_character_length_value(array_type->m_type, len)
-                || len <= 1) {
+                || len < 1) {
             return false;
         }
         int64_t n_int = ASRUtils::get_fixed_size_of_array(member_type);
