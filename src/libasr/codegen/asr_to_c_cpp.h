@@ -8578,10 +8578,31 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         std::string target_element = target_data + "[" + target_offset
             + " + " + index1_name + " * " + target_stride1
             + " + " + index2_name + " * " + target_stride2 + "]";
+        bool value_is_scalar =
+            !ASRUtils::is_array(ASRUtils::expr_type(plan.value_expr))
+            && !ASRUtils::is_array_t(plan.value_expr);
         std::string value_expr;
-        if (!get_c_rank2_scalarized_expr(plan.value_expr, index1_name,
-                index2_name, setup, value_expr)) {
-            return false;
+        if (value_is_scalar
+                && !is_c_plain_scalar_expr_for_section_fill(plan.value_expr)) {
+            self().visit_expr(*plan.value_expr);
+            std::string scalar_value = src;
+            setup += drain_tmp_buffer();
+            setup += extract_stmt_setup_from_expr(scalar_value);
+            ASR::ttype_t *scalar_type = ASRUtils::type_get_past_allocatable_pointer(
+                ASRUtils::expr_type(plan.value_expr));
+            if (scalar_type == nullptr || ASRUtils::is_array(scalar_type)) {
+                return false;
+            }
+            std::string scalar_name = get_unique_local_name("__lfortran_scalar_fill_value");
+            std::string indent(indentation_level * indentation_spaces, ' ');
+            setup += indent + CUtils::get_c_type_from_ttype_t(scalar_type)
+                + " " + scalar_name + " = " + scalar_value + ";\n";
+            value_expr = scalar_name;
+        } else {
+            if (!get_c_rank2_scalarized_expr(plan.value_expr, index1_name,
+                    index2_name, setup, value_expr)) {
+                return false;
+            }
         }
 
         std::string indent(indentation_level * indentation_spaces, ' ');
