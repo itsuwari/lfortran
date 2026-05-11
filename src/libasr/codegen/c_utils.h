@@ -514,7 +514,7 @@ namespace LCompilers {
                 body += indent + tab + "const_array->data = (" + element_type + "*) malloc(sizeof(" + element_type + ")*n);\n";
                 body += indent + tab + "const_array->n_dims = 1;\n";
                 body += indent + tab + "const_array->offset = 0;\n";
-                body += indent + tab + "const_array->dims[0].lower_bound = 0;\n";
+                body += indent + tab + "const_array->dims[0].lower_bound = 1;\n";
                 body += indent + tab + "const_array->dims[0].length = n;\n";
                 body += indent + tab + "const_array->dims[0].stride = 1;\n";
                 body += indent + tab + "for (int32_t i = 0; i < n; i++) {\n";

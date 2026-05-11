@@ -7989,9 +7989,11 @@ R"(    // Initialise Numpy
                     index += src;
                 } else {
                     std::string current_index = "";
-                    if (is_data_only_array) {
+                    if (is_data_only_array || is_raw_array_constant) {
                         std::string index_src = src;
-                        std::string dim_start = get_dim_start_src(m_dims[i]);
+                        std::string dim_start = is_raw_array_constant
+                            ? array + "->dims[" + std::to_string(i) + "].lower_bound"
+                            : get_dim_start_src(m_dims[i]);
                         current_index += "((" + index_src + ") - (" + dim_start + "))";
                     } else {
                         current_index += src;
@@ -8156,6 +8158,61 @@ R"(    // Initialise Numpy
             }
             last_expr_precedence = 2;
             return;
+        }
+        ASR::ttype_t *base_array_type = ASRUtils::type_get_past_allocatable_pointer(
+            ASRUtils::expr_type(x.m_v));
+        if (is_c && x.n_args == 1
+                && base_array_type != nullptr
+                && ASR::is_a<ASR::Array_t>(*base_array_type)
+                && ASRUtils::extract_n_dims_from_ttype(base_array_type) == 1
+                && !base_is_array_constant) {
+            ASR::array_physical_typeType base_phys =
+                ASR::down_cast<ASR::Array_t>(base_array_type)->m_physical_type;
+            bool descriptor_backed =
+                base_phys == ASR::array_physical_typeType::DescriptorArray
+                || base_phys == ASR::array_physical_typeType::PointerArray
+                || base_phys == ASR::array_physical_typeType::UnboundedPointerArray
+                || base_phys == ASR::array_physical_typeType::ISODescriptorArray
+                || base_phys == ASR::array_physical_typeType::NumPyArray;
+            if (descriptor_backed) {
+                this->visit_expr(*x.m_v);
+                std::string base_expr = src;
+                std::string setup = drain_tmp_buffer();
+                setup += extract_stmt_setup_from_expr(base_expr);
+
+                auto get_dim_expr = [&](ASR::expr_t *expr, const std::string &fallback) -> std::string {
+                    if (expr == nullptr) {
+                        return fallback;
+                    }
+                    this->visit_expr(*expr);
+                    std::string expr_src = src;
+                    setup += drain_tmp_buffer();
+                    setup += extract_stmt_setup_from_expr(expr_src);
+                    return expr_src;
+                };
+
+                std::string base_lb = base_expr + "->dims[0].lower_bound";
+                std::string base_ub = "(" + base_expr + "->dims[0].length + "
+                    + base_lb + " - 1)";
+                std::string section_lb = get_dim_expr(x.m_args[0].m_left, base_lb);
+                std::string section_ub = get_dim_expr(x.m_args[0].m_right, base_ub);
+                std::string section_step = get_dim_expr(x.m_args[0].m_step, "1");
+                std::string wrapper_type = get_c_declared_array_wrapper_type_name(x.m_type);
+
+                src = "(&(" + wrapper_type + "){ .data = " + base_expr
+                    + "->data, .dims = {{1, ((((" + section_ub + ") - ("
+                    + section_lb + ")) / (" + section_step + ")) + 1), ("
+                    + base_expr + "->dims[0].stride * (" + section_step
+                    + "))}}, .n_dims = 1, .offset = (" + base_expr
+                    + "->offset + (" + base_expr + "->dims[0].stride * (("
+                    + section_lb + ") - (" + base_lb
+                    + ")))), .is_allocated = true })";
+                if (!setup.empty()) {
+                    tmp_buffer_src.push_back(setup);
+                }
+                last_expr_precedence = 2;
+                return;
+            }
         }
         this->visit_expr(*x.m_v);
         last_expr_precedence = 2;
