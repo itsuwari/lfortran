@@ -4166,6 +4166,7 @@ R"(
     void visit_TranslationUnit(const ASR::TranslationUnit_t &x) {
         is_string_concat_present = false;
         global_scope = x.m_symtab;
+        emitted_c_tbp_parent_force_link_type_ids.clear();
         // All loose statements must be converted to a function, so the items
         // must be empty:
         LCOMPILERS_ASSERT(x.n_items == 0);
@@ -4352,6 +4353,7 @@ R"(
         deferred_c_struct_cleanup_defs.clear();
         emitted_c_struct_runtime_info_type_ids.clear();
         required_c_struct_runtime_info_type_ids.clear();
+        emitted_c_tbp_parent_force_link_type_ids.clear();
         global_scope = x.m_symtab;
         LCOMPILERS_ASSERT(x.n_items == 0);
         indentation_level = 0;

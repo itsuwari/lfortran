@@ -259,6 +259,7 @@ public:
     std::set<std::string> headers, user_headers, user_defines;
     std::set<std::string> emitted_pointer_backed_struct_names;
     std::set<int64_t> required_c_struct_runtime_info_type_ids;
+    std::set<int64_t> emitted_c_tbp_parent_force_link_type_ids;
     std::vector<std::string> tmp_buffer_src;
     SymbolTable* global_scope;
     int64_t lower_bound;
@@ -12437,13 +12438,16 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         collect_direct_concrete_struct_methods(parent_struct, parent_methods);
         std::string force_link_decls;
         std::string force_link_calls;
-        for (ASR::StructMethodDeclaration_t *method: parent_methods) {
-            std::string anchor_name = get_c_tbp_force_link_anchor_name(parent_struct, method);
-            force_link_decls += "extern void " + anchor_name + "(void);\n";
-            force_link_calls += "    " + anchor_name + "();\n";
-        }
+        int64_t parent_type_id = get_struct_runtime_type_id(parent_sym);
         int64_t child_type_id = get_struct_runtime_type_id(
             reinterpret_cast<ASR::symbol_t*>(const_cast<ASR::Struct_t*>(&x)));
+        if (emitted_c_tbp_parent_force_link_type_ids.insert(parent_type_id).second) {
+            for (ASR::StructMethodDeclaration_t *method: parent_methods) {
+                std::string anchor_name = get_c_tbp_force_link_anchor_name(parent_struct, method);
+                force_link_decls += "extern void " + anchor_name + "(void);\n";
+                force_link_calls += "    " + anchor_name + "();\n";
+            }
+        }
         std::string registrar_name = get_unique_local_name(
             "__lfortran_register_type_parent_"
             + CUtils::sanitize_c_identifier(x.m_name)
@@ -12454,7 +12458,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             "    _lfortran_register_c_type_parent("
             + std::to_string(child_type_id)
             + ", "
-            + std::to_string(get_struct_runtime_type_id(parent_sym))
+            + std::to_string(parent_type_id)
             + ");\n"
             + force_link_calls
             + "}\n\n";
