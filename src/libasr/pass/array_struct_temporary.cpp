@@ -2534,6 +2534,95 @@ static bool is_c_rank2_scalarizable_array_expr(ASR::expr_t *expr) {
     }
 }
 
+static bool is_c_rank2_scalarizable_after_rhs_temps_expr(Allocator &al,
+        ASR::expr_t *lhs_array_var, ASR::expr_t *expr) {
+    expr = ASRUtils::get_past_array_physical_cast(expr);
+    if (expr == nullptr) {
+        return false;
+    }
+    if (!ASRUtils::is_array(ASRUtils::expr_type(expr))) {
+        return true;
+    }
+    switch (expr->type) {
+        case ASR::exprType::ArrayReshape: {
+            return should_preserve_c_rank2_scalar_constructor_reshape(
+                al, lhs_array_var, expr);
+        }
+        case ASR::exprType::ArrayBroadcast: {
+            return is_c_rank2_scalarizable_after_rhs_temps_expr(
+                al, lhs_array_var,
+                ASR::down_cast<ASR::ArrayBroadcast_t>(expr)->m_array);
+        }
+        case ASR::exprType::RealBinOp: {
+            ASR::RealBinOp_t *binop = ASR::down_cast<ASR::RealBinOp_t>(expr);
+            return binop->m_op != ASR::binopType::Pow
+                && is_c_rank2_scalarizable_after_rhs_temps_expr(
+                    al, lhs_array_var, binop->m_left)
+                && is_c_rank2_scalarizable_after_rhs_temps_expr(
+                    al, lhs_array_var, binop->m_right);
+        }
+        case ASR::exprType::IntegerBinOp: {
+            ASR::IntegerBinOp_t *binop = ASR::down_cast<ASR::IntegerBinOp_t>(expr);
+            return binop->m_op != ASR::binopType::Pow
+                && is_c_rank2_scalarizable_after_rhs_temps_expr(
+                    al, lhs_array_var, binop->m_left)
+                && is_c_rank2_scalarizable_after_rhs_temps_expr(
+                    al, lhs_array_var, binop->m_right);
+        }
+        case ASR::exprType::UnsignedIntegerBinOp: {
+            ASR::UnsignedIntegerBinOp_t *binop =
+                ASR::down_cast<ASR::UnsignedIntegerBinOp_t>(expr);
+            return binop->m_op != ASR::binopType::Pow
+                && is_c_rank2_scalarizable_after_rhs_temps_expr(
+                    al, lhs_array_var, binop->m_left)
+                && is_c_rank2_scalarizable_after_rhs_temps_expr(
+                    al, lhs_array_var, binop->m_right);
+        }
+        case ASR::exprType::RealUnaryMinus: {
+            return is_c_rank2_scalarizable_after_rhs_temps_expr(
+                al, lhs_array_var,
+                ASR::down_cast<ASR::RealUnaryMinus_t>(expr)->m_arg);
+        }
+        case ASR::exprType::IntegerUnaryMinus: {
+            return is_c_rank2_scalarizable_after_rhs_temps_expr(
+                al, lhs_array_var,
+                ASR::down_cast<ASR::IntegerUnaryMinus_t>(expr)->m_arg);
+        }
+        default: {
+            return is_c_rank2_scalarizable_array_expr(expr);
+        }
+    }
+}
+
+static bool is_c_rank2_scalarized_nonself_assignment(Allocator &al,
+        ASR::expr_t *lhs_array_var, ASR::expr_t *target, ASR::expr_t *value) {
+    target = ASRUtils::get_past_array_physical_cast(target);
+    value = ASRUtils::get_past_array_physical_cast(value);
+    if (lhs_array_var == nullptr || target == nullptr || value == nullptr
+            || is_c_pointer_array_base_expr(target)
+            || is_c_pointer_array_base_expr(value)
+            || !is_c_rank2_full_array_expr(target)
+            || !is_c_rank2_scalarizable_after_rhs_temps_expr(
+                al, lhs_array_var, value)
+            || is_common_symbol_present_in_lhs_and_rhs(al, lhs_array_var, value)) {
+        return false;
+    }
+    ASR::ttype_t *target_type = ASRUtils::type_get_past_allocatable_pointer(
+        ASRUtils::expr_type(target));
+    ASR::ttype_t *value_type = ASRUtils::type_get_past_allocatable_pointer(
+        ASRUtils::expr_type(value));
+    ASR::ttype_t *target_element_type = target_type != nullptr
+        ? ASRUtils::type_get_past_array(target_type) : nullptr;
+    ASR::ttype_t *value_element_type = value_type != nullptr
+        ? ASRUtils::type_get_past_array(value_type) : nullptr;
+    return target_element_type != nullptr
+        && value_element_type != nullptr
+        && is_c_plain_scalar_array_element_type(target_element_type)
+        && is_c_plain_scalar_array_element_type(value_element_type)
+        && ASRUtils::types_equal(
+            target_element_type, value_element_type, nullptr, nullptr);
+}
+
 static bool c_rank2_full_ref_same_target(ASR::expr_t *target, ASR::expr_t *expr) {
     target = ASRUtils::get_past_array_physical_cast(target);
     expr = ASRUtils::get_past_array_physical_cast(expr);
@@ -4490,7 +4579,11 @@ class ReplaceExprWithTemporaryVisitor:
         }
         bool c_rank2_section_scalar_assignment = c_backend &&
             is_c_rank2_section_scalar_assignment(x.m_target, x.m_value);
+        bool c_rank2_scalarized_nonself_assignment = c_backend &&
+            is_c_rank2_scalarized_nonself_assignment(
+                al, lhs_array_var, x.m_target, x.m_value);
         if( !c_rank2_section_scalar_assignment &&
+            !c_rank2_scalarized_nonself_assignment &&
             (ASR::is_a<ASR::ArraySection_t>(*x.m_target) ||
             ASR::is_a<ASR::ArrayItem_t>(*x.m_target)) ) {
             ASRUtils::extract_indices(x.m_target, m_args, n_args);

@@ -1491,6 +1491,23 @@ class ArrayOpVisitor: public ASR::CallReplacerOnExpressionsVisitor<ArrayOpVisito
                 get_c_array_assignment_root_symbol(target));
     }
 
+    bool should_leave_rank2_scalarizable_array_assignment_for_c(
+            ASR::expr_t *target, ASR::expr_t *value) const {
+        return pass_options.c_backend
+            && target != nullptr
+            && value != nullptr
+            && !is_compiler_created_array_temp_expr(target)
+            && !is_whole_allocatable_or_pointer_array_target(target)
+            && !ASRUtils::is_allocatable(ASRUtils::expr_type(target))
+            && !is_c_pointer_array_base_expr(target)
+            && !is_c_pointer_array_base_expr(value)
+            && is_c_rank2_full_array_expr(target)
+            && is_c_rank2_scalarizable_array_expr(value)
+            && c_plain_array_copy_element_types_match(target, value)
+            && !c_expr_references_root_symbol(value,
+                get_c_array_assignment_root_symbol(target));
+    }
+
     bool should_leave_rank2_section_scalar_assignment_for_c(
             ASR::expr_t *target, ASR::expr_t *value) const {
         target = ASRUtils::get_past_array_physical_cast(target);
@@ -2833,6 +2850,14 @@ class ArrayOpVisitor: public ASR::CallReplacerOnExpressionsVisitor<ArrayOpVisito
             return;
         }
         if (should_leave_rank2_plain_data_copy_assignment_for_c(
+                xx.m_target, xx.m_value)) {
+            pass_result.push_back(al, ASRUtils::STMT(
+                ASRUtils::make_Assignment_t_util(al, loc, xx.m_target,
+                    xx.m_value, xx.m_overloaded, xx.m_realloc_lhs,
+                    xx.m_move_allocation)));
+            return;
+        }
+        if (should_leave_rank2_scalarizable_array_assignment_for_c(
                 xx.m_target, xx.m_value)) {
             pass_result.push_back(al, ASRUtils::STMT(
                 ASRUtils::make_Assignment_t_util(al, loc, xx.m_target,
