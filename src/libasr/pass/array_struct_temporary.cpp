@@ -2110,6 +2110,72 @@ static bool is_c_plain_scalar_array_element_type(ASR::ttype_t *type) {
         || ASRUtils::is_logical(*type);
 }
 
+static bool is_c_scalar_array_constructor(ASR::expr_t *expr) {
+    expr = ASRUtils::get_past_array_physical_cast(expr);
+    if (expr == nullptr || !ASR::is_a<ASR::ArrayConstructor_t>(*expr)) {
+        return false;
+    }
+    ASR::ArrayConstructor_t *constructor = ASR::down_cast<ASR::ArrayConstructor_t>(expr);
+    ASR::ttype_t *constructor_type = ASRUtils::type_get_past_allocatable_pointer(
+        constructor->m_type);
+    ASR::ttype_t *element_type = constructor_type != nullptr
+        ? ASRUtils::type_get_past_array(constructor_type) : nullptr;
+    if (constructor->n_args == 0
+            || constructor_type == nullptr
+            || ASRUtils::extract_n_dims_from_ttype(constructor_type) != 1
+            || !is_c_plain_scalar_array_element_type(element_type)) {
+        return false;
+    }
+    for (size_t i = 0; i < constructor->n_args; i++) {
+        if (ASR::is_a<ASR::ImpliedDoLoop_t>(*constructor->m_args[i])) {
+            return false;
+        }
+        ASR::ttype_t *arg_type = ASRUtils::type_get_past_allocatable_pointer(
+            ASRUtils::expr_type(constructor->m_args[i]));
+        if (arg_type == nullptr || ASRUtils::is_array(arg_type)
+                || !is_c_plain_scalar_array_element_type(arg_type)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static bool is_c_rank2_scalar_constructor_reshape(ASR::expr_t *expr) {
+    expr = ASRUtils::get_past_array_physical_cast(expr);
+    if (expr == nullptr || !ASR::is_a<ASR::ArrayReshape_t>(*expr)) {
+        return false;
+    }
+    ASR::ArrayReshape_t *reshape = ASR::down_cast<ASR::ArrayReshape_t>(expr);
+    ASR::ttype_t *result_type = ASRUtils::type_get_past_allocatable_pointer(
+        reshape->m_type);
+    ASR::ttype_t *source_type = ASRUtils::type_get_past_allocatable_pointer(
+        ASRUtils::expr_type(reshape->m_array));
+    ASR::ttype_t *result_element_type = result_type != nullptr
+        ? ASRUtils::type_get_past_array(result_type) : nullptr;
+    ASR::ttype_t *source_element_type = source_type != nullptr
+        ? ASRUtils::type_get_past_array(source_type) : nullptr;
+    return reshape->m_pad == nullptr
+        && reshape->m_order == nullptr
+        && result_type != nullptr
+        && source_type != nullptr
+        && ASRUtils::extract_n_dims_from_ttype(result_type) == 2
+        && ASRUtils::extract_n_dims_from_ttype(source_type) == 1
+        && ASRUtils::is_fixed_size_array(result_type)
+        && result_element_type != nullptr
+        && source_element_type != nullptr
+        && is_c_plain_scalar_array_element_type(result_element_type)
+        && is_c_plain_scalar_array_element_type(source_element_type)
+        && is_c_scalar_array_constructor(reshape->m_array)
+        && is_compile_time_integer_array_constant(reshape->m_shape);
+}
+
+static bool should_preserve_c_rank2_scalar_constructor_reshape(
+        Allocator &al, ASR::expr_t *lhs_var, ASR::expr_t *expr) {
+    return lhs_var != nullptr
+        && is_c_rank2_scalar_constructor_reshape(expr)
+        && !is_common_symbol_present_in_lhs_and_rhs(al, lhs_var, expr);
+}
+
 static bool is_c_proven_contiguous_array_base_expr(ASR::expr_t *expr) {
     expr = ASRUtils::get_past_array_physical_cast(expr);
     if (expr == nullptr || ASR::is_a<ASR::ArraySection_t>(*expr)
@@ -3109,6 +3175,11 @@ class ArgSimplifier: public ASR::CallReplacerOnExpressionsVisitor<ArgSimplifier>
                 && is_c_projected_array_section_expr(expr)) {
             return expr;
         }
+        if (c_backend
+                && should_preserve_c_rank2_scalar_constructor_reshape(
+                    al, lhs_var, expr)) {
+            return expr;
+        }
         if (ASRUtils::is_array(ASRUtils::expr_type(expr)) &&
             !ASR::is_a<ASR::ArrayBroadcast_t>(*expr) &&
             !is_vectorise_able(expr) &&
@@ -3417,6 +3488,11 @@ class ArgSimplifier: public ASR::CallReplacerOnExpressionsVisitor<ArgSimplifier>
         ASR::expr_t *result_expr = const_cast<ASR::expr_t*>(&x.base);
         ASR::ttype_t *result_element_type = ASRUtils::type_get_past_array(
             ASRUtils::type_get_past_allocatable_pointer(x.m_type));
+        if (c_backend
+                && should_preserve_c_rank2_scalar_constructor_reshape(
+                    al, lhs_var, result_expr)) {
+            return;
+        }
         if (c_backend && x.m_value != nullptr
                 && ASR::is_a<ASR::ArrayConstant_t>(*x.m_value)
                 && result_element_type != nullptr
@@ -3928,6 +4004,11 @@ class ReplaceExprWithTemporary: public ASR::BaseExprReplacer<ReplaceExprWithTemp
     }
 
     void replace_ArrayReshape(ASR::ArrayReshape_t* x) {
+        if (c_backend
+                && should_preserve_c_rank2_scalar_constructor_reshape(
+                    al, lhs_var, *current_expr)) {
+            return;
+        }
         replace_current_expr(x, "_array_reshape_");
     }
 
