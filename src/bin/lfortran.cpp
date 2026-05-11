@@ -172,6 +172,13 @@ std::string c_compiler_lto_flags(const CompilerOptions &compiler_options,
     if (!c_compiler_supports_lto_by_default(compiler_options, compiler)) {
         return "";
     }
+    if (c_is_macos_platform(compiler_options)) {
+        std::string name = std::filesystem::path(compiler).filename().string();
+        if (name == "cc" || name == "gcc" || name == "clang"
+                || LCompilers::startswith(name, "clang-")) {
+            return " -flto=thin";
+        }
+    }
     return " -flto";
 }
 
