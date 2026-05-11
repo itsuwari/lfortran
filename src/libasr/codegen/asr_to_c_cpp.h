@@ -12424,19 +12424,19 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         return "(void*)" + self_pointer_expr;
     }
 
-    std::string emit_c_tbp_parent_registration(const ASR::Struct_t &x) {
+    bool get_c_tbp_parent_registration_parts(const ASR::Struct_t &x,
+            std::string &force_link_decls, std::string &registration_body) {
         if (!is_c || x.m_parent == nullptr) {
-            return "";
+            return false;
         }
         ensure_c_backend_constructor_macro_decl();
         ASR::symbol_t *parent_sym = ASRUtils::symbol_get_past_external(x.m_parent);
         if (parent_sym == nullptr || !ASR::is_a<ASR::Struct_t>(*parent_sym)) {
-            return "";
+            return false;
         }
         ASR::Struct_t *parent_struct = ASR::down_cast<ASR::Struct_t>(parent_sym);
         std::vector<ASR::StructMethodDeclaration_t*> parent_methods;
         collect_direct_concrete_struct_methods(parent_struct, parent_methods);
-        std::string force_link_decls;
         std::string force_link_calls;
         int64_t parent_type_id = get_struct_runtime_type_id(parent_sym);
         int64_t child_type_id = get_struct_runtime_type_id(
@@ -12448,6 +12448,25 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 force_link_calls += "    " + anchor_name + "();\n";
             }
         }
+        registration_body = "    _lfortran_register_c_type_parent("
+            + std::to_string(child_type_id)
+            + ", "
+            + std::to_string(parent_type_id)
+            + ");\n"
+            + force_link_calls;
+        return true;
+    }
+
+    std::string emit_c_tbp_parent_registration(const ASR::Struct_t &x) {
+        std::string force_link_decls;
+        std::string registration_body;
+        if (!get_c_tbp_parent_registration_parts(
+                x, force_link_decls, registration_body)) {
+            return "";
+        }
+        ASR::symbol_t *struct_sym =
+            reinterpret_cast<ASR::symbol_t*>(const_cast<ASR::Struct_t*>(&x));
+        int64_t child_type_id = get_struct_runtime_type_id(struct_sym);
         std::string registrar_name = get_unique_local_name(
             "__lfortran_register_type_parent_"
             + CUtils::sanitize_c_identifier(x.m_name)
@@ -12455,12 +12474,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         return force_link_decls
             + "LFORTRAN_C_BACKEND_CONSTRUCTOR LFORTRAN_C_BACKEND_WEAK void "
             + registrar_name + "(void)\n{\n"
-            "    _lfortran_register_c_type_parent("
-            + std::to_string(child_type_id)
-            + ", "
-            + std::to_string(parent_type_id)
-            + ");\n"
-            + force_link_calls
+            + registration_body
             + "}\n\n";
     }
 

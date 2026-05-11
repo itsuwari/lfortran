@@ -41,7 +41,8 @@ public:
     std::string string_concat_helper_name;
     bool defer_c_tbp_parent_registration_defs = false;
     std::set<int64_t> deferred_c_tbp_parent_registration_type_ids;
-    std::string deferred_c_tbp_parent_registration_defs;
+    std::string deferred_c_tbp_parent_registration_decls;
+    std::string deferred_c_tbp_parent_registration_body;
     bool defer_c_struct_runtime_info_defs = false;
     std::string deferred_c_struct_runtime_info_defs;
     bool defer_c_struct_cleanup_defs = false;
@@ -2008,20 +2009,32 @@ R"(
             std::string &src_dest) {
         SymbolTable *saved_scope = current_scope;
         current_scope = global_scope;
-        std::string registration = emit_c_tbp_parent_registration(x);
-        current_scope = saved_scope;
-        if (registration.empty()) {
+        if (!defer_c_tbp_parent_registration_defs) {
+            std::string registration = emit_c_tbp_parent_registration(x);
+            current_scope = saved_scope;
+            if (registration.empty()) {
+                return;
+            }
+            src_dest += registration;
             return;
         }
-        if (!defer_c_tbp_parent_registration_defs) {
-            src_dest += registration;
+        if (x.m_parent == nullptr) {
+            current_scope = saved_scope;
             return;
         }
         int64_t type_id = get_struct_runtime_type_id(
             reinterpret_cast<ASR::symbol_t*>(const_cast<ASR::Struct_t*>(&x)));
         if (deferred_c_tbp_parent_registration_type_ids.insert(type_id).second) {
-            deferred_c_tbp_parent_registration_defs += registration;
+            std::string force_link_decls;
+            std::string registration_body;
+            bool has_registration = get_c_tbp_parent_registration_parts(
+                x, force_link_decls, registration_body);
+            if (has_registration) {
+                deferred_c_tbp_parent_registration_decls += force_link_decls;
+                deferred_c_tbp_parent_registration_body += registration_body;
+            }
         }
+        current_scope = saved_scope;
     }
 
     std::string emit_c_struct_cleanup_registration(const ASR::Struct_t &x) {
@@ -4373,7 +4386,8 @@ R"(
         compact_constant_data_decls.clear();
         defer_c_tbp_parent_registration_defs = true;
         deferred_c_tbp_parent_registration_type_ids.clear();
-        deferred_c_tbp_parent_registration_defs.clear();
+        deferred_c_tbp_parent_registration_decls.clear();
+        deferred_c_tbp_parent_registration_body.clear();
         defer_c_struct_runtime_info_defs = true;
         deferred_c_struct_runtime_info_defs.clear();
         defer_c_struct_cleanup_defs = true;
@@ -4608,8 +4622,12 @@ R"(
         if (!split_owned_defs.empty()) {
             shared_body += split_owned_defs + "\n";
         }
-        if (!deferred_c_tbp_parent_registration_defs.empty()) {
-            shared_body += deferred_c_tbp_parent_registration_defs + "\n";
+        if (!deferred_c_tbp_parent_registration_body.empty()) {
+            shared_body += deferred_c_tbp_parent_registration_decls
+                + "LFORTRAN_C_BACKEND_CONSTRUCTOR static void "
+                "__lfortran_register_type_parents(void)\n{\n"
+                + deferred_c_tbp_parent_registration_body
+                + "}\n\n";
         }
         if (!deferred_c_struct_runtime_info_defs.empty()) {
             shared_body += deferred_c_struct_runtime_info_defs + "\n";
