@@ -49,6 +49,7 @@ public:
     std::string deferred_c_struct_cleanup_defs;
     std::set<int64_t> emitted_c_struct_runtime_info_type_ids;
     bool suppress_c_struct_cleanup_registration = false;
+    bool suppress_c_struct_runtime_info_registration = false;
 
     bool target_offload_enabled;
     std::vector<std::string> kernel_func_names;
@@ -1724,10 +1725,13 @@ R"(
                 if (struct_sym == nullptr) {
                     continue;
                 }
-                bool saved_suppress = suppress_c_struct_cleanup_registration;
+                bool saved_cleanup_suppress = suppress_c_struct_cleanup_registration;
+                bool saved_runtime_info_suppress = suppress_c_struct_runtime_info_registration;
                 suppress_c_struct_cleanup_registration = mod->m_loaded_from_mod;
+                suppress_c_struct_runtime_info_registration = mod->m_loaded_from_mod;
                 visit_symbol(*struct_sym);
-                suppress_c_struct_cleanup_registration = saved_suppress;
+                suppress_c_struct_cleanup_registration = saved_cleanup_suppress;
+                suppress_c_struct_runtime_info_registration = saved_runtime_info_suppress;
                 decls += src;
             }
         }
@@ -2301,6 +2305,9 @@ R"(
 
     void append_c_struct_runtime_info_registration(const ASR::Struct_t &x,
             std::string &src_dest) {
+        if (suppress_c_struct_runtime_info_registration) {
+            return;
+        }
         std::string registration = emit_c_struct_runtime_info_registration(x);
         if (registration.empty()) {
             return;
@@ -4184,6 +4191,8 @@ R"(
         emitted_c_tbp_parent_force_link_type_ids.clear();
         defer_c_struct_runtime_info_defs = false;
         deferred_c_struct_runtime_info_defs.clear();
+        suppress_c_struct_cleanup_registration = false;
+        suppress_c_struct_runtime_info_registration = false;
         // All loose statements must be converted to a function, so the items
         // must be empty:
         LCOMPILERS_ASSERT(x.n_items == 0);
@@ -4373,6 +4382,8 @@ R"(
         emitted_c_struct_runtime_info_type_ids.clear();
         required_c_struct_runtime_info_type_ids.clear();
         emitted_c_tbp_parent_force_link_type_ids.clear();
+        suppress_c_struct_cleanup_registration = false;
+        suppress_c_struct_runtime_info_registration = false;
         global_scope = x.m_symtab;
         LCOMPILERS_ASSERT(x.n_items == 0);
         indentation_level = 0;
