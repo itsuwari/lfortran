@@ -16,6 +16,20 @@
 #define LFORTRAN_C_BACKEND_CONSTRUCTOR
 #endif
 #endif
+#ifndef LFORTRAN_C_BACKEND_WEAK
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_WEAK __attribute__((weak))
+#else
+#define LFORTRAN_C_BACKEND_WEAK static
+#endif
+#endif
+#ifndef LFORTRAN_C_BACKEND_COMMON
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_COMMON __attribute__((common))
+#else
+#define LFORTRAN_C_BACKEND_COMMON
+#endif
+#endif
 
 
 struct dimension_descriptor
@@ -27,6 +41,20 @@ struct dimension_descriptor
 #define LFORTRAN_C_BACKEND_CONSTRUCTOR __attribute__((constructor))
 #else
 #define LFORTRAN_C_BACKEND_CONSTRUCTOR
+#endif
+#endif
+#ifndef LFORTRAN_C_BACKEND_WEAK
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_WEAK __attribute__((weak))
+#else
+#define LFORTRAN_C_BACKEND_WEAK static
+#endif
+#endif
+#ifndef LFORTRAN_C_BACKEND_COMMON
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_COMMON __attribute__((common))
+#else
+#define LFORTRAN_C_BACKEND_COMMON
 #endif
 #endif
 
@@ -112,7 +140,7 @@ void __lfortran_c_backend_specialized_pass_array_no_copy_01_b__outer_real_______
     const int32_t __lfortran_trans_dim2_stride = trans->dims[1].stride;
     struct r64_____ __lfortran_array_view2 = { .data = xyz->data, .dims = {{1, xyz->dims[0].length, xyz->dims[0].stride}, {1, xyz->dims[1].length, xyz->dims[1].stride}}, .n_dims = 2, .offset = xyz->offset, .is_allocated = xyz->is_allocated };
     struct r64_____ __lfortran_array_view3 = { .data = trans->data, .dims = {{1, trans->dims[0].length, trans->dims[0].stride}, {1, trans->dims[1].length, trans->dims[1].stride}}, .n_dims = 2, .offset = trans->offset, .is_allocated = trans->is_allocated };
-    __lfortran_c_backend_specialized_pass_array_no_copy_01_a__inner_real_______1_real_______2__StructType(((struct c_backend_specialized_pass_array_no_copy_01_a__container*)(mol)), &__lfortran_array_view2, ((int32_t) (&__lfortran_array_view2)->dims[0].length), ((int32_t) (&__lfortran_array_view2)->dims[1].length), &__lfortran_array_view3, ((int32_t) (&__lfortran_array_view3)->dims[0].length), ((int32_t) (&__lfortran_array_view3)->dims[1].length), &(*total));
+    __lfortran_c_backend_specialized_pass_array_no_copy_01_a__inner_real_______1_real_______2__StructType(((struct c_backend_specialized_pass_array_no_copy_01_a__container*)(mol)), &__lfortran_array_view2, ((int32_t) xyz->dims[0].length), ((int32_t) xyz->dims[1].length), &__lfortran_array_view3, ((int32_t) trans->dims[0].length), ((int32_t) trans->dims[1].length), &(*total));
 }
 
 void __lfortran_c_backend_specialized_pass_array_no_copy_01_b__outer__StructType(struct c_backend_specialized_pass_array_no_copy_01_a__container* restrict mol, struct r64_____* restrict xyz, struct r64_____* restrict trans, double *total)
@@ -123,7 +151,10 @@ void __lfortran_c_backend_specialized_pass_array_no_copy_01_b__outer__StructType
 int main(int argc, char* argv[])
 {
     _lpython_set_argv(argc, argv);
-    static const double __libasr_created__array_reshape_array_data[6] = {1.0000000000000000e+01, 2.0000000000000000e+01, 3.0000000000000000e+01, 4.0000000000000000e+01, 5.0000000000000000e+01, 6.0000000000000000e+01};
+    static const double __libasr_created__array_constant__data[3] = {0x1.9000000000000p+6, 0x1.9000000000000p+7, 0x1.2c00000000000p+8};
+    static struct r64___ __libasr_created__array_constant__value = { .data = (double*) __libasr_created__array_constant__data, .n_dims = 1, .offset = 0, .is_allocated = true, .dims = {{1, 3, 1}} };
+    struct r64___* __libasr_created__array_constant_ = &__libasr_created__array_constant__value;
+    static const double __libasr_created__array_reshape_array_data[6] = {0x1.4000000000000p+3, 0x1.4000000000000p+4, 0x1.e000000000000p+4, 0x1.4000000000000p+5, 0x1.9000000000000p+5, 0x1.e000000000000p+5};
     static struct r64___ __libasr_created__array_reshape_array_value = { .data = (double*) __libasr_created__array_reshape_array_data, .n_dims = 1, .offset = 0, .is_allocated = true, .dims = {{1, 6, 1}} };
     struct r64___* __libasr_created__array_reshape_array = &__libasr_created__array_reshape_array_value;
     struct i32___ __libasr_created__array_reshape_shape_value;
@@ -167,23 +198,37 @@ int main(int argc, char* argv[])
     xyz->dims[1].lower_bound = 1;
     xyz->dims[1].length = 2;
     xyz->dims[1].stride = (1*3);
-    mol->bias =   1.00000000000000000e+00;
+    mol->bias = 0x1.0000000000000p+0;
     __libasr_created__array_reshape_shape_data[(0 + (1 * (1 - 1)))] = 3;
     __libasr_created__array_reshape_shape_data[(0 + (1 * (2 - 1)))] = 2;
-    xyz_data[((0 + (1 * (1 - 1))) + ((1 * 3) * (1 - 1)))] =   1.00000000000000000e+01;
-    xyz_data[((0 + (1 * (2 - 1))) + ((1 * 3) * (1 - 1)))] =   2.00000000000000000e+01;
-    xyz_data[((0 + (1 * (3 - 1))) + ((1 * 3) * (1 - 1)))] =   3.00000000000000000e+01;
-    xyz_data[((0 + (1 * (1 - 1))) + ((1 * 3) * (2 - 1)))] =   4.00000000000000000e+01;
-    xyz_data[((0 + (1 * (2 - 1))) + ((1 * 3) * (2 - 1)))] =   5.00000000000000000e+01;
-    xyz_data[((0 + (1 * (3 - 1))) + ((1 * 3) * (2 - 1)))] =   6.00000000000000000e+01;
-    trans_data[(0 + (1 * ((((int32_t)trans->dims[1-1].lower_bound) + ((1) - (1)) * (1)) - 1)))] =   1.00000000000000000e+02;
-    trans_data[(0 + (1 * ((((int32_t)trans->dims[1-1].lower_bound) + ((2) - (1)) * (1)) - 1)))] =   2.00000000000000000e+02;
-    trans_data[(0 + (1 * ((((int32_t)trans->dims[1-1].lower_bound) + ((3) - (1)) * (1)) - 1)))] =   3.00000000000000000e+02;
-    total =   0.00000000000000000e+00;
+    xyz_data[((0 + (1 * (1 - 1))) + ((1 * 3) * (1 - 1)))] = 0x1.4000000000000p+3;
+    xyz_data[((0 + (1 * (2 - 1))) + ((1 * 3) * (1 - 1)))] = 0x1.4000000000000p+4;
+    xyz_data[((0 + (1 * (3 - 1))) + ((1 * 3) * (1 - 1)))] = 0x1.e000000000000p+4;
+    xyz_data[((0 + (1 * (1 - 1))) + ((1 * 3) * (2 - 1)))] = 0x1.4000000000000p+5;
+    xyz_data[((0 + (1 * (2 - 1))) + ((1 * 3) * (2 - 1)))] = 0x1.9000000000000p+5;
+    xyz_data[((0 + (1 * (3 - 1))) + ((1 * 3) * (2 - 1)))] = 0x1.e000000000000p+5;
+    {
+    double *__lfortran_lhs1copy_data = trans->data;
+    int64_t __lfortran_lhs1copy_stride = 1 * (1);
+    int64_t __lfortran_lhs1copy_offset = (0 + 3 * ((1) - 1));
+    int64_t __lfortran_lhs1copy_length = (((((1 + 3 - 1)) - (1)) / (1)) + 1);
+    double *__lfortran_rhs1copy_data = __libasr_created__array_constant_->data;
+    int64_t __lfortran_rhs1copy_stride = __libasr_created__array_constant_->dims[0].stride * (1);
+    int64_t __lfortran_rhs1copy_offset = __libasr_created__array_constant_->offset;
+    int64_t __lfortran_rhs1copy_length = (((((__libasr_created__array_constant_->dims[0].lower_bound + __libasr_created__array_constant_->dims[0].length - 1)) - (__libasr_created__array_constant_->dims[0].lower_bound)) / (1)) + 1);
+        if (__lfortran_lhs1copy_stride == 1 && __lfortran_rhs1copy_stride == 1) {
+            memcpy(__lfortran_lhs1copy_data + __lfortran_lhs1copy_offset, __lfortran_rhs1copy_data + __lfortran_rhs1copy_offset, (size_t)(__lfortran_lhs1copy_length) * sizeof(*__lfortran_lhs1copy_data));
+        } else {
+            for (int64_t __lfortran_i = 0; __lfortran_i < __lfortran_lhs1copy_length; __lfortran_i++) {
+                __lfortran_lhs1copy_data[__lfortran_lhs1copy_offset + __lfortran_i * __lfortran_lhs1copy_stride] = __lfortran_rhs1copy_data[__lfortran_rhs1copy_offset + __lfortran_i * __lfortran_rhs1copy_stride];
+            }
+        }
+    }
+    total = 0x0.0000000000000p+0;
     struct r64_____ __lfortran_array_view2 = { .data = xyz->data, .dims = {{1, xyz->dims[0].length, xyz->dims[0].stride}, {1, xyz->dims[1].length, xyz->dims[1].stride}}, .n_dims = 2, .offset = xyz->offset, .is_allocated = xyz->is_allocated };
     struct r64_____ __lfortran_array_view3 = { .data = trans->data, .dims = {{1, trans->dims[0].length, trans->dims[0].stride}, {1, trans->dims[1].length, trans->dims[1].stride}}, .n_dims = 2, .offset = trans->offset, .is_allocated = trans->is_allocated };
-    __lfortran_c_backend_specialized_pass_array_no_copy_01_b__outer_real_______1_real_______2__StructType(((struct c_backend_specialized_pass_array_no_copy_01_a__container*)(mol)), &__lfortran_array_view2, ((int32_t) (&__lfortran_array_view2)->dims[0].length), ((int32_t) (&__lfortran_array_view2)->dims[1].length), &__lfortran_array_view3, ((int32_t) (&__lfortran_array_view3)->dims[0].length), ((int32_t) (&__lfortran_array_view3)->dims[1].length), &total);
-    if (fabs(total -   3.21000000000000000e+02) >   9.99999999999999980e-13) {
+    __lfortran_c_backend_specialized_pass_array_no_copy_01_b__outer_real_______1_real_______2__StructType(((struct c_backend_specialized_pass_array_no_copy_01_a__container*)(mol)), &__lfortran_array_view2, ((int32_t) xyz->dims[0].length), ((int32_t) xyz->dims[1].length), &__lfortran_array_view3, ((int32_t) trans->dims[0].length), ((int32_t) trans->dims[1].length), &total);
+    if (fabs(total - 0x1.4100000000000p+8) > 0x1.19799812dea11p-40) {
         fprintf(stderr, "ERROR STOP");
         exit(1);
     }

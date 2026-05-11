@@ -229,6 +229,7 @@ public:
     std::vector<CLocalDescriptorCleanup> current_function_local_descriptors;
     std::set<uint64_t> current_c_struct_cleanup_stack;
     std::map<std::string, CArrayDescriptorCache> current_function_array_descriptor_cache;
+    std::map<std::string, std::vector<std::string>> c_no_copy_descriptor_view_lengths;
     std::map<std::string, CScalarExprCacheEntry> current_function_pow_cache;
     std::map<std::string, CLazyAutomaticArrayStorage>
         current_function_lazy_automatic_array_storage;
@@ -481,6 +482,7 @@ public:
         current_function_local_allocatable_structs.clear();
         current_function_local_structs.clear();
         current_function_local_descriptors.clear();
+        c_no_copy_descriptor_view_lengths.clear();
     }
 
     std::string emit_c_lazy_automatic_array_temp_allocation(
@@ -4587,6 +4589,7 @@ R"(#include <stdio.h>
         current_function_local_structs.clear();
         current_function_local_descriptors.clear();
         current_function_array_descriptor_cache.clear();
+        c_no_copy_descriptor_view_lengths.clear();
         current_function_pow_cache.clear();
         current_function_lazy_automatic_array_storage.clear();
         SymbolTable* current_scope_copy = current_scope;
@@ -4888,6 +4891,7 @@ R"(#include <stdio.h>
             current_function_local_structs.clear();
             current_function_local_descriptors.clear();
             current_function_array_descriptor_cache.clear();
+            c_no_copy_descriptor_view_lengths.clear();
             current_function_pow_cache.clear();
             current_function_lazy_automatic_array_storage.clear();
             indentation_level -= 1;
@@ -9873,19 +9877,24 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
 
         std::string saved_src = src;
         std::string dims_init;
+        std::vector<std::string> view_lengths;
+        view_lengths.reserve(target_rank);
         for (int i = 0; i < target_rank; i++) {
             std::string lower_bound = "1";
             if (target_dims[i].m_start != nullptr) {
                 self().visit_expr(*target_dims[i].m_start);
                 lower_bound = src;
             }
+            std::string length = source_src_copy + "->dims["
+                + std::to_string(i) + "].length";
             if (i > 0) {
                 dims_init += ", ";
             }
             dims_init += "{"
                 + lower_bound + ", "
-                + source_src_copy + "->dims[" + std::to_string(i) + "].length, "
+                + length + ", "
                 + source_src_copy + "->dims[" + std::to_string(i) + "].stride}";
+            view_lengths.push_back(length);
         }
         src = saved_src;
 
@@ -9908,6 +9917,8 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             + ", .offset = " + offset
             + ", .is_allocated = " + is_allocated + " };\n";
         tmp_buffer_src.push_back(view_decl);
+        c_no_copy_descriptor_view_lengths[
+            get_c_descriptor_member_base_expr("&" + view_name)] = view_lengths;
         return "&" + view_name;
     }
 
@@ -10995,8 +11006,15 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                     && param != nullptr
                     && is_pass_array_by_data_hidden_arg_name(
                         std::string(param->m_name), no_copy_hidden_base_name)) {
-                args += "((int32_t) " + no_copy_hidden_shape_src + "->dims["
-                    + std::to_string(no_copy_hidden_dim) + "].length)";
+                std::string length_src = no_copy_hidden_shape_src + "->dims["
+                    + std::to_string(no_copy_hidden_dim) + "].length";
+                auto view_lengths =
+                    c_no_copy_descriptor_view_lengths.find(no_copy_hidden_shape_src);
+                if (view_lengths != c_no_copy_descriptor_view_lengths.end()
+                        && no_copy_hidden_dim < (int)view_lengths->second.size()) {
+                    length_src = view_lengths->second[no_copy_hidden_dim];
+                }
+                args += "((int32_t) " + length_src + ")";
                 no_copy_hidden_dim++;
                 if (i < n_args - 1) args += ", ";
                 continue;
@@ -11583,8 +11601,15 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                     && param != nullptr
                     && is_pass_array_by_data_hidden_arg_name(
                         std::string(param->m_name), no_copy_hidden_base_name)) {
-                args += "((int32_t) " + no_copy_hidden_shape_src + "->dims["
-                    + std::to_string(no_copy_hidden_dim) + "].length)";
+                std::string length_src = no_copy_hidden_shape_src + "->dims["
+                    + std::to_string(no_copy_hidden_dim) + "].length";
+                auto view_lengths =
+                    c_no_copy_descriptor_view_lengths.find(no_copy_hidden_shape_src);
+                if (view_lengths != c_no_copy_descriptor_view_lengths.end()
+                        && no_copy_hidden_dim < (int)view_lengths->second.size()) {
+                    length_src = view_lengths->second[no_copy_hidden_dim];
+                }
+                args += "((int32_t) " + length_src + ")";
                 no_copy_hidden_dim++;
                 if (i < n_args - 1) args += ", ";
                 continue;
