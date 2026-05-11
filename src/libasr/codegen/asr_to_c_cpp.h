@@ -7849,7 +7849,8 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
     bool get_c_rank2_full_array_access(ASR::expr_t *expr, const std::string &prefix,
             std::string &setup, std::string &data_name, std::string &offset_name,
             std::string &stride1_name, std::string &stride2_name,
-            std::string &length1_name, std::string &length2_name) {
+            std::string &length1_name, std::string &length2_name,
+            bool need_lengths=true) {
         expr = unwrap_c_array_expr(expr);
         if (expr == nullptr || !is_c_rank2_unit_slice_array_expr(expr)) {
             return false;
@@ -7914,8 +7915,13 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         offset_name = get_unique_local_name(prefix + "_offset");
         stride1_name = get_unique_local_name(prefix + "_stride1");
         stride2_name = get_unique_local_name(prefix + "_stride2");
-        length1_name = get_unique_local_name(prefix + "_length1");
-        length2_name = get_unique_local_name(prefix + "_length2");
+        if (need_lengths) {
+            length1_name = get_unique_local_name(prefix + "_length1");
+            length2_name = get_unique_local_name(prefix + "_length2");
+        } else {
+            length1_name.clear();
+            length2_name.clear();
+        }
         std::string base_data = use_static_base_dims ? base + "_data" :
             (cache && !cache->data.empty() ? cache->data : base + "->data");
         std::vector<std::string> base_lbs = {
@@ -7970,10 +7976,12 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             + computed_strides[0] + ";\n";
         setup += indent + "int64_t " + stride2_name + " = "
             + computed_strides[1] + ";\n";
-        setup += indent + "int64_t " + length1_name + " = "
-            + computed_lengths[0] + ";\n";
-        setup += indent + "int64_t " + length2_name + " = "
-            + computed_lengths[1] + ";\n";
+        if (need_lengths) {
+            setup += indent + "int64_t " + length1_name + " = "
+                + computed_lengths[0] + ";\n";
+            setup += indent + "int64_t " + length2_name + " = "
+                + computed_lengths[1] + ";\n";
+        }
         return true;
     }
 
@@ -7998,7 +8006,8 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             case ASR::exprType::ArraySection: {
                 std::string data, offset, stride1, stride2, length1, length2;
                 if (!get_c_rank2_full_array_access(expr, "__lfortran_rhs2",
-                        setup, data, offset, stride1, stride2, length1, length2)) {
+                        setup, data, offset, stride1, stride2, length1, length2,
+                        false)) {
                     return false;
                 }
                 out = data + "[" + offset + " + " + index1_name + " * "
@@ -8123,9 +8132,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             plan.value_expr = x.m_value;
             return plan;
         }
-        if ((ASRUtils::is_array(ASRUtils::expr_type(x.m_value))
-                    || ASRUtils::is_array_t(x.m_value))
-                && !is_c_whole_allocatable_or_pointer_array_expr(unwrapped_target_expr)
+        if (!is_c_whole_allocatable_or_pointer_array_expr(unwrapped_target_expr)
                 && is_c_rank2_full_array_expr(unwrapped_target_expr)
                 && is_c_rank2_scalarizable_array_expr(x.m_value)
                 && !c_expr_references_root_symbol(x.m_value,
@@ -8383,7 +8390,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         std::string source_length1, source_length2;
         if (!get_c_rank2_full_array_access(value_expr, "__lfortran_rhs2copy",
                 setup, source_data, source_offset, source_stride1, source_stride2,
-                source_length1, source_length2)) {
+                source_length1, source_length2, false)) {
             return false;
         }
 
