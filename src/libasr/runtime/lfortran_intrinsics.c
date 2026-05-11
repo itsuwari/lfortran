@@ -366,6 +366,16 @@ LFORTRAN_API size_t _lfortran_get_c_struct_size_or_die(const char *context,
     exit(1);
 }
 
+LFORTRAN_API void _lfortran_c_struct_memcpy_deepcopy(void *src, void *dest) {
+    if (src == NULL || dest == NULL) {
+        return;
+    }
+    int64_t type_id = *((int64_t*) src);
+    size_t size = _lfortran_get_c_struct_size_or_die(
+        "plain C struct deepcopy", type_id);
+    memcpy(dest, src, size);
+}
+
 LFORTRAN_API void _lfortran_register_c_struct_deepcopy(int64_t type_id,
         lfortran_c_struct_deepcopy_func_ptr func) {
     if (type_id == 0 || func == NULL) {

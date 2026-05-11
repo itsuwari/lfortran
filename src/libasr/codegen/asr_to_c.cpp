@@ -2152,6 +2152,87 @@ R"(
         return false;
     }
 
+    bool c_member_can_use_memcpy_deepcopy(ASR::Variable_t *member_var,
+            std::set<uint64_t> &seen) {
+        if (member_var == nullptr || member_var->m_type == nullptr) {
+            return false;
+        }
+        if (ASRUtils::is_allocatable(member_var->m_type)
+                || ASRUtils::is_pointer(member_var->m_type)) {
+            return false;
+        }
+        ASR::ttype_t *member_type = ASRUtils::type_get_past_allocatable_pointer(
+            member_var->m_type);
+        if (member_type == nullptr || ASRUtils::is_class_type(member_type)
+                || ASRUtils::is_character(*member_type)) {
+            return false;
+        }
+        if (ASRUtils::is_array(member_var->m_type)) {
+            ASR::dimension_t *m_dims = nullptr;
+            size_t n_dims = ASRUtils::extract_dimensions_from_ttype(
+                member_var->m_type, m_dims);
+            if (!ASRUtils::is_fixed_size_array(m_dims, n_dims)) {
+                return false;
+            }
+            ASR::ttype_t *element_type = ASRUtils::extract_type(member_type);
+            return element_type != nullptr
+                && !ASRUtils::is_character(*element_type)
+                && !ASRUtils::is_class_type(element_type)
+                && !CUtils::is_non_primitive_DT(element_type)
+                && !ASR::is_a<ASR::UnionType_t>(*element_type);
+        }
+        if (ASR::is_a<ASR::StructType_t>(*member_type)) {
+            if (member_var->m_type_declaration == nullptr) {
+                return false;
+            }
+            ASR::symbol_t *member_struct_sym = ASRUtils::symbol_get_past_external(
+                member_var->m_type_declaration);
+            return member_struct_sym != nullptr
+                && ASR::is_a<ASR::Struct_t>(*member_struct_sym)
+                && c_struct_can_use_memcpy_deepcopy(
+                    *ASR::down_cast<ASR::Struct_t>(member_struct_sym), seen);
+        }
+        return !CUtils::is_non_primitive_DT(member_type)
+            && !ASR::is_a<ASR::UnionType_t>(*member_type);
+    }
+
+    bool c_struct_can_use_memcpy_deepcopy(const ASR::Struct_t &x,
+            std::set<uint64_t> &seen) {
+        uint64_t struct_key = get_hash(
+            reinterpret_cast<ASR::asr_t*>(const_cast<ASR::Struct_t*>(&x)));
+        if (!seen.insert(struct_key).second) {
+            return true;
+        }
+        if (x.m_parent != nullptr) {
+            ASR::symbol_t *parent_sym = ASRUtils::symbol_get_past_external(
+                x.m_parent);
+            if (parent_sym == nullptr || !ASR::is_a<ASR::Struct_t>(*parent_sym)
+                    || !c_struct_can_use_memcpy_deepcopy(
+                        *ASR::down_cast<ASR::Struct_t>(parent_sym), seen)) {
+                return false;
+            }
+        }
+        for (size_t i = 0; i < x.n_members; i++) {
+            ASR::symbol_t *member_sym0 = x.m_symtab->get_symbol(x.m_members[i]);
+            if (member_sym0 == nullptr) {
+                return false;
+            }
+            ASR::symbol_t *member_sym = ASRUtils::symbol_get_past_external(
+                member_sym0);
+            if (member_sym == nullptr || !ASR::is_a<ASR::Variable_t>(*member_sym)
+                    || !c_member_can_use_memcpy_deepcopy(
+                        ASR::down_cast<ASR::Variable_t>(member_sym), seen)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    bool c_struct_can_use_memcpy_deepcopy(const ASR::Struct_t &x) {
+        std::set<uint64_t> seen;
+        return c_struct_can_use_memcpy_deepcopy(x, seen);
+    }
+
     bool c_struct_needs_runtime_info(const ASR::Struct_t &x,
             ASR::symbol_t *struct_sym) {
         if (!is_c) {
@@ -2184,16 +2265,21 @@ R"(
         Allocator al_tmp(4*1024);
         ASR::expr_t *struct_expr = ASRUtils::EXPR(
             ASR::make_Var_t(al_tmp, x.base.base.loc, struct_sym));
-        std::string deepcopy_func = c_ds_api->get_struct_deepcopy_func(struct_expr);
+        bool use_memcpy_deepcopy = c_struct_can_use_memcpy_deepcopy(x);
+        std::string deepcopy_func = use_memcpy_deepcopy
+            ? "_lfortran_c_struct_memcpy_deepcopy"
+            : c_ds_api->get_struct_deepcopy_func(struct_expr);
         std::string safe_name = CUtils::sanitize_c_identifier(
             CUtils::get_c_symbol_name(struct_sym));
         std::string registrar_name = get_unique_local_name(
             "__lfortran_register_struct_runtime_" + safe_name
             + "_x" + std::to_string(static_cast<uint64_t>(type_id)), false);
         std::string struct_type = "struct " + CUtils::get_c_symbol_name(struct_sym);
+        std::string deepcopy_decl = use_memcpy_deepcopy ? ""
+            : "    extern void " + deepcopy_func + "(void*, void*);\n";
         std::string registration = "LFORTRAN_C_BACKEND_CONSTRUCTOR static void "
             + registrar_name + "(void)\n{\n"
-            + "    extern void " + deepcopy_func + "(void*, void*);\n"
+            + deepcopy_decl
             + "    _lfortran_register_c_struct_size("
             + std::to_string(type_id) + ", sizeof(" + struct_type + "));\n"
             + "    _lfortran_register_c_struct_deepcopy("

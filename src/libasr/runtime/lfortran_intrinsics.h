@@ -114,6 +114,7 @@ LFORTRAN_API void _lfortran_register_c_struct_deepcopy(int64_t type_id,
         lfortran_c_struct_deepcopy_func_ptr func);
 LFORTRAN_API lfortran_c_struct_deepcopy_func_ptr _lfortran_get_c_struct_deepcopy(
         int64_t type_id);
+LFORTRAN_API void _lfortran_c_struct_memcpy_deepcopy(void *src, void *dest);
 
 /* Convenience macros for calling through an allocator */
 #define ALLOCATOR_ALLOC(a, size)          ((a)->alloc((a)->context, (size)))
