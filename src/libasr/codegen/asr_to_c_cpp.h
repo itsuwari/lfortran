@@ -15069,6 +15069,20 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         ASR::array_physical_typeType physical_type = ASRUtils::extract_physical_type(array_type);
         self().visit_expr(*x.m_array);
         std::string array_expr = src;
+        auto emit_descriptor_contiguity_check = [&]() {
+            std::string array_desc = get_c_descriptor_member_base_expr(array_expr);
+            ASR::dimension_t *m_dims = nullptr;
+            int n_dims = ASRUtils::extract_dimensions_from_ttype(array_type, m_dims);
+            std::string is_contiguous = "true";
+            std::string expected_stride = "1";
+            for (int i = 0; i < n_dims; i++) {
+                is_contiguous += " && (" + array_desc + "->dims[" + std::to_string(i)
+                    + "].stride == " + expected_stride + ")";
+                expected_stride = "(" + expected_stride + " * " + array_desc
+                    + "->dims[" + std::to_string(i) + "].length)";
+            }
+            src = "(" + array_desc + "->is_allocated && (" + is_contiguous + "))";
+        };
         switch (physical_type) {
             case ASR::array_physical_typeType::DescriptorArray: {
                 ASR::expr_t *array_lvalue =
@@ -15146,25 +15160,22 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                         }
                     }
                 }
-                std::string array_desc = get_c_descriptor_member_base_expr(array_expr);
-                ASR::dimension_t *m_dims = nullptr;
-                int n_dims = ASRUtils::extract_dimensions_from_ttype(array_type, m_dims);
-                std::string is_contiguous = "true";
-                std::string expected_stride = "1";
-                for (int i = 0; i < n_dims; i++) {
-                    is_contiguous += " && (" + array_desc + "->dims[" + std::to_string(i)
-                        + "].stride == " + expected_stride + ")";
-                    expected_stride = "(" + expected_stride + " * " + array_desc
-                        + "->dims[" + std::to_string(i) + "].length)";
-                }
-                src = "(" + array_desc + "->is_allocated && (" + is_contiguous + "))";
+                emit_descriptor_contiguity_check();
                 return;
             }
             case ASR::array_physical_typeType::FixedSizeArray:
             case ASR::array_physical_typeType::SIMDArray:
+                src = "true";
+                return;
             case ASR::array_physical_typeType::PointerArray:
             case ASR::array_physical_typeType::UnboundedPointerArray:
-                src = "true";
+                // C represents these arrays with descriptors; section views can
+                // carry non-unit stride.
+                if (is_c) {
+                    emit_descriptor_contiguity_check();
+                } else {
+                    src = "true";
+                }
                 return;
             case ASR::array_physical_typeType::StringArraySinglePointer:
                 src = "false";

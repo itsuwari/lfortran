@@ -283,7 +283,8 @@ public:
             ASR::ArrayPhysicalCast_t* cast = ASR::down_cast<ASR::ArrayPhysicalCast_t>(expr);
             if ( !((cast->m_new == ASR::array_physical_typeType::PointerArray ||
                      cast->m_new == ASR::array_physical_typeType::UnboundedPointerArray) &&
-                    cast->m_old == ASR::array_physical_typeType::DescriptorArray) ) {
+                    (cast->m_old == ASR::array_physical_typeType::DescriptorArray ||
+                     cast->m_old == ASR::array_physical_typeType::PointerArray)) ) {
                 return false;
             }
             // Skip copy-in/copy-out when the inner expression must use Fortran
