@@ -2,11 +2,11 @@
     "basename": "c-c_backend_specialized_pass_array_no_copy_01-50ba8f5",
     "cmd": "lfortran --no-color --show-c {infile}",
     "infile": "tests/c_backend_specialized_pass_array_no_copy_01.f90",
-    "infile_hash": "e4092e8d61f22d7ccafb6e085029e6b9a547d6bc09f9f5f9da6dba2c",
+    "infile_hash": "fe33a94ebe25386f1d5d226f2c66216c1b8ceef1c37107aea14ef87f",
     "outfile": null,
     "outfile_hash": null,
     "stdout": "c-c_backend_specialized_pass_array_no_copy_01-50ba8f5.stdout",
-    "stdout_hash": "af6379e1893ccf88674276e47f5a46ac244de9aff6c4d5396cc6992a",
+    "stdout_hash": "699f9847d24e18ae24d43f8ddfd5a119d94272a14e73072b0f8830d8",
     "stderr": null,
     "stderr_hash": null,
     "returncode": 0

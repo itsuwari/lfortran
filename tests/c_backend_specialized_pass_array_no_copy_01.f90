@@ -37,13 +37,38 @@ end subroutine
 
 end module
 
+module c_backend_specialized_pass_array_no_copy_01_c
+implicit none
+
+type :: downloader
+contains
+    procedure, nopass :: upload_form
+end type
+
+contains
+
+subroutine upload_form(form_data)
+integer, intent(inout) :: form_data(:)
+integer :: i
+
+do i = 1, size(form_data)
+    form_data(i) = i
+end do
+
+end subroutine
+
+end module
+
 program c_backend_specialized_pass_array_no_copy_01
 use c_backend_specialized_pass_array_no_copy_01_a, only: container
 use c_backend_specialized_pass_array_no_copy_01_b, only: outer
+use c_backend_specialized_pass_array_no_copy_01_c, only: downloader
 implicit none
 
 type(container) :: mol
+type(downloader) :: d
 real(8) :: xyz(3, 2), trans(3, 1), total
+integer :: form(5)
 
 mol%bias = 1.0d0
 xyz = reshape([10.0d0, 20.0d0, 30.0d0, 40.0d0, 50.0d0, 60.0d0], [3, 2])
@@ -51,7 +76,10 @@ trans(:, 1) = [100.0d0, 200.0d0, 300.0d0]
 total = 0.0d0
 
 call outer(mol, xyz, trans, total)
+call d%upload_form(form)
 
 if (abs(total - 321.0d0) > 1.0d-12) error stop
+if (form(1) /= 1 .or. form(2) /= 2 .or. form(3) /= 3) error stop
+if (form(4) /= 4 .or. form(5) /= 5) error stop
 
 end program

@@ -73,14 +73,8 @@ struct r64_____
     bool is_allocated;
 };
 
-
-struct r64___
-{
-    double *data;
-    struct dimension_descriptor dims[32];
-    int32_t n_dims;
-    int32_t offset;
-    bool is_allocated;
+struct c_backend_specialized_pass_array_no_copy_01_c__downloader {
+ int64_t __lfortran_type_tag;
 };
 
 
@@ -93,10 +87,22 @@ struct i32___
     bool is_allocated;
 };
 
+
+struct r64___
+{
+    double *data;
+    struct dimension_descriptor dims[32];
+    int32_t n_dims;
+    int32_t offset;
+    bool is_allocated;
+};
+
 void __lfortran_c_backend_specialized_pass_array_no_copy_01_a__inner_real_______1_real_______2__StructType(struct c_backend_specialized_pass_array_no_copy_01_a__container* restrict mol, struct r64_____* restrict xyz, int32_t __1xyz, int32_t __2xyz, struct r64_____* restrict trans, int32_t __1trans, int32_t __2trans, double *total);
 void __lfortran_c_backend_specialized_pass_array_no_copy_01_a__inner__StructType(struct c_backend_specialized_pass_array_no_copy_01_a__container* restrict mol, struct r64_____* restrict xyz, struct r64_____* restrict trans, double *total);
 void __lfortran_c_backend_specialized_pass_array_no_copy_01_b__outer_real_______1_real_______2__StructType(struct c_backend_specialized_pass_array_no_copy_01_a__container* restrict mol, struct r64_____* restrict xyz, int32_t __1xyz, int32_t __2xyz, struct r64_____* restrict trans, int32_t __1trans, int32_t __2trans, double *total);
 void __lfortran_c_backend_specialized_pass_array_no_copy_01_b__outer__StructType(struct c_backend_specialized_pass_array_no_copy_01_a__container* restrict mol, struct r64_____* restrict xyz, struct r64_____* restrict trans, double *total);
+void __lfortran_c_backend_specialized_pass_array_no_copy_01_c__upload_form(struct i32___* restrict form_data);
+void __lfortran_c_backend_specialized_pass_array_no_copy_01_c__upload_form_integer____0(struct i32___* restrict form_data, int32_t __1form_data);
 
 
 
@@ -148,6 +154,45 @@ void __lfortran_c_backend_specialized_pass_array_no_copy_01_b__outer__StructType
     __lfortran_c_backend_specialized_pass_array_no_copy_01_b__outer_real_______1_real_______2__StructType(mol, xyz, ((int32_t)xyz->dims[0].length + xyz->dims[0].lower_bound - 1), ((int32_t)xyz->dims[1].length + xyz->dims[1].lower_bound - 1), trans, ((int32_t)trans->dims[0].length + trans->dims[0].lower_bound - 1), ((int32_t)trans->dims[1].length + trans->dims[1].lower_bound - 1), total);
 }
 
+void __lfortran_c_backend_specialized_pass_array_no_copy_01_c__upload_form(struct i32___* restrict form_data)
+{
+    int32_t i;
+    int32_t * restrict __lfortran_form_data_data = form_data->data;
+    const int32_t __lfortran_form_data_offset = form_data->offset;
+    const int32_t __lfortran_form_data_dim1_lower_bound = form_data->dims[0].lower_bound;
+    const int32_t __lfortran_form_data_dim1_stride = form_data->dims[0].stride;
+    for (i=1; i<=((int32_t) (((form_data->dims[0].length)))); i++) {
+        __lfortran_form_data_data[((0 + (__lfortran_form_data_dim1_stride * (i - __lfortran_form_data_dim1_lower_bound))) + __lfortran_form_data_offset)] = i;
+    }
+}
+
+static void __lfortran_tbp_wrapper_upload_form(void* __lfortran_self)
+{
+    __lfortran_c_backend_specialized_pass_array_no_copy_01_c__upload_form(((struct c_backend_specialized_pass_array_no_copy_01_c__downloader*)(__lfortran_self)));
+}
+
+LFORTRAN_C_BACKEND_CONSTRUCTOR static void __lfortran_register_tbp_upload_form(void)
+{
+    _lfortran_register_c_tbp_impl("upload_form", 7545916867220465440, (lfortran_c_tbp_func_ptr)__lfortran_tbp_wrapper_upload_form);
+}
+
+void __lfortran_force_link_tbp_c_backend_specialized_pass_array_no_copy_01_c__downloader__upload_form(void)
+{
+    __lfortran_register_tbp_upload_form();
+}
+
+void __lfortran_c_backend_specialized_pass_array_no_copy_01_c__upload_form_integer____0(struct i32___* restrict form_data, int32_t __1form_data)
+{
+    int32_t i;
+    int32_t * restrict __lfortran_form_data_data = form_data->data;
+    const int32_t __lfortran_form_data_offset = form_data->offset;
+    const int32_t __lfortran_form_data_dim1_lower_bound = form_data->dims[0].lower_bound;
+    const int32_t __lfortran_form_data_dim1_stride = form_data->dims[0].stride;
+    for (i=1; i<=1*__1form_data; i++) {
+        __lfortran_form_data_data[((0 + (__lfortran_form_data_dim1_stride * (i - __lfortran_form_data_dim1_lower_bound))) + __lfortran_form_data_offset)] = i;
+    }
+}
+
 int main(int argc, char* argv[])
 {
     _lpython_set_argv(argc, argv);
@@ -167,6 +212,20 @@ int main(int argc, char* argv[])
     __libasr_created__array_reshape_shape->dims[0].lower_bound = 1;
     __libasr_created__array_reshape_shape->dims[0].length = 2;
     __libasr_created__array_reshape_shape->dims[0].stride = 1;
+    struct c_backend_specialized_pass_array_no_copy_01_c__downloader d_value;
+    memset(&d_value, 0, sizeof(d_value));
+    d_value.__lfortran_type_tag = 7545916867220465440;
+    struct c_backend_specialized_pass_array_no_copy_01_c__downloader* d = &d_value;
+    struct i32___ form_value;
+    struct i32___* form = &form_value;
+    int32_t form_data[5];
+    form->data = form_data;
+    form->n_dims = 1;
+    form->offset = 0;
+    form->is_allocated = true;
+    form->dims[0].lower_bound = 1;
+    form->dims[0].length = 5;
+    form->dims[0].stride = 1;
     struct c_backend_specialized_pass_array_no_copy_01_a__container mol_value;
     memset(&mol_value, 0, sizeof(mol_value));
     mol_value.__lfortran_type_tag = 2748822589170336580;
@@ -228,7 +287,17 @@ int main(int argc, char* argv[])
     struct r64_____ __lfortran_array_view2 = { .data = xyz->data, .dims = {{1, xyz->dims[0].length, xyz->dims[0].stride}, {1, xyz->dims[1].length, xyz->dims[1].stride}}, .n_dims = 2, .offset = xyz->offset, .is_allocated = xyz->is_allocated };
     struct r64_____ __lfortran_array_view3 = { .data = trans->data, .dims = {{1, trans->dims[0].length, trans->dims[0].stride}, {1, trans->dims[1].length, trans->dims[1].stride}}, .n_dims = 2, .offset = trans->offset, .is_allocated = trans->is_allocated };
     __lfortran_c_backend_specialized_pass_array_no_copy_01_b__outer_real_______1_real_______2__StructType(((struct c_backend_specialized_pass_array_no_copy_01_a__container*)(mol)), &__lfortran_array_view2, ((int32_t) xyz->dims[0].length), ((int32_t) xyz->dims[1].length), &__lfortran_array_view3, ((int32_t) trans->dims[0].length), ((int32_t) trans->dims[1].length), &total);
+    struct i32___ __lfortran_array_view4 = { .data = form->data, .dims = {{1, form->dims[0].length, form->dims[0].stride}}, .n_dims = 1, .offset = form->offset, .is_allocated = form->is_allocated };
+    __lfortran_c_backend_specialized_pass_array_no_copy_01_c__upload_form_integer____0(&__lfortran_array_view4, ((int32_t) form->dims[0].length));
     if (fabs(total - 0x1.4100000000000p+8) > 0x1.19799812dea11p-40) {
+        fprintf(stderr, "ERROR STOP");
+        exit(1);
+    }
+    if (form_data[(0 + (1 * (1 - 1)))] != 1 || form_data[(0 + (1 * (2 - 1)))] != 2 || form_data[(0 + (1 * (3 - 1)))] != 3) {
+        fprintf(stderr, "ERROR STOP");
+        exit(1);
+    }
+    if (form_data[(0 + (1 * (4 - 1)))] != 4 || form_data[(0 + (1 * (5 - 1)))] != 5) {
         fprintf(stderr, "ERROR STOP");
         exit(1);
     }
