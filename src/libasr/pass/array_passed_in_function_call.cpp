@@ -1025,6 +1025,7 @@ public:
         size_t x_n_args, const std::string& name_hint,
         std::vector<bool> is_arg_intent_out = {},
         std::vector<bool> is_arg_intent_in = {},
+        std::vector<bool> is_arg_intent_out_only = {},
         bool is_func_bind_c = false) {
         /* For other frontends, we might need to traverse the arguments
            in reverse order. */
@@ -1136,6 +1137,8 @@ public:
                     alloc_args.push_back(al, alloc_arg);
                     bool arg_is_intent_out =
                         is_arg_intent_out.size() > i && is_arg_intent_out[i];
+                    bool arg_is_intent_out_only =
+                        is_arg_intent_out_only.size() > i && is_arg_intent_out_only[i];
                     if (arg_is_intent_out && is_spread_result_arg
                             && ASRUtils::is_allocatable(ASRUtils::expr_type(arg_expr_past_cast))) {
                         ASR::alloc_arg_t actual_alloc_arg;
@@ -1205,7 +1208,7 @@ public:
                             array_var_temporary->base.loc, alloc_args.p, alloc_args.size(),
                             nullptr, nullptr, nullptr))
                     };
-                    if (!arg_is_intent_out) {
+                    if (!arg_is_intent_out_only) {
                         copy_in_body.push_back(create_do_loop(al, loc, do_loop_variables,
                             array_var_temporary, arg_expr_past_cast, array_rank, integer_kind));
                     }
@@ -1325,6 +1328,7 @@ public:
         Vec<ASR::call_arg_t> x_m_args; x_m_args.reserve(al, x.n_args);
         std::vector<bool> is_arg_intent_out;
         std::vector<bool> is_arg_intent_in;
+        std::vector<bool> is_arg_intent_out_only;
         if ( ASR::is_a<ASR::Function_t>(*ASRUtils::symbol_get_past_external(x.m_name)) ) {
             ASR::Function_t* func = ASR::down_cast<ASR::Function_t>(ASRUtils::symbol_get_past_external(x.m_name));
             ASR::FunctionType_t* func_type = ASR::down_cast<ASR::FunctionType_t>(func->m_function_signature);
@@ -1342,18 +1346,23 @@ public:
                         is_arg_intent_in.push_back(
                             var->m_intent == ASR::intentType::In
                         );
+                        is_arg_intent_out_only.push_back(
+                            var->m_intent == ASR::intentType::Out
+                        );
                     } else {
                         is_arg_intent_out.push_back(false);
                         is_arg_intent_in.push_back(false);
+                        is_arg_intent_out_only.push_back(false);
                     }
                 } else {
                     is_arg_intent_out.push_back(false);
                     is_arg_intent_in.push_back(false);
+                    is_arg_intent_out_only.push_back(false);
                 }
             }
             traverse_call_args(x_m_args, x.m_args, x.n_args,
                 name_hint + ASRUtils::symbol_name(x.m_name), is_arg_intent_out,
-                is_arg_intent_in, is_func_bind_c);
+                is_arg_intent_in, is_arg_intent_out_only, is_func_bind_c);
         } else {
             traverse_call_args(x_m_args, x.m_args, x.n_args,
                 name_hint + ASRUtils::symbol_name(x.m_name));
