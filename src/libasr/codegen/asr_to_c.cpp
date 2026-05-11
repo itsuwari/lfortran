@@ -42,6 +42,8 @@ public:
     bool defer_c_tbp_parent_registration_defs = false;
     std::set<int64_t> deferred_c_tbp_parent_registration_type_ids;
     std::string deferred_c_tbp_parent_registration_defs;
+    bool defer_c_struct_runtime_info_defs = false;
+    std::string deferred_c_struct_runtime_info_defs;
     bool defer_c_struct_cleanup_defs = false;
     std::set<int64_t> deferred_c_struct_cleanup_type_ids;
     std::string deferred_c_struct_cleanup_defs;
@@ -2297,6 +2299,19 @@ R"(
         return registration;
     }
 
+    void append_c_struct_runtime_info_registration(const ASR::Struct_t &x,
+            std::string &src_dest) {
+        std::string registration = emit_c_struct_runtime_info_registration(x);
+        if (registration.empty()) {
+            return;
+        }
+        if (!defer_c_struct_runtime_info_defs) {
+            src_dest += registration;
+            return;
+        }
+        deferred_c_struct_runtime_info_defs += registration;
+    }
+
     std::string get_variable_c_name(const ASR::Variable_t &v) {
         return CUtils::get_c_variable_name(v);
     }
@@ -4167,6 +4182,8 @@ R"(
         is_string_concat_present = false;
         global_scope = x.m_symtab;
         emitted_c_tbp_parent_force_link_type_ids.clear();
+        defer_c_struct_runtime_info_defs = false;
+        deferred_c_struct_runtime_info_defs.clear();
         // All loose statements must be converted to a function, so the items
         // must be empty:
         LCOMPILERS_ASSERT(x.n_items == 0);
@@ -4348,6 +4365,8 @@ R"(
         defer_c_tbp_parent_registration_defs = true;
         deferred_c_tbp_parent_registration_type_ids.clear();
         deferred_c_tbp_parent_registration_defs.clear();
+        defer_c_struct_runtime_info_defs = true;
+        deferred_c_struct_runtime_info_defs.clear();
         defer_c_struct_cleanup_defs = true;
         deferred_c_struct_cleanup_type_ids.clear();
         deferred_c_struct_cleanup_defs.clear();
@@ -4580,6 +4599,9 @@ R"(
         }
         if (!deferred_c_tbp_parent_registration_defs.empty()) {
             shared_body += deferred_c_tbp_parent_registration_defs + "\n";
+        }
+        if (!deferred_c_struct_runtime_info_defs.empty()) {
+            shared_body += deferred_c_struct_runtime_info_defs + "\n";
         }
         if (!deferred_c_struct_cleanup_defs.empty()) {
             shared_body += deferred_c_struct_cleanup_defs + "\n";
@@ -4913,7 +4935,7 @@ R"(    // Initialise Numpy
         src_dest += open_struct + body + end_struct;
         if constexpr (std::is_same_v<std::decay_t<T>, ASR::Struct_t>) {
             append_c_tbp_parent_registration(x, src_dest);
-            src_dest += emit_c_struct_runtime_info_registration(x);
+            append_c_struct_runtime_info_registration(x, src_dest);
             if (!suppress_c_struct_cleanup_registration) {
                 append_c_struct_cleanup_registration(x, src_dest);
             }
