@@ -2357,6 +2357,39 @@ static bool is_c_rank2_allocatable_self_section_assignment(
     return true;
 }
 
+static bool is_c_rank1_allocatable_self_section_assignment(
+        ASR::expr_t *lhs_array_var, ASR::expr_t *target, ASR::expr_t *value) {
+    target = ASRUtils::get_past_array_physical_cast(target);
+    value = ASRUtils::get_past_array_physical_cast(value);
+    if (lhs_array_var == nullptr || target == nullptr || value == nullptr
+            || !ASRUtils::is_allocatable(target)
+            || !ASR::is_a<ASR::ArraySection_t>(*value)) {
+        return false;
+    }
+    ASR::ttype_t *target_type = ASRUtils::type_get_past_allocatable_pointer(
+        ASRUtils::expr_type(target));
+    ASR::ttype_t *value_type = ASRUtils::type_get_past_allocatable_pointer(
+        ASRUtils::expr_type(value));
+    if (!ASRUtils::is_array(target_type) || !ASRUtils::is_array(value_type)
+            || ASRUtils::extract_n_dims_from_ttype(target_type) != 1
+            || ASRUtils::extract_n_dims_from_ttype(value_type) != 1
+            || !is_c_plain_scalar_array_element_type(target_type)
+            || !is_c_plain_scalar_array_element_type(value_type)) {
+        return false;
+    }
+    ASR::ArraySection_t *section = ASR::down_cast<ASR::ArraySection_t>(value);
+    if (section->n_args != 1
+            || !same_array_reference(lhs_array_var, section->m_v)) {
+        return false;
+    }
+    const ASR::array_index_t &idx = section->m_args[0];
+    bool is_slice = idx.m_left || idx.m_step || idx.m_right == nullptr;
+    return is_slice
+        && is_unit_step_expr(idx.m_step)
+        && is_c_simple_integer_bound_expr(idx.m_left)
+        && is_c_simple_integer_bound_expr(idx.m_right);
+}
+
 static bool is_c_rank2_nonself_section_copy_assignment(Allocator &al,
         ASR::expr_t *lhs_array_var, ASR::expr_t *target, ASR::expr_t *value) {
     target = ASRUtils::get_past_array_physical_cast(target);
@@ -4643,6 +4676,10 @@ class ReplaceExprWithTemporaryVisitor:
             is_self_ref_allocatable_array &&
             is_c_rank2_allocatable_self_section_assignment(
                 lhs_array_var, x.m_target, x.m_value);
+        bool c_rank1_allocatable_self_section_assignment = c_backend &&
+            is_self_ref_allocatable_array &&
+            is_c_rank1_allocatable_self_section_assignment(
+                lhs_array_var, x.m_target, x.m_value);
         bool c_rank2_nonself_section_copy_assignment = c_backend &&
             is_c_rank2_nonself_section_copy_assignment(
                 al, lhs_array_var, x.m_target, x.m_value);
@@ -4661,6 +4698,7 @@ class ReplaceExprWithTemporaryVisitor:
             replacer.is_assignment_target_array_section_item = true;
         }
         if (!c_rank2_allocatable_self_section_assignment
+                && !c_rank1_allocatable_self_section_assignment
                 && !c_rank2_nonself_section_copy_assignment
                 && !c_rank1_nonself_section_copy_assignment
                 && !c_rank2_section_scalar_assignment) {
