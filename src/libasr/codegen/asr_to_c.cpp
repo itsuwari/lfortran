@@ -238,6 +238,9 @@ R"(
         if( bind_py_utils_functions->get_generated_code().size() > 0 ) {
             helper_defs += "\n" + bind_py_utils_functions->get_generated_code() + "\n";
         }
+        if (c_ds_api->needs_runtime_type_tag_header_decl()) {
+            ensure_runtime_type_tag_header_decl();
+        }
 
         if (array_types_decls.size() != 0) {
             array_types_decls = "\nstruct dimension_descriptor\n"
@@ -2237,6 +2240,11 @@ R"(
             ASR::symbol_t *struct_sym) {
         if (!is_c) {
             return false;
+        }
+        int64_t type_id = get_struct_runtime_type_id(struct_sym);
+        if (required_c_struct_runtime_info_type_ids.find(type_id)
+                != required_c_struct_runtime_info_type_ids.end()) {
+            return true;
         }
         if (x.m_parent != nullptr || x.m_is_abstract
                 || x.n_member_functions > 0
@@ -4343,6 +4351,7 @@ R"(
         deferred_c_struct_cleanup_type_ids.clear();
         deferred_c_struct_cleanup_defs.clear();
         emitted_c_struct_runtime_info_type_ids.clear();
+        required_c_struct_runtime_info_type_ids.clear();
         global_scope = x.m_symtab;
         LCOMPILERS_ASSERT(x.n_items == 0);
         indentation_level = 0;

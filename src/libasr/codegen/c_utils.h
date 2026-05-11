@@ -874,6 +874,7 @@ class CCPPDSUtils {
 
         std::string generated_code;
         std::string func_decls;
+        bool needs_runtime_type_tag_header;
 
         SymbolTable* global_scope;
         bool is_c;
@@ -884,6 +885,7 @@ class CCPPDSUtils {
         CCPPDSUtils(bool is_c, Platform &platform): is_c{is_c}, platform{platform} {
             generated_code.clear();
             func_decls.clear();
+            needs_runtime_type_tag_header = false;
         }
 
         void set_c_utils_functions(CUtils::CUtilFunctions* c_utils_functions_) {
@@ -1359,6 +1361,10 @@ class CCPPDSUtils {
             return generated_code;
         }
 
+        bool needs_runtime_type_tag_header_decl() const {
+            return needs_runtime_type_tag_header;
+        }
+
         std::string get_func_decls() {
             return func_decls;
         }
@@ -1630,6 +1636,7 @@ class CCPPDSUtils {
                                     + " = src->" + emitted_mem_name + ";\n";
                                 continue;
                             }
+                            needs_runtime_type_tag_header = true;
                             std::string member_tmp_name = CUtils::sanitize_c_identifier(
                                 emitted_mem_name);
                             std::string type_id_var = "__lfortran_dynamic_type_id_"

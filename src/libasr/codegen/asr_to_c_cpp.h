@@ -258,6 +258,7 @@ public:
     bool is_c;
     std::set<std::string> headers, user_headers, user_defines;
     std::set<std::string> emitted_pointer_backed_struct_names;
+    std::set<int64_t> required_c_struct_runtime_info_type_ids;
     std::vector<std::string> tmp_buffer_src;
     SymbolTable* global_scope;
     int64_t lower_bound;
@@ -1192,24 +1193,34 @@ public:
         std::string decl;
         auto emit_cache_for_array_expr = [&](const std::string &array_expr,
                 const std::string &cache_name_base, int n_dims,
-                ASR::ttype_t *array_type, bool use_restrict=true) {
+                ASR::ttype_t *array_type, bool use_restrict=true,
+                bool descriptor_may_be_null=false) {
             if (n_dims <= 0
                     || current_function_array_descriptor_cache.find(array_expr)
                         != current_function_array_descriptor_cache.end()) {
                 return;
             }
+            auto descriptor_access = [&](const std::string &field,
+                    const std::string &fallback) {
+                if (!descriptor_may_be_null) {
+                    return array_expr + "->" + field;
+                }
+                std::string guarded = "(" + array_expr + ")";
+                return "(" + guarded + " != NULL ? " + guarded + "->"
+                    + field + " : " + fallback + ")";
+            };
             CArrayDescriptorCache cache;
             if (is_c_scalarizable_element_type(array_type)) {
                 cache.data = get_unique_local_name(
                     "__lfortran_" + cache_name_base + "_data");
                 decl += indent + CUtils::get_c_array_element_type_from_ttype_t(array_type)
                     + " *" + (use_restrict ? " restrict " : " ") + cache.data + " = "
-                    + array_expr + "->data;\n";
+                    + descriptor_access("data", "NULL") + ";\n";
             }
             cache.offset = get_unique_local_name(
                 "__lfortran_" + cache_name_base + "_offset");
             decl += indent + "const int32_t " + cache.offset + " = "
-                + array_expr + "->offset;\n";
+                + descriptor_access("offset", "0") + ";\n";
             for (int j = 0; j < n_dims; j++) {
                 std::string dim_prefix = "__lfortran_" + cache_name_base + "_dim"
                     + std::to_string(j + 1);
@@ -1218,9 +1229,9 @@ public:
                 std::string stride =
                     get_unique_local_name(dim_prefix + "_stride");
                 decl += indent + "const int32_t " + lower_bound + " = "
-                    + array_expr + "->dims[" + std::to_string(j) + "].lower_bound;\n";
+                    + descriptor_access("dims[" + std::to_string(j) + "].lower_bound", "1") + ";\n";
                 decl += indent + "const int32_t " + stride + " = "
-                    + array_expr + "->dims[" + std::to_string(j) + "].stride;\n";
+                    + descriptor_access("dims[" + std::to_string(j) + "].stride", "1") + ";\n";
                 cache.lower_bounds.push_back(lower_bound);
                 cache.strides.push_back(stride);
             }
@@ -1275,7 +1286,10 @@ public:
                 + std::to_string(current_function_array_descriptor_cache.size());
             ASR::dimension_t *dims = nullptr;
             int n_dims = ASRUtils::extract_dimensions_from_ttype(member->m_type, dims);
-            emit_cache_for_array_expr(array_expr, cache_name_base, n_dims, member->m_type, false);
+            bool descriptor_may_be_null = ASRUtils::is_allocatable(member->m_type)
+                || ASRUtils::is_pointer(member->m_type);
+            emit_cache_for_array_expr(array_expr, cache_name_base, n_dims,
+                member->m_type, false, descriptor_may_be_null);
         }
         src = saved_src;
         return decl;
@@ -1613,6 +1627,9 @@ public:
         if( bind_py_utils_functions->get_generated_code().size() > 0 ) {
             util_funcs_defined =  "\n" + bind_py_utils_functions->get_generated_code() + "\n";
         }
+        if (c_ds_api->needs_runtime_type_tag_header_decl()) {
+            ensure_runtime_type_tag_header_decl();
+        }
         if (is_c) {
             head += "\n#ifndef LFORTRAN_C_BACKEND_CONSTRUCTOR\n"
                 "#if defined(__GNUC__) || defined(__clang__)\n"
@@ -1670,6 +1687,47 @@ public:
         if (array_types_decls.find(header_decl) == std::string::npos) {
             array_types_decls = header_decl + array_types_decls;
         }
+    }
+
+    void require_c_struct_runtime_info(ASR::symbol_t *struct_sym) {
+        if (!is_c || struct_sym == nullptr) {
+            return;
+        }
+        struct_sym = ASRUtils::symbol_get_past_external(struct_sym);
+        if (struct_sym == nullptr || !ASR::is_a<ASR::Struct_t>(*struct_sym)) {
+            return;
+        }
+        required_c_struct_runtime_info_type_ids.insert(
+            get_struct_runtime_type_id(struct_sym));
+    }
+
+    bool c_target_type_needs_dynamic_struct_runtime_info(ASR::ttype_t *type) {
+        if (type == nullptr) {
+            return false;
+        }
+        ASR::ttype_t *past_type = ASRUtils::type_get_past_allocatable_pointer(type);
+        if (past_type == nullptr) {
+            return false;
+        }
+        ASR::ttype_t *element_type = ASRUtils::is_array(past_type)
+            ? ASRUtils::type_get_past_array(past_type) : past_type;
+        return (past_type != nullptr && ASRUtils::is_class_type(past_type))
+            || (element_type != nullptr && ASRUtils::is_class_type(element_type))
+            || is_unlimited_polymorphic_storage_type(type);
+    }
+
+    void require_c_move_alloc_source_runtime_info(ASR::expr_t *source_expr,
+            ASR::expr_t *target_expr) {
+        if (!is_c || source_expr == nullptr || target_expr == nullptr) {
+            return;
+        }
+        if (!c_target_type_needs_dynamic_struct_runtime_info(
+                ASRUtils::expr_type(target_expr))) {
+            return;
+        }
+        ASR::symbol_t *source_struct_sym =
+            ASRUtils::get_struct_sym_from_struct_expr(source_expr);
+        require_c_struct_runtime_info(source_struct_sym);
     }
 
     void ensure_c_backend_constructor_macro_decl() {
@@ -16227,6 +16285,13 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                     out += indent + "    }\n";
                     out += indent + "}\n";
                 }
+                if (is_c) {
+                    headers.insert("string.h");
+                    out += indent + "if (" + sym + " == NULL) {\n";
+                    out += indent + "    " + sym + " = _lfortran_malloc_alloc(_lfortran_get_default_allocator(), sizeof(*" + sym + "));\n";
+                    out += indent + "    memset(" + sym + ", 0, sizeof(*" + sym + "));\n";
+                    out += indent + "}\n";
+                }
                 out += indent + sym + "->n_dims = " + std::to_string(x.m_args[i].n_dims) + ";\n";
                 std::string stride = "1";
                 for (size_t j = 0; j < x.m_args[i].n_dims; j++) {
@@ -17828,6 +17893,10 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             + indent + sym_name + "(" + call_args + ");\n";
         if (is_c && x.n_args > 0
                 && std::string(s->m_name).rfind("_lcompilers_move_alloc_", 0) == 0) {
+            if (x.n_args > 1) {
+                require_c_move_alloc_source_runtime_info(
+                    x.m_args[0].m_value, x.m_args[1].m_value);
+            }
             src += emit_move_alloc_source_reset(x.m_args[0].m_value, indent);
         }
         if (is_c) {
