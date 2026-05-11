@@ -519,6 +519,10 @@ namespace LCompilers::CommandLineInterface {
             );
         }
 
+        if (opts.arg_backend == "c" || opts.show_c || !opts.show_c_split.empty()) {
+            compiler_options.po.realloc_lhs_arrays = true;
+        }
+
         if (disable_bounds_checking || compiler_options.po.fast) {
             compiler_options.po.bounds_checking = false;
             compiler_options.po.strict_bounds_checking = false;

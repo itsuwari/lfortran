@@ -6577,7 +6577,9 @@ _lfortran_open(int32_t unit_num,
      * "replace" (file will be created, replacing any existing file)
      * "unknown" (it is not known whether the file exists)
      */
+    bool old_status = false;
     if (streql(status_c, "old")) {
+        old_status = true;
         if (!*file_exists) {
             if (iostat != NULL) {
                 *iostat = 2;
@@ -6594,7 +6596,7 @@ _lfortran_open(int32_t unit_num,
                 exit(1);
             }
         }
-        access_mode = "r+";
+        access_mode = streql(action_c, "read") ? "r" : "r+";
     } else if (streql(status_c, "new")) {
         if (*file_exists) {
             if (iostat != NULL) {
@@ -6790,8 +6792,41 @@ _lfortran_open(int32_t unit_num,
             internal_free(pad_c);
             return (int64_t) already_open;
         }
+        errno = 0;
         FILE* fd = fopen(f_name_c, access_mode);
-        if (!fd && iostat == NULL) {
+        int saved_errno = errno;
+        if (!fd && old_status && !ini_action && streql(access_mode, "r+")) {
+            errno = 0;
+            fd = fopen(f_name_c, "r");
+            saved_errno = errno;
+            if (fd) {
+                write_access = false;
+            }
+        }
+        if (!fd && iostat != NULL) {
+            if (*iostat == 0) {
+                *iostat = saved_errno != 0 ? saved_errno : 1;
+            }
+            if ((iomsg != NULL) && (iomsg_len > 0)) {
+                snprintf(iomsg, iomsg_len + 1, "Error opening file `%s`: %s",
+                    f_name_c, saved_errno != 0 ? strerror(saved_errno) : "unknown error");
+                pad_with_spaces(iomsg, strlen(iomsg), iomsg_len);
+            }
+            internal_free(f_name_c);
+            internal_free(status_c);
+            internal_free(form_c);
+            internal_free(access_c);
+            internal_free(action_c);
+            internal_free(delim_c);
+            internal_free(blank_c);
+            internal_free(encoding_c);
+            internal_free(sign_c);
+            internal_free(decimal_c);
+            internal_free(round_c);
+            internal_free(pad_c);
+            return 0;
+        }
+        if (!fd) {
             printf("Runtime error: Error in opening the file!\n");
             perror(f_name_c);
             exit(1);
