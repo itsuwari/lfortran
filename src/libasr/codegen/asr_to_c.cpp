@@ -5960,8 +5960,9 @@ R"(    // Initialise Numpy
                     } else {
                         ASR::dimension_t *m_dims = nullptr;
                         int n_dims = ASRUtils::extract_dimensions_from_ttype(value_type_past_allocatable, m_dims);
-                        std::string array_size_func = c_utils_functions->get_array_size();
-                        array_size = "((int32_t) " + array_size_func + "(" + value + "->dims, " + std::to_string(n_dims) + "))";
+                        array_size = "((int32_t) "
+                            + c_utils_functions->get_array_size_expr(value, n_dims)
+                            + ")";
                     }
 
                     if (ASR::is_a<ASR::Integer_t>(*element_type)) {
@@ -6818,8 +6819,9 @@ R"(    // Initialise Numpy
                     } else {
                         ASR::dimension_t *m_dims = nullptr;
                         int n_dims = ASRUtils::extract_dimensions_from_ttype(past_type, m_dims);
-                        std::string array_size_func = c_utils_functions->get_array_size();
-                        array_size = "((int32_t) " + array_size_func + "(" + value + "->dims, " + std::to_string(n_dims) + "))";
+                        array_size = "((int32_t) "
+                            + c_utils_functions->get_array_size_expr(value, n_dims)
+                            + ")";
                     }
 
                     if (ASRUtils::is_character(*element_type)) {
@@ -7609,8 +7611,8 @@ R"(    // Initialise Numpy
             return;
         }
         if (x.m_dim == nullptr) {
-            std::string array_size_func = c_utils_functions->get_array_size();
-            src = "((" + result_type + ") " + array_size_func + "(" + var_name + "->dims, " + std::to_string(n_dims) + "))";
+            src = "((" + result_type + ") "
+                + c_utils_functions->get_array_size_expr(var_name, n_dims) + ")";
         } else {
             visit_expr(*x.m_dim);
             std::string idx = src;

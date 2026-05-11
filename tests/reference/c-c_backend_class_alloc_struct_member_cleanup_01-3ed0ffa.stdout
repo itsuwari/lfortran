@@ -72,7 +72,6 @@ LFORTRAN_C_BACKEND_CONSTRUCTOR static void __lfortran_register_struct_runtime_c_
     _lfortran_register_c_struct_size(2140013315519574036, sizeof(struct c_backend_class_alloc_struct_member_cleanup_01_m__base_type));
     _lfortran_register_c_struct_deepcopy(2140013315519574036, struct_deepcopy_c_backend_class_alloc_struct_member_cleanup_01_m__base_type);
 }
-
 static void __lfortran_cleanup_struct_c_backend_class_alloc_struct_member_cleanup_01_m__base_type_x2140013315519574036(void *__lfortran_value)
 {
     struct c_backend_class_alloc_struct_member_cleanup_01_m__base_type *__lfortran_self = (struct c_backend_class_alloc_struct_member_cleanup_01_m__base_type*)__lfortran_value;
@@ -84,7 +83,6 @@ static void __lfortran_cleanup_struct_c_backend_class_alloc_struct_member_cleanu
         __lfortran_self->label = NULL;
     }
 }
-
 LFORTRAN_C_BACKEND_CONSTRUCTOR static void __lfortran_register_struct_cleanup_c_backend_class_alloc_struct_member_cleanup_01_m__base_type_x2140013315519574036(void)
 {
     _lfortran_register_c_struct_cleanup(2140013315519574036, __lfortran_cleanup_struct_c_backend_class_alloc_struct_member_cleanup_01_m__base_type_x2140013315519574036);
@@ -182,9 +180,6 @@ LFORTRAN_C_BACKEND_CONSTRUCTOR static void __lfortran_register_struct_cleanup_c_
 void struct_deepcopy_c_backend_class_alloc_struct_member_cleanup_01_m__base_type(void* src_void, void* dest_void);
 void struct_deepcopy_c_backend_class_alloc_struct_member_cleanup_01_m__child_type(void* src_void, void* dest_void);
 void struct_deepcopy_c_backend_class_alloc_struct_member_cleanup_01_m__holder_type(void* src_void, void* dest_void);
-
-
-int32_t array_size(struct dimension_descriptor dims[], size_t n);
 
 void __lfortran__lcompilers_move_alloc_child_type_x20_allocatable__Allocatable_StructType_(struct c_backend_class_alloc_struct_member_cleanup_01_m__child_type* from, struct c_backend_class_alloc_struct_member_cleanup_01_m__base_type* *to);
 void __lfortran_c_backend_class_alloc_struct_member_cleanup_01_m__fill__StructType(struct c_backend_class_alloc_struct_member_cleanup_01_m__holder_type* restrict holder);
@@ -392,7 +387,7 @@ void struct_deepcopy_c_backend_class_alloc_struct_member_cleanup_01_m__child_typ
     }
     dest->values = _lfortran_malloc_alloc(_lfortran_get_default_allocator(), sizeof(*dest->values));
     memset(dest->values, 0, sizeof(*dest->values));
-    int32_t __lfortran_array_size_dest_x2D__x3E_values = array_size(src->values->dims, src->values->n_dims);
+    int32_t __lfortran_array_size_dest_x2D__x3E_values = (((src->values->dims[0].length)));
     dest->values->data = (int32_t*) _lfortran_malloc_alloc(_lfortran_get_default_allocator(), __lfortran_array_size_dest_x2D__x3E_values * sizeof(int32_t));
     memcpy(dest->values->data, src->values->data, __lfortran_array_size_dest_x2D__x3E_values * sizeof(int32_t));
     memcpy(dest->values->dims, src->values->dims, 32 * sizeof(struct dimension_descriptor));
@@ -441,14 +436,4 @@ void struct_deepcopy_c_backend_class_alloc_struct_member_cleanup_01_m__holder_ty
             dest->item = NULL;
         }
     }
-}
-
-
-
-int32_t array_size(struct dimension_descriptor dims[], size_t n) {
-    int32_t size = 1;
-    for (size_t i = 0; i < n; i++) {
-        size *= dims[i].length;
-    }
-    return size;
 }

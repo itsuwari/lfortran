@@ -364,6 +364,30 @@ namespace LCompilers {
         return ASR::is_a<ASR::List_t>(*t) || ASR::is_a<ASR::Tuple_t>(*t) || ASR::is_a<ASR::StructType_t>(*t);
     }
 
+    static inline bool is_simple_c_descriptor_reference(const std::string &expr) {
+        for (unsigned char ch : expr) {
+            if (std::isalnum(ch) || ch == '_' || ch == '-' || ch == '>'
+                    || ch == '.' || std::isspace(ch)) {
+                continue;
+            }
+            return false;
+        }
+        return true;
+    }
+
+    static inline std::string get_rank_known_array_size_expr(
+            const std::string &dims_expr, int n_dims) {
+        if (n_dims <= 0) {
+            return "1";
+        }
+        std::string result = "(" + dims_expr + "[0].length)";
+        for (int dim = 1; dim < n_dims; dim++) {
+            result += " * (" + dims_expr + "[" + std::to_string(dim)
+                + "].length)";
+        }
+        return "((" + result + "))";
+    }
+
     class CUtilFunctions {
 
         private:
@@ -529,6 +553,16 @@ namespace LCompilers {
             std::string get_array_size() {
                 array_size();
                 return util2func["array_size"];
+            }
+
+            std::string get_array_size_expr(const std::string &array_expr,
+                    int n_dims) {
+                if (n_dims == 1 || is_simple_c_descriptor_reference(array_expr)) {
+                    return get_rank_known_array_size_expr(
+                        array_expr + "->dims", n_dims);
+                }
+                return get_array_size() + "(" + array_expr + "->dims, "
+                    + std::to_string(n_dims) + ")";
             }
 
             std::string get_array_reshape(
@@ -932,8 +966,11 @@ class CCPPDSUtils {
                             std::string element_type_name =
                                 CUtils::get_c_array_element_type_from_ttype_t(
                                     alloc_value_type);
-                            std::string array_size_func =
-                                c_utils_functions->get_array_size();
+                            ASR::dimension_t *m_dims = nullptr;
+                            int n_dims = ASRUtils::extract_dimensions_from_ttype(
+                                alloc_value_type, m_dims);
+                            std::string array_size_expr =
+                                c_utils_functions->get_array_size_expr(value, n_dims);
                             std::string target_tmp = CUtils::sanitize_c_identifier(target);
                             std::string size_var = "__lfortran_array_size_"
                                 + target_tmp;
@@ -976,8 +1013,7 @@ class CCPPDSUtils {
                             result += "    memset(" + target + ", 0, sizeof(*"
                                 + target + "));\n";
                             result += "    int32_t " + size_var + " = "
-                                + array_size_func + "(" + value + "->dims, "
-                                + value + "->n_dims);\n";
+                                + array_size_expr + ";\n";
                             result += "    " + target + "->data = ("
                                 + element_type_name + "*) _lfortran_malloc_alloc("
                                 + "_lfortran_get_default_allocator(), " + size_var
