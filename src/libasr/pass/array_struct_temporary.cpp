@@ -180,6 +180,16 @@ static bool is_scalar_array_index(const ASR::array_index_t& idx) {
         && !ASRUtils::is_array(ASRUtils::expr_type(idx.m_right));
 }
 
+static bool is_compile_time_integer_array_constant(ASR::expr_t *expr) {
+    expr = ASRUtils::get_past_array_physical_cast(expr);
+    if (expr == nullptr || !ASR::is_a<ASR::ArrayConstant_t>(*expr)) {
+        return false;
+    }
+    ASR::ttype_t *element_type = ASRUtils::type_get_past_array(
+        ASRUtils::type_get_past_allocatable_pointer(ASRUtils::expr_type(expr)));
+    return element_type != nullptr && ASRUtils::is_integer(*element_type);
+}
+
 static bool same_array_reference(ASR::expr_t* x, ASR::expr_t* y) {
     if (x == nullptr || y == nullptr) {
         return x == y;
@@ -3404,6 +3414,16 @@ class ArgSimplifier: public ASR::CallReplacerOnExpressionsVisitor<ArgSimplifier>
 
     void visit_ArrayReshape(const ASR::ArrayReshape_t& x) {
         ASR::ArrayReshape_t& xx = const_cast<ASR::ArrayReshape_t&>(x);
+        ASR::expr_t *result_expr = const_cast<ASR::expr_t*>(&x.base);
+        ASR::ttype_t *result_element_type = ASRUtils::type_get_past_array(
+            ASRUtils::type_get_past_allocatable_pointer(x.m_type));
+        if (c_backend && x.m_value != nullptr
+                && ASR::is_a<ASR::ArrayConstant_t>(*x.m_value)
+                && result_element_type != nullptr
+                && !ASRUtils::is_character(*result_element_type)
+                && exprs_with_target.find(result_expr) != exprs_with_target.end()) {
+            return;
+        }
         auto is_c_char_transfer_reshape = [&]() {
             if (!c_backend) {
                 return false;
@@ -3430,7 +3450,8 @@ class ArgSimplifier: public ASR::CallReplacerOnExpressionsVisitor<ArgSimplifier>
                 && result_element_type != nullptr
                 && !ASRUtils::is_character(*result_element_type);
         };
-        if( !ASR::is_a<ASR::Var_t>(*ASRUtils::get_past_array_physical_cast(x.m_shape)) ) {
+        if( !ASR::is_a<ASR::Var_t>(*ASRUtils::get_past_array_physical_cast(x.m_shape)) &&
+                !(c_backend && is_compile_time_integer_array_constant(x.m_shape)) ) {
             replace_expr_with_temporary_variable(xx.m_shape, x.m_shape, "_array_reshape_shape", true);
             ASR::ttype_t* shape_ttype = ASRUtils::expr_type(xx.m_shape);
             ASR::array_physical_typeType shape_ptype = ASRUtils::extract_physical_type(shape_ttype);
