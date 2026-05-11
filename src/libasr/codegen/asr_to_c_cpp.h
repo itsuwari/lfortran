@@ -5625,7 +5625,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         }
         size_t n = static_cast<size_t>(n_int);
         storage_decl = "char " + storage_name + "[" + std::to_string(n)
-            + "][" + std::to_string(len) + "] = {";
+            + "][" + std::to_string(len + 1) + "] = {";
         pointer_init = "{";
         for (size_t i = 0; i < n; i++) {
             if (i > 0) {
@@ -8442,6 +8442,10 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             ASR::expr_t *target_expr, ASR::expr_t *value_expr) {
         target_expr = unwrap_c_lvalue_expr(target_expr);
         value_expr = unwrap_c_lvalue_expr(value_expr);
+        if ((target_expr != nullptr && ASRUtils::is_simd_array(target_expr))
+                || (value_expr != nullptr && ASRUtils::is_simd_array(value_expr))) {
+            return false;
+        }
         bool target_is_whole_alloc_pointer =
             target_expr != nullptr && is_c_whole_allocatable_or_pointer_array_expr(target_expr);
         bool target_is_whole_allocatable =
