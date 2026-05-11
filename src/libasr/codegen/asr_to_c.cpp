@@ -45,6 +45,7 @@ public:
     bool defer_c_struct_cleanup_defs = false;
     std::set<int64_t> deferred_c_struct_cleanup_type_ids;
     std::string deferred_c_struct_cleanup_defs;
+    std::set<int64_t> emitted_c_struct_runtime_info_type_ids;
     bool suppress_c_struct_cleanup_registration = false;
 
     bool target_offload_enabled;
@@ -2072,6 +2073,134 @@ R"(
         }
         deferred_c_struct_cleanup_type_ids.insert(type_id);
         deferred_c_struct_cleanup_defs += registration;
+    }
+
+    bool c_variable_declares_class_type(ASR::Variable_t *var,
+            ASR::symbol_t *target_sym) {
+        if (var == nullptr || target_sym == nullptr
+                || var->m_type_declaration == nullptr) {
+            return false;
+        }
+        ASR::symbol_t *declared_sym = ASRUtils::symbol_get_past_external(
+            var->m_type_declaration);
+        if (declared_sym != target_sym) {
+            return false;
+        }
+        ASR::ttype_t *type = ASRUtils::type_get_past_allocatable_pointer(
+            var->m_type);
+        ASR::ttype_t *element_type = type != nullptr
+            ? ASRUtils::extract_type(type) : nullptr;
+        return (type != nullptr && ASRUtils::is_class_type(type))
+            || (element_type != nullptr && ASRUtils::is_class_type(element_type));
+    }
+
+    bool c_symbol_table_declares_class_type(SymbolTable *symtab,
+            ASR::symbol_t *target_sym, std::set<SymbolTable*> &seen) {
+        if (symtab == nullptr || !seen.insert(symtab).second) {
+            return false;
+        }
+        for (auto &item : symtab->get_scope()) {
+            ASR::symbol_t *sym = ASRUtils::symbol_get_past_external(item.second);
+            if (sym == nullptr) {
+                continue;
+            }
+            if (ASR::is_a<ASR::Variable_t>(*sym)
+                    && c_variable_declares_class_type(
+                        ASR::down_cast<ASR::Variable_t>(sym), target_sym)) {
+                return true;
+            }
+            SymbolTable *child_symtab = nullptr;
+            if (ASR::is_a<ASR::Struct_t>(*sym)) {
+                child_symtab = ASR::down_cast<ASR::Struct_t>(sym)->m_symtab;
+            } else if (ASR::is_a<ASR::Module_t>(*sym)) {
+                child_symtab = ASR::down_cast<ASR::Module_t>(sym)->m_symtab;
+            } else if (ASR::is_a<ASR::Function_t>(*sym)) {
+                child_symtab = ASR::down_cast<ASR::Function_t>(sym)->m_symtab;
+            } else if (ASR::is_a<ASR::Program_t>(*sym)) {
+                child_symtab = ASR::down_cast<ASR::Program_t>(sym)->m_symtab;
+            }
+            if (c_symbol_table_declares_class_type(child_symtab, target_sym, seen)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    bool c_struct_has_class_member(const ASR::Struct_t &x) {
+        for (size_t i = 0; i < x.n_members; i++) {
+            ASR::symbol_t *member_sym0 = x.m_symtab->get_symbol(x.m_members[i]);
+            if (member_sym0 == nullptr) {
+                continue;
+            }
+            ASR::symbol_t *member_sym = ASRUtils::symbol_get_past_external(
+                member_sym0);
+            if (member_sym == nullptr || !ASR::is_a<ASR::Variable_t>(*member_sym)) {
+                continue;
+            }
+            ASR::Variable_t *member_var = ASR::down_cast<ASR::Variable_t>(
+                member_sym);
+            ASR::ttype_t *type = ASRUtils::type_get_past_allocatable_pointer(
+                member_var->m_type);
+            ASR::ttype_t *element_type = type != nullptr
+                ? ASRUtils::extract_type(type) : nullptr;
+            if ((type != nullptr && ASRUtils::is_class_type(type))
+                    || (element_type != nullptr
+                        && ASRUtils::is_class_type(element_type))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    bool c_struct_needs_runtime_info(const ASR::Struct_t &x,
+            ASR::symbol_t *struct_sym) {
+        if (!is_c) {
+            return false;
+        }
+        if (x.m_parent != nullptr || x.m_is_abstract
+                || x.n_member_functions > 0
+                || c_struct_has_class_member(x)) {
+            return true;
+        }
+        ASR::symbol_t *target_sym = ASRUtils::symbol_get_past_external(
+            struct_sym);
+        std::set<SymbolTable*> seen;
+        return c_symbol_table_declares_class_type(global_scope, target_sym, seen);
+    }
+
+    std::string emit_c_struct_runtime_info_registration(const ASR::Struct_t &x) {
+        ASR::symbol_t *struct_sym =
+            reinterpret_cast<ASR::symbol_t*>(const_cast<ASR::Struct_t*>(&x));
+        if (!c_struct_needs_runtime_info(x, struct_sym)) {
+            return "";
+        }
+        int64_t type_id = get_struct_runtime_type_id(struct_sym);
+        if (!emitted_c_struct_runtime_info_type_ids.insert(type_id).second) {
+            return "";
+        }
+        SymbolTable *saved_scope = current_scope;
+        current_scope = global_scope;
+        ensure_c_backend_constructor_macro_decl();
+        Allocator al_tmp(4*1024);
+        ASR::expr_t *struct_expr = ASRUtils::EXPR(
+            ASR::make_Var_t(al_tmp, x.base.base.loc, struct_sym));
+        std::string deepcopy_func = c_ds_api->get_struct_deepcopy_func(struct_expr);
+        std::string safe_name = CUtils::sanitize_c_identifier(
+            CUtils::get_c_symbol_name(struct_sym));
+        std::string registrar_name = get_unique_local_name(
+            "__lfortran_register_struct_runtime_" + safe_name
+            + "_x" + std::to_string(static_cast<uint64_t>(type_id)), false);
+        std::string struct_type = "struct " + CUtils::get_c_symbol_name(struct_sym);
+        std::string registration = "LFORTRAN_C_BACKEND_CONSTRUCTOR static void "
+            + registrar_name + "(void)\n{\n"
+            + "    extern void " + deepcopy_func + "(void*, void*);\n"
+            + "    _lfortran_register_c_struct_size("
+            + std::to_string(type_id) + ", sizeof(" + struct_type + "));\n"
+            + "    _lfortran_register_c_struct_deepcopy("
+            + std::to_string(type_id) + ", " + deepcopy_func + ");\n"
+            + "}\n\n";
+        current_scope = saved_scope;
+        return registration;
     }
 
     std::string get_variable_c_name(const ASR::Variable_t &v) {
@@ -4127,6 +4256,7 @@ R"(
         defer_c_struct_cleanup_defs = true;
         deferred_c_struct_cleanup_type_ids.clear();
         deferred_c_struct_cleanup_defs.clear();
+        emitted_c_struct_runtime_info_type_ids.clear();
         global_scope = x.m_symtab;
         LCOMPILERS_ASSERT(x.n_items == 0);
         indentation_level = 0;
@@ -4306,6 +4436,7 @@ R"(
         indentation_level = 0;
         bracket_open = 0;
         current_scope = global_scope;
+        std::string module_aggregate_decls = collect_module_aggregate_decls(x);
         std::string helper_defs;
         finalize_common_sections(helper_defs);
         std::string module_var_decls = collect_module_extern_decls(x);
@@ -4315,7 +4446,6 @@ R"(
         std::transform(header_guard.begin(), header_guard.end(), header_guard.begin(), ::toupper);
         header_guard += "_GENERATED_H";
 
-        std::string module_aggregate_decls = collect_module_aggregate_decls(x);
         std::string header_array_type_decls = array_types_decls;
         const std::string dimension_descriptor_decl =
             "\nstruct dimension_descriptor\n"
@@ -4686,6 +4816,7 @@ R"(    // Initialise Numpy
         src_dest += open_struct + body + end_struct;
         if constexpr (std::is_same_v<std::decay_t<T>, ASR::Struct_t>) {
             append_c_tbp_parent_registration(x, src_dest);
+            src_dest += emit_c_struct_runtime_info_registration(x);
             if (!suppress_c_struct_cleanup_registration) {
                 append_c_struct_cleanup_registration(x, src_dest);
             }

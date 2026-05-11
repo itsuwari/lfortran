@@ -69,13 +69,29 @@ typedef struct LFortranCStructCleanupEntry {
     struct LFortranCStructCleanupEntry *next;
 } LFortranCStructCleanupEntry;
 
+typedef struct LFortranCStructSizeEntry {
+    int64_t type_id;
+    size_t size;
+    struct LFortranCStructSizeEntry *next;
+} LFortranCStructSizeEntry;
+
+typedef struct LFortranCStructDeepcopyEntry {
+    int64_t type_id;
+    lfortran_c_struct_deepcopy_func_ptr func;
+    struct LFortranCStructDeepcopyEntry *next;
+} LFortranCStructDeepcopyEntry;
+
 #define LFORTRAN_C_TBP_BUCKET_COUNT 4096
 #define LFORTRAN_C_TYPE_PARENT_BUCKET_COUNT 1024
 #define LFORTRAN_C_STRUCT_CLEANUP_BUCKET_COUNT 4096
+#define LFORTRAN_C_STRUCT_SIZE_BUCKET_COUNT 4096
+#define LFORTRAN_C_STRUCT_DEEPCOPY_BUCKET_COUNT 4096
 
 static LFortranCTypeParentEntry *lfortran_c_type_parent_registry[LFORTRAN_C_TYPE_PARENT_BUCKET_COUNT] = {NULL};
 static LFortranCTbpEntry *lfortran_c_tbp_registry[LFORTRAN_C_TBP_BUCKET_COUNT] = {NULL};
 static LFortranCStructCleanupEntry *lfortran_c_struct_cleanup_registry[LFORTRAN_C_STRUCT_CLEANUP_BUCKET_COUNT] = {NULL};
+static LFortranCStructSizeEntry *lfortran_c_struct_size_registry[LFORTRAN_C_STRUCT_SIZE_BUCKET_COUNT] = {NULL};
+static LFortranCStructDeepcopyEntry *lfortran_c_struct_deepcopy_registry[LFORTRAN_C_STRUCT_DEEPCOPY_BUCKET_COUNT] = {NULL};
 
 static uint64_t lfortran_hash_c_string(const char *str) {
     uint64_t hash = UINT64_C(1469598103934665603);
@@ -132,6 +148,35 @@ static LFortranCStructCleanupEntry *lfortran_find_c_struct_cleanup_entry(
     size_t bucket = (size_t)(lfortran_mix_i64_hash(type_id)
         & (LFORTRAN_C_STRUCT_CLEANUP_BUCKET_COUNT - 1));
     LFortranCStructCleanupEntry *entry = lfortran_c_struct_cleanup_registry[bucket];
+    while (entry != NULL) {
+        if (entry->type_id == type_id) {
+            return entry;
+        }
+        entry = entry->next;
+    }
+    return NULL;
+}
+
+static LFortranCStructSizeEntry *lfortran_find_c_struct_size_entry(
+        int64_t type_id) {
+    size_t bucket = (size_t)(lfortran_mix_i64_hash(type_id)
+        & (LFORTRAN_C_STRUCT_SIZE_BUCKET_COUNT - 1));
+    LFortranCStructSizeEntry *entry = lfortran_c_struct_size_registry[bucket];
+    while (entry != NULL) {
+        if (entry->type_id == type_id) {
+            return entry;
+        }
+        entry = entry->next;
+    }
+    return NULL;
+}
+
+static LFortranCStructDeepcopyEntry *lfortran_find_c_struct_deepcopy_entry(
+        int64_t type_id) {
+    size_t bucket = (size_t)(lfortran_mix_i64_hash(type_id)
+        & (LFORTRAN_C_STRUCT_DEEPCOPY_BUCKET_COUNT - 1));
+    LFortranCStructDeepcopyEntry *entry =
+        lfortran_c_struct_deepcopy_registry[bucket];
     while (entry != NULL) {
         if (entry->type_id == type_id) {
             return entry;
@@ -269,6 +314,99 @@ LFORTRAN_API void _lfortran_cleanup_c_struct(int64_t type_id, void *ptr) {
     if (func != NULL) {
         func(ptr);
     }
+}
+
+LFORTRAN_API void _lfortran_register_c_struct_size(int64_t type_id,
+        size_t size) {
+    if (type_id == 0 || size == 0) {
+        return;
+    }
+    LFortranCStructSizeEntry *entry = lfortran_find_c_struct_size_entry(type_id);
+    if (entry != NULL) {
+        entry->size = size;
+        return;
+    }
+    entry = (LFortranCStructSizeEntry*) malloc(sizeof(LFortranCStructSizeEntry));
+    if (entry == NULL) {
+        fprintf(stderr, "ERROR: unable to register C struct size\n");
+        exit(1);
+    }
+    size_t bucket = (size_t)(lfortran_mix_i64_hash(type_id)
+        & (LFORTRAN_C_STRUCT_SIZE_BUCKET_COUNT - 1));
+    entry->type_id = type_id;
+    entry->size = size;
+    entry->next = lfortran_c_struct_size_registry[bucket];
+    lfortran_c_struct_size_registry[bucket] = entry;
+}
+
+LFORTRAN_API size_t _lfortran_get_c_struct_size(int64_t type_id) {
+    while (type_id != 0) {
+        LFortranCStructSizeEntry *entry =
+            lfortran_find_c_struct_size_entry(type_id);
+        if (entry != NULL) {
+            return entry->size;
+        }
+        LFortranCTypeParentEntry *parent_entry =
+            lfortran_find_c_type_parent_entry(type_id);
+        if (parent_entry == NULL) {
+            break;
+        }
+        type_id = parent_entry->parent_type_id;
+    }
+    return 0;
+}
+
+LFORTRAN_API size_t _lfortran_get_c_struct_size_or_die(const char *context,
+        int64_t type_id) {
+    size_t size = _lfortran_get_c_struct_size(type_id);
+    if (size != 0) {
+        return size;
+    }
+    fprintf(stderr, "C struct dynamic size lookup failed for %s\n", context);
+    exit(1);
+}
+
+LFORTRAN_API void _lfortran_register_c_struct_deepcopy(int64_t type_id,
+        lfortran_c_struct_deepcopy_func_ptr func) {
+    if (type_id == 0 || func == NULL) {
+        return;
+    }
+    LFortranCStructDeepcopyEntry *entry =
+        lfortran_find_c_struct_deepcopy_entry(type_id);
+    if (entry != NULL) {
+        entry->func = func;
+        return;
+    }
+    entry = (LFortranCStructDeepcopyEntry*) malloc(
+        sizeof(LFortranCStructDeepcopyEntry));
+    if (entry == NULL) {
+        fprintf(stderr, "ERROR: unable to register C struct deepcopy\n");
+        exit(1);
+    }
+    size_t bucket = (size_t)(lfortran_mix_i64_hash(type_id)
+        & (LFORTRAN_C_STRUCT_DEEPCOPY_BUCKET_COUNT - 1));
+    entry->type_id = type_id;
+    entry->func = func;
+    entry->next = lfortran_c_struct_deepcopy_registry[bucket];
+    lfortran_c_struct_deepcopy_registry[bucket] = entry;
+}
+
+LFORTRAN_API lfortran_c_struct_deepcopy_func_ptr
+_lfortran_get_c_struct_deepcopy(int64_t type_id) {
+    while (type_id != 0) {
+        LFortranCStructDeepcopyEntry *entry =
+            lfortran_find_c_struct_deepcopy_entry(type_id);
+        if (entry != NULL) {
+            return entry->func;
+        }
+        LFortranCTypeParentEntry *parent_entry =
+            lfortran_find_c_type_parent_entry(type_id);
+        if (parent_entry == NULL) {
+            break;
+        }
+        type_id = parent_entry->parent_type_id;
+    }
+    return NULL;
 }
 
 /* ----------------------------------------------------- */

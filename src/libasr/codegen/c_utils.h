@@ -928,7 +928,89 @@ class CCPPDSUtils {
                     ASR::Allocatable_t *type_alloc = ASR::down_cast<ASR::Allocatable_t>(t);
                     ASR::ttype_t *alloc_value_type = type_alloc->m_type;
                     if (ASRUtils::is_array(alloc_value_type)) {
-                        result = get_deepcopy(alloc_value_type, value, target);
+                        if (is_c) {
+                            std::string element_type_name =
+                                CUtils::get_c_array_element_type_from_ttype_t(
+                                    alloc_value_type);
+                            std::string array_size_func =
+                                c_utils_functions->get_array_size();
+                            std::string target_tmp = CUtils::sanitize_c_identifier(target);
+                            std::string size_var = "__lfortran_array_size_"
+                                + target_tmp;
+                            if (value == "NULL") {
+                                result = "if (" + target + " != NULL) {\n";
+                                result += "    if (" + target
+                                    + "->is_allocated && " + target
+                                    + "->data != NULL) {\n";
+                                result += std::string("        _lfortran_free_alloc_plain(")
+                                    + "_lfortran_get_default_allocator(), (char*) "
+                                    + target + "->data);\n";
+                                result += "    }\n";
+                                result += std::string("    _lfortran_free_alloc_plain(")
+                                    + "_lfortran_get_default_allocator(), (char*) "
+                                    + target + ");\n";
+                                result += "    " + target + " = NULL;\n";
+                                result += "}";
+                                break;
+                            }
+                            result = "if (" + target + " == " + value + ") {\n";
+                            result += "    ;\n";
+                            result += "} else if (" + value
+                                + " != NULL && " + value + "->is_allocated) {\n";
+                            result += "    if (" + target + " != NULL) {\n";
+                            result += "        if (" + target
+                                + "->is_allocated && " + target
+                                + "->data != NULL) {\n";
+                            result += std::string("            _lfortran_free_alloc_plain(")
+                                + "_lfortran_get_default_allocator(), (char*) "
+                                + target + "->data);\n";
+                            result += "        }\n";
+                            result += std::string("        _lfortran_free_alloc_plain(")
+                                + "_lfortran_get_default_allocator(), (char*) "
+                                + target + ");\n";
+                            result += "        " + target + " = NULL;\n";
+                            result += "    }\n";
+                            result += "    " + target + " = _lfortran_malloc_alloc("
+                                + "_lfortran_get_default_allocator(), sizeof(*"
+                                + target + "));\n";
+                            result += "    memset(" + target + ", 0, sizeof(*"
+                                + target + "));\n";
+                            result += "    int32_t " + size_var + " = "
+                                + array_size_func + "(" + value + "->dims, "
+                                + value + "->n_dims);\n";
+                            result += "    " + target + "->data = ("
+                                + element_type_name + "*) _lfortran_malloc_alloc("
+                                + "_lfortran_get_default_allocator(), " + size_var
+                                + " * sizeof(" + element_type_name + "));\n";
+                            result += "    memcpy(" + target + "->data, " + value
+                                + "->data, " + size_var + " * sizeof("
+                                + element_type_name + "));\n";
+                            result += "    memcpy(" + target + "->dims, " + value
+                                + "->dims, 32 * sizeof(struct dimension_descriptor));\n";
+                            result += "    " + target + "->n_dims = " + value
+                                + "->n_dims;\n";
+                            result += "    " + target + "->offset = " + value
+                                + "->offset;\n";
+                            result += "    " + target + "->is_allocated = "
+                                + value + "->is_allocated;\n";
+                            result += "} else {\n";
+                            result += "    if (" + target + " != NULL) {\n";
+                            result += "        if (" + target
+                                + "->is_allocated && " + target
+                                + "->data != NULL) {\n";
+                            result += std::string("            _lfortran_free_alloc_plain(")
+                                + "_lfortran_get_default_allocator(), (char*) "
+                                + target + "->data);\n";
+                            result += "        }\n";
+                            result += std::string("        _lfortran_free_alloc_plain(")
+                                + "_lfortran_get_default_allocator(), (char*) "
+                                + target + ");\n";
+                            result += "        " + target + " = NULL;\n";
+                            result += "    }\n";
+                            result += "}";
+                        } else {
+                            result = get_deepcopy(alloc_value_type, value, target);
+                        }
                     } else if (ASRUtils::is_character(*alloc_value_type)) {
                         result = "if (" + value + " != NULL) {\n";
                         result += "    _lfortran_strcpy_alloc(_lfortran_get_default_allocator(), &"
@@ -1170,7 +1252,9 @@ class CCPPDSUtils {
 
         std::string get_struct_deepcopy_func(ASR::expr_t* struct_expr) {
             std::string struct_type_code = CUtils::get_struct_type_code(struct_expr);
-            if( typecodeToDSfuncs.find(struct_type_code) == typecodeToDSfuncs.end() ) {
+            if( typecodeToDSfuncs.find(struct_type_code) == typecodeToDSfuncs.end()
+                    || typecodeToDSfuncs[struct_type_code].find("struct_deepcopy")
+                        == typecodeToDSfuncs[struct_type_code].end() ) {
                 struct_deepcopy(struct_expr);
             }
             return typecodeToDSfuncs[struct_type_code]["struct_deepcopy"];
@@ -1411,38 +1495,48 @@ class CCPPDSUtils {
             tmp_generated += indent + tab + struct_type_str + "* src = (" + struct_type_str + "*) src_void;\n";
             tmp_generated += indent + tab + struct_type_str + "* dest = (" + struct_type_str + "*) dest_void;\n";
             Allocator al(4*1024);
-            for(size_t i=0; i < struct_t->n_members; i++) {
-                std::string mem_name = std::string(struct_t->m_members[i]);
-                ASR::symbol_t* member = struct_t->m_symtab->get_symbol(mem_name);
-                std::string emitted_mem_name = CUtils::get_c_member_name(member);
-                ASR::expr_t* member_expr = ASRUtils::EXPR(ASR::make_Var_t(al, member->base.loc, member));
-                ASR::ttype_t* member_type_asr = ASRUtils::expr_type(member_expr);
-                ASR::ttype_t* member_value_type = ASRUtils::type_get_past_allocatable_pointer(member_type_asr);
-                if( ASR::is_a<ASR::String_t>(*member_value_type) ) {
-                    tmp_generated += indent + tab + get_deepcopy(member_type_asr,
-                                 "src->" + emitted_mem_name, "dest->" + emitted_mem_name) + ";\n";
-                } else if( ASRUtils::is_array(member_type_asr) ) {
-                    ASR::dimension_t* m_dims = nullptr;
-                    size_t n_dims = ASRUtils::extract_dimensions_from_ttype(member_type_asr, m_dims);
-                    if( ASRUtils::is_fixed_size_array(m_dims, n_dims) ) {
-                        std::string array_size = std::to_string(ASRUtils::get_fixed_size_of_array(m_dims, n_dims));
-                        array_size += "*sizeof(" + CUtils::get_c_type_from_ttype_t(member_type_asr) + ")";
-                        tmp_generated += indent + tab + "memcpy(dest->" + emitted_mem_name + ", src->" + emitted_mem_name +
-                                            ", " + array_size + ");\n";
-                    } else {
-                        ASR::ttype_t *member_element_type =
-                            ASRUtils::extract_type(member_type_asr);
-                        if (ASR::is_a<ASR::Allocatable_t>(*member_type_asr)
-                                && member_element_type != nullptr
-                                && ASR::is_a<ASR::StructType_t>(*member_element_type)
-                                && ASR::down_cast<ASR::StructType_t>(
-                                    member_element_type)->m_is_unlimited_polymorphic) {
-                            tmp_generated += indent + tab + "dest->" + emitted_mem_name
-                                + " = src->" + emitted_mem_name + ";\n";
-                            continue;
-                        }
-                        if (ASR::is_a<ASR::Allocatable_t>(*member_type_asr)
-                                && ASR::is_a<ASR::StructType_t>(*member_element_type)) {
+            auto append_struct_member_deepcopy = [&](auto&& self,
+                    ASR::Struct_t *current_struct_t) -> void {
+                if (current_struct_t->m_parent != nullptr) {
+                    ASR::symbol_t *parent_sym = ASRUtils::symbol_get_past_external(
+                        current_struct_t->m_parent);
+                    if (parent_sym != nullptr
+                            && ASR::is_a<ASR::Struct_t>(*parent_sym)) {
+                        self(self, ASR::down_cast<ASR::Struct_t>(parent_sym));
+                    }
+                }
+                for(size_t i=0; i < current_struct_t->n_members; i++) {
+                    std::string mem_name = std::string(current_struct_t->m_members[i]);
+                    ASR::symbol_t* member = current_struct_t->m_symtab->get_symbol(mem_name);
+                    std::string emitted_mem_name = CUtils::get_c_member_name(member);
+                    ASR::expr_t* member_expr = ASRUtils::EXPR(ASR::make_Var_t(al, member->base.loc, member));
+                    ASR::ttype_t* member_type_asr = ASRUtils::expr_type(member_expr);
+                    ASR::ttype_t* member_value_type = ASRUtils::type_get_past_allocatable_pointer(member_type_asr);
+                    if( ASR::is_a<ASR::String_t>(*member_value_type) ) {
+                        tmp_generated += indent + tab + get_deepcopy(member_type_asr,
+                                     "src->" + emitted_mem_name, "dest->" + emitted_mem_name) + ";\n";
+                    } else if( ASRUtils::is_array(member_type_asr) ) {
+                        ASR::dimension_t* m_dims = nullptr;
+                        size_t n_dims = ASRUtils::extract_dimensions_from_ttype(member_type_asr, m_dims);
+                        if( ASRUtils::is_fixed_size_array(m_dims, n_dims) ) {
+                            std::string array_size = std::to_string(ASRUtils::get_fixed_size_of_array(m_dims, n_dims));
+                            array_size += "*sizeof(" + CUtils::get_c_type_from_ttype_t(member_type_asr) + ")";
+                            tmp_generated += indent + tab + "memcpy(dest->" + emitted_mem_name + ", src->" + emitted_mem_name +
+                                                ", " + array_size + ");\n";
+                        } else {
+                            ASR::ttype_t *member_element_type =
+                                ASRUtils::extract_type(member_type_asr);
+                            if (ASR::is_a<ASR::Allocatable_t>(*member_type_asr)
+                                    && member_element_type != nullptr
+                                    && ASR::is_a<ASR::StructType_t>(*member_element_type)
+                                    && ASR::down_cast<ASR::StructType_t>(
+                                        member_element_type)->m_is_unlimited_polymorphic) {
+                                tmp_generated += indent + tab + "dest->" + emitted_mem_name
+                                    + " = src->" + emitted_mem_name + ";\n";
+                                continue;
+                            }
+                            if (ASR::is_a<ASR::Allocatable_t>(*member_type_asr)
+                                    && ASR::is_a<ASR::StructType_t>(*member_element_type)) {
                             tmp_generated += indent + tab + "if (src->" + emitted_mem_name
                                 + " != NULL && src->" + emitted_mem_name
                                 + "->data != NULL) {\n";
@@ -1495,8 +1589,88 @@ class CCPPDSUtils {
                     if( ASR::is_a<ASR::Allocatable_t>(*member_type_asr) ||
                         ASR::is_a<ASR::Pointer_t>(*member_type_asr) ) {
                         if (ASRUtils::is_class_type(member_value_type)) {
-                            tmp_generated += indent + tab + "dest->" + emitted_mem_name
-                                + " = src->" + emitted_mem_name + ";\n";
+                            if (ASR::is_a<ASR::Pointer_t>(*member_type_asr) || !is_c) {
+                                tmp_generated += indent + tab + "dest->" + emitted_mem_name
+                                    + " = src->" + emitted_mem_name + ";\n";
+                                continue;
+                            }
+                            std::string member_tmp_name = CUtils::sanitize_c_identifier(
+                                emitted_mem_name);
+                            std::string type_id_var = "__lfortran_dynamic_type_id_"
+                                + member_tmp_name;
+                            std::string size_var = "__lfortran_dynamic_size_"
+                                + member_tmp_name;
+                            std::string deepcopy_var = "__lfortran_dynamic_deepcopy_"
+                                + member_tmp_name;
+                            tmp_generated += indent + tab + "if (src->" + emitted_mem_name
+                                + " != NULL) {\n";
+                            tmp_generated += indent + tab + tab + "if (dest->"
+                                + emitted_mem_name + " == src->" + emitted_mem_name
+                                + ") {\n";
+                            tmp_generated += indent + tab + tab + tab + ";\n";
+                            tmp_generated += indent + tab + tab + "} else {\n";
+                            tmp_generated += indent + tab + tab + tab + "if (dest->"
+                                + emitted_mem_name + " != NULL) {\n";
+                            tmp_generated += indent + tab + tab + tab + tab
+                                + "_lfortran_cleanup_c_struct(((struct __lfortran_runtime_type_header*)dest->"
+                                + emitted_mem_name + ")->__lfortran_type_tag, (void*) dest->"
+                                + emitted_mem_name + ");\n";
+                            tmp_generated += indent + tab + tab + tab + tab
+                                + "_lfortran_free_alloc_plain(_lfortran_get_default_allocator(), "
+                                + "(char*) dest->" + emitted_mem_name + ");\n";
+                            tmp_generated += indent + tab + tab + tab + "}\n";
+                            tmp_generated += indent + tab + tab + tab + "int64_t "
+                                + type_id_var
+                                + " = ((struct __lfortran_runtime_type_header*)src->"
+                                + emitted_mem_name + ")->__lfortran_type_tag;\n";
+                            tmp_generated += indent + tab + tab + tab + "size_t "
+                                + size_var + " = _lfortran_get_c_struct_size_or_die("
+                                + "\"class allocatable deepcopy\", " + type_id_var
+                                + ");\n";
+                            tmp_generated += indent + tab + tab + tab + "dest->"
+                                + emitted_mem_name + " = _lfortran_malloc_alloc("
+                                + "_lfortran_get_default_allocator(), " + size_var
+                                + ");\n";
+                            tmp_generated += indent + tab + tab + tab + "memset(dest->"
+                                + emitted_mem_name + ", 0, " + size_var + ");\n";
+                            tmp_generated += indent + tab + tab + tab
+                                + "((struct __lfortran_runtime_type_header*)dest->"
+                                + emitted_mem_name + ")->__lfortran_type_tag = "
+                                + type_id_var + ";\n";
+                            tmp_generated += indent + tab + tab + tab
+                                + "lfortran_c_struct_deepcopy_func_ptr " + deepcopy_var
+                                + " = _lfortran_get_c_struct_deepcopy(" + type_id_var
+                                + ");\n";
+                            tmp_generated += indent + tab + tab + tab + "if ("
+                                + deepcopy_var + " == NULL) {\n";
+                            tmp_generated += indent + tab + tab + tab + tab
+                                + "fprintf(stderr, \"C struct dynamic deepcopy lookup "
+                                + "failed for class allocatable deepcopy\\n\");\n";
+                            tmp_generated += indent + tab + tab + tab + tab
+                                + "exit(1);\n";
+                            tmp_generated += indent + tab + tab + tab + "}\n";
+                            tmp_generated += indent + tab + tab + tab + deepcopy_var
+                                + "((void*) src->" + emitted_mem_name + ", (void*) dest->"
+                                + emitted_mem_name + ");\n";
+                            tmp_generated += indent + tab + tab + tab
+                                + "((struct __lfortran_runtime_type_header*)dest->"
+                                + emitted_mem_name + ")->__lfortran_type_tag = "
+                                + type_id_var + ";\n";
+                            tmp_generated += indent + tab + tab + "}\n";
+                            tmp_generated += indent + tab + "} else {\n";
+                            tmp_generated += indent + tab + tab + "if (dest->"
+                                + emitted_mem_name + " != NULL) {\n";
+                            tmp_generated += indent + tab + tab + tab
+                                + "_lfortran_cleanup_c_struct(((struct __lfortran_runtime_type_header*)dest->"
+                                + emitted_mem_name + ")->__lfortran_type_tag, (void*) dest->"
+                                + emitted_mem_name + ");\n";
+                            tmp_generated += indent + tab + tab + tab
+                                + "_lfortran_free_alloc_plain(_lfortran_get_default_allocator(), "
+                                + "(char*) dest->" + emitted_mem_name + ");\n";
+                            tmp_generated += indent + tab + tab + tab + "dest->"
+                                + emitted_mem_name + " = NULL;\n";
+                            tmp_generated += indent + tab + tab + "}\n";
+                            tmp_generated += indent + tab + "}\n";
                             continue;
                         }
                         std::string member_struct_type = "struct " + CUtils::get_struct_type_code(member_expr);
@@ -1524,6 +1698,8 @@ class CCPPDSUtils {
                     tmp_generated += indent + tab + "dest->" + emitted_mem_name + " = " + " src->" + emitted_mem_name + ";\n";
                 }
             }
+            };
+            append_struct_member_deepcopy(append_struct_member_deepcopy, struct_t);
             tmp_generated += indent + "}\n\n";
             generated_code += tmp_generated;
         }
