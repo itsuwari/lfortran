@@ -3439,6 +3439,7 @@ RUN(NAME array_section_31 LABELS gfortran c)
 RUN(NAME array_section_32 LABELS gfortran c)
 RUN(NAME array_section_33 LABELS gfortran c)
 RUN(NAME array_section_34 LABELS gfortran c)
+RUN(NAME array_section_35 LABELS gfortran c)
 RUN(NAME c_backend_imported_sum_helper_01 LABELS gfortran c
     EXTRAFILES c_backend_imported_sum_helper_01_mod.f90
     EXTRA_ARGS --separate-compilation)
