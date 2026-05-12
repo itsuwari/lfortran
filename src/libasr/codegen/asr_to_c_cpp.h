@@ -6675,6 +6675,172 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         return true;
     }
 
+    bool get_c_rank1_simple_section_access(ASR::expr_t *expr,
+            const std::string &prefix, std::string &setup,
+            std::string &data_name, std::string &offset_name,
+            std::string &stride_name) {
+        expr = unwrap_c_lvalue_expr(expr);
+        if (expr == nullptr || !ASR::is_a<ASR::ArraySection_t>(*expr)) {
+            return false;
+        }
+        ASR::ArraySection_t *section = ASR::down_cast<ASR::ArraySection_t>(expr);
+        ASR::expr_t *base_expr = unwrap_c_array_expr(section->m_v);
+        if (base_expr == nullptr || !ASRUtils::is_array(ASRUtils::expr_type(base_expr))) {
+            return false;
+        }
+        ASR::ttype_t *base_type = ASRUtils::type_get_past_allocatable_pointer(
+            ASRUtils::expr_type(base_expr));
+        ASR::dimension_t *base_dims = nullptr;
+        int base_rank = ASRUtils::extract_dimensions_from_ttype(base_type, base_dims);
+        if (base_rank != 1 || section->n_args != 1) {
+            return false;
+        }
+        ASR::array_index_t idx = section->m_args[0];
+        bool is_slice = idx.m_left || idx.m_step || idx.m_right == nullptr;
+        if (!is_slice
+                || !is_c_simple_integer_section_bound_expr(idx.m_left)
+                || !is_c_simple_integer_section_bound_expr(idx.m_right)
+                || !is_c_simple_integer_section_bound_expr(idx.m_step)) {
+            return false;
+        }
+
+        self().visit_expr(*base_expr);
+        std::string base = src;
+        setup += drain_tmp_buffer();
+        setup += extract_stmt_setup_from_expr(base);
+
+        bool use_static_base_dims = is_c_fixed_size_descriptor_storage_expr(base_expr)
+            && base_dims != nullptr;
+        int64_t static_lb = 1;
+        if (use_static_base_dims) {
+            if (base_dims[0].m_start != nullptr
+                    && !get_c_constant_int_expr_value(base_dims[0].m_start, static_lb)) {
+                use_static_base_dims = false;
+            }
+        }
+
+        std::string base_lb = use_static_base_dims
+            ? std::to_string(static_lb) : base + "->dims[0].lower_bound";
+        std::string base_stride = use_static_base_dims ? "1" : base + "->dims[0].stride";
+        std::string base_offset = use_static_base_dims ? "0" : base + "->offset";
+        std::string left = get_c_array_section_bound_expr(idx.m_left, base_lb);
+        setup += drain_tmp_buffer();
+        setup += extract_stmt_setup_from_expr(left);
+        std::string step = get_c_array_section_bound_expr(idx.m_step, "1");
+        setup += drain_tmp_buffer();
+        setup += extract_stmt_setup_from_expr(step);
+
+        std::string indent(indentation_level * indentation_spaces, ' ');
+        ASR::ttype_t *element_type = ASRUtils::type_get_past_array(base_type);
+        std::string elem_type = CUtils::get_c_type_from_ttype_t(element_type);
+        data_name = get_unique_local_name(prefix + "_data");
+        offset_name = get_unique_local_name(prefix + "_offset");
+        stride_name = get_unique_local_name(prefix + "_stride");
+        std::string base_data = is_c_local_fixed_size_descriptor_storage_expr(base_expr)
+            ? base + "_data" : base + "->data";
+        setup += indent + elem_type + " *" + data_name + " = " + base_data + ";\n";
+        setup += indent + "int64_t " + offset_name + " = (" + base_offset
+            + " + " + base_stride + " * ((" + left + ") - " + base_lb + "));\n";
+        setup += indent + "int64_t " + stride_name + " = " + base_stride
+            + " * (" + step + ");\n";
+        return true;
+    }
+
+    bool try_emit_c_rank1_section_array_constant_assignment(
+            const ASR::Assignment_t &x, ASR::expr_t *target_expr) {
+        if (!is_c) {
+            return false;
+        }
+        target_expr = unwrap_c_lvalue_expr(target_expr);
+        if (target_expr == nullptr || !ASR::is_a<ASR::ArraySection_t>(*target_expr)) {
+            return false;
+        }
+        ASR::ArrayConstant_t *arr = get_c_array_constant_expr(x.m_value);
+        ASR::ArrayConstructor_t *ctor = nullptr;
+        ASR::expr_t *value_expr = unwrap_c_array_expr(x.m_value);
+        if (arr == nullptr && value_expr != nullptr
+                && ASR::is_a<ASR::ArrayConstructor_t>(*value_expr)) {
+            ctor = ASR::down_cast<ASR::ArrayConstructor_t>(value_expr);
+            if (!is_c_scalarizable_array_constructor(*ctor)) {
+                return false;
+            }
+        }
+        if (arr == nullptr && ctor == nullptr) {
+            return false;
+        }
+        ASR::ttype_t *raw_value_type = arr ? arr->m_type : ctor->m_type;
+        ASR::ttype_t *value_type = ASRUtils::type_get_past_allocatable_pointer(
+            raw_value_type);
+        if (value_type == nullptr || !ASRUtils::is_fixed_size_array(value_type)
+                || ASRUtils::extract_n_dims_from_ttype(value_type) != 1) {
+            return false;
+        }
+        ASR::ttype_t *element_type = ASRUtils::type_get_past_array(value_type);
+        if (element_type == nullptr
+                || !is_c_scalarizable_element_type(element_type)
+                || ASRUtils::is_character(*element_type)) {
+            return false;
+        }
+        ASR::ttype_t *target_type = ASRUtils::type_get_past_allocatable_pointer(
+            ASRUtils::expr_type(target_expr));
+        ASR::ttype_t *target_element_type = target_type
+            ? ASRUtils::type_get_past_array(target_type) : nullptr;
+        if (target_element_type == nullptr
+                || !ASRUtils::check_equal_type(target_element_type, element_type,
+                    nullptr, nullptr)) {
+            return false;
+        }
+        int64_t length = ASRUtils::get_fixed_size_of_array(value_type);
+        if (length <= 0 || length > 8) {
+            return false;
+        }
+        if (ctor != nullptr && static_cast<int64_t>(ctor->n_args) != length) {
+            return false;
+        }
+
+        std::string value_setup;
+        std::vector<std::string> values;
+        values.reserve(static_cast<size_t>(length));
+        if (arr != nullptr) {
+            for (int64_t i = 0; i < length; i++) {
+                values.push_back(get_c_array_constant_init_element_for_c_index(
+                    arr, value_type, element_type, static_cast<size_t>(i)));
+            }
+        } else {
+            for (int64_t i = 0; i < length; i++) {
+                self().visit_expr(*ctor->m_args[i]);
+                std::string value = src;
+                value_setup += drain_tmp_buffer();
+                value_setup += extract_stmt_setup_from_expr(value);
+                values.push_back(value);
+            }
+        }
+
+        std::string setup;
+        std::string target_data, target_offset, target_stride;
+        if (!get_c_rank1_simple_section_access(target_expr,
+                "__lfortran_const_lhs", setup, target_data, target_offset,
+                target_stride)) {
+            return false;
+        }
+
+        std::string indent(indentation_level * indentation_spaces, ' ');
+        src = check_tmp_buffer();
+        src += indent + "{\n";
+        indentation_level++;
+        std::string inner_indent(indentation_level * indentation_spaces, ' ');
+        src += setup;
+        src += value_setup;
+        for (int64_t i = 0; i < length; i++) {
+            src += inner_indent + target_data + "[" + target_offset + " + "
+                + std::to_string(i) + " * " + target_stride + "] = "
+                + values[static_cast<size_t>(i)] + ";\n";
+        }
+        indentation_level--;
+        src += indent + "}\n";
+        return true;
+    }
+
     bool get_c_constant_int_expr_value(ASR::expr_t *expr, int64_t &value) {
         if (expr == nullptr) {
             return false;
@@ -13031,6 +13197,10 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         }
         if (try_emit_c_rank2_plain_data_copy_assignment(
                 unwrapped_target_expr, x.m_value)) {
+            return;
+        }
+        if (try_emit_c_rank1_section_array_constant_assignment(
+                x, unwrapped_target_expr)) {
             return;
         }
         if (try_emit_c_rank1_plain_data_copy_assignment(
