@@ -8871,6 +8871,9 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         src += setup;
         src += value_setup;
         std::string index_name = get_unique_local_name("__lfortran_i");
+        std::string target_index = get_unique_local_name("__lfortran_char_lhs_index");
+        src += inner_indent + "int64_t " + target_index + " = "
+            + target_offset + ";\n";
         src += inner_indent + "for (int64_t " + index_name + " = 0; "
             + index_name + " < " + target_length + "; " + index_name + "++) {\n";
         indentation_level++;
@@ -8881,14 +8884,14 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         src += loop_indent + "char* " + source_name + " = (" + index_name
             + " < " + value_length + ") ? (" + value_data + " + "
             + index_name + ") : " + zero_name + ";\n";
-        std::string target_elem = target_data + "[" + target_offset + " + "
-            + index_name + " * " + target_stride + "]";
+        std::string target_elem = target_data + "[" + target_index + "]";
         src += loop_indent + "if (" + target_elem + " == NULL) {\n";
         src += loop_indent + "    " + target_elem
             + " = (char*) _lfortran_string_malloc_alloc(_lfortran_get_default_allocator(), 1);\n";
         src += loop_indent + "}\n";
         src += loop_indent + target_elem + "[0] = (" + source_name
             + " != NULL) ? " + source_name + "[0] : '\\0';\n";
+        src += loop_indent + target_index + " += " + target_stride + ";\n";
         indentation_level--;
         src += inner_indent + "}\n";
         src += value_cleanup;
@@ -9001,19 +9004,24 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         std::string src_idx = get_unique_local_name("__lfortran_transfer_src_i");
         std::string dst_bytes = get_unique_local_name("__lfortran_transfer_dst");
         std::string src_elem = get_unique_local_name("__lfortran_transfer_src_elem");
+        std::string target_index = get_unique_local_name("__lfortran_transfer_lhs_index");
+        std::string source_index = get_unique_local_name("__lfortran_transfer_src_index");
         src = check_tmp_buffer();
         src += indent + "{\n";
         indentation_level++;
         std::string inner_indent(indentation_level * indentation_spaces, ' ');
         src += setup;
         src += inner_indent + "int64_t " + src_idx + " = 0;\n";
+        src += inner_indent + "int64_t " + source_index + " = "
+            + source_offset + ";\n";
+        src += inner_indent + "int64_t " + target_index + " = "
+            + target_offset + ";\n";
         src += inner_indent + "for (int64_t " + elem_idx + " = 0; "
             + elem_idx + " < " + target_length + "; " + elem_idx + "++) {\n";
         indentation_level++;
         std::string loop_indent(indentation_level * indentation_spaces, ' ');
         src += loop_indent + "unsigned char *" + dst_bytes + " = (unsigned char*) &"
-            + target_data + "[" + target_offset + " + " + elem_idx
-            + " * " + target_stride + "];\n";
+            + target_data + "[" + target_index + "];\n";
         src += loop_indent + "memset(" + dst_bytes + ", 0, sizeof(" + elem_type + "));\n";
         src += loop_indent + "for (int64_t " + byte_idx + " = 0; "
             + byte_idx + " < (int64_t) sizeof(" + elem_type + ") && "
@@ -9021,12 +9029,14 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             + src_idx + "++) {\n";
         indentation_level++;
         std::string byte_indent(indentation_level * indentation_spaces, ' ');
-        src += byte_indent + "char *" + src_elem + " = " + source_data + "["
-            + source_offset + " + " + src_idx + " * " + source_stride + "];\n";
+        src += byte_indent + "char *" + src_elem + " = " + source_data
+            + "[" + source_index + "];\n";
         src += byte_indent + dst_bytes + "[" + byte_idx + "] = (unsigned char)(("
             + src_elem + " != NULL) ? " + src_elem + "[0] : '\\0');\n";
+        src += byte_indent + source_index + " += " + source_stride + ";\n";
         indentation_level--;
         src += loop_indent + "}\n";
+        src += loop_indent + target_index + " += " + target_stride + ";\n";
         indentation_level--;
         src += inner_indent + "}\n";
         indentation_level--;
@@ -9108,6 +9118,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         std::string byte_idx = get_unique_local_name("__lfortran_transfer_byte_i");
         std::string dst_bytes = get_unique_local_name("__lfortran_transfer_dst");
         std::string src_elem = get_unique_local_name("__lfortran_transfer_src_elem");
+        std::string source_index = get_unique_local_name("__lfortran_transfer_src_index");
         std::vector<std::string> idx_names;
         std::vector<std::string> offset_terms;
         idx_names.reserve(target_rank);
@@ -9126,6 +9137,8 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         std::string inner_indent(indentation_level * indentation_spaces, ' ');
         src += setup;
         src += inner_indent + "int64_t " + src_idx + " = 0;\n";
+        src += inner_indent + "int64_t " + source_index + " = "
+            + source_offset + ";\n";
         for (int d = target_rank - 1; d >= 0; d--) {
             std::string dim = std::to_string(d);
             src += inner_indent + "for (int64_t " + idx_names[d] + " = "
@@ -9153,10 +9166,11 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             + src_idx + "++) {\n";
         indentation_level++;
         std::string byte_indent(indentation_level * indentation_spaces, ' ');
-        src += byte_indent + "char *" + src_elem + " = " + source_data + "["
-            + source_offset + " + " + src_idx + " * " + source_stride + "];\n";
+        src += byte_indent + "char *" + src_elem + " = " + source_data
+            + "[" + source_index + "];\n";
         src += byte_indent + dst_bytes + "[" + byte_idx + "] = (unsigned char)(("
             + src_elem + " != NULL) ? " + src_elem + "[0] : '\\0');\n";
+        src += byte_indent + source_index + " += " + source_stride + ";\n";
         indentation_level--;
         src += inner_indent + "}\n";
         for (int d = 0; d < target_rank; d++) {
