@@ -1,0 +1,13 @@
+{
+    "basename": "c_forbid_pattern-product_02-df100a5",
+    "cmd": "lfortran --no-color --show-c {infile} | (! grep -F -q \"__lfortran_array_dim1_stride * (__1_i - __lfortran_array_dim1_lower_bound)\") #",
+    "infile": "tests/../integration_tests/product_02.f90",
+    "infile_hash": "1df31c4feca11bb7b72e29da58198782517c5b8811507d041b13941c",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}
