@@ -18231,11 +18231,9 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         return true;
     }
 
-    bool try_emit_c_rank3_sum_induction_loop(const ASR::DoLoop_t &outer,
+    bool try_emit_c_rank3_reduction_induction_loop(const ASR::DoLoop_t &outer,
             std::string &out) {
         if (!is_c || current_function == nullptr
-                || std::string(current_function->m_name).find("_lcompilers_Sum")
-                    == std::string::npos
                 || outer.n_body != 1
                 || !ASR::is_a<ASR::DoLoop_t>(*outer.m_body[0])
                 || !is_c_unit_increment_loop(outer.m_head)
@@ -18277,24 +18275,11 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             return false;
         }
 
-        ASR::expr_t *rhs = ASRUtils::get_past_array_physical_cast(assignment->m_value);
         ASR::expr_t *right = nullptr;
         ASR::expr_t *left = nullptr;
-        if (rhs != nullptr && ASR::is_a<ASR::RealBinOp_t>(*rhs)) {
-            ASR::RealBinOp_t *binop = ASR::down_cast<ASR::RealBinOp_t>(rhs);
-            if (binop->m_op != ASR::binopType::Add) {
-                return false;
-            }
-            left = binop->m_left;
-            right = binop->m_right;
-        } else if (rhs != nullptr && ASR::is_a<ASR::IntegerBinOp_t>(*rhs)) {
-            ASR::IntegerBinOp_t *binop = ASR::down_cast<ASR::IntegerBinOp_t>(rhs);
-            if (binop->m_op != ASR::binopType::Add) {
-                return false;
-            }
-            left = binop->m_left;
-            right = binop->m_right;
-        } else {
+        std::string reduction_op_src, ptr_prefix;
+        if (!get_c_reduction_binop_operands(assignment->m_value, left, right,
+                reduction_op_src, ptr_prefix)) {
             return false;
         }
         if (!is_c_same_var_expr(left, target_sym) || right == nullptr
@@ -18363,7 +18348,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         if (element_type.empty()) {
             return fail_with_restore();
         }
-        std::string ptr_name = get_unique_local_name("__lfortran_sum_ptr");
+        std::string ptr_name = get_unique_local_name(ptr_prefix);
         std::string indent(indentation_level * indentation_spaces, ' ');
         std::string middle_indent((indentation_level + 1) * indentation_spaces, ' ');
         std::string inner_indent((indentation_level + 2) * indentation_spaces, ' ');
@@ -18382,8 +18367,8 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             + " - " + cache->lower_bounds[0] + "));\n";
         out += inner_indent + "for (" + inner_name + "=" + inner_start + "; "
             + inner_name + "<=" + inner_end + "; " + inner_name + "++) {\n";
-        out += body_indent + target_name + " = " + target_name + " + *"
-            + ptr_name + ";\n";
+        out += body_indent + target_name + " = " + target_name + " "
+            + reduction_op_src + " *" + ptr_name + ";\n";
         out += body_indent + ptr_name + " += " + cache->strides[0] + ";\n";
         out += inner_indent + "}\n";
         out += middle_indent + "}\n";
@@ -18397,7 +18382,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             src = optimized_loop;
             return;
         }
-        if (try_emit_c_rank3_sum_induction_loop(x, optimized_loop)) {
+        if (try_emit_c_rank3_reduction_induction_loop(x, optimized_loop)) {
             src = optimized_loop;
             return;
         }

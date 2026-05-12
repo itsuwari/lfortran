@@ -1,0 +1,13 @@
+{
+    "basename": "c-c_backend_product_rank3_induction_01-e93c9fa",
+    "cmd": "lfortran --no-color --show-c {infile}",
+    "infile": "tests/c_backend_product_rank3_induction_01.f90",
+    "infile_hash": "6810f715111468c22d69127caa8a1cfceec3e3f634000498f5f970a4",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": "c-c_backend_product_rank3_induction_01-e93c9fa.stdout",
+    "stdout_hash": "9c756f130a499b3371555d695299560468b1312b50c5fe2031d78e4e",
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}
