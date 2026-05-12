@@ -17986,6 +17986,11 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         if (target_sym == nullptr) {
             return false;
         }
+        if (!ASR::is_a<ASR::Variable_t>(*outer_sym)
+                || !ASR::is_a<ASR::Variable_t>(*inner_sym)
+                || !ASR::is_a<ASR::Variable_t>(*target_sym)) {
+            return false;
+        }
 
         ASR::expr_t *rhs = ASRUtils::get_past_array_physical_cast(assignment->m_value);
         ASR::expr_t *right = nullptr;
@@ -18020,17 +18025,25 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             return false;
         }
 
+        std::string saved_src = src;
+        std::vector<std::string> saved_tmp_buffer_src = tmp_buffer_src;
+        auto fail_with_restore = [&]() -> bool {
+            src = saved_src;
+            tmp_buffer_src = saved_tmp_buffer_src;
+            return false;
+        };
+
         self().visit_expr(*item->m_v);
         std::string array = src;
         std::string setup = drain_tmp_buffer();
         if (!setup.empty()) {
-            return false;
+            return fail_with_restore();
         }
         const CArrayDescriptorCache *cache =
             get_current_function_array_descriptor_cache(array, 2);
         if (cache == nullptr || cache->data.empty()
                 || cache->lower_bounds.size() < 2 || cache->strides.size() < 2) {
-            return false;
+            return fail_with_restore();
         }
 
         auto loop_bound = [&](ASR::expr_t *expr, std::string &value) -> bool {
@@ -18044,7 +18057,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 || !loop_bound(outer.m_head.m_end, outer_end)
                 || !loop_bound(inner->m_head.m_start, inner_start)
                 || !loop_bound(inner->m_head.m_end, inner_end)) {
-            return false;
+            return fail_with_restore();
         }
 
         std::string outer_name = CUtils::get_c_variable_name(
@@ -18057,7 +18070,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             CUtils::get_c_array_element_type_from_ttype_t(
                 ASRUtils::expr_type(item->m_v), is_c);
         if (element_type.empty()) {
-            return false;
+            return fail_with_restore();
         }
         std::string ptr_name = get_unique_local_name("__lfortran_sum_ptr");
         std::string indent(indentation_level * indentation_spaces, ' ');
@@ -18065,7 +18078,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         std::string body_indent((indentation_level + 2) * indentation_spaces, ' ');
         out = indent + "for (" + outer_name + "=" + outer_start + "; "
             + outer_name + "<=" + outer_end + "; " + outer_name + "++) {\n";
-        out += inner_indent + element_type + " * restrict " + ptr_name
+        out += inner_indent + element_type + " * " + ptr_name
             + " = " + cache->data + " + " + cache->offset + " + ("
             + cache->strides[1] + " * (" + outer_name + " - "
             + cache->lower_bounds[1] + ")) + (" + cache->strides[0]
