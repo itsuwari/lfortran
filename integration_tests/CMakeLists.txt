@@ -3360,6 +3360,7 @@ RUN(NAME implied_do_loops36 LABELS gfortran llvm)
 
 RUN(NAME implied_do_loops37 LABELS gfortran llvm)
 RUN(NAME implied_do_loops38 LABELS gfortran c EXTRA_ARGS --separate-compilation)
+RUN(NAME implied_do_loop_var_after_io_01 LABELS gfortran llvm EXTRA_ARGS --use-loop-variable-after-loop)
 
 RUN(NAME minpack_01 LABELS gfortran llvm_rtlib EXTRAFILES
         minpack_01_module.f90 minpack_01_func.f90)
