@@ -2,7 +2,7 @@
     "basename": "c_forbid_pattern-c_backend_call_section_no_temp_01-1c48a5c",
     "cmd": "lfortran --no-color --show-c {infile} | (! grep -F -q \"__libasr_created__subroutine_call_\") #",
     "infile": "tests/c_backend_call_section_no_temp_01.f90",
-    "infile_hash": "b50e773dc1fbbaceb0cbc92d61b59a9d5b51a11a33a3495edcac31bd",
+    "infile_hash": "1d738817e616bf4ff8bba6674e59277f2b3e312dca5c2e5efad36cb7",
     "outfile": null,
     "outfile_hash": null,
     "stdout": null,

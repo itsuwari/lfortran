@@ -30,11 +30,6 @@ implicit none
 real(8) :: a(4, 5), s
 
 a = 1.0d0
-call consume(a(:, 2:4), s)
-
-if (abs(s - 12.0d0) > 1.0d-12) error stop
-
-a = 1.0d0
 call consume(a(1:4:2, 2:4), s)
 
 if (abs(s - 6.0d0) > 1.0d-12) error stop

@@ -2192,62 +2192,37 @@ static bool should_preserve_c_rank2_scalar_constructor_reshape(
         && !is_common_symbol_present_in_lhs_and_rhs(al, lhs_var, expr);
 }
 
-static bool is_c_proven_contiguous_array_base_expr(ASR::expr_t *expr) {
-    expr = ASRUtils::get_past_array_physical_cast(expr);
-    if (expr == nullptr || ASR::is_a<ASR::ArraySection_t>(*expr)
-            || !ASRUtils::is_array(ASRUtils::expr_type(expr))
-            || is_c_pointer_array_base_expr(expr)) {
+static bool is_c_simple_array_section_view(ASR::ArraySection_t *section) {
+    if (section == nullptr) {
         return false;
     }
-    ASR::ttype_t *type = ASRUtils::expr_type(expr);
-    if (ASRUtils::is_allocatable(type)) {
-        return true;
-    }
-    ASR::array_physical_typeType physical_type = ASRUtils::extract_physical_type(type);
-    if (physical_type == ASR::array_physical_typeType::FixedSizeArray
-            || physical_type == ASR::array_physical_typeType::SIMDArray) {
-        return true;
-    }
-    if (ASR::is_a<ASR::Var_t>(*expr)) {
-        ASR::symbol_t *sym = ASRUtils::symbol_get_past_external(
-            ASR::down_cast<ASR::Var_t>(expr)->m_v);
-        return ASR::is_a<ASR::Variable_t>(*sym)
-            && ASR::down_cast<ASR::Variable_t>(sym)->m_contiguous_attr;
-    }
-    return false;
-}
-
-static bool is_c_provably_contiguous_array_section(ASR::ArraySection_t *section) {
     ASR::expr_t *base = ASRUtils::get_past_array_physical_cast(section->m_v);
-    if (!is_c_proven_contiguous_array_base_expr(base)) {
-        return false;
-    }
-    ASR::ttype_t *base_type = ASRUtils::type_get_past_allocatable_pointer(
-        ASRUtils::expr_type(base));
+    ASR::ttype_t *base_type = base != nullptr
+        ? ASRUtils::type_get_past_allocatable_pointer(ASRUtils::expr_type(base))
+        : nullptr;
     int base_rank = ASRUtils::extract_n_dims_from_ttype(base_type);
     if (base_rank <= 0 || section->n_args != static_cast<size_t>(base_rank)) {
         return false;
     }
-    int last_slice_dim = -1;
+    bool found_slice = false;
     for (int i = 0; i < base_rank; i++) {
         const ASR::array_index_t &idx = section->m_args[i];
         bool is_slice = idx.m_left || idx.m_step || idx.m_right == nullptr;
         if (!is_slice) {
-            if (!is_scalar_array_index(idx)) {
+            if (!is_scalar_array_index(idx)
+                    || !is_c_simple_integer_bound_expr(idx.m_right)) {
                 return false;
             }
             continue;
         }
-        if (i != last_slice_dim + 1 || !is_unit_step_expr(idx.m_step)) {
+        if (!is_c_simple_integer_bound_expr(idx.m_left)
+                || !is_c_simple_integer_bound_expr(idx.m_right)
+                || !is_c_simple_integer_bound_expr(idx.m_step)) {
             return false;
         }
-        if (last_slice_dim >= 0
-                && !is_default_unit_array_slice(section->m_args[last_slice_dim])) {
-            return false;
-        }
-        last_slice_dim = i;
+        found_slice = true;
     }
-    return last_slice_dim >= 0;
+    return found_slice;
 }
 
 static bool should_preserve_c_no_copy_section_actual(bool c_backend,
@@ -2279,7 +2254,7 @@ static bool should_preserve_c_no_copy_section_actual(bool c_backend,
     if (ASRUtils::is_array_indexed_with_array_indices(section)) {
         return false;
     }
-    if (!is_c_provably_contiguous_array_section(section)) {
+    if (!is_c_simple_array_section_view(section)) {
         return false;
     }
     ASR::expr_t *base = ASRUtils::get_past_array_physical_cast(section->m_v);
