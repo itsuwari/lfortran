@@ -8464,15 +8464,22 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             + source_stride1 + " == 1) {\n";
         indentation_level++;
         std::string memcpy_indent(indentation_level * indentation_spaces, ' ');
-        src += memcpy_indent + "for (int64_t " + index2_name + " = 0; "
+        std::string target_memcpy_index =
+            get_unique_local_name("__lfortran_lhs2_memcpy_index");
+        std::string source_memcpy_index =
+            get_unique_local_name("__lfortran_rhs2_memcpy_index");
+        src += memcpy_indent + "for (int64_t " + index2_name + " = 0, "
+            + target_memcpy_index + " = " + target_offset + ", "
+            + source_memcpy_index + " = " + source_offset + "; "
             + index2_name + " < " + target_length2 + "; "
-            + index2_name + "++) {\n";
+            + index2_name + "++, " + target_memcpy_index + " += "
+            + target_stride2 + ", " + source_memcpy_index + " += "
+            + source_stride2 + ") {\n";
         indentation_level++;
         std::string memcpy_loop_indent(indentation_level * indentation_spaces, ' ');
-        src += memcpy_loop_indent + "memcpy(" + target_data + " + ("
-            + target_offset + " + " + index2_name + " * " + target_stride2
-            + "), " + source_data + " + (" + source_offset + " + "
-            + index2_name + " * " + source_stride2 + "), (size_t)("
+        src += memcpy_loop_indent + "memcpy(" + target_data + " + "
+            + target_memcpy_index + ", " + source_data + " + "
+            + source_memcpy_index + ", (size_t)("
             + target_length1 + ") * sizeof(*" + target_data + "));\n";
         indentation_level--;
         src += memcpy_indent + "}\n";
