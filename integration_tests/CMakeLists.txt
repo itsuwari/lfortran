@@ -2501,6 +2501,7 @@ RUN(NAME derived_types_138 LABELS gfortran llvm)
 RUN(NAME derived_types_apply_clip_01 LABELS gfortran llvm
     EXTRA_ARGS --realloc-lhs-arrays)
 RUN(NAME derived_types_139 LABELS gfortran c)
+RUN(NAME derived_types_142 LABELS gfortran llvm)
 
 RUN(NAME derived_type_with_default_init LABELS gfortran llvm llvm_wasm llvm_wasm_emcc)
 RUN(NAME derived_type_with_default_init_01 LABELS gfortran llvm llvm_wasm llvm_wasm_emcc)
