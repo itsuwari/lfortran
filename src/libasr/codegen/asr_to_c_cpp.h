@@ -8491,15 +8491,19 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             + " + " + index2_name + " * " + target_stride2 + ";\n";
         src += row_indent + "int64_t " + source_row + " = " + source_offset
             + " + " + index2_name + " * " + source_stride2 + ";\n";
+        std::string target_index = get_unique_local_name("__lfortran_lhs2_index");
+        std::string source_index = get_unique_local_name("__lfortran_rhs2_index");
+        src += row_indent + "int64_t " + target_index + " = " + target_row + ";\n";
+        src += row_indent + "int64_t " + source_index + " = " + source_row + ";\n";
         src += row_indent + "for (int64_t " + index1_name + " = 0; "
             + index1_name + " < " + target_length1 + "; "
             + index1_name + "++) {\n";
         indentation_level++;
         std::string item_indent(indentation_level * indentation_spaces, ' ');
-        src += item_indent + target_data + "[" + target_row + " + "
-            + index1_name + " * " + target_stride1 + "] = " + source_data
-            + "[" + source_row + " + " + index1_name + " * "
-            + source_stride1 + "];\n";
+        src += item_indent + target_data + "[" + target_index + "] = "
+            + source_data + "[" + source_index + "];\n";
+        src += item_indent + target_index + " += " + target_stride1 + ";\n";
+        src += item_indent + source_index + " += " + source_stride1 + ";\n";
         indentation_level--;
         src += row_indent + "}\n";
         indentation_level--;
@@ -8592,15 +8596,21 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             src += inner_indent + "} else {\n";
             indentation_level++;
             std::string loop_indent(indentation_level * indentation_spaces, ' ');
+            std::string target_index = get_unique_local_name("__lfortran_lhs1_index");
+            std::string source_index = get_unique_local_name("__lfortran_rhs1_index");
+            src += loop_indent + "int64_t " + target_index + " = "
+                + target_offset + ";\n";
+            src += loop_indent + "int64_t " + source_index + " = "
+                + source_offset + ";\n";
             src += loop_indent + "for (int64_t " + index_name + " = 0; "
                 + index_name + " < " + target_length + "; " + index_name
                 + "++) {\n";
             indentation_level++;
             std::string item_indent(indentation_level * indentation_spaces, ' ');
-            src += item_indent + target_data + "[" + target_offset + " + "
-                + index_name + " * " + target_stride + "] = " + source_data
-                + "[" + source_offset + " + " + index_name + " * "
-                + source_stride + "];\n";
+            src += item_indent + target_data + "[" + target_index + "] = "
+                + source_data + "[" + source_index + "];\n";
+            src += item_indent + target_index + " += " + target_stride + ";\n";
+            src += item_indent + source_index + " += " + source_stride + ";\n";
             indentation_level--;
             src += loop_indent + "}\n";
             indentation_level--;
