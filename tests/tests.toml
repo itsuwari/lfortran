@@ -5149,6 +5149,14 @@ c_forbid_pattern = true
 c_forbid_pattern_value = "}})->dims[0].length"
 
 [[test]]
+filename = "c_backend_sum_rank3_induction_01.f90"
+c = true
+c_require_pattern = true
+c_require_pattern_value = "__lfortran_sum_ptr"
+c_forbid_pattern = true
+c_forbid_pattern_value = "result = result + __lfortran_array_data["
+
+[[test]]
 filename = "c_backend_spread_allocatable_assignment_01.f90"
 c = true
 

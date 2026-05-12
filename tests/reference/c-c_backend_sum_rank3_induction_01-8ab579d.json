@@ -1,0 +1,13 @@
+{
+    "basename": "c-c_backend_sum_rank3_induction_01-8ab579d",
+    "cmd": "lfortran --no-color --show-c {infile}",
+    "infile": "tests/c_backend_sum_rank3_induction_01.f90",
+    "infile_hash": "eab2c16ab88dec5ebf09aaae5b50c18bebbb05677bf77c6e64f3245d",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": "c-c_backend_sum_rank3_induction_01-8ab579d.stdout",
+    "stdout_hash": "de17b498eadc7c7ee213de4fc1ba4d8180bbb3d6fdcf76e4e1df9321",
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

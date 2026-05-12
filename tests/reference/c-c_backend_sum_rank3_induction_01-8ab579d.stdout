@@ -1,0 +1,153 @@
+#include <inttypes.h>
+#include <math.h>
+
+#include <stdlib.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <string.h>
+#include <lfortran_intrinsics.h>
+
+
+#ifndef LFORTRAN_C_BACKEND_CONSTRUCTOR
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_CONSTRUCTOR __attribute__((constructor))
+#else
+#define LFORTRAN_C_BACKEND_CONSTRUCTOR
+#endif
+#endif
+#ifndef LFORTRAN_C_BACKEND_WEAK
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_WEAK __attribute__((weak))
+#else
+#define LFORTRAN_C_BACKEND_WEAK static
+#endif
+#endif
+#ifndef LFORTRAN_C_BACKEND_COMMON
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_COMMON __attribute__((common))
+#else
+#define LFORTRAN_C_BACKEND_COMMON
+#endif
+#endif
+
+
+struct dimension_descriptor
+{
+    int32_t lower_bound, length, stride;
+};
+#ifndef LFORTRAN_C_BACKEND_CONSTRUCTOR
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_CONSTRUCTOR __attribute__((constructor))
+#else
+#define LFORTRAN_C_BACKEND_CONSTRUCTOR
+#endif
+#endif
+#ifndef LFORTRAN_C_BACKEND_WEAK
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_WEAK __attribute__((weak))
+#else
+#define LFORTRAN_C_BACKEND_WEAK static
+#endif
+#endif
+#ifndef LFORTRAN_C_BACKEND_COMMON
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_COMMON __attribute__((common))
+#else
+#define LFORTRAN_C_BACKEND_COMMON
+#endif
+#endif
+
+
+struct r64_______
+{
+    double *data;
+    struct dimension_descriptor dims[32];
+    int32_t n_dims;
+    int32_t offset;
+    bool is_allocated;
+};
+
+double __lfortran__lcompilers_Sum_8_3_0_idx4_real__________0(struct r64_______* restrict array, int32_t __1array, int32_t __2array, int32_t __3array);
+double __lfortran__lcompilers_Sum_8_3_0_idx4(struct r64_______* restrict array);
+double __lfortran__lcompilers_real_i32(int32_t x);
+
+
+
+
+// Implementations
+double __lfortran__lcompilers_Sum_8_3_0_idx4_real__________0(struct r64_______* restrict array, int32_t __1array, int32_t __2array, int32_t __3array)
+{
+    int32_t __1_i;
+    int32_t __2_i;
+    int32_t __3_i;
+    double result;
+    double * restrict __lfortran_array_data = array->data;
+    const int32_t __lfortran_array_offset = array->offset;
+    const int32_t __lfortran_array_dim1_lower_bound = array->dims[0].lower_bound;
+    const int32_t __lfortran_array_dim1_stride = array->dims[0].stride;
+    const int32_t __lfortran_array_dim2_lower_bound = array->dims[1].lower_bound;
+    const int32_t __lfortran_array_dim2_stride = array->dims[1].stride;
+    const int32_t __lfortran_array_dim3_lower_bound = array->dims[2].lower_bound;
+    const int32_t __lfortran_array_dim3_stride = array->dims[2].stride;
+    result = 0x0.0000000000000p+0;
+    for (__3_i=1; __3_i<=__3array + 1 - 1; __3_i++) {
+        for (__2_i=1; __2_i<=__2array + 1 - 1; __2_i++) {
+            double * __lfortran_sum_ptr = __lfortran_array_data + __lfortran_array_offset + (__lfortran_array_dim3_stride * (__3_i - __lfortran_array_dim3_lower_bound)) + (__lfortran_array_dim2_stride * (__2_i - __lfortran_array_dim2_lower_bound)) + (__lfortran_array_dim1_stride * (1 - __lfortran_array_dim1_lower_bound));
+            for (__1_i=1; __1_i<=__1array + 1 - 1; __1_i++) {
+                result = result + *__lfortran_sum_ptr;
+                __lfortran_sum_ptr += __lfortran_array_dim1_stride;
+            }
+        }
+    }
+    return result;
+}
+
+double __lfortran__lcompilers_Sum_8_3_0_idx4(struct r64_______* restrict array)
+{
+    return __lfortran__lcompilers_Sum_8_3_0_idx4_real__________0(array, ((int32_t)array->dims[0].length + array->dims[0].lower_bound - 1), ((int32_t)array->dims[1].length + array->dims[1].lower_bound - 1), ((int32_t)array->dims[2].length + array->dims[2].lower_bound - 1));
+}
+
+double __lfortran__lcompilers_real_i32(int32_t x)
+{
+    double _lcompilers_real_i32;
+    _lcompilers_real_i32 = (double)(x);
+    return _lcompilers_real_i32;
+}
+
+int main(int argc, char* argv[])
+{
+    _lpython_set_argv(argc, argv);
+    double __libasr_created__intrinsic_array_function_Sum;
+    struct r64_______ a_value;
+    struct r64_______* a = &a_value;
+    double a_data[24];
+    a->data = a_data;
+    a->n_dims = 3;
+    a->offset = 0;
+    a->is_allocated = true;
+    a->dims[0].lower_bound = 1;
+    a->dims[0].length = 2;
+    a->dims[0].stride = 1;
+    a->dims[1].lower_bound = 1;
+    a->dims[1].length = 3;
+    a->dims[1].stride = (1*2);
+    a->dims[2].lower_bound = 1;
+    a->dims[2].length = 4;
+    a->dims[2].stride = ((1*2)*3);
+    int32_t i;
+    int32_t j;
+    int32_t k;
+    for (k=1; k<=4; k++) {
+        for (j=1; j<=3; j++) {
+            for (i=1; i<=2; i++) {
+                a_data[(((0 + (1 * (i - 1))) + ((1 * 2) * (j - 1))) + (((1 * 2) * 3) * (k - 1)))] = __lfortran__lcompilers_real_i32(i + 10*j + 100*k);
+            }
+        }
+    }
+    __libasr_created__intrinsic_array_function_Sum = __lfortran__lcompilers_Sum_8_3_0_idx4_real__________0((&(struct r64_______){ .data = a->data, .dims = {{1, a->dims[0].length, a->dims[0].stride}, {1, a->dims[1].length, a->dims[1].stride}, {1, a->dims[2].length, a->dims[2].stride}}, .n_dims = 3, .offset = a->offset, .is_allocated = a->is_allocated }), ((int32_t) a->dims[0].length), ((int32_t) a->dims[1].length), ((int32_t) a->dims[2].length));
+    if (fabs(__libasr_created__intrinsic_array_function_Sum - 0x1.9740000000000p+12) > 0x1.19799812dea11p-40) {
+        fprintf(stderr, "ERROR STOP");
+        exit(1);
+    }
+    return 0;
+}

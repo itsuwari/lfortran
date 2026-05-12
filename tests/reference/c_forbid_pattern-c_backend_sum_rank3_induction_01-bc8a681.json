@@ -1,0 +1,13 @@
+{
+    "basename": "c_forbid_pattern-c_backend_sum_rank3_induction_01-bc8a681",
+    "cmd": "lfortran --no-color --show-c {infile} | (! grep -F -q \"result = result + __lfortran_array_data[\") #",
+    "infile": "tests/c_backend_sum_rank3_induction_01.f90",
+    "infile_hash": "eab2c16ab88dec5ebf09aaae5b50c18bebbb05677bf77c6e64f3245d",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

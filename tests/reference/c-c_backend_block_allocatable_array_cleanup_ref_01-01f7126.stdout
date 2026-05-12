@@ -105,8 +105,10 @@ float __lfortran__lcompilers_Sum_4_3_0_idx4_real__________0(struct r32_______* r
     result = 0x0.000000p+0f;
     for (__3_i=1; __3_i<=__3array + 1 - 1; __3_i++) {
         for (__2_i=1; __2_i<=__2array + 1 - 1; __2_i++) {
+            float * __lfortran_sum_ptr = __lfortran_array_data + __lfortran_array_offset + (__lfortran_array_dim3_stride * (__3_i - __lfortran_array_dim3_lower_bound)) + (__lfortran_array_dim2_stride * (__2_i - __lfortran_array_dim2_lower_bound)) + (__lfortran_array_dim1_stride * (1 - __lfortran_array_dim1_lower_bound));
             for (__1_i=1; __1_i<=__1array + 1 - 1; __1_i++) {
-                result = result + __lfortran_array_data[((((0 + (__lfortran_array_dim1_stride * (__1_i - __lfortran_array_dim1_lower_bound))) + (__lfortran_array_dim2_stride * (__2_i - __lfortran_array_dim2_lower_bound))) + (__lfortran_array_dim3_stride * (__3_i - __lfortran_array_dim3_lower_bound))) + __lfortran_array_offset)];
+                result = result + *__lfortran_sum_ptr;
+                __lfortran_sum_ptr += __lfortran_array_dim1_stride;
             }
         }
     }
@@ -133,7 +135,7 @@ void __lfortran_c_backend_block_allocatable_array_cleanup_ref_01__check_real____
         fprintf(stderr, "ERROR STOP");
         exit(1);
     }
-    __libasr_created__intrinsic_array_function_Sum = __lfortran__lcompilers_Sum_4_3_0_idx4_real__________0((&(struct r32_______){ .data = values->data, .dims = {{1, values->dims[0].length, values->dims[0].stride}, {1, values->dims[1].length, values->dims[1].stride}, {1, values->dims[2].length, values->dims[2].stride}}, .n_dims = 3, .offset = values->offset, .is_allocated = values->is_allocated }), ((int32_t) (&(struct r32_______){ .data = values->data, .dims = {{1, values->dims[0].length, values->dims[0].stride}, {1, values->dims[1].length, values->dims[1].stride}, {1, values->dims[2].length, values->dims[2].stride}}, .n_dims = 3, .offset = values->offset, .is_allocated = values->is_allocated })->dims[0].length), ((int32_t) (&(struct r32_______){ .data = values->data, .dims = {{1, values->dims[0].length, values->dims[0].stride}, {1, values->dims[1].length, values->dims[1].stride}, {1, values->dims[2].length, values->dims[2].stride}}, .n_dims = 3, .offset = values->offset, .is_allocated = values->is_allocated })->dims[1].length), ((int32_t) (&(struct r32_______){ .data = values->data, .dims = {{1, values->dims[0].length, values->dims[0].stride}, {1, values->dims[1].length, values->dims[1].stride}, {1, values->dims[2].length, values->dims[2].stride}}, .n_dims = 3, .offset = values->offset, .is_allocated = values->is_allocated })->dims[2].length));
+    __libasr_created__intrinsic_array_function_Sum = __lfortran__lcompilers_Sum_4_3_0_idx4_real__________0((&(struct r32_______){ .data = values->data, .dims = {{1, values->dims[0].length, values->dims[0].stride}, {1, values->dims[1].length, values->dims[1].stride}, {1, values->dims[2].length, values->dims[2].stride}}, .n_dims = 3, .offset = values->offset, .is_allocated = values->is_allocated }), ((int32_t) values->dims[0].length), ((int32_t) values->dims[1].length), ((int32_t) values->dims[2].length));
     if (__libasr_created__intrinsic_array_function_Sum != 0x1.800000p+4f) {
         fprintf(stderr, "ERROR STOP");
         exit(1);
