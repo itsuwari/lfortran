@@ -10251,6 +10251,8 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
 
             std::vector<std::string> dim_inits;
             dim_inits.reserve(target_rank);
+            std::vector<std::string> view_lengths;
+            view_lengths.reserve(target_rank);
             std::vector<std::string> view_lower_bounds;
             view_lower_bounds.reserve(target_rank);
             std::vector<std::string> offset_terms;
@@ -10289,6 +10291,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 std::string stride = "(" + base_stride + " * (" + step + "))";
                 dim_inits.push_back("{" + lower_bound + ", " + length
                     + ", " + stride + "}");
+                view_lengths.push_back(length);
                 view_lower_bounds.push_back(lower_bound);
                 offset_terms.push_back(base_stride + " * ((" + left
                     + ") - " + base_lb + ")");
@@ -10322,14 +10325,19 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 tmp_buffer_src.push_back(setup);
             }
             if (!use_named_stack_view) {
-                return "(&(" + target_wrapper + ")" + view_init + ")";
+                std::string view_expr = "(&(" + target_wrapper + ")" + view_init + ")";
+                std::string view_base = get_c_descriptor_member_base_expr(view_expr);
+                c_no_copy_descriptor_view_lengths[view_base] = view_lengths;
+                c_no_copy_descriptor_view_lower_bounds[view_base] = view_lower_bounds;
+                return view_expr;
             }
             std::string indent(indentation_level * indentation_spaces, ' ');
             std::string view_name = get_unique_local_name("__lfortran_array_view");
             tmp_buffer_src.push_back(indent + target_wrapper + " " + view_name
                 + " = " + view_init + ";\n");
-            c_no_copy_descriptor_view_lower_bounds[
-                get_c_descriptor_member_base_expr("&" + view_name)] = view_lower_bounds;
+            std::string view_base = get_c_descriptor_member_base_expr("&" + view_name);
+            c_no_copy_descriptor_view_lengths[view_base] = view_lengths;
+            c_no_copy_descriptor_view_lower_bounds[view_base] = view_lower_bounds;
             return "&" + view_name;
         }
 
@@ -10364,11 +10372,15 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         std::string offset = get_c_array_offset_expr(source_expr, source_src_copy);
         std::string is_allocated = get_c_array_is_allocated_expr(source_expr, source_src_copy);
         if (!use_named_stack_view) {
-            return "(&(" + target_wrapper + "){ .data = " + data_ptr
+            std::string view_expr = "(&(" + target_wrapper + "){ .data = " + data_ptr
                 + ", .dims = {" + dims_init + "}, .n_dims = "
                 + std::to_string(target_rank)
                 + ", .offset = " + offset
                 + ", .is_allocated = " + is_allocated + " })";
+            std::string view_base = get_c_descriptor_member_base_expr(view_expr);
+            c_no_copy_descriptor_view_lengths[view_base] = view_lengths;
+            c_no_copy_descriptor_view_lower_bounds[view_base] = view_lower_bounds;
+            return view_expr;
         }
         std::string indent(indentation_level * indentation_spaces, ' ');
         std::string view_decl = indent + target_wrapper + " " + view_name

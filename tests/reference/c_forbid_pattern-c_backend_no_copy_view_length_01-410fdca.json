@@ -1,0 +1,13 @@
+{
+    "basename": "c_forbid_pattern-c_backend_no_copy_view_length_01-410fdca",
+    "cmd": "lfortran --no-color --show-c {infile} | (! grep -F -q \"}})->dims[0].length\") #",
+    "infile": "tests/c_backend_no_copy_view_length_01.f90",
+    "infile_hash": "61e8fd9afcd9c76df420cc4c3efa683644dfda5367f13e094eef4704",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

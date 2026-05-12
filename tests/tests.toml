@@ -5143,6 +5143,12 @@ c_forbid_pattern = true
 c_forbid_pattern_value = "__lfortran_array_dim1_stride * (__1_i - __lfortran_array_dim1_lower_bound)"
 
 [[test]]
+filename = "c_backend_no_copy_view_length_01.f90"
+c = true
+c_forbid_pattern = true
+c_forbid_pattern_value = "}})->dims[0].length"
+
+[[test]]
 filename = "c_backend_spread_allocatable_assignment_01.f90"
 c = true
 
