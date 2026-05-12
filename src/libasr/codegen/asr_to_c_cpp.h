@@ -8932,7 +8932,10 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         std::string len_name = get_unique_local_name("__lfortran_transfer_len");
         std::string tmp_name = get_unique_local_name("__lfortran_transfer_str");
         std::string idx_name = get_unique_local_name("__lfortran_transfer_i");
+        std::string source_idx_name = get_unique_local_name("__lfortran_transfer_src_i");
         std::string elem_name = get_unique_local_name("__lfortran_transfer_elem");
+        std::string target_len = CUtils::get_fixed_character_length_arg(target_type);
+        bool target_has_fixed_len = target_len != "NULL";
         src = check_tmp_buffer();
         src += indent + "{\n";
         indentation_level++;
@@ -8942,19 +8945,23 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         src += inner_indent + "char *" + tmp_name
             + " = (char*) _lfortran_malloc_alloc(_lfortran_get_default_allocator(), "
             + "(" + len_name + " + 1));\n";
-        src += inner_indent + "for (int64_t " + idx_name + " = 0; "
-            + idx_name + " < " + len_name + "; " + idx_name + "++) {\n";
+        src += inner_indent + "for (int64_t " + idx_name + " = 0, "
+            + source_idx_name + " = " + source_offset + "; "
+            + idx_name + " < " + len_name + "; " + idx_name + "++, "
+            + source_idx_name + " += " + source_stride + ") {\n";
         indentation_level++;
         std::string loop_indent(indentation_level * indentation_spaces, ' ');
         src += loop_indent + "char *" + elem_name + " = " + source_data + "["
-            + source_offset + " + " + idx_name + " * " + source_stride + "];\n";
+            + source_idx_name + "];\n";
         src += loop_indent + tmp_name + "[" + idx_name + "] = ("
             + elem_name + " != NULL) ? " + elem_name + "[0] : '\\0';\n";
         indentation_level--;
         src += inner_indent + "}\n";
         src += inner_indent + tmp_name + "[" + len_name + "] = '\\0';\n";
         src += inner_indent + "_lfortran_strcpy_alloc(_lfortran_get_default_allocator(), &"
-            + target + ", NULL, true, true, " + tmp_name + ", " + len_name + ");\n";
+            + target + ", " + target_len + ", true, "
+            + (target_has_fixed_len ? "false" : "true") + ", "
+            + tmp_name + ", " + len_name + ");\n";
         src += inner_indent + "_lfortran_free_alloc_plain(_lfortran_get_default_allocator(), "
             + tmp_name + ");\n";
         indentation_level--;
