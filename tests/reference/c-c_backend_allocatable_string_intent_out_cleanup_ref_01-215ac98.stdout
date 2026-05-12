@@ -20,6 +20,13 @@
 #define LFORTRAN_C_BACKEND_WEAK static
 #endif
 #endif
+#ifndef LFORTRAN_C_BACKEND_COMMON
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_COMMON __attribute__((common))
+#else
+#define LFORTRAN_C_BACKEND_COMMON
+#endif
+#endif
 
 
 struct dimension_descriptor
@@ -40,6 +47,13 @@ struct dimension_descriptor
 #define LFORTRAN_C_BACKEND_WEAK static
 #endif
 #endif
+#ifndef LFORTRAN_C_BACKEND_COMMON
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_COMMON __attribute__((common))
+#else
+#define LFORTRAN_C_BACKEND_COMMON
+#endif
+#endif
 
 void __lfortran_c_backend_allocatable_string_intent_out_cleanup_ref_01__next_line(char * *line, char * value);
 void __lfortran_c_backend_allocatable_string_intent_out_cleanup_ref_01__check_lines();
@@ -56,11 +70,19 @@ void __lfortran_c_backend_allocatable_string_intent_out_cleanup_ref_01__next_lin
         *line = NULL;
     }
     if ((((*line)) != NULL)) {
-        if (((*line)) != NULL) {
+        if ((*line) != NULL) {
+            _lfortran_free_alloc(__lfortran_default_allocator, (*line));
             (*line) = NULL;
         }
     }
-    _lfortran_strcpy_alloc(__lfortran_default_allocator, &(*line), NULL, true, true, value, strlen(value));
+    if (value != NULL) {
+    _lfortran_strcpy_alloc(__lfortran_default_allocator, &(*line), NULL, true, true, value, _lfortran_str_len(value));
+} else {
+    if ((*line) != NULL) {
+        _lfortran_free_alloc(__lfortran_default_allocator, (*line));
+        (*line) = NULL;
+    }
+}
 }
 
 void __lfortran_c_backend_allocatable_string_intent_out_cleanup_ref_01__check_lines()
@@ -68,12 +90,12 @@ void __lfortran_c_backend_allocatable_string_intent_out_cleanup_ref_01__check_li
     lfortran_allocator_t* __lfortran_default_allocator = _lfortran_get_default_allocator();
     char * line = NULL;
     __lfortran_c_backend_allocatable_string_intent_out_cleanup_ref_01__next_line(&line, (char*)"first");
-    if (str_compare(line, ((line) != NULL ? strlen(line) : 0), (char*)"first", 5)  !=  0) {
+    if (str_compare(line, ((line) != NULL ? _lfortran_str_len(line) : 0), (char*)"first", 5)  !=  0) {
         fprintf(stderr, "ERROR STOP");
         exit(1);
     }
     __lfortran_c_backend_allocatable_string_intent_out_cleanup_ref_01__next_line(&line, (char*)"second");
-    if (str_compare(line, ((line) != NULL ? strlen(line) : 0), (char*)"second", 6)  !=  0) {
+    if (str_compare(line, ((line) != NULL ? _lfortran_str_len(line) : 0), (char*)"second", 6)  !=  0) {
         fprintf(stderr, "ERROR STOP");
         exit(1);
     }

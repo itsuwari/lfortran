@@ -23,6 +23,13 @@
 #define LFORTRAN_C_BACKEND_WEAK static
 #endif
 #endif
+#ifndef LFORTRAN_C_BACKEND_COMMON
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_COMMON __attribute__((common))
+#else
+#define LFORTRAN_C_BACKEND_COMMON
+#endif
+#endif
 
 
 
@@ -31,24 +38,33 @@
 int main(int argc, char* argv[])
 {
     _lpython_set_argv(argc, argv);
-    char * line = NULL;
+    lfortran_allocator_t* __lfortran_default_allocator = _lfortran_get_default_allocator();
+    char __lfortran_fixed_char_line[16] = {0}; char *line = __lfortran_fixed_char_line;
     int32_t stat;
     double value;
-    _lfortran_strcpy_alloc(_lfortran_get_default_allocator(), &line, NULL, true, true, (char*)"abc 1.25 xyz", strlen((char*)"abc 1.25 xyz"));
-    char *__lfortran_internal_read_unit = _lfortran_str_slice_alloc(_lfortran_get_default_allocator(), line, strlen(line), ((5) - 1), ((1) > 0 ? (8) : ((8) - 2)), 1, true, true);
+    if ((char*)"abc 1.25 xyz" != NULL) {
+    _lfortran_strcpy_alloc(__lfortran_default_allocator, &line, &((int64_t){16}), true, false, (char*)"abc 1.25 xyz", _lfortran_str_len((char*)"abc 1.25 xyz"));
+} else {
+    if (line != NULL) {
+        _lfortran_free_alloc(__lfortran_default_allocator, line);
+        line = NULL;
+    }
+}
+    char *__lfortran_internal_read_unit = _lfortran_str_slice_alloc(__lfortran_default_allocator, line, 16, ((5) - 1), ((1) > 0 ? (8) : ((8) - 2)), 1, true, true);
     int64_t __lfortran_read_offset = 0;
     _lfortran_string_read_f64(__lfortran_internal_read_unit, 4, NULL, &(value), &(stat), &__lfortran_read_offset);
     if (__lfortran_internal_read_unit != NULL) {
-        _lfortran_free_alloc(_lfortran_get_default_allocator(), __lfortran_internal_read_unit);
+        _lfortran_free_alloc(__lfortran_default_allocator, __lfortran_internal_read_unit);
         __lfortran_internal_read_unit = NULL;
     }
     if (stat != 0) {
         fprintf(stderr, "ERROR STOP");
         exit(1);
     }
-    if (fabs(value -   1.25000000000000000e+00) >   9.99999999999999980e-13) {
+    if (fabs(value - 0x1.4000000000000p+0) > 0x1.19799812dea11p-40) {
         fprintf(stderr, "ERROR STOP");
         exit(1);
     }
+    _lfortran_string_len_unregister(line);
     return 0;
 }

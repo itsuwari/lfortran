@@ -21,6 +21,13 @@
 #define LFORTRAN_C_BACKEND_WEAK static
 #endif
 #endif
+#ifndef LFORTRAN_C_BACKEND_COMMON
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_COMMON __attribute__((common))
+#else
+#define LFORTRAN_C_BACKEND_COMMON
+#endif
+#endif
 
 
 struct dimension_descriptor
@@ -41,6 +48,13 @@ struct dimension_descriptor
 #define LFORTRAN_C_BACKEND_WEAK static
 #endif
 #endif
+#ifndef LFORTRAN_C_BACKEND_COMMON
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_COMMON __attribute__((common))
+#else
+#define LFORTRAN_C_BACKEND_COMMON
+#endif
+#endif
 
 struct c_backend_struct_scalar_allocatable_member_cleanup_ref_01_m__run_config {
  int64_t __lfortran_type_tag;
@@ -56,15 +70,15 @@ static void __lfortran_cleanup_struct_c_backend_struct_scalar_allocatable_member
         return;
     }
     if (__lfortran_self->charge != NULL) {
-        _lfortran_free_alloc(_lfortran_get_default_allocator(), (char*) __lfortran_self->charge);
+        _lfortran_free_alloc_plain(_lfortran_get_default_allocator(), (char*) __lfortran_self->charge);
         __lfortran_self->charge = NULL;
     }
     if (__lfortran_self->spin != NULL) {
-        _lfortran_free_alloc(_lfortran_get_default_allocator(), (char*) __lfortran_self->spin);
+        _lfortran_free_alloc_plain(_lfortran_get_default_allocator(), (char*) __lfortran_self->spin);
         __lfortran_self->spin = NULL;
     }
     if (__lfortran_self->max_iter != NULL) {
-        _lfortran_free_alloc(_lfortran_get_default_allocator(), (char*) __lfortran_self->max_iter);
+        _lfortran_free_alloc_plain(_lfortran_get_default_allocator(), (char*) __lfortran_self->max_iter);
         __lfortran_self->max_iter = NULL;
     }
 }
@@ -109,15 +123,15 @@ void __lfortran_c_backend_struct_scalar_allocatable_member_cleanup_ref_01_m__exe
         exit(1);
     }
     if ((&(config_value))->charge != NULL) {
-        _lfortran_free_alloc(__lfortran_default_allocator, (char*) (&(config_value))->charge);
+        _lfortran_free_alloc_plain(__lfortran_default_allocator, (char*) (&(config_value))->charge);
         (&(config_value))->charge = NULL;
     }
     if ((&(config_value))->spin != NULL) {
-        _lfortran_free_alloc(__lfortran_default_allocator, (char*) (&(config_value))->spin);
+        _lfortran_free_alloc_plain(__lfortran_default_allocator, (char*) (&(config_value))->spin);
         (&(config_value))->spin = NULL;
     }
     if ((&(config_value))->max_iter != NULL) {
-        _lfortran_free_alloc(__lfortran_default_allocator, (char*) (&(config_value))->max_iter);
+        _lfortran_free_alloc_plain(__lfortran_default_allocator, (char*) (&(config_value))->max_iter);
         (&(config_value))->max_iter = NULL;
     }
 }

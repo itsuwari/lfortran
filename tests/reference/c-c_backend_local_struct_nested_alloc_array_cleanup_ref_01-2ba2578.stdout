@@ -21,6 +21,13 @@
 #define LFORTRAN_C_BACKEND_WEAK static
 #endif
 #endif
+#ifndef LFORTRAN_C_BACKEND_COMMON
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_COMMON __attribute__((common))
+#else
+#define LFORTRAN_C_BACKEND_COMMON
+#endif
+#endif
 
 
 struct dimension_descriptor
@@ -39,6 +46,13 @@ struct dimension_descriptor
 #define LFORTRAN_C_BACKEND_WEAK __attribute__((weak))
 #else
 #define LFORTRAN_C_BACKEND_WEAK static
+#endif
+#endif
+#ifndef LFORTRAN_C_BACKEND_COMMON
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_COMMON __attribute__((common))
+#else
+#define LFORTRAN_C_BACKEND_COMMON
 #endif
 #endif
 
@@ -65,14 +79,14 @@ static void __lfortran_cleanup_struct_c_backend_local_struct_nested_alloc_array_
     }
     bool __lfortran_cleanup_desc_owned___lfortran_self_x2D__x3E_values = (__lfortran_self->values) != NULL && (__lfortran_self->values)->is_allocated;
     if ((__lfortran_self->values) != NULL && (__lfortran_self->values)->is_allocated && (__lfortran_self->values)->data != NULL) {
-        _lfortran_free_alloc(_lfortran_get_default_allocator(), (char*) (__lfortran_self->values)->data);
+        _lfortran_free_alloc_plain(_lfortran_get_default_allocator(), (char*) (__lfortran_self->values)->data);
         (__lfortran_self->values)->data = NULL;
     }
     if ((__lfortran_self->values) != NULL) {
         (__lfortran_self->values)->offset = 0;
         (__lfortran_self->values)->is_allocated = false;
         if (__lfortran_cleanup_desc_owned___lfortran_self_x2D__x3E_values) {
-            _lfortran_free_alloc(_lfortran_get_default_allocator(), (char*) __lfortran_self->values);
+            _lfortran_free_alloc_plain(_lfortran_get_default_allocator(), (char*) __lfortran_self->values);
             __lfortran_self->values = NULL;
         }
     }
@@ -97,18 +111,18 @@ static void __lfortran_cleanup_struct_c_backend_local_struct_nested_alloc_array_
     if ((__lfortran_self->child) != NULL) {
         bool __lfortran_cleanup_desc_owned___lfortran_self_x2D__x3E_child_x2D__x3E_values = (__lfortran_self->child->values) != NULL && (__lfortran_self->child->values)->is_allocated;
         if ((__lfortran_self->child->values) != NULL && (__lfortran_self->child->values)->is_allocated && (__lfortran_self->child->values)->data != NULL) {
-            _lfortran_free_alloc(_lfortran_get_default_allocator(), (char*) (__lfortran_self->child->values)->data);
+            _lfortran_free_alloc_plain(_lfortran_get_default_allocator(), (char*) (__lfortran_self->child->values)->data);
             (__lfortran_self->child->values)->data = NULL;
         }
         if ((__lfortran_self->child->values) != NULL) {
             (__lfortran_self->child->values)->offset = 0;
             (__lfortran_self->child->values)->is_allocated = false;
             if (__lfortran_cleanup_desc_owned___lfortran_self_x2D__x3E_child_x2D__x3E_values) {
-                _lfortran_free_alloc(_lfortran_get_default_allocator(), (char*) __lfortran_self->child->values);
+                _lfortran_free_alloc_plain(_lfortran_get_default_allocator(), (char*) __lfortran_self->child->values);
                 __lfortran_self->child->values = NULL;
             }
         }
-        _lfortran_free_alloc(_lfortran_get_default_allocator(), (char*) __lfortran_self->child);
+        _lfortran_free_alloc_plain(_lfortran_get_default_allocator(), (char*) __lfortran_self->child);
         __lfortran_self->child = NULL;
     }
 }
@@ -128,21 +142,24 @@ void __lfortran_c_backend_local_struct_nested_alloc_array_cleanup_ref_01_m__exer
 void __lfortran_c_backend_local_struct_nested_alloc_array_cleanup_ref_01_m__fill__StructType(struct c_backend_local_struct_nested_alloc_array_cleanup_ref_01_m__owner_type* restrict owner)
 {
     lfortran_allocator_t* __lfortran_default_allocator = _lfortran_get_default_allocator();
+    static const float __libasr_created__array_constant__showc6ed6a918a06e66a9_data[2] = {0x1.000000p+0f, 0x1.000000p+1f};
+    static struct r32___ __libasr_created__array_constant__showc6ed6a918a06e66a9_value = { .data = (float*) __libasr_created__array_constant__showc6ed6a918a06e66a9_data, .n_dims = 1, .offset = 0, .is_allocated = true, .dims = {{1, 2, 1}} };
+    struct r32___* __libasr_created__array_constant__showc6ed6a918a06e66a9 = &__libasr_created__array_constant__showc6ed6a918a06e66a9_value;
     if ((owner->child) != NULL) {
         bool __lfortran_cleanup_desc_owned_owner_x2D__x3E_child_x2D__x3E_values = (owner->child->values) != NULL && (owner->child->values)->is_allocated;
         if ((owner->child->values) != NULL && (owner->child->values)->is_allocated && (owner->child->values)->data != NULL) {
-            _lfortran_free_alloc(__lfortran_default_allocator, (char*) (owner->child->values)->data);
+            _lfortran_free_alloc_plain(__lfortran_default_allocator, (char*) (owner->child->values)->data);
             (owner->child->values)->data = NULL;
         }
         if ((owner->child->values) != NULL) {
             (owner->child->values)->offset = 0;
             (owner->child->values)->is_allocated = false;
             if (__lfortran_cleanup_desc_owned_owner_x2D__x3E_child_x2D__x3E_values) {
-                _lfortran_free_alloc(__lfortran_default_allocator, (char*) owner->child->values);
+                _lfortran_free_alloc_plain(__lfortran_default_allocator, (char*) owner->child->values);
                 owner->child->values = NULL;
             }
         }
-        _lfortran_free_alloc(__lfortran_default_allocator, (char*) owner->child);
+        _lfortran_free_alloc_plain(__lfortran_default_allocator, (char*) owner->child);
         owner->child = NULL;
     }
     memset(owner, 0, sizeof(*owner));
@@ -151,18 +168,18 @@ void __lfortran_c_backend_local_struct_nested_alloc_array_cleanup_ref_01_m__fill
         if (((*owner).child) != NULL) {
             bool __lfortran_cleanup_desc_owned__x28__x2A_owner_x29__x2E_child_x2D__x3E_values = ((*owner).child->values) != NULL && ((*owner).child->values)->is_allocated;
             if (((*owner).child->values) != NULL && ((*owner).child->values)->is_allocated && ((*owner).child->values)->data != NULL) {
-                _lfortran_free_alloc(__lfortran_default_allocator, (char*) ((*owner).child->values)->data);
+                _lfortran_free_alloc_plain(__lfortran_default_allocator, (char*) ((*owner).child->values)->data);
                 ((*owner).child->values)->data = NULL;
             }
             if (((*owner).child->values) != NULL) {
                 ((*owner).child->values)->offset = 0;
                 ((*owner).child->values)->is_allocated = false;
                 if (__lfortran_cleanup_desc_owned__x28__x2A_owner_x29__x2E_child_x2D__x3E_values) {
-                    _lfortran_free_alloc(__lfortran_default_allocator, (char*) (*owner).child->values);
+                    _lfortran_free_alloc_plain(__lfortran_default_allocator, (char*) (*owner).child->values);
                     (*owner).child->values = NULL;
                 }
             }
-            _lfortran_free_alloc(__lfortran_default_allocator, (char*) (*owner).child);
+            _lfortran_free_alloc_plain(__lfortran_default_allocator, (char*) (*owner).child);
             (*owner).child = NULL;
         }
     }
@@ -173,6 +190,10 @@ void __lfortran_c_backend_local_struct_nested_alloc_array_cleanup_ref_01_m__fill
     memset(struct_member_values_0, 0, sizeof(*struct_member_values_0));
     ((struct c_backend_local_struct_nested_alloc_array_cleanup_ref_01_m__child_type*)((*owner).child))->values = struct_member_values_0;
     (*owner).child->__lfortran_type_tag = 2410821067652758599;
+    if ((*owner).child->values == NULL) {
+        (*owner).child->values = _lfortran_malloc_alloc(__lfortran_default_allocator, sizeof(*(*owner).child->values));
+        memset((*owner).child->values, 0, sizeof(*(*owner).child->values));
+    }
     (*owner).child->values->n_dims = 1;
     (*owner).child->values->dims[0].lower_bound = 1;
     (*owner).child->values->dims[0].length = 2;
@@ -180,8 +201,79 @@ void __lfortran_c_backend_local_struct_nested_alloc_array_cleanup_ref_01_m__fill
     (*owner).child->values->offset = 0;
     (*owner).child->values->data = (float*) _lfortran_malloc_alloc(__lfortran_default_allocator, 1*(*owner).child->values->dims[0].length*sizeof(float));
     (*owner).child->values->is_allocated = true;
-    (*owner).child->values->data[((0 + ((*owner).child->values->dims[0].stride * (1 - (*owner).child->values->dims[0].lower_bound))) + (*owner).child->values->offset)] =   1.00000000000000000e+00;
-    (*owner).child->values->data[((0 + ((*owner).child->values->dims[0].stride * (2 - (*owner).child->values->dims[0].lower_bound))) + (*owner).child->values->offset)] =   2.00000000000000000e+00;
+    int64_t __lfortran_realloc_old_size_showc6ed6a918a06e66a9 = 0;
+    if ((*owner).child->values != NULL && (*owner).child->values->is_allocated && (*owner).child->values->data != NULL) {
+        __lfortran_realloc_old_size_showc6ed6a918a06e66a9 = 1;
+        for (int32_t __lfortran_realloc_dim_showc6ed6a918a06e66a9 = 0; __lfortran_realloc_dim_showc6ed6a918a06e66a9 < (*owner).child->values->n_dims; __lfortran_realloc_dim_showc6ed6a918a06e66a9++) {
+            __lfortran_realloc_old_size_showc6ed6a918a06e66a9 *= (*owner).child->values->dims[__lfortran_realloc_dim_showc6ed6a918a06e66a9].length;
+        }
+    }
+    if ((*owner).child->values == NULL) {
+        (*owner).child->values = _lfortran_malloc_alloc(__lfortran_default_allocator, sizeof(*(*owner).child->values));
+        memset((*owner).child->values, 0, sizeof(*(*owner).child->values));
+    }
+    (*owner).child->values->n_dims = 1;
+    (*owner).child->values->dims[0].lower_bound = ((int32_t)__libasr_created__array_constant__showc6ed6a918a06e66a9->dims[1-1].lower_bound);
+    (*owner).child->values->dims[0].length = ((int32_t)__libasr_created__array_constant__showc6ed6a918a06e66a9->dims[1-1].length);
+    (*owner).child->values->dims[0].stride = 1;
+    (*owner).child->values->offset = 0;
+    int64_t __lfortran_realloc_new_size_showc6ed6a918a06e66a9 = 1*(*owner).child->values->dims[0].length;
+    if ((*owner).child->values->is_allocated && (*owner).child->values->data != NULL && __lfortran_realloc_old_size_showc6ed6a918a06e66a9 != __lfortran_realloc_new_size_showc6ed6a918a06e66a9) {
+        _lfortran_free_alloc_plain(__lfortran_default_allocator, (char*) (*owner).child->values->data);
+        (*owner).child->values->data = NULL;
+        (*owner).child->values->is_allocated = false;
+    }
+    if (!(*owner).child->values->is_allocated || (*owner).child->values->data == NULL) {
+        (*owner).child->values->data = (float*) _lfortran_malloc_alloc(__lfortran_default_allocator, 1*(*owner).child->values->dims[0].length*sizeof(float));
+    }
+    (*owner).child->values->is_allocated = true;
+    int64_t __lfortran_realloc_old_size1_showc6ed6a918a06e66a9 = 0;
+    if ((*owner).child->values != NULL && (*owner).child->values->is_allocated && (*owner).child->values->data != NULL) {
+        __lfortran_realloc_old_size1_showc6ed6a918a06e66a9 = 1;
+        for (int32_t __lfortran_realloc_dim1_showc6ed6a918a06e66a9 = 0; __lfortran_realloc_dim1_showc6ed6a918a06e66a9 < (*owner).child->values->n_dims; __lfortran_realloc_dim1_showc6ed6a918a06e66a9++) {
+            __lfortran_realloc_old_size1_showc6ed6a918a06e66a9 *= (*owner).child->values->dims[__lfortran_realloc_dim1_showc6ed6a918a06e66a9].length;
+        }
+    }
+    if ((*owner).child->values == NULL) {
+        (*owner).child->values = _lfortran_malloc_alloc(__lfortran_default_allocator, sizeof(*(*owner).child->values));
+        memset((*owner).child->values, 0, sizeof(*(*owner).child->values));
+    }
+    (*owner).child->values->n_dims = 1;
+    (*owner).child->values->dims[0].lower_bound = ((int32_t)__libasr_created__array_constant__showc6ed6a918a06e66a9->dims[1-1].lower_bound);
+    (*owner).child->values->dims[0].length = ((int32_t)__libasr_created__array_constant__showc6ed6a918a06e66a9->dims[1-1].length);
+    (*owner).child->values->dims[0].stride = 1;
+    (*owner).child->values->offset = 0;
+    int64_t __lfortran_realloc_new_size1_showc6ed6a918a06e66a9 = 1*(*owner).child->values->dims[0].length;
+    if ((*owner).child->values->is_allocated && (*owner).child->values->data != NULL && __lfortran_realloc_old_size1_showc6ed6a918a06e66a9 != __lfortran_realloc_new_size1_showc6ed6a918a06e66a9) {
+        _lfortran_free_alloc_plain(__lfortran_default_allocator, (char*) (*owner).child->values->data);
+        (*owner).child->values->data = NULL;
+        (*owner).child->values->is_allocated = false;
+    }
+    if (!(*owner).child->values->is_allocated || (*owner).child->values->data == NULL) {
+        (*owner).child->values->data = (float*) _lfortran_malloc_alloc(__lfortran_default_allocator, 1*(*owner).child->values->dims[0].length*sizeof(float));
+    }
+    (*owner).child->values->is_allocated = true;
+    {
+    float *__lfortran_lhs1copy_data_showc6ed6a918a06e66a9 = (*owner).child->values->data;
+    int64_t __lfortran_lhs1copy_stride_showc6ed6a918a06e66a9 = (*owner).child->values->dims[0].stride * (1);
+    int64_t __lfortran_lhs1copy_offset_showc6ed6a918a06e66a9 = (*owner).child->values->offset;
+    int64_t __lfortran_lhs1copy_length_showc6ed6a918a06e66a9 = ((((((*owner).child->values->dims[0].lower_bound + (*owner).child->values->dims[0].length - 1)) - ((*owner).child->values->dims[0].lower_bound)) / (1)) + 1);
+    float *__lfortran_rhs1copy_data_showc6ed6a918a06e66a9 = __libasr_created__array_constant__showc6ed6a918a06e66a9->data;
+    int64_t __lfortran_rhs1copy_stride_showc6ed6a918a06e66a9 = __libasr_created__array_constant__showc6ed6a918a06e66a9->dims[0].stride * (1);
+    int64_t __lfortran_rhs1copy_offset_showc6ed6a918a06e66a9 = __libasr_created__array_constant__showc6ed6a918a06e66a9->offset;
+    int64_t __lfortran_rhs1copy_length_showc6ed6a918a06e66a9 = (((((__libasr_created__array_constant__showc6ed6a918a06e66a9->dims[0].lower_bound + __libasr_created__array_constant__showc6ed6a918a06e66a9->dims[0].length - 1)) - (__libasr_created__array_constant__showc6ed6a918a06e66a9->dims[0].lower_bound)) / (1)) + 1);
+        if (__lfortran_lhs1copy_stride_showc6ed6a918a06e66a9 == 1 && __lfortran_rhs1copy_stride_showc6ed6a918a06e66a9 == 1) {
+            memcpy(__lfortran_lhs1copy_data_showc6ed6a918a06e66a9 + __lfortran_lhs1copy_offset_showc6ed6a918a06e66a9, __lfortran_rhs1copy_data_showc6ed6a918a06e66a9 + __lfortran_rhs1copy_offset_showc6ed6a918a06e66a9, (size_t)(__lfortran_lhs1copy_length_showc6ed6a918a06e66a9) * sizeof(*__lfortran_lhs1copy_data_showc6ed6a918a06e66a9));
+        } else {
+            int64_t __lfortran_lhs1_index_showc6ed6a918a06e66a9 = __lfortran_lhs1copy_offset_showc6ed6a918a06e66a9;
+            int64_t __lfortran_rhs1_index_showc6ed6a918a06e66a9 = __lfortran_rhs1copy_offset_showc6ed6a918a06e66a9;
+            for (int64_t __lfortran_i_showc6ed6a918a06e66a9 = 0; __lfortran_i_showc6ed6a918a06e66a9 < __lfortran_lhs1copy_length_showc6ed6a918a06e66a9; __lfortran_i_showc6ed6a918a06e66a9++) {
+                __lfortran_lhs1copy_data_showc6ed6a918a06e66a9[__lfortran_lhs1_index_showc6ed6a918a06e66a9] = __lfortran_rhs1copy_data_showc6ed6a918a06e66a9[__lfortran_rhs1_index_showc6ed6a918a06e66a9];
+                __lfortran_lhs1_index_showc6ed6a918a06e66a9 += __lfortran_lhs1copy_stride_showc6ed6a918a06e66a9;
+                __lfortran_rhs1_index_showc6ed6a918a06e66a9 += __lfortran_rhs1copy_stride_showc6ed6a918a06e66a9;
+            }
+        }
+    }
 }
 
 void __lfortran_c_backend_local_struct_nested_alloc_array_cleanup_ref_01_m__exercise()
@@ -189,7 +281,7 @@ void __lfortran_c_backend_local_struct_nested_alloc_array_cleanup_ref_01_m__exer
     struct c_backend_local_struct_nested_alloc_array_cleanup_ref_01_m__owner_type temp_struct_var__owner;
     temp_struct_var__owner.__lfortran_type_tag = 8247926051833999556;
     __lfortran_c_backend_local_struct_nested_alloc_array_cleanup_ref_01_m__fill__StructType(((struct c_backend_local_struct_nested_alloc_array_cleanup_ref_01_m__owner_type*)(&temp_struct_var__owner)));
-    if (temp_struct_var__owner.child->values->data[((0 + (temp_struct_var__owner.child->values->dims[0].stride * (2 - temp_struct_var__owner.child->values->dims[0].lower_bound))) + temp_struct_var__owner.child->values->offset)] !=   2.00000000000000000e+00) {
+    if (temp_struct_var__owner.child->values->data[((0 + (temp_struct_var__owner.child->values->dims[0].stride * (2 - temp_struct_var__owner.child->values->dims[0].lower_bound))) + temp_struct_var__owner.child->values->offset)] != 0x1.000000p+1f) {
         fprintf(stderr, "ERROR STOP");
         exit(1);
     }

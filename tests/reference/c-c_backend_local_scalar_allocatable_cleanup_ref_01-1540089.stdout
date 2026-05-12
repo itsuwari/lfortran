@@ -20,6 +20,13 @@
 #define LFORTRAN_C_BACKEND_WEAK static
 #endif
 #endif
+#ifndef LFORTRAN_C_BACKEND_COMMON
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_COMMON __attribute__((common))
+#else
+#define LFORTRAN_C_BACKEND_COMMON
+#endif
+#endif
 
 
 
@@ -32,17 +39,17 @@ int main(int argc, char* argv[])
     float * charge = NULL;
     charge = (float*) _lfortran_malloc_alloc(__lfortran_default_allocator, sizeof(float));
     if (charge == NULL) { charge = (float*) _lfortran_malloc_alloc(__lfortran_default_allocator, sizeof(float)); }
-*(charge) =   1.25000000000000000e+00;
+*(charge) = 0x1.400000p+0f;
     if (!((charge) != NULL)) {
         fprintf(stderr, "ERROR STOP");
         exit(1);
     }
-    if ((*charge) !=   1.25000000000000000e+00) {
+    if ((*charge) != 0x1.400000p+0f) {
         fprintf(stderr, "ERROR STOP");
         exit(1);
     }
     if (charge != NULL) {
-        _lfortran_free_alloc(__lfortran_default_allocator, (char*) charge);
+        _lfortran_free_alloc_plain(__lfortran_default_allocator, (char*) charge);
         charge = NULL;
     }
     return 0;

@@ -22,6 +22,13 @@
 #define LFORTRAN_C_BACKEND_WEAK static
 #endif
 #endif
+#ifndef LFORTRAN_C_BACKEND_COMMON
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_COMMON __attribute__((common))
+#else
+#define LFORTRAN_C_BACKEND_COMMON
+#endif
+#endif
 
 
 struct dimension_descriptor
@@ -40,6 +47,13 @@ struct dimension_descriptor
 #define LFORTRAN_C_BACKEND_WEAK __attribute__((weak))
 #else
 #define LFORTRAN_C_BACKEND_WEAK static
+#endif
+#endif
+#ifndef LFORTRAN_C_BACKEND_COMMON
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_COMMON __attribute__((common))
+#else
+#define LFORTRAN_C_BACKEND_COMMON
 #endif
 #endif
 
@@ -81,27 +95,33 @@ static void __lfortran_cleanup_struct_c_backend_local_struct_scalar_member_array
             __lfortran_cleanup_size___lfortran_self_x2D__x3E_record *= (__lfortran_self->record)->dims[__lfortran_cleanup_dim___lfortran_self_x2D__x3E_record].length;
         }
         for (int64_t __lfortran_cleanup_i___lfortran_self_x2D__x3E_record = 0; __lfortran_cleanup_i___lfortran_self_x2D__x3E_record < __lfortran_cleanup_size___lfortran_self_x2D__x3E_record; __lfortran_cleanup_i___lfortran_self_x2D__x3E_record++) {
+            bool __lfortran_cleanup_desc_owned__x28__x26__x28__x28___lfortran_self_x2D__x3E_record_x29__x2D__x3E_data_x5B___lfortran_cleanup_i___lfortran_self_x2D__x3E_record_x5D__x29__x29__x2D__x3E_values = ((&((__lfortran_self->record)->data[__lfortran_cleanup_i___lfortran_self_x2D__x3E_record]))->values) != NULL && ((&((__lfortran_self->record)->data[__lfortran_cleanup_i___lfortran_self_x2D__x3E_record]))->values)->is_allocated;
             if (((&((__lfortran_self->record)->data[__lfortran_cleanup_i___lfortran_self_x2D__x3E_record]))->values) != NULL && ((&((__lfortran_self->record)->data[__lfortran_cleanup_i___lfortran_self_x2D__x3E_record]))->values)->is_allocated && ((&((__lfortran_self->record)->data[__lfortran_cleanup_i___lfortran_self_x2D__x3E_record]))->values)->data != NULL) {
-                _lfortran_free_alloc(_lfortran_get_default_allocator(), (char*) ((&((__lfortran_self->record)->data[__lfortran_cleanup_i___lfortran_self_x2D__x3E_record]))->values)->data);
+                _lfortran_free_alloc_plain(_lfortran_get_default_allocator(), (char*) ((&((__lfortran_self->record)->data[__lfortran_cleanup_i___lfortran_self_x2D__x3E_record]))->values)->data);
                 ((&((__lfortran_self->record)->data[__lfortran_cleanup_i___lfortran_self_x2D__x3E_record]))->values)->data = NULL;
             }
             if (((&((__lfortran_self->record)->data[__lfortran_cleanup_i___lfortran_self_x2D__x3E_record]))->values) != NULL) {
                 ((&((__lfortran_self->record)->data[__lfortran_cleanup_i___lfortran_self_x2D__x3E_record]))->values)->offset = 0;
                 ((&((__lfortran_self->record)->data[__lfortran_cleanup_i___lfortran_self_x2D__x3E_record]))->values)->is_allocated = false;
-                _lfortran_free_alloc(_lfortran_get_default_allocator(), (char*) (&((__lfortran_self->record)->data[__lfortran_cleanup_i___lfortran_self_x2D__x3E_record]))->values);
-                (&((__lfortran_self->record)->data[__lfortran_cleanup_i___lfortran_self_x2D__x3E_record]))->values = NULL;
+                if (__lfortran_cleanup_desc_owned__x28__x26__x28__x28___lfortran_self_x2D__x3E_record_x29__x2D__x3E_data_x5B___lfortran_cleanup_i___lfortran_self_x2D__x3E_record_x5D__x29__x29__x2D__x3E_values) {
+                    _lfortran_free_alloc_plain(_lfortran_get_default_allocator(), (char*) (&((__lfortran_self->record)->data[__lfortran_cleanup_i___lfortran_self_x2D__x3E_record]))->values);
+                    (&((__lfortran_self->record)->data[__lfortran_cleanup_i___lfortran_self_x2D__x3E_record]))->values = NULL;
+                }
             }
         }
     }
+    bool __lfortran_cleanup_desc_owned___lfortran_self_x2D__x3E_record = (__lfortran_self->record) != NULL && (__lfortran_self->record)->is_allocated;
     if ((__lfortran_self->record) != NULL && (__lfortran_self->record)->is_allocated && (__lfortran_self->record)->data != NULL) {
-        _lfortran_free_alloc(_lfortran_get_default_allocator(), (char*) (__lfortran_self->record)->data);
+        _lfortran_free_alloc_plain(_lfortran_get_default_allocator(), (char*) (__lfortran_self->record)->data);
         (__lfortran_self->record)->data = NULL;
     }
     if ((__lfortran_self->record) != NULL) {
         (__lfortran_self->record)->offset = 0;
         (__lfortran_self->record)->is_allocated = false;
-        _lfortran_free_alloc(_lfortran_get_default_allocator(), (char*) __lfortran_self->record);
-        __lfortran_self->record = NULL;
+        if (__lfortran_cleanup_desc_owned___lfortran_self_x2D__x3E_record) {
+            _lfortran_free_alloc_plain(_lfortran_get_default_allocator(), (char*) __lfortran_self->record);
+            __lfortran_self->record = NULL;
+        }
     }
 }
 
@@ -121,15 +141,18 @@ static void __lfortran_cleanup_struct_c_backend_local_struct_scalar_member_array
     if (__lfortran_self == NULL) {
         return;
     }
+    bool __lfortran_cleanup_desc_owned___lfortran_self_x2D__x3E_values = (__lfortran_self->values) != NULL && (__lfortran_self->values)->is_allocated;
     if ((__lfortran_self->values) != NULL && (__lfortran_self->values)->is_allocated && (__lfortran_self->values)->data != NULL) {
-        _lfortran_free_alloc(_lfortran_get_default_allocator(), (char*) (__lfortran_self->values)->data);
+        _lfortran_free_alloc_plain(_lfortran_get_default_allocator(), (char*) (__lfortran_self->values)->data);
         (__lfortran_self->values)->data = NULL;
     }
     if ((__lfortran_self->values) != NULL) {
         (__lfortran_self->values)->offset = 0;
         (__lfortran_self->values)->is_allocated = false;
-        _lfortran_free_alloc(_lfortran_get_default_allocator(), (char*) __lfortran_self->values);
-        __lfortran_self->values = NULL;
+        if (__lfortran_cleanup_desc_owned___lfortran_self_x2D__x3E_values) {
+            _lfortran_free_alloc_plain(_lfortran_get_default_allocator(), (char*) __lfortran_self->values);
+            __lfortran_self->values = NULL;
+        }
     }
 }
 
@@ -156,29 +179,35 @@ static void __lfortran_cleanup_struct_c_backend_local_struct_scalar_member_array
                 __lfortran_cleanup_size___lfortran_self_x2D__x3E_dict_x2D__x3E_record *= (__lfortran_self->dict->record)->dims[__lfortran_cleanup_dim___lfortran_self_x2D__x3E_dict_x2D__x3E_record].length;
             }
             for (int64_t __lfortran_cleanup_i___lfortran_self_x2D__x3E_dict_x2D__x3E_record = 0; __lfortran_cleanup_i___lfortran_self_x2D__x3E_dict_x2D__x3E_record < __lfortran_cleanup_size___lfortran_self_x2D__x3E_dict_x2D__x3E_record; __lfortran_cleanup_i___lfortran_self_x2D__x3E_dict_x2D__x3E_record++) {
+                bool __lfortran_cleanup_desc_owned__x28__x26__x28__x28___lfortran_self_x2D__x3E_dict_x2D__x3E_record_x29__x2D__x3E_data_x5B___lfortran_cleanup_i___lfortran_self_x2D__x3E_dict_x2D__x3E_record_x5D__x29__x29__x2D__x3E_values = ((&((__lfortran_self->dict->record)->data[__lfortran_cleanup_i___lfortran_self_x2D__x3E_dict_x2D__x3E_record]))->values) != NULL && ((&((__lfortran_self->dict->record)->data[__lfortran_cleanup_i___lfortran_self_x2D__x3E_dict_x2D__x3E_record]))->values)->is_allocated;
                 if (((&((__lfortran_self->dict->record)->data[__lfortran_cleanup_i___lfortran_self_x2D__x3E_dict_x2D__x3E_record]))->values) != NULL && ((&((__lfortran_self->dict->record)->data[__lfortran_cleanup_i___lfortran_self_x2D__x3E_dict_x2D__x3E_record]))->values)->is_allocated && ((&((__lfortran_self->dict->record)->data[__lfortran_cleanup_i___lfortran_self_x2D__x3E_dict_x2D__x3E_record]))->values)->data != NULL) {
-                    _lfortran_free_alloc(_lfortran_get_default_allocator(), (char*) ((&((__lfortran_self->dict->record)->data[__lfortran_cleanup_i___lfortran_self_x2D__x3E_dict_x2D__x3E_record]))->values)->data);
+                    _lfortran_free_alloc_plain(_lfortran_get_default_allocator(), (char*) ((&((__lfortran_self->dict->record)->data[__lfortran_cleanup_i___lfortran_self_x2D__x3E_dict_x2D__x3E_record]))->values)->data);
                     ((&((__lfortran_self->dict->record)->data[__lfortran_cleanup_i___lfortran_self_x2D__x3E_dict_x2D__x3E_record]))->values)->data = NULL;
                 }
                 if (((&((__lfortran_self->dict->record)->data[__lfortran_cleanup_i___lfortran_self_x2D__x3E_dict_x2D__x3E_record]))->values) != NULL) {
                     ((&((__lfortran_self->dict->record)->data[__lfortran_cleanup_i___lfortran_self_x2D__x3E_dict_x2D__x3E_record]))->values)->offset = 0;
                     ((&((__lfortran_self->dict->record)->data[__lfortran_cleanup_i___lfortran_self_x2D__x3E_dict_x2D__x3E_record]))->values)->is_allocated = false;
-                    _lfortran_free_alloc(_lfortran_get_default_allocator(), (char*) (&((__lfortran_self->dict->record)->data[__lfortran_cleanup_i___lfortran_self_x2D__x3E_dict_x2D__x3E_record]))->values);
-                    (&((__lfortran_self->dict->record)->data[__lfortran_cleanup_i___lfortran_self_x2D__x3E_dict_x2D__x3E_record]))->values = NULL;
+                    if (__lfortran_cleanup_desc_owned__x28__x26__x28__x28___lfortran_self_x2D__x3E_dict_x2D__x3E_record_x29__x2D__x3E_data_x5B___lfortran_cleanup_i___lfortran_self_x2D__x3E_dict_x2D__x3E_record_x5D__x29__x29__x2D__x3E_values) {
+                        _lfortran_free_alloc_plain(_lfortran_get_default_allocator(), (char*) (&((__lfortran_self->dict->record)->data[__lfortran_cleanup_i___lfortran_self_x2D__x3E_dict_x2D__x3E_record]))->values);
+                        (&((__lfortran_self->dict->record)->data[__lfortran_cleanup_i___lfortran_self_x2D__x3E_dict_x2D__x3E_record]))->values = NULL;
+                    }
                 }
             }
         }
+        bool __lfortran_cleanup_desc_owned___lfortran_self_x2D__x3E_dict_x2D__x3E_record = (__lfortran_self->dict->record) != NULL && (__lfortran_self->dict->record)->is_allocated;
         if ((__lfortran_self->dict->record) != NULL && (__lfortran_self->dict->record)->is_allocated && (__lfortran_self->dict->record)->data != NULL) {
-            _lfortran_free_alloc(_lfortran_get_default_allocator(), (char*) (__lfortran_self->dict->record)->data);
+            _lfortran_free_alloc_plain(_lfortran_get_default_allocator(), (char*) (__lfortran_self->dict->record)->data);
             (__lfortran_self->dict->record)->data = NULL;
         }
         if ((__lfortran_self->dict->record) != NULL) {
             (__lfortran_self->dict->record)->offset = 0;
             (__lfortran_self->dict->record)->is_allocated = false;
-            _lfortran_free_alloc(_lfortran_get_default_allocator(), (char*) __lfortran_self->dict->record);
-            __lfortran_self->dict->record = NULL;
+            if (__lfortran_cleanup_desc_owned___lfortran_self_x2D__x3E_dict_x2D__x3E_record) {
+                _lfortran_free_alloc_plain(_lfortran_get_default_allocator(), (char*) __lfortran_self->dict->record);
+                __lfortran_self->dict->record = NULL;
+            }
         }
-        _lfortran_free_alloc(_lfortran_get_default_allocator(), (char*) __lfortran_self->dict);
+        _lfortran_free_alloc_plain(_lfortran_get_default_allocator(), (char*) __lfortran_self->dict);
         __lfortran_self->dict = NULL;
     }
 }
@@ -215,7 +244,7 @@ float __lfortran__lcompilers_Sum_4_1_0_idx4_real____0(struct r32___* restrict ar
     const int32_t __lfortran_array_offset = array->offset;
     const int32_t __lfortran_array_dim1_lower_bound = array->dims[0].lower_bound;
     const int32_t __lfortran_array_dim1_stride = array->dims[0].stride;
-    result =   0.00000000000000000e+00;
+    result = 0x0.000000p+0f;
     for (__1_i=1; __1_i<=__1array + 1 - 1; __1_i++) {
         result = result + __lfortran_array_data[((0 + (__lfortran_array_dim1_stride * (__1_i - __lfortran_array_dim1_lower_bound))) + __lfortran_array_offset)];
     }
@@ -240,6 +269,10 @@ void __lfortran_c_backend_local_struct_scalar_member_array_descriptor_cleanup_re
     ((struct c_backend_local_struct_scalar_member_array_descriptor_cleanup_ref_01_m__dict_type*)((*results).dict))->record = struct_member_record_0;
     (*results).dict->__lfortran_type_tag = 3838679772444763733;
     (*results).dict->n = 1;
+    if ((*results).dict->record == NULL) {
+        (*results).dict->record = _lfortran_malloc_alloc(__lfortran_default_allocator, sizeof(*(*results).dict->record));
+        memset((*results).dict->record, 0, sizeof(*(*results).dict->record));
+    }
     (*results).dict->record->n_dims = 1;
     (*results).dict->record->dims[0].lower_bound = 1;
     (*results).dict->record->dims[0].length = 1;
@@ -247,13 +280,19 @@ void __lfortran_c_backend_local_struct_scalar_member_array_descriptor_cleanup_re
     (*results).dict->record->offset = 0;
     (*results).dict->record->data = (struct c_backend_local_struct_scalar_member_array_descriptor_cleanup_ref_01_m__record_type*) _lfortran_malloc_alloc(__lfortran_default_allocator, 1*(*results).dict->record->dims[0].length*sizeof(struct c_backend_local_struct_scalar_member_array_descriptor_cleanup_ref_01_m__record_type));
     (*results).dict->record->is_allocated = true;
-    memset((*results).dict->record->data, 0, 1*(*results).dict->record->dims[0].length*sizeof(struct c_backend_local_struct_scalar_member_array_descriptor_cleanup_ref_01_m__record_type));
-    for (int64_t __lfortran_struct_array_init_i = 0; __lfortran_struct_array_init_i < 1*(*results).dict->record->dims[0].length; __lfortran_struct_array_init_i++) {
-        (&((*results).dict->record->data[__lfortran_struct_array_init_i]))->__lfortran_type_tag = 9034130618837272766;
-        struct r32___* struct_member_values_1;
-        struct_member_values_1 = _lfortran_malloc_alloc(__lfortran_default_allocator, sizeof(*struct_member_values_1));
-        memset(struct_member_values_1, 0, sizeof(*struct_member_values_1));
-        (&((*results).dict->record->data[__lfortran_struct_array_init_i]))->values = struct_member_values_1;
+    if ((*results).dict->record->data != NULL) {
+        memset((*results).dict->record->data, 0, 1*(*results).dict->record->dims[0].length*sizeof(struct c_backend_local_struct_scalar_member_array_descriptor_cleanup_ref_01_m__record_type));
+        for (int64_t __lfortran_struct_array_init_i = 0; __lfortran_struct_array_init_i < 1*(*results).dict->record->dims[0].length; __lfortran_struct_array_init_i++) {
+            (&((*results).dict->record->data[__lfortran_struct_array_init_i]))->__lfortran_type_tag = 9034130618837272766;
+            struct r32___* struct_member_values_1;
+            struct_member_values_1 = _lfortran_malloc_alloc(__lfortran_default_allocator, sizeof(*struct_member_values_1));
+            memset(struct_member_values_1, 0, sizeof(*struct_member_values_1));
+            (&((*results).dict->record->data[__lfortran_struct_array_init_i]))->values = struct_member_values_1;
+        }
+    }
+    if ((*results).dict->record->data[((0 + ((*results).dict->record->dims[0].stride * (1 - (*results).dict->record->dims[0].lower_bound))) + (*results).dict->record->offset)].values == NULL) {
+        (*results).dict->record->data[((0 + ((*results).dict->record->dims[0].stride * (1 - (*results).dict->record->dims[0].lower_bound))) + (*results).dict->record->offset)].values = _lfortran_malloc_alloc(__lfortran_default_allocator, sizeof(*(*results).dict->record->data[((0 + ((*results).dict->record->dims[0].stride * (1 - (*results).dict->record->dims[0].lower_bound))) + (*results).dict->record->offset)].values));
+        memset((*results).dict->record->data[((0 + ((*results).dict->record->dims[0].stride * (1 - (*results).dict->record->dims[0].lower_bound))) + (*results).dict->record->offset)].values, 0, sizeof(*(*results).dict->record->data[((0 + ((*results).dict->record->dims[0].stride * (1 - (*results).dict->record->dims[0].lower_bound))) + (*results).dict->record->offset)].values));
     }
     (*results).dict->record->data[((0 + ((*results).dict->record->dims[0].stride * (1 - (*results).dict->record->dims[0].lower_bound))) + (*results).dict->record->offset)].values->n_dims = 1;
     (*results).dict->record->data[((0 + ((*results).dict->record->dims[0].stride * (1 - (*results).dict->record->dims[0].lower_bound))) + (*results).dict->record->offset)].values->dims[0].lower_bound = 1;
@@ -263,7 +302,7 @@ void __lfortran_c_backend_local_struct_scalar_member_array_descriptor_cleanup_re
     (*results).dict->record->data[((0 + ((*results).dict->record->dims[0].stride * (1 - (*results).dict->record->dims[0].lower_bound))) + (*results).dict->record->offset)].values->data = (float*) _lfortran_malloc_alloc(__lfortran_default_allocator, 1*(*results).dict->record->data[((0 + ((*results).dict->record->dims[0].stride * (1 - (*results).dict->record->dims[0].lower_bound))) + (*results).dict->record->offset)].values->dims[0].length*sizeof(float));
     (*results).dict->record->data[((0 + ((*results).dict->record->dims[0].stride * (1 - (*results).dict->record->dims[0].lower_bound))) + (*results).dict->record->offset)].values->is_allocated = true;
     for (__libasr_index_0_=((int32_t)(*results).dict->record->data[((0 + ((*results).dict->record->dims[0].stride * (1 - (*results).dict->record->dims[0].lower_bound))) + (*results).dict->record->offset)].values->dims[1-1].lower_bound); __libasr_index_0_<=((int32_t) (*results).dict->record->data[((0 + ((*results).dict->record->dims[0].stride * (1 - (*results).dict->record->dims[0].lower_bound))) + (*results).dict->record->offset)].values->dims[1-1].length + (*results).dict->record->data[((0 + ((*results).dict->record->dims[0].stride * (1 - (*results).dict->record->dims[0].lower_bound))) + (*results).dict->record->offset)].values->dims[1-1].lower_bound - 1); __libasr_index_0_++) {
-        (*results).dict->record->data[((0 + ((*results).dict->record->dims[0].stride * (1 - (*results).dict->record->dims[0].lower_bound))) + (*results).dict->record->offset)].values->data[((0 + ((*results).dict->record->data[((0 + ((*results).dict->record->dims[0].stride * (1 - (*results).dict->record->dims[0].lower_bound))) + (*results).dict->record->offset)].values->dims[0].stride * (__libasr_index_0_ - (*results).dict->record->data[((0 + ((*results).dict->record->dims[0].stride * (1 - (*results).dict->record->dims[0].lower_bound))) + (*results).dict->record->offset)].values->dims[0].lower_bound))) + (*results).dict->record->data[((0 + ((*results).dict->record->dims[0].stride * (1 - (*results).dict->record->dims[0].lower_bound))) + (*results).dict->record->offset)].values->offset)] =   2.00000000000000000e+00;
+        (*results).dict->record->data[((0 + ((*results).dict->record->dims[0].stride * (1 - (*results).dict->record->dims[0].lower_bound))) + (*results).dict->record->offset)].values->data[((0 + ((*results).dict->record->data[((0 + ((*results).dict->record->dims[0].stride * (1 - (*results).dict->record->dims[0].lower_bound))) + (*results).dict->record->offset)].values->dims[0].stride * (__libasr_index_0_ - (*results).dict->record->data[((0 + ((*results).dict->record->dims[0].stride * (1 - (*results).dict->record->dims[0].lower_bound))) + (*results).dict->record->offset)].values->dims[0].lower_bound))) + (*results).dict->record->data[((0 + ((*results).dict->record->dims[0].stride * (1 - (*results).dict->record->dims[0].lower_bound))) + (*results).dict->record->offset)].values->offset)] = 0x1.000000p+1f;
     }
 }
 
@@ -289,14 +328,18 @@ void __lfortran_c_backend_local_struct_scalar_member_array_descriptor_cleanup_re
         fprintf(stderr, "ERROR STOP");
         exit(1);
     }
-    if (!((!results->dict->record->data[((0 + (results->dict->record->dims[0].stride * (1 - results->dict->record->dims[0].lower_bound))) + results->dict->record->offset)].values->is_allocated || (true && (results->dict->record->data[((0 + (results->dict->record->dims[0].stride * (1 - results->dict->record->dims[0].lower_bound))) + results->dict->record->offset)].values->dims[0].stride == 1))) && ((int32_t)results->dict->record->data[((0 + (results->dict->record->dims[0].stride * (1 - results->dict->record->dims[0].lower_bound))) + results->dict->record->offset)].values->dims[1-1].lower_bound) == 1)) {
+    if (!((results->dict->record->data[((0 + (results->dict->record->dims[0].stride * (1 - results->dict->record->dims[0].lower_bound))) + results->dict->record->offset)].values->is_allocated && (true && (results->dict->record->data[((0 + (results->dict->record->dims[0].stride * (1 - results->dict->record->dims[0].lower_bound))) + results->dict->record->offset)].values->dims[0].stride == 1))) && ((int32_t)results->dict->record->data[((0 + (results->dict->record->dims[0].stride * (1 - results->dict->record->dims[0].lower_bound))) + results->dict->record->offset)].values->dims[1-1].lower_bound) == 1)) {
         if ((__libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_real____0) != NULL && (__libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_real____0)->is_allocated && (__libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_real____0)->data != NULL) {
-            _lfortran_free_alloc(__lfortran_default_allocator, (char*) (__libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_real____0)->data);
+            _lfortran_free_alloc_plain(__lfortran_default_allocator, (char*) (__libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_real____0)->data);
             (__libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_real____0)->data = NULL;
         }
         if ((__libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_real____0) != NULL) {
             (__libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_real____0)->offset = 0;
             (__libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_real____0)->is_allocated = false;
+        }
+        if (__libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_real____0 == NULL) {
+            __libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_real____0 = _lfortran_malloc_alloc(__lfortran_default_allocator, sizeof(*__libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_real____0));
+            memset(__libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_real____0, 0, sizeof(*__libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_real____0));
         }
         __libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_real____0->n_dims = 1;
         __libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_real____0->dims[0].lower_bound = 1;
@@ -312,7 +355,7 @@ void __lfortran_c_backend_local_struct_scalar_member_array_descriptor_cleanup_re
         __libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_real____0 = ((struct r32___*)(results->dict->record->data[((0 + (results->dict->record->dims[0].stride * (1 - results->dict->record->dims[0].lower_bound))) + results->dict->record->offset)].values));
     }
     __libasr_created__intrinsic_array_function_Sum = __lfortran__lcompilers_Sum_4_1_0_idx4_real____0((&(struct r32___){ .data = __libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_real____0->data, .dims = {{1, __libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_real____0->dims[0].length, __libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_real____0->dims[0].stride}}, .n_dims = 1, .offset = __libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_real____0->offset, .is_allocated = __libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_real____0->is_allocated }), ((int32_t) (&(struct r32___){ .data = __libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_real____0->data, .dims = {{1, __libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_real____0->dims[0].length, __libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_real____0->dims[0].stride}}, .n_dims = 1, .offset = __libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_real____0->offset, .is_allocated = __libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_real____0->is_allocated })->dims[0].length));
-    if ((!results->dict->record->data[((0 + (results->dict->record->dims[0].stride * (1 - results->dict->record->dims[0].lower_bound))) + results->dict->record->offset)].values->is_allocated || (true && (results->dict->record->data[((0 + (results->dict->record->dims[0].stride * (1 - results->dict->record->dims[0].lower_bound))) + results->dict->record->offset)].values->dims[0].stride == 1))) && ((int32_t)results->dict->record->data[((0 + (results->dict->record->dims[0].stride * (1 - results->dict->record->dims[0].lower_bound))) + results->dict->record->offset)].values->dims[1-1].lower_bound) == 1) {
+    if ((results->dict->record->data[((0 + (results->dict->record->dims[0].stride * (1 - results->dict->record->dims[0].lower_bound))) + results->dict->record->offset)].values->is_allocated && (true && (results->dict->record->data[((0 + (results->dict->record->dims[0].stride * (1 - results->dict->record->dims[0].lower_bound))) + results->dict->record->offset)].values->dims[0].stride == 1))) && ((int32_t)results->dict->record->data[((0 + (results->dict->record->dims[0].stride * (1 - results->dict->record->dims[0].lower_bound))) + results->dict->record->offset)].values->dims[1-1].lower_bound) == 1) {
         __libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_real____0 = &__libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_real____0_value;
         if ((__libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_real____0) != NULL) {
             (__libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_real____0)->data = NULL;
@@ -321,7 +364,7 @@ void __lfortran_c_backend_local_struct_scalar_member_array_descriptor_cleanup_re
         }
     } else {
         if ((__libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_real____0) != NULL && (__libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_real____0)->is_allocated && (__libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_real____0)->data != NULL) {
-            _lfortran_free_alloc(__lfortran_default_allocator, (char*) (__libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_real____0)->data);
+            _lfortran_free_alloc_plain(__lfortran_default_allocator, (char*) (__libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_real____0)->data);
             (__libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_real____0)->data = NULL;
         }
         if ((__libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_real____0) != NULL) {
@@ -329,7 +372,7 @@ void __lfortran_c_backend_local_struct_scalar_member_array_descriptor_cleanup_re
             (__libasr_created__function_call__lcompilers_Sum_4_1_0_idx4_real____0)->is_allocated = false;
         }
     }
-    if (__libasr_created__intrinsic_array_function_Sum !=   4.00000000000000000e+00) {
+    if (__libasr_created__intrinsic_array_function_Sum != 0x1.000000p+2f) {
         fprintf(stderr, "ERROR STOP");
         exit(1);
     }
@@ -340,29 +383,35 @@ void __lfortran_c_backend_local_struct_scalar_member_array_descriptor_cleanup_re
                 __lfortran_cleanup_size__x28__x26__x28_results_value_x29__x29__x2D__x3E_dict_x2D__x3E_record *= ((&(results_value))->dict->record)->dims[__lfortran_cleanup_dim__x28__x26__x28_results_value_x29__x29__x2D__x3E_dict_x2D__x3E_record].length;
             }
             for (int64_t __lfortran_cleanup_i__x28__x26__x28_results_value_x29__x29__x2D__x3E_dict_x2D__x3E_record = 0; __lfortran_cleanup_i__x28__x26__x28_results_value_x29__x29__x2D__x3E_dict_x2D__x3E_record < __lfortran_cleanup_size__x28__x26__x28_results_value_x29__x29__x2D__x3E_dict_x2D__x3E_record; __lfortran_cleanup_i__x28__x26__x28_results_value_x29__x29__x2D__x3E_dict_x2D__x3E_record++) {
+                bool __lfortran_cleanup_desc_owned__x28__x26__x28__x28__x28__x26__x28_results_value_x29__x29__x2D__x3E_dict_x2D__x3E_record_x29__x2D__x3E_data_x5B___lfortran_cleanup_i__x28__x26__x28_results_value_x29__x29__x2D__x3E_dict_x2D__x3E_record_x5D__x29__x29__x2D__x3E_values = ((&(((&(results_value))->dict->record)->data[__lfortran_cleanup_i__x28__x26__x28_results_value_x29__x29__x2D__x3E_dict_x2D__x3E_record]))->values) != NULL && ((&(((&(results_value))->dict->record)->data[__lfortran_cleanup_i__x28__x26__x28_results_value_x29__x29__x2D__x3E_dict_x2D__x3E_record]))->values)->is_allocated;
                 if (((&(((&(results_value))->dict->record)->data[__lfortran_cleanup_i__x28__x26__x28_results_value_x29__x29__x2D__x3E_dict_x2D__x3E_record]))->values) != NULL && ((&(((&(results_value))->dict->record)->data[__lfortran_cleanup_i__x28__x26__x28_results_value_x29__x29__x2D__x3E_dict_x2D__x3E_record]))->values)->is_allocated && ((&(((&(results_value))->dict->record)->data[__lfortran_cleanup_i__x28__x26__x28_results_value_x29__x29__x2D__x3E_dict_x2D__x3E_record]))->values)->data != NULL) {
-                    _lfortran_free_alloc(__lfortran_default_allocator, (char*) ((&(((&(results_value))->dict->record)->data[__lfortran_cleanup_i__x28__x26__x28_results_value_x29__x29__x2D__x3E_dict_x2D__x3E_record]))->values)->data);
+                    _lfortran_free_alloc_plain(__lfortran_default_allocator, (char*) ((&(((&(results_value))->dict->record)->data[__lfortran_cleanup_i__x28__x26__x28_results_value_x29__x29__x2D__x3E_dict_x2D__x3E_record]))->values)->data);
                     ((&(((&(results_value))->dict->record)->data[__lfortran_cleanup_i__x28__x26__x28_results_value_x29__x29__x2D__x3E_dict_x2D__x3E_record]))->values)->data = NULL;
                 }
                 if (((&(((&(results_value))->dict->record)->data[__lfortran_cleanup_i__x28__x26__x28_results_value_x29__x29__x2D__x3E_dict_x2D__x3E_record]))->values) != NULL) {
                     ((&(((&(results_value))->dict->record)->data[__lfortran_cleanup_i__x28__x26__x28_results_value_x29__x29__x2D__x3E_dict_x2D__x3E_record]))->values)->offset = 0;
                     ((&(((&(results_value))->dict->record)->data[__lfortran_cleanup_i__x28__x26__x28_results_value_x29__x29__x2D__x3E_dict_x2D__x3E_record]))->values)->is_allocated = false;
-                    _lfortran_free_alloc(__lfortran_default_allocator, (char*) (&(((&(results_value))->dict->record)->data[__lfortran_cleanup_i__x28__x26__x28_results_value_x29__x29__x2D__x3E_dict_x2D__x3E_record]))->values);
-                    (&(((&(results_value))->dict->record)->data[__lfortran_cleanup_i__x28__x26__x28_results_value_x29__x29__x2D__x3E_dict_x2D__x3E_record]))->values = NULL;
+                    if (__lfortran_cleanup_desc_owned__x28__x26__x28__x28__x28__x26__x28_results_value_x29__x29__x2D__x3E_dict_x2D__x3E_record_x29__x2D__x3E_data_x5B___lfortran_cleanup_i__x28__x26__x28_results_value_x29__x29__x2D__x3E_dict_x2D__x3E_record_x5D__x29__x29__x2D__x3E_values) {
+                        _lfortran_free_alloc_plain(__lfortran_default_allocator, (char*) (&(((&(results_value))->dict->record)->data[__lfortran_cleanup_i__x28__x26__x28_results_value_x29__x29__x2D__x3E_dict_x2D__x3E_record]))->values);
+                        (&(((&(results_value))->dict->record)->data[__lfortran_cleanup_i__x28__x26__x28_results_value_x29__x29__x2D__x3E_dict_x2D__x3E_record]))->values = NULL;
+                    }
                 }
             }
         }
+        bool __lfortran_cleanup_desc_owned__x28__x26__x28_results_value_x29__x29__x2D__x3E_dict_x2D__x3E_record = ((&(results_value))->dict->record) != NULL && ((&(results_value))->dict->record)->is_allocated;
         if (((&(results_value))->dict->record) != NULL && ((&(results_value))->dict->record)->is_allocated && ((&(results_value))->dict->record)->data != NULL) {
-            _lfortran_free_alloc(__lfortran_default_allocator, (char*) ((&(results_value))->dict->record)->data);
+            _lfortran_free_alloc_plain(__lfortran_default_allocator, (char*) ((&(results_value))->dict->record)->data);
             ((&(results_value))->dict->record)->data = NULL;
         }
         if (((&(results_value))->dict->record) != NULL) {
             ((&(results_value))->dict->record)->offset = 0;
             ((&(results_value))->dict->record)->is_allocated = false;
-            _lfortran_free_alloc(__lfortran_default_allocator, (char*) (&(results_value))->dict->record);
-            (&(results_value))->dict->record = NULL;
+            if (__lfortran_cleanup_desc_owned__x28__x26__x28_results_value_x29__x29__x2D__x3E_dict_x2D__x3E_record) {
+                _lfortran_free_alloc_plain(__lfortran_default_allocator, (char*) (&(results_value))->dict->record);
+                (&(results_value))->dict->record = NULL;
+            }
         }
-        _lfortran_free_alloc(__lfortran_default_allocator, (char*) (&(results_value))->dict);
+        _lfortran_free_alloc_plain(__lfortran_default_allocator, (char*) (&(results_value))->dict);
         (&(results_value))->dict = NULL;
     }
 }

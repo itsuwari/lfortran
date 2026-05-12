@@ -264,6 +264,25 @@ bool write_file_atomically(const std::filesystem::path &fullpath,
 // Used in naming unique intermediate object files during both compilation modes.
 const std::string LCOMPILERS_UNIQUE_ID = LCompilers::get_unique_ID();
 
+static uint64_t get_stable_cli_string_hash(const std::string &value)
+{
+    uint64_t hash = 1469598103934665603ULL;
+    for (unsigned char ch : value) {
+        hash ^= static_cast<uint64_t>(ch);
+        hash *= 1099511628211ULL;
+    }
+    return hash;
+}
+
+static std::string get_stable_show_c_unique_id(const std::string &infile,
+        const std::string &show_c_split_dir)
+{
+    std::ostringstream id;
+    id << "showc" << std::hex
+       << get_stable_cli_string_hash(infile + "\n" + show_c_split_dir);
+    return id.str();
+}
+
 void print_one_component(std::string component) {
     std::istringstream ss(component);
     std::string component_name;
@@ -2860,7 +2879,17 @@ int main_app(int argc, char *argv[]) {
         }
     }
 
-    lcompilers_unique_ID_separate_compilation = ( parser.opts.compiler_options.separate_compilation || compiler_options.generate_code_for_global_procedures ) ? LCOMPILERS_UNIQUE_ID : "";
+    if (parser.opts.compiler_options.separate_compilation
+            || compiler_options.generate_code_for_global_procedures) {
+        if (opts.show_c || !opts.show_c_split.empty()) {
+            lcompilers_unique_ID_separate_compilation =
+                get_stable_show_c_unique_id(opts.arg_file, opts.show_c_split);
+        } else {
+            lcompilers_unique_ID_separate_compilation = LCOMPILERS_UNIQUE_ID;
+        }
+    } else {
+        lcompilers_unique_ID_separate_compilation = "";
+    }
     if (parser.opts.compiler_options.separate_compilation) {
         compiler_options.po.intrinsic_symbols_mangling = true;
         compiler_options.po.intrinsic_module_name_mangling = true;
