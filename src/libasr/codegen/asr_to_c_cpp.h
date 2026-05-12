@@ -6678,7 +6678,15 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
     bool get_c_rank1_simple_section_access(ASR::expr_t *expr,
             const std::string &prefix, std::string &setup,
             std::string &data_name, std::string &offset_name,
-            std::string &stride_name) {
+            std::string &stride_name, bool *has_constant_offset=nullptr,
+            int64_t *constant_offset=nullptr, bool *has_constant_stride=nullptr,
+            int64_t *constant_stride=nullptr) {
+        if (has_constant_offset != nullptr) {
+            *has_constant_offset = false;
+        }
+        if (has_constant_stride != nullptr) {
+            *has_constant_stride = false;
+        }
         expr = unwrap_c_lvalue_expr(expr);
         if (expr == nullptr || !ASR::is_a<ASR::ArraySection_t>(*expr)) {
             return false;
@@ -6723,6 +6731,36 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             ? std::to_string(static_lb) : base + "->dims[0].lower_bound";
         std::string base_stride = use_static_base_dims ? "1" : base + "->dims[0].stride";
         std::string base_offset = use_static_base_dims ? "0" : base + "->offset";
+        std::string base_data = is_c_local_fixed_size_descriptor_storage_expr(base_expr)
+            ? base + "_data" : base + "->data";
+        if (use_static_base_dims) {
+            int64_t left_value = static_lb;
+            int64_t step_value = 1;
+            bool left_constant = idx.m_left == nullptr
+                || get_c_constant_int_expr_value(idx.m_left, left_value);
+            bool step_constant = idx.m_step == nullptr
+                || get_c_constant_int_expr_value(idx.m_step, step_value);
+            if (left_constant && step_constant) {
+                int64_t folded_offset = left_value - static_lb;
+                int64_t folded_stride = step_value;
+                data_name = base_data;
+                offset_name = std::to_string(folded_offset);
+                stride_name = std::to_string(folded_stride);
+                if (has_constant_offset != nullptr) {
+                    *has_constant_offset = true;
+                }
+                if (constant_offset != nullptr) {
+                    *constant_offset = folded_offset;
+                }
+                if (has_constant_stride != nullptr) {
+                    *has_constant_stride = true;
+                }
+                if (constant_stride != nullptr) {
+                    *constant_stride = folded_stride;
+                }
+                return true;
+            }
+        }
         std::string left = get_c_array_section_bound_expr(idx.m_left, base_lb);
         setup += drain_tmp_buffer();
         setup += extract_stmt_setup_from_expr(left);
@@ -6736,8 +6774,6 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         data_name = get_unique_local_name(prefix + "_data");
         offset_name = get_unique_local_name(prefix + "_offset");
         stride_name = get_unique_local_name(prefix + "_stride");
-        std::string base_data = is_c_local_fixed_size_descriptor_storage_expr(base_expr)
-            ? base + "_data" : base + "->data";
         setup += indent + elem_type + " *" + data_name + " = " + base_data + ";\n";
         setup += indent + "int64_t " + offset_name + " = (" + base_offset
             + " + " + base_stride + " * ((" + left + ") - " + base_lb + "));\n";
@@ -6818,9 +6854,12 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
 
         std::string setup;
         std::string target_data, target_offset, target_stride;
+        bool has_constant_offset = false, has_constant_stride = false;
+        int64_t constant_offset = 0, constant_stride = 0;
         if (!get_c_rank1_simple_section_access(target_expr,
                 "__lfortran_const_lhs", setup, target_data, target_offset,
-                target_stride)) {
+                target_stride, &has_constant_offset, &constant_offset,
+                &has_constant_stride, &constant_stride)) {
             return false;
         }
 
@@ -6832,9 +6871,14 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         src += setup;
         src += value_setup;
         for (int64_t i = 0; i < length; i++) {
-            src += inner_indent + target_data + "[" + target_offset + " + "
-                + std::to_string(i) + " * " + target_stride + "] = "
-                + values[static_cast<size_t>(i)] + ";\n";
+            src += inner_indent + target_data + "[";
+            if (has_constant_offset && has_constant_stride) {
+                src += std::to_string(constant_offset + i * constant_stride);
+            } else {
+                src += target_offset + " + " + std::to_string(i)
+                    + " * " + target_stride;
+            }
+            src += "] = " + values[static_cast<size_t>(i)] + ";\n";
         }
         indentation_level--;
         src += indent + "}\n";
