@@ -1841,6 +1841,7 @@ RUN(NAME intrinsics_456 LABELS gfortran llvm) # move_alloc preserves lower bound
 RUN(NAME intrinsics_457 LABELS gfortran llvm) # eoshift on 2D array with dim
 RUN(NAME intrinsics_458 LABELS gfortran llvm) # sign with common block variables
 RUN(NAME intrinsics_459 LABELS gfortran c) # minloc with section extent and masked section
+RUN(NAME intrinsics_460 LABELS gfortran llvm) # minval over array with runtime bounds (--fast regression)
 
 RUN(NAME array_expr_scalarize_01 LABELS gfortran c) # C scalarizes/fuses rank-1 contiguous section expressions
 

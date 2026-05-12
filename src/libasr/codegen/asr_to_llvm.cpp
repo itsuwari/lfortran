@@ -859,7 +859,10 @@ public:
         for( int r = 0; r < n_dims; r++ ) {
             ASR::dimension_t m_dim = m_dims[r];
             LCOMPILERS_ASSERT(m_dim.m_start != nullptr);
-            visit_expr(*(m_dim.m_start));
+            // ArrayItem bounds must be loaded as their element type before
+            // widening to descriptor indexes; plain visit_expr can leave a
+            // raw pointer that would be read with the wrong width.
+            visit_expr_wrapper(m_dim.m_start, true);
             llvm::Value* start = tmp;
             LCOMPILERS_ASSERT(m_dim.m_length != nullptr);
             load_array_size_deep_copy(m_dim.m_length);
