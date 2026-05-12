@@ -1,0 +1,13 @@
+{
+    "basename": "c_forbid_pattern-c_backend_module_allocatable_array_descriptor_ref_01-a2f625e",
+    "cmd": "lfortran --no-color --show-c {infile} | (! grep -F -q \"__lfortran_array_dim1_stride * (__1_i - __lfortran_array_dim1_lower_bound)\") #",
+    "infile": "tests/c_backend_module_allocatable_array_descriptor_ref_01.f90",
+    "infile_hash": "28524701eabec6dd522fc04af6a4b89ef76ab3d8f2cab59906ff3f33",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

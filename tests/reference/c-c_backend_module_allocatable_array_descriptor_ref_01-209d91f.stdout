@@ -95,8 +95,10 @@ float __lfortran__lcompilers_Sum_4_1_0_idx4_real____0(struct r32___* restrict ar
     const int32_t __lfortran_array_dim1_lower_bound = array->dims[0].lower_bound;
     const int32_t __lfortran_array_dim1_stride = array->dims[0].stride;
     result = 0x0.000000p+0f;
+    float * __lfortran_sum_ptr = __lfortran_array_data + __lfortran_array_offset + (__lfortran_array_dim1_stride * (1 - __lfortran_array_dim1_lower_bound));
     for (__1_i=1; __1_i<=__1array + 1 - 1; __1_i++) {
-        result = result + __lfortran_array_data[((0 + (__lfortran_array_dim1_stride * (__1_i - __lfortran_array_dim1_lower_bound))) + __lfortran_array_offset)];
+        result = result + *__lfortran_sum_ptr;
+        __lfortran_sum_ptr += __lfortran_array_dim1_stride;
     }
     return result;
 }

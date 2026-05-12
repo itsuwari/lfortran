@@ -1,0 +1,13 @@
+{
+    "basename": "c_require_pattern-c_backend_module_allocatable_array_descriptor_ref_01-20955dc",
+    "cmd": "lfortran --no-color --show-c {infile} | grep -F -q \"__lfortran_sum_ptr\" #",
+    "infile": "tests/c_backend_module_allocatable_array_descriptor_ref_01.f90",
+    "infile_hash": "28524701eabec6dd522fc04af6a4b89ef76ab3d8f2cab59906ff3f33",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

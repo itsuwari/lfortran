@@ -17956,6 +17956,120 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             increment) && increment == 1;
     }
 
+    bool try_emit_c_rank1_sum_induction_loop(const ASR::DoLoop_t &loop,
+            std::string &out) {
+        if (!is_c || current_function == nullptr
+                || std::string(current_function->m_name).find("_lcompilers_Sum")
+                    == std::string::npos
+                || loop.n_body != 1
+                || !ASR::is_a<ASR::Assignment_t>(*loop.m_body[0])
+                || !is_c_unit_increment_loop(loop.m_head)
+                || !is_c_simple_loop_bound_expr(loop.m_head.m_start)
+                || !is_c_simple_loop_bound_expr(loop.m_head.m_end)) {
+            return false;
+        }
+        ASR::symbol_t *loop_sym = get_c_var_symbol_from_expr(loop.m_head.m_v);
+        ASR::Assignment_t *assignment =
+            ASR::down_cast<ASR::Assignment_t>(loop.m_body[0]);
+        ASR::symbol_t *target_sym = get_c_var_symbol_from_expr(assignment->m_target);
+        if (loop_sym == nullptr || target_sym == nullptr
+                || !ASR::is_a<ASR::Variable_t>(*loop_sym)
+                || !ASR::is_a<ASR::Variable_t>(*target_sym)) {
+            return false;
+        }
+
+        ASR::expr_t *rhs = ASRUtils::get_past_array_physical_cast(assignment->m_value);
+        ASR::expr_t *right = nullptr;
+        ASR::expr_t *left = nullptr;
+        if (rhs != nullptr && ASR::is_a<ASR::RealBinOp_t>(*rhs)) {
+            ASR::RealBinOp_t *binop = ASR::down_cast<ASR::RealBinOp_t>(rhs);
+            if (binop->m_op != ASR::binopType::Add) {
+                return false;
+            }
+            left = binop->m_left;
+            right = binop->m_right;
+        } else if (rhs != nullptr && ASR::is_a<ASR::IntegerBinOp_t>(*rhs)) {
+            ASR::IntegerBinOp_t *binop = ASR::down_cast<ASR::IntegerBinOp_t>(rhs);
+            if (binop->m_op != ASR::binopType::Add) {
+                return false;
+            }
+            left = binop->m_left;
+            right = binop->m_right;
+        } else {
+            return false;
+        }
+        if (!is_c_same_var_expr(left, target_sym) || right == nullptr
+                || !ASR::is_a<ASR::ArrayItem_t>(
+                    *ASRUtils::get_past_array_physical_cast(right))) {
+            return false;
+        }
+        ASR::ArrayItem_t *item = ASR::down_cast<ASR::ArrayItem_t>(
+            ASRUtils::get_past_array_physical_cast(right));
+        if (item->n_args != 1
+                || !is_c_same_var_expr(get_array_index_expr(item->m_args[0]),
+                    loop_sym)) {
+            return false;
+        }
+
+        std::string saved_src = src;
+        std::vector<std::string> saved_tmp_buffer_src = tmp_buffer_src;
+        auto fail_with_restore = [&]() -> bool {
+            src = saved_src;
+            tmp_buffer_src = saved_tmp_buffer_src;
+            return false;
+        };
+
+        self().visit_expr(*item->m_v);
+        std::string array = src;
+        std::string setup = drain_tmp_buffer();
+        if (!setup.empty()) {
+            return fail_with_restore();
+        }
+        const CArrayDescriptorCache *cache =
+            get_current_function_array_descriptor_cache(array, 1);
+        if (cache == nullptr || cache->data.empty()
+                || cache->lower_bounds.empty() || cache->strides.empty()) {
+            return fail_with_restore();
+        }
+
+        auto loop_bound = [&](ASR::expr_t *expr, std::string &value) -> bool {
+            self().visit_expr(*expr);
+            value = src;
+            std::string bound_setup = drain_tmp_buffer();
+            return bound_setup.empty();
+        };
+        std::string loop_start, loop_end;
+        if (!loop_bound(loop.m_head.m_start, loop_start)
+                || !loop_bound(loop.m_head.m_end, loop_end)) {
+            return fail_with_restore();
+        }
+
+        std::string loop_name = CUtils::get_c_variable_name(
+            *ASR::down_cast<ASR::Variable_t>(loop_sym));
+        std::string target_name = CUtils::get_c_variable_name(
+            *ASR::down_cast<ASR::Variable_t>(target_sym));
+        std::string element_type =
+            CUtils::get_c_array_element_type_from_ttype_t(
+                ASRUtils::expr_type(item->m_v), is_c);
+        if (element_type.empty()) {
+            return fail_with_restore();
+        }
+        std::string ptr_name = get_unique_local_name("__lfortran_sum_ptr");
+        std::string indent(indentation_level * indentation_spaces, ' ');
+        std::string body_indent((indentation_level + 1) * indentation_spaces, ' ');
+        out = indent + element_type + " * " + ptr_name + " = "
+            + cache->data + " + " + cache->offset + " + ("
+            + cache->strides[0] + " * (" + loop_start + " - "
+            + cache->lower_bounds[0] + "));\n";
+        out += indent + "for (" + loop_name + "=" + loop_start + "; "
+            + loop_name + "<=" + loop_end + "; " + loop_name + "++) {\n";
+        out += body_indent + target_name + " = " + target_name + " + *"
+            + ptr_name + ";\n";
+        out += body_indent + ptr_name + " += " + cache->strides[0] + ";\n";
+        out += indent + "}\n";
+        return true;
+    }
+
     bool try_emit_c_rank2_sum_induction_loop(const ASR::DoLoop_t &outer,
             std::string &out) {
         if (!is_c || current_function == nullptr
@@ -18096,6 +18210,10 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
 
     void visit_DoLoop(const ASR::DoLoop_t &x) {
         std::string optimized_loop;
+        if (try_emit_c_rank1_sum_induction_loop(x, optimized_loop)) {
+            src = optimized_loop;
+            return;
+        }
         if (try_emit_c_rank2_sum_induction_loop(x, optimized_loop)) {
             src = optimized_loop;
             return;
