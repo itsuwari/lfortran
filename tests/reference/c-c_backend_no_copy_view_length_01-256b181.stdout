@@ -152,7 +152,7 @@ int main(int argc, char* argv[])
         }
     }
     struct r64_____ __lfortran_array_view = { .data = a->data, .dims = {{1, ((((((int32_t) a->dims[1-1].length + a->dims[1-1].lower_bound - 1)) - (((int32_t)a->dims[1-1].lower_bound))) / (1)) + 1), (a->dims[0].stride * (1))}, {1, ((((4) - (2)) / (1)) + 1), (a->dims[1].stride * (1))}}, .n_dims = 2, .offset = (a->offset + a->dims[0].stride * ((((int32_t)a->dims[1-1].lower_bound)) - a->dims[0].lower_bound) + a->dims[1].stride * ((2) - a->dims[1].lower_bound)), .is_allocated = a->is_allocated };
-    __lfortran_c_backend_no_copy_view_length_01_m__sum_assumed_real_______0(&__lfortran_array_view, ((int32_t) (&__lfortran_array_view)->dims[0].length), ((int32_t) (&__lfortran_array_view)->dims[1].length), &s);
+    __lfortran_c_backend_no_copy_view_length_01_m__sum_assumed_real_______0(&__lfortran_array_view, ((int32_t) ((((((int32_t) a->dims[1-1].length + a->dims[1-1].lower_bound - 1)) - (((int32_t)a->dims[1-1].lower_bound))) / (1)) + 1)), ((int32_t) ((((4) - (2)) / (1)) + 1)), &s);
     if (fabs(s - 0x1.8000000000000p+3) > 0x1.19799812dea11p-40) {
         fprintf(stderr, "ERROR STOP");
         exit(1);
