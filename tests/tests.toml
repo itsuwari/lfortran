@@ -5393,6 +5393,13 @@ c_forbid_pattern = true
 c_forbid_pattern_value = "__lfortran_i + __lfortran_j * 3)) == 1"
 
 [[test]]
+filename = "../integration_tests/c_backend_sum_helper_dedup_01.f90"
+c_require_pattern = true
+c_require_pattern_value = "__lfortran_sum_ptr"
+c_forbid_pattern = true
+c_forbid_pattern_value = "__lfortran_array_dim1_stride * (__1_i - __lfortran_array_dim1_lower_bound)"
+
+[[test]]
 filename = "c_backend_small_integer_pow_01.f90"
 c = true
 

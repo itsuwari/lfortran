@@ -17907,7 +17907,186 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         last_expr_precedence = 2;
     }
 
+    ASR::symbol_t *get_c_var_symbol_from_expr(ASR::expr_t *expr) {
+        expr = unwrap_c_array_expr(expr);
+        if (expr == nullptr || !ASR::is_a<ASR::Var_t>(*expr)) {
+            return nullptr;
+        }
+        return ASRUtils::symbol_get_past_external(
+            ASR::down_cast<ASR::Var_t>(expr)->m_v);
+    }
+
+    bool is_c_same_var_expr(ASR::expr_t *expr, ASR::symbol_t *sym) {
+        return sym != nullptr && get_c_var_symbol_from_expr(expr) == sym;
+    }
+
+    bool is_c_simple_loop_bound_expr(ASR::expr_t *expr) {
+        expr = ASRUtils::get_past_array_physical_cast(expr);
+        if (expr == nullptr || ASRUtils::is_array(ASRUtils::expr_type(expr))) {
+            return false;
+        }
+        switch (expr->type) {
+            case ASR::exprType::IntegerConstant:
+            case ASR::exprType::Var:
+            case ASR::exprType::ArrayBound:
+            case ASR::exprType::ArraySize:
+                return true;
+            case ASR::exprType::IntegerBinOp: {
+                ASR::IntegerBinOp_t *binop = ASR::down_cast<ASR::IntegerBinOp_t>(expr);
+                return is_c_simple_loop_bound_expr(binop->m_left)
+                    && is_c_simple_loop_bound_expr(binop->m_right);
+            }
+            case ASR::exprType::IntegerUnaryMinus:
+                return is_c_simple_loop_bound_expr(
+                    ASR::down_cast<ASR::IntegerUnaryMinus_t>(expr)->m_arg);
+            case ASR::exprType::Cast:
+                return is_c_simple_loop_bound_expr(
+                    ASR::down_cast<ASR::Cast_t>(expr)->m_arg);
+            default:
+                return false;
+        }
+    }
+
+    bool is_c_unit_increment_loop(const ASR::do_loop_head_t &head) {
+        if (head.m_increment == nullptr) {
+            return true;
+        }
+        int increment = 0;
+        return ASRUtils::extract_value(ASRUtils::expr_value(head.m_increment),
+            increment) && increment == 1;
+    }
+
+    bool try_emit_c_rank2_sum_induction_loop(const ASR::DoLoop_t &outer,
+            std::string &out) {
+        if (!is_c || current_function == nullptr
+                || std::string(current_function->m_name).find("_lcompilers_Sum")
+                    == std::string::npos
+                || outer.n_body != 1
+                || !ASR::is_a<ASR::DoLoop_t>(*outer.m_body[0])
+                || !is_c_unit_increment_loop(outer.m_head)
+                || !is_c_simple_loop_bound_expr(outer.m_head.m_start)
+                || !is_c_simple_loop_bound_expr(outer.m_head.m_end)) {
+            return false;
+        }
+        ASR::DoLoop_t *inner = ASR::down_cast<ASR::DoLoop_t>(outer.m_body[0]);
+        if (inner->n_body != 1 || !ASR::is_a<ASR::Assignment_t>(*inner->m_body[0])
+                || !is_c_unit_increment_loop(inner->m_head)
+                || !is_c_simple_loop_bound_expr(inner->m_head.m_start)
+                || !is_c_simple_loop_bound_expr(inner->m_head.m_end)) {
+            return false;
+        }
+        ASR::symbol_t *outer_sym = get_c_var_symbol_from_expr(outer.m_head.m_v);
+        ASR::symbol_t *inner_sym = get_c_var_symbol_from_expr(inner->m_head.m_v);
+        if (outer_sym == nullptr || inner_sym == nullptr) {
+            return false;
+        }
+        ASR::Assignment_t *assignment =
+            ASR::down_cast<ASR::Assignment_t>(inner->m_body[0]);
+        ASR::symbol_t *target_sym = get_c_var_symbol_from_expr(assignment->m_target);
+        if (target_sym == nullptr) {
+            return false;
+        }
+
+        ASR::expr_t *rhs = ASRUtils::get_past_array_physical_cast(assignment->m_value);
+        ASR::expr_t *right = nullptr;
+        ASR::expr_t *left = nullptr;
+        if (rhs != nullptr && ASR::is_a<ASR::RealBinOp_t>(*rhs)) {
+            ASR::RealBinOp_t *binop = ASR::down_cast<ASR::RealBinOp_t>(rhs);
+            if (binop->m_op != ASR::binopType::Add) {
+                return false;
+            }
+            left = binop->m_left;
+            right = binop->m_right;
+        } else if (rhs != nullptr && ASR::is_a<ASR::IntegerBinOp_t>(*rhs)) {
+            ASR::IntegerBinOp_t *binop = ASR::down_cast<ASR::IntegerBinOp_t>(rhs);
+            if (binop->m_op != ASR::binopType::Add) {
+                return false;
+            }
+            left = binop->m_left;
+            right = binop->m_right;
+        } else {
+            return false;
+        }
+        if (!is_c_same_var_expr(left, target_sym) || right == nullptr
+                || !ASR::is_a<ASR::ArrayItem_t>(
+                    *ASRUtils::get_past_array_physical_cast(right))) {
+            return false;
+        }
+        ASR::ArrayItem_t *item = ASR::down_cast<ASR::ArrayItem_t>(
+            ASRUtils::get_past_array_physical_cast(right));
+        if (item->n_args != 2
+                || !is_c_same_var_expr(get_array_index_expr(item->m_args[0]), inner_sym)
+                || !is_c_same_var_expr(get_array_index_expr(item->m_args[1]), outer_sym)) {
+            return false;
+        }
+
+        self().visit_expr(*item->m_v);
+        std::string array = src;
+        std::string setup = drain_tmp_buffer();
+        if (!setup.empty()) {
+            return false;
+        }
+        const CArrayDescriptorCache *cache =
+            get_current_function_array_descriptor_cache(array, 2);
+        if (cache == nullptr || cache->data.empty()
+                || cache->lower_bounds.size() < 2 || cache->strides.size() < 2) {
+            return false;
+        }
+
+        auto loop_bound = [&](ASR::expr_t *expr, std::string &value) -> bool {
+            self().visit_expr(*expr);
+            value = src;
+            std::string bound_setup = drain_tmp_buffer();
+            return bound_setup.empty();
+        };
+        std::string outer_start, outer_end, inner_start, inner_end;
+        if (!loop_bound(outer.m_head.m_start, outer_start)
+                || !loop_bound(outer.m_head.m_end, outer_end)
+                || !loop_bound(inner->m_head.m_start, inner_start)
+                || !loop_bound(inner->m_head.m_end, inner_end)) {
+            return false;
+        }
+
+        std::string outer_name = CUtils::get_c_variable_name(
+            *ASR::down_cast<ASR::Variable_t>(outer_sym));
+        std::string inner_name = CUtils::get_c_variable_name(
+            *ASR::down_cast<ASR::Variable_t>(inner_sym));
+        std::string target_name = CUtils::get_c_variable_name(
+            *ASR::down_cast<ASR::Variable_t>(target_sym));
+        std::string element_type =
+            CUtils::get_c_array_element_type_from_ttype_t(
+                ASRUtils::expr_type(item->m_v), is_c);
+        if (element_type.empty()) {
+            return false;
+        }
+        std::string ptr_name = get_unique_local_name("__lfortran_sum_ptr");
+        std::string indent(indentation_level * indentation_spaces, ' ');
+        std::string inner_indent((indentation_level + 1) * indentation_spaces, ' ');
+        std::string body_indent((indentation_level + 2) * indentation_spaces, ' ');
+        out = indent + "for (" + outer_name + "=" + outer_start + "; "
+            + outer_name + "<=" + outer_end + "; " + outer_name + "++) {\n";
+        out += inner_indent + element_type + " * restrict " + ptr_name
+            + " = " + cache->data + " + " + cache->offset + " + ("
+            + cache->strides[1] + " * (" + outer_name + " - "
+            + cache->lower_bounds[1] + ")) + (" + cache->strides[0]
+            + " * (" + inner_start + " - " + cache->lower_bounds[0]
+            + "));\n";
+        out += inner_indent + "for (" + inner_name + "=" + inner_start + "; "
+            + inner_name + "<=" + inner_end + "; " + inner_name + "++) {\n";
+        out += body_indent + target_name + " = " + target_name + " + *"
+            + ptr_name + ";\n";
+        out += body_indent + ptr_name + " += " + cache->strides[0] + ";\n";
+        out += inner_indent + "}\n";
+        out += indent + "}\n";
+        return true;
+    }
+
     void visit_DoLoop(const ASR::DoLoop_t &x) {
+        std::string optimized_loop;
+        if (try_emit_c_rank2_sum_induction_loop(x, optimized_loop)) {
+            src = optimized_loop;
+            return;
+        }
         std::string current_body_copy = current_body;
         std::map<std::string, CScalarExprCacheEntry> pow_cache_copy =
             current_function_pow_cache;

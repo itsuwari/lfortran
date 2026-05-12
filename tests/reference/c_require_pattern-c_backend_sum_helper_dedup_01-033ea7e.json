@@ -1,0 +1,13 @@
+{
+    "basename": "c_require_pattern-c_backend_sum_helper_dedup_01-033ea7e",
+    "cmd": "lfortran --no-color --show-c {infile} | grep -F -q \"__lfortran_sum_ptr\" #",
+    "infile": "tests/../integration_tests/c_backend_sum_helper_dedup_01.f90",
+    "infile_hash": "4fdb800b9f04dcad095bb32f10eb3daad21054e83a0391ec2eedfa3c",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}
