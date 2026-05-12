@@ -1,0 +1,13 @@
+{
+    "basename": "c_forbid_pattern-c_backend_rank2_reshape_index_once_01-713d2e8",
+    "cmd": "lfortran --no-color --show-c {infile} | (! grep -F -q \"__lfortran_i + __lfortran_j * 3)) == 1\") #",
+    "infile": "tests/c_backend_rank2_reshape_index_once_01.f90",
+    "infile_hash": "01a4e1d82e2552b7856406d1d68970a54857b02d7cbf8f5fde7b457e",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

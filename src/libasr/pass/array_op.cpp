@@ -1352,6 +1352,44 @@ class ArrayOpVisitor: public ASR::CallReplacerOnExpressionsVisitor<ArrayOpVisito
                 *ASR::down_cast<ASR::ArrayConstructor_t>(source));
     }
 
+    bool is_c_rank2_scalarizable_reshape(ASR::expr_t *expr) const {
+        expr = ASRUtils::get_past_array_physical_cast(expr);
+        if (expr == nullptr || !ASR::is_a<ASR::ArrayReshape_t>(*expr)) {
+            return false;
+        }
+        ASR::ArrayReshape_t *reshape = ASR::down_cast<ASR::ArrayReshape_t>(expr);
+        ASR::ttype_t *reshape_type = ASRUtils::type_get_past_allocatable_pointer(
+            reshape->m_type);
+        ASR::ttype_t *source_type = ASRUtils::type_get_past_allocatable_pointer(
+            ASRUtils::expr_type(reshape->m_array));
+        ASR::ttype_t *reshape_element_type = reshape_type != nullptr
+            ? ASRUtils::type_get_past_array(reshape_type) : nullptr;
+        ASR::ttype_t *source_element_type = source_type != nullptr
+            ? ASRUtils::type_get_past_array(source_type) : nullptr;
+        ASR::expr_t *source = ASRUtils::get_past_array_physical_cast(
+            reshape->m_array);
+        bool source_scalarizable = source != nullptr
+            && (is_c_rank1_scalarizable_array_expr(source)
+                || (ASR::is_a<ASR::ArrayConstructor_t>(*source)
+                    && is_c_plain_scalar_array_constructor(
+                        *ASR::down_cast<ASR::ArrayConstructor_t>(source))));
+        return reshape->m_pad == nullptr
+            && reshape->m_order == nullptr
+            && get_array_constant_value(reshape->m_shape) != nullptr
+            && reshape_type != nullptr
+            && source_type != nullptr
+            && ASRUtils::extract_n_dims_from_ttype(reshape_type) == 2
+            && ASRUtils::extract_n_dims_from_ttype(source_type) == 1
+            && ASRUtils::is_fixed_size_array(reshape_type)
+            && reshape_element_type != nullptr
+            && source_element_type != nullptr
+            && is_c_scalarizable_element_type(reshape_element_type)
+            && is_c_scalarizable_element_type(source_element_type)
+            && ASRUtils::types_equal(reshape_element_type, source_element_type,
+                nullptr, nullptr)
+            && source_scalarizable;
+    }
+
     bool is_c_rank2_scalarizable_array_expr(ASR::expr_t *expr) const {
         expr = ASRUtils::get_past_array_physical_cast(expr);
         if (expr == nullptr) {
@@ -1402,7 +1440,7 @@ class ArrayOpVisitor: public ASR::CallReplacerOnExpressionsVisitor<ArrayOpVisito
                     ASR::down_cast<ASR::IntegerUnaryMinus_t>(expr)->m_arg);
             }
             case ASR::exprType::ArrayReshape: {
-                return is_c_rank2_plain_constructor_reshape(expr);
+                return is_c_rank2_scalarizable_reshape(expr);
             }
             default: {
                 return false;

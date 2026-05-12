@@ -6132,6 +6132,28 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             && is_c_scalarizable_array_expr(x.m_array);
     }
 
+    bool should_cache_c_rank1_scalarized_index(ASR::expr_t *expr) {
+        expr = unwrap_c_array_expr(expr);
+        if (expr == nullptr || !ASRUtils::is_array(ASRUtils::expr_type(expr))) {
+            return false;
+        }
+        switch (expr->type) {
+            case ASR::exprType::Var:
+            case ASR::exprType::StructInstanceMember:
+            case ASR::exprType::ArraySection:
+            case ASR::exprType::ArrayItem: {
+                return false;
+            }
+            case ASR::exprType::ArrayBroadcast: {
+                return should_cache_c_rank1_scalarized_index(
+                    ASR::down_cast<ASR::ArrayBroadcast_t>(expr)->m_array);
+            }
+            default: {
+                return true;
+            }
+        }
+    }
+
     bool is_c_scalarizable_array_expr(ASR::expr_t *expr) {
         expr = unwrap_c_array_expr(expr);
         if (expr == nullptr) {
@@ -8307,6 +8329,21 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 }
                 std::string flat_index = "(" + index1_name + " + "
                     + index2_name + " * " + std::to_string(dim1_length) + ")";
+                if (should_cache_c_rank1_scalarized_index(reshape->m_array)) {
+                    std::string cached_index =
+                        get_unique_local_name("__lfortran_k");
+                    std::string indent(indentation_level * indentation_spaces, ' ');
+                    setup += indent + "int64_t " + cached_index + ";\n";
+                    std::string source_out;
+                    if (!get_c_scalarized_array_expr(
+                            reshape->m_array, cached_index, setup, source_out,
+                            false)) {
+                        return false;
+                    }
+                    out = "(" + cached_index + " = " + flat_index + ", "
+                        + source_out + ")";
+                    return true;
+                }
                 return get_c_scalarized_array_expr(
                     reshape->m_array, flat_index, setup, out, false);
             }

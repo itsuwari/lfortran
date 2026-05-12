@@ -5373,6 +5373,16 @@ c_forbid_pattern = true
 c_forbid_pattern_value = "__libasr_created__array_reshape_"
 
 [[test]]
+filename = "c_backend_rank2_reshape_var_no_temp_01.f90"
+c_forbid_pattern = true
+c_forbid_pattern_value = "__libasr_created_real_binop_left_"
+
+[[test]]
+filename = "c_backend_rank2_reshape_index_once_01.f90"
+c_forbid_pattern = true
+c_forbid_pattern_value = "__lfortran_i + __lfortran_j * 3)) == 1"
+
+[[test]]
 filename = "c_backend_small_integer_pow_01.f90"
 c = true
 

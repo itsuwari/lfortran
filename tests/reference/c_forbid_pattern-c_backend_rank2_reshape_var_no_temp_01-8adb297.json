@@ -1,0 +1,13 @@
+{
+    "basename": "c_forbid_pattern-c_backend_rank2_reshape_var_no_temp_01-8adb297",
+    "cmd": "lfortran --no-color --show-c {infile} | (! grep -F -q \"__libasr_created_real_binop_left_\") #",
+    "infile": "tests/c_backend_rank2_reshape_var_no_temp_01.f90",
+    "infile_hash": "706573b834e58ed763cb74b864d477e0d1a25bf525eb75f62e1ba61f",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}
