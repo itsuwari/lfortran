@@ -3588,7 +3588,7 @@ R"(#include <stdio.h>
         }
 
         SymbolTable *parent_scope = x.m_symtab ? x.m_symtab->parent : nullptr;
-        if (parent_scope && !startswith(x.m_name, "_lcompilers_")) {
+        if (parent_scope) {
             if (find_other_scope_implementation_with_local_name(
                         parent_scope, wrapper_local_name, x) != nullptr) {
                 return "";
