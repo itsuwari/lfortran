@@ -8684,14 +8684,18 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         indentation_level++;
         std::string inner_indent(indentation_level * indentation_spaces, ' ');
         src += setup;
-        src += inner_indent + "for (int64_t " + index2_name + " = 0; "
+        std::string target_row_index =
+            get_unique_local_name("__lfortran_lhs2_row_index");
+        src += inner_indent + "for (int64_t " + index2_name + " = 0, "
+            + target_row_index + " = " + target_offset + "; "
             + index2_name + " < " + target_length2 + "; "
-            + index2_name + "++) {\n";
+            + index2_name + "++, " + target_row_index + " += "
+            + target_stride2 + ") {\n";
         indentation_level++;
         std::string loop1_indent(indentation_level * indentation_spaces, ' ');
         std::string target_index = get_unique_local_name("__lfortran_lhs2_index");
         src += loop1_indent + "int64_t " + target_index + " = "
-            + target_offset + " + " + index2_name + " * " + target_stride2 + ";\n";
+            + target_row_index + ";\n";
         src += loop1_indent + "for (int64_t " + index1_name + " = 0; "
             + index1_name + " < " + target_length1 + "; "
             + index1_name + "++) {\n";
@@ -8752,14 +8756,18 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         indentation_level++;
         std::string inner_indent(indentation_level * indentation_spaces, ' ');
         src += setup;
-        src += inner_indent + "for (int64_t " + index2_name + " = 0; "
+        std::string target_row_index =
+            get_unique_local_name("__lfortran_lhs2fill_row_index");
+        src += inner_indent + "for (int64_t " + index2_name + " = 0, "
+            + target_row_index + " = " + target_offset + "; "
             + index2_name + " < " + target_length2 + "; "
-            + index2_name + "++) {\n";
+            + index2_name + "++, " + target_row_index + " += "
+            + target_stride2 + ") {\n";
         indentation_level++;
         std::string row_indent(indentation_level * indentation_spaces, ' ');
         std::string target_index = get_unique_local_name("__lfortran_lhs2fill_index");
         src += row_indent + "int64_t " + target_index + " = "
-            + target_offset + " + " + index2_name + " * " + target_stride2 + ";\n";
+            + target_row_index + ";\n";
         src += row_indent + "for (int64_t " + index1_name + " = 0; "
             + index1_name + " < " + target_length1 + "; "
             + index1_name + "++) {\n";
