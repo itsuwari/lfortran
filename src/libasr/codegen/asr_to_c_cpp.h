@@ -8487,17 +8487,17 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         src += inner_indent + "} else {\n";
         indentation_level++;
         std::string loop_indent(indentation_level * indentation_spaces, ' ');
-        src += loop_indent + "for (int64_t " + index2_name + " = 0; "
+        std::string target_row = get_unique_local_name("__lfortran_lhs2_row_index");
+        std::string source_row = get_unique_local_name("__lfortran_rhs2_row_index");
+        src += loop_indent + "for (int64_t " + index2_name + " = 0, "
+            + target_row + " = " + target_offset + ", "
+            + source_row + " = " + source_offset + "; "
             + index2_name + " < " + target_length2 + "; "
-            + index2_name + "++) {\n";
+            + index2_name + "++, " + target_row + " += "
+            + target_stride2 + ", " + source_row + " += "
+            + source_stride2 + ") {\n";
         indentation_level++;
         std::string row_indent(indentation_level * indentation_spaces, ' ');
-        std::string target_row = get_unique_local_name("__lfortran_lhs2_index");
-        std::string source_row = get_unique_local_name("__lfortran_rhs2_index");
-        src += row_indent + "int64_t " + target_row + " = " + target_offset
-            + " + " + index2_name + " * " + target_stride2 + ";\n";
-        src += row_indent + "int64_t " + source_row + " = " + source_offset
-            + " + " + index2_name + " * " + source_stride2 + ";\n";
         std::string target_index = get_unique_local_name("__lfortran_lhs2_index");
         std::string source_index = get_unique_local_name("__lfortran_rhs2_index");
         src += row_indent + "int64_t " + target_index + " = " + target_row + ";\n";
