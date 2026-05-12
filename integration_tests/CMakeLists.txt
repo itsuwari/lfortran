@@ -1034,6 +1034,7 @@ RUN(NAME c_backend_realloc_lhs_vector_subscript_01 LABELS gfortran c EXTRA_ARGS 
 RUN(NAME c_backend_function_result_intent_out_struct_01 LABELS gfortran c)
 RUN(NAME c_backend_alloc_class_constructor_result_01 LABELS gfortran c)
 RUN(NAME c_backend_nonadvancing_abs_read_01 LABELS gfortran c)
+RUN(NAME c_backend_rank1_section_constant_01 LABELS gfortran llvm c)
 RUN(NAME c_backend_rank1_nonself_section_copy_01 LABELS gfortran c)
 RUN(NAME c_backend_rank2_nonself_section_copy_01 LABELS gfortran c)
 RUN(NAME c_backend_rank2_scalar_fill_eval_once_01 LABELS gfortran c)
