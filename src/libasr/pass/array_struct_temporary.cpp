@@ -2556,7 +2556,7 @@ static bool is_c_rank1_section_array_constant_direct_assignment(
     }
     const ASR::array_index_t &idx = section->m_args[0];
     bool is_slice = idx.m_left || idx.m_step || idx.m_right == nullptr;
-    if (!is_slice || !is_unit_step_expr(idx.m_step)
+    if (!is_slice || !is_c_simple_integer_bound_expr(idx.m_step)
             || !is_c_simple_integer_bound_expr(idx.m_left)
             || !is_c_simple_integer_bound_expr(idx.m_right)) {
         return false;
@@ -4704,8 +4704,12 @@ class ReplaceExprWithTemporaryVisitor:
         bool c_rank2_scalarized_nonself_assignment = c_backend &&
             is_c_rank2_scalarized_nonself_assignment(
                 al, lhs_array_var, x.m_target, x.m_value);
+        bool c_rank1_section_array_constant_direct_assignment = c_backend &&
+            is_c_rank1_section_array_constant_direct_assignment(
+                x.m_target, x.m_value);
         if( !c_rank2_section_scalar_assignment &&
             !c_rank2_scalarized_nonself_assignment &&
+            !c_rank1_section_array_constant_direct_assignment &&
             (ASR::is_a<ASR::ArraySection_t>(*x.m_target) ||
             ASR::is_a<ASR::ArrayItem_t>(*x.m_target)) ) {
             ASRUtils::extract_indices(x.m_target, m_args, n_args);
@@ -4775,7 +4779,7 @@ class ReplaceExprWithTemporaryVisitor:
         bool c_rank1_nonself_section_copy_assignment = c_backend &&
             is_c_rank1_nonself_section_copy_assignment(
                 al, lhs_array_var, x.m_target, x.m_value);
-        bool c_rank1_section_array_constant_direct_assignment = c_backend &&
+        c_rank1_section_array_constant_direct_assignment = c_backend &&
             is_c_rank1_section_array_constant_direct_assignment(
                 x.m_target, x.m_value);
 

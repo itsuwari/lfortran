@@ -1794,6 +1794,64 @@ class ArrayOpVisitor: public ASR::CallReplacerOnExpressionsVisitor<ArrayOpVisito
             || phys == ASR::array_physical_typeType::NumPyArray;
     }
 
+    bool should_leave_small_array_constant_section_assignment_for_c(
+            ASR::expr_t *target, ASR::expr_t *value) const {
+        if (!pass_options.c_backend) {
+            return false;
+        }
+        target = unwrap_array_op_lvalue(target);
+        if (target == nullptr || !ASR::is_a<ASR::ArraySection_t>(*target)) {
+            return false;
+        }
+        ASR::ArraySection_t *section = ASR::down_cast<ASR::ArraySection_t>(target);
+        if (section->n_args != 1) {
+            return false;
+        }
+        ASR::array_index_t idx = section->m_args[0];
+        bool is_slice = idx.m_left || idx.m_step || idx.m_right == nullptr;
+        if (!is_slice
+                || !is_simple_integer_section_bound_expr(idx.m_left)
+                || !is_simple_integer_section_bound_expr(idx.m_right)
+                || !is_simple_integer_section_bound_expr(idx.m_step)) {
+            return false;
+        }
+        ASR::ttype_t *base_type = ASRUtils::type_get_past_allocatable_pointer(
+            ASRUtils::expr_type(section->m_v));
+        ASR::ttype_t *target_type = ASRUtils::type_get_past_allocatable_pointer(
+            ASRUtils::expr_type(target));
+        if (base_type == nullptr || target_type == nullptr
+                || !ASRUtils::is_array(base_type)
+                || !ASRUtils::is_array(target_type)
+                || ASRUtils::extract_n_dims_from_ttype(base_type) != 1
+                || ASRUtils::extract_n_dims_from_ttype(target_type) != 1) {
+            return false;
+        }
+        ASR::ArrayConstant_t *arr = get_array_constant_value(value);
+        if (arr == nullptr) {
+            return false;
+        }
+        ASR::ttype_t *value_type = ASRUtils::type_get_past_allocatable_pointer(
+            arr->m_type);
+        if (value_type == nullptr || !ASRUtils::is_fixed_size_array(value_type)
+                || ASRUtils::extract_n_dims_from_ttype(value_type) != 1) {
+            return false;
+        }
+        int64_t length = ASRUtils::get_fixed_size_of_array(value_type);
+        ASR::ttype_t *target_element_type = ASRUtils::type_get_past_array(target_type);
+        ASR::ttype_t *value_element_type = ASRUtils::type_get_past_array(value_type);
+        return length > 0 && length <= 8
+            && target_element_type != nullptr
+            && value_element_type != nullptr
+            && !ASRUtils::is_character(*target_element_type)
+            && !ASRUtils::is_character(*value_element_type)
+            && (ASRUtils::is_integer(*target_element_type)
+                || ASRUtils::is_unsigned_integer(*target_element_type)
+                || ASRUtils::is_real(*target_element_type)
+                || ASRUtils::is_logical(*target_element_type))
+            && ASRUtils::types_equal(
+                target_element_type, value_element_type, nullptr, nullptr);
+    }
+
     void call_replacer() {
         replacer.current_expr = current_expr;
         replacer.current_scope = current_scope;
@@ -2811,6 +2869,14 @@ class ArrayOpVisitor: public ASR::CallReplacerOnExpressionsVisitor<ArrayOpVisito
         xx.m_value = ASRUtils::get_past_array_broadcast(xx.m_value);
         const Location loc = x.base.base.loc;
         if (should_leave_large_array_constant_section_assignment_for_c(
+                xx.m_target, xx.m_value)) {
+            pass_result.push_back(al, ASRUtils::STMT(
+                ASRUtils::make_Assignment_t_util(al, loc, xx.m_target,
+                    xx.m_value, xx.m_overloaded, xx.m_realloc_lhs,
+                    xx.m_move_allocation)));
+            return;
+        }
+        if (should_leave_small_array_constant_section_assignment_for_c(
                 xx.m_target, xx.m_value)) {
             pass_result.push_back(al, ASRUtils::STMT(
                 ASRUtils::make_Assignment_t_util(al, loc, xx.m_target,
