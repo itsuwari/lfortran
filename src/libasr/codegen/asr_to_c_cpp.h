@@ -355,7 +355,8 @@ public:
             + indent + "}\n";
     }
 
-    std::string emit_current_function_heap_array_cleanup(const std::string &indent) {
+    std::string emit_current_function_heap_array_cleanup(const std::string &indent,
+            const std::set<std::string> *skip_allocatable_arrays=nullptr) {
         std::string cleanup;
         for (auto it = current_function_local_structs.rbegin();
                 it != current_function_local_structs.rend(); ++it) {
@@ -391,13 +392,19 @@ public:
         }
         for (auto it = current_function_local_allocatable_arrays.rbegin();
                 it != current_function_local_allocatable_arrays.rend(); ++it) {
+            if (skip_allocatable_arrays != nullptr
+                    && skip_allocatable_arrays->find(*it)
+                        != skip_allocatable_arrays->end()) {
+                continue;
+            }
+            std::string array_cleanup;
             for (auto string_it = current_function_local_allocatable_array_strings.rbegin();
                     string_it != current_function_local_allocatable_array_strings.rend();
                     ++string_it) {
                 if (string_it->descriptor != *it) {
                     continue;
                 }
-                cleanup += emit_c_character_array_element_cleanup(*it, indent,
+                array_cleanup += emit_c_character_array_element_cleanup(*it, indent,
                     string_it->len_one_character);
                 break;
             }
@@ -409,18 +416,18 @@ public:
                 }
                 std::string idx = "__lfortran_cleanup_i_"
                     + CUtils::sanitize_c_identifier(*it);
-                cleanup += indent + "if ((" + *it + ") != NULL && (" + *it
+                array_cleanup += indent + "if ((" + *it + ") != NULL && (" + *it
                     + ")->is_allocated && (" + *it + ")->data != NULL) {\n"
                     + indent + "    for (int64_t " + idx + " = 0; " + idx
                     + " < (" + *it + ")->dims[0].length; " + idx + "++) {\n";
-                cleanup += emit_c_struct_member_cleanup(struct_it->struct_t,
+                array_cleanup += emit_c_struct_member_cleanup(struct_it->struct_t,
                     indent + "        ", "(&((" + *it + ")->data[" + idx + "]))",
                     true, true, true, false);
-                cleanup += indent + "    }\n"
+                array_cleanup += indent + "    }\n"
                     + indent + "}\n";
                 break;
             }
-            cleanup += indent + "if ((" + *it + ") != NULL && (" + *it
+            array_cleanup += indent + "if ((" + *it + ") != NULL && (" + *it
                 + ")->is_allocated && (" + *it + ")->data != NULL) {\n"
                 + indent + "    _lfortran_free_alloc_plain(_lfortran_get_default_allocator(), "
                 + "(char*) (" + *it + ")->data);\n"
@@ -430,6 +437,7 @@ public:
                 + indent + "    (" + *it + ")->offset = 0;\n"
                 + indent + "    (" + *it + ")->is_allocated = false;\n"
                 + indent + "}\n";
+            cleanup += array_cleanup;
         }
         for (auto it = current_function_local_allocatable_strings.rbegin();
                 it != current_function_local_allocatable_strings.rend(); ++it) {
@@ -1515,6 +1523,50 @@ public:
             || name.rfind("__libasr__created", 0) == 0
             || name.find("__libasr_created") != std::string::npos
             || name.find("__libasr__created") != std::string::npos;
+    }
+
+    void collect_c_trailing_implicit_deallocate_array_cleanup(
+            ASR::expr_t *expr, std::set<std::string> &cleanup_names) const {
+        if (!is_c || expr == nullptr) {
+            return;
+        }
+        expr = ASRUtils::get_past_array_physical_cast(expr);
+        if (expr == nullptr || !ASR::is_a<ASR::Var_t>(*expr)) {
+            return;
+        }
+        ASR::symbol_t *sym = ASRUtils::symbol_get_past_external(
+            ASR::down_cast<ASR::Var_t>(expr)->m_v);
+        if (sym == nullptr || !ASR::is_a<ASR::Variable_t>(*sym)) {
+            return;
+        }
+        ASR::Variable_t *var = ASR::down_cast<ASR::Variable_t>(sym);
+        if (var->m_intent != ASRUtils::intent_local
+                || !ASRUtils::is_allocatable(var->m_type)
+                || !ASRUtils::is_array(var->m_type)) {
+            return;
+        }
+        std::string emitted_name = CUtils::get_c_variable_name(*var);
+        if (is_c_compiler_generated_temporary_name(emitted_name)) {
+            cleanup_names.insert(emitted_name);
+        }
+    }
+
+    std::set<std::string> collect_c_trailing_implicit_deallocate_array_cleanups(
+            ASR::stmt_t **body, size_t n_body) const {
+        std::set<std::string> cleanup_names;
+        for (size_t i = n_body; i > 0; i--) {
+            ASR::stmt_t *stmt = body[i - 1];
+            if (!ASR::is_a<ASR::ImplicitDeallocate_t>(*stmt)) {
+                break;
+            }
+            ASR::ImplicitDeallocate_t *dealloc =
+                ASR::down_cast<ASR::ImplicitDeallocate_t>(stmt);
+            for (size_t j = 0; j < dealloc->n_vars; j++) {
+                collect_c_trailing_implicit_deallocate_array_cleanup(
+                    dealloc->m_vars[j], cleanup_names);
+            }
+        }
+        return cleanup_names;
     }
 
     bool is_c_owned_function_call_struct_temp_name(const std::string &name) const {
@@ -2949,7 +3001,11 @@ R"(#include <stdio.h>
             body += src;
         }
 
-        body += emit_current_function_heap_array_cleanup(indent1);
+        std::set<std::string> trailing_implicit_cleanup_arrays =
+            collect_c_trailing_implicit_deallocate_array_cleanups(
+                x.m_body, x.n_body);
+        body += emit_current_function_heap_array_cleanup(
+            indent1, &trailing_implicit_cleanup_arrays);
         cache_c_default_allocator(decl, body, indent1);
 
         src = contains
@@ -4897,7 +4953,14 @@ R"(#include <stdio.h>
                 visited_return = true;
             }
 
-            std::string function_cleanup = emit_current_function_heap_array_cleanup(indent);
+            std::set<std::string> trailing_implicit_cleanup_arrays;
+            if (is_c && !current_function_has_explicit_return) {
+                trailing_implicit_cleanup_arrays =
+                    collect_c_trailing_implicit_deallocate_array_cleanups(
+                        x.m_body, x.n_body);
+            }
+            std::string function_cleanup = emit_current_function_heap_array_cleanup(
+                indent, &trailing_implicit_cleanup_arrays);
             if (is_c && current_function_has_explicit_return) {
                 std::string marker = "/* __lfortran_return_cleanup_marker__ */\n";
                 size_t pos = 0;

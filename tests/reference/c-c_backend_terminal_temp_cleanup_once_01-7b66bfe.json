@@ -1,0 +1,13 @@
+{
+    "basename": "c-c_backend_terminal_temp_cleanup_once_01-7b66bfe",
+    "cmd": "lfortran --no-color --show-c {infile}",
+    "infile": "tests/c_backend_terminal_temp_cleanup_once_01.f90",
+    "infile_hash": "6e8e445a3b7dac55103ae51fde56cda6fdb395d32c03923a4bf19e7f",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": "c-c_backend_terminal_temp_cleanup_once_01-7b66bfe.stdout",
+    "stdout_hash": "c1c2a6a1b15c0ea4e50c3fedb5fdae24c821c68598607ab07a46a885",
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}
