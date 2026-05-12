@@ -9212,13 +9212,16 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         src += value_setup;
         src += inner_indent + value_type + " *" + value_name + " = "
             + value_expr + ";\n";
+        std::string target_index = get_unique_local_name("__lfortran_reshape_lhs_index");
+        src += inner_indent + "int64_t " + target_index + " = "
+            + target_offset + ";\n";
         src += inner_indent + "for (int64_t " + index_name + " = 0; "
             + index_name + " < " + target_length + "; " + index_name + "++) {\n";
         indentation_level++;
         std::string loop_indent(indentation_level * indentation_spaces, ' ');
-        src += loop_indent + target_data + "[" + target_offset + " + "
-            + index_name + " * " + target_stride + "] = " + value_name
-            + "->data[" + index_name + "];\n";
+        src += loop_indent + target_data + "[" + target_index + "] = "
+            + value_name + "->data[" + index_name + "];\n";
+        src += loop_indent + target_index + " += " + target_stride + ";\n";
         indentation_level--;
         src += inner_indent + "}\n";
         src += inner_indent + "free(" + value_name + "->data);\n";
