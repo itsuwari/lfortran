@@ -2495,6 +2495,68 @@ static bool is_c_plain_scalar_expr_for_section_fill(ASR::expr_t *expr) {
     }
 }
 
+static ASR::ArrayConstant_t *get_c_array_constant_value(ASR::expr_t *expr) {
+    expr = ASRUtils::get_past_array_physical_cast(expr);
+    if (expr == nullptr) {
+        return nullptr;
+    }
+    ASR::expr_t *value = ASRUtils::expr_value(expr);
+    if (value != nullptr) {
+        expr = ASRUtils::get_past_array_physical_cast(value);
+    }
+    if (expr != nullptr && ASR::is_a<ASR::ArrayConstant_t>(*expr)) {
+        return ASR::down_cast<ASR::ArrayConstant_t>(expr);
+    }
+    return nullptr;
+}
+
+static bool is_c_rank1_section_array_constant_direct_assignment(
+        ASR::expr_t *target, ASR::expr_t *value) {
+    target = ASRUtils::get_past_array_physical_cast(target);
+    ASR::ArrayConstant_t *arr = get_c_array_constant_value(value);
+    if (target == nullptr || arr == nullptr
+            || !ASR::is_a<ASR::ArraySection_t>(*target)) {
+        return false;
+    }
+    ASR::ArraySection_t *section = ASR::down_cast<ASR::ArraySection_t>(target);
+    ASR::expr_t *base = ASRUtils::get_past_array_physical_cast(section->m_v);
+    ASR::ttype_t *base_type = base != nullptr
+        ? ASRUtils::type_get_past_allocatable_pointer(ASRUtils::expr_type(base))
+        : nullptr;
+    ASR::ttype_t *target_type = ASRUtils::type_get_past_allocatable_pointer(
+        ASRUtils::expr_type(target));
+    ASR::ttype_t *value_type = ASRUtils::type_get_past_allocatable_pointer(
+        arr->m_type);
+    if (base_type == nullptr || target_type == nullptr || value_type == nullptr
+            || !ASRUtils::is_array(base_type)
+            || !ASRUtils::is_array(target_type)
+            || !ASRUtils::is_array(value_type)
+            || ASRUtils::extract_n_dims_from_ttype(base_type) != 1
+            || ASRUtils::extract_n_dims_from_ttype(target_type) != 1
+            || ASRUtils::extract_n_dims_from_ttype(value_type) != 1
+            || !ASRUtils::is_fixed_size_array(value_type)
+            || section->n_args != 1) {
+        return false;
+    }
+    const ASR::array_index_t &idx = section->m_args[0];
+    bool is_slice = idx.m_left || idx.m_step || idx.m_right == nullptr;
+    if (!is_slice || !is_unit_step_expr(idx.m_step)
+            || !is_c_simple_integer_bound_expr(idx.m_left)
+            || !is_c_simple_integer_bound_expr(idx.m_right)) {
+        return false;
+    }
+    int64_t length = ASRUtils::get_fixed_size_of_array(value_type);
+    ASR::ttype_t *target_element_type = ASRUtils::type_get_past_array(target_type);
+    ASR::ttype_t *value_element_type = ASRUtils::type_get_past_array(value_type);
+    return length > 0 && length <= 8
+        && target_element_type != nullptr
+        && value_element_type != nullptr
+        && is_c_plain_scalar_array_element_type(target_element_type)
+        && is_c_plain_scalar_array_element_type(value_element_type)
+        && ASRUtils::types_equal(
+            target_element_type, value_element_type, nullptr, nullptr);
+}
+
 static bool is_c_rank2_section_scalar_assignment(
         ASR::expr_t *target, ASR::expr_t *value) {
     target = ASRUtils::get_past_array_physical_cast(target);
@@ -4697,6 +4759,9 @@ class ReplaceExprWithTemporaryVisitor:
         bool c_rank1_nonself_section_copy_assignment = c_backend &&
             is_c_rank1_nonself_section_copy_assignment(
                 al, lhs_array_var, x.m_target, x.m_value);
+        bool c_rank1_section_array_constant_direct_assignment = c_backend &&
+            is_c_rank1_section_array_constant_direct_assignment(
+                x.m_target, x.m_value);
 
         current_expr = const_cast<ASR::expr_t**>(&(x.m_value));
         bool rhs_is_assignment_target_array_section_item =
@@ -4712,6 +4777,7 @@ class ReplaceExprWithTemporaryVisitor:
                 && !c_rank1_allocatable_self_section_assignment
                 && !c_rank2_nonself_section_copy_assignment
                 && !c_rank1_nonself_section_copy_assignment
+                && !c_rank1_section_array_constant_direct_assignment
                 && !c_rank2_section_scalar_assignment) {
             call_replacer();
         }
