@@ -84,6 +84,7 @@ def single_test(test: Dict, verbose: bool, no_llvm: bool, skip_run_with_dbg: boo
     cpp_infer = is_included("cpp_infer")
     c = is_included("c")
     c_split_cleanup_dedupe = is_included("c_split_cleanup_dedupe")
+    c_split_no_empty_source = is_included("c_split_no_empty_source")
     c_require_pattern = is_included("c_require_pattern")
     c_forbid_pattern = is_included("c_forbid_pattern")
     is_cumulative_pass = is_included("cumulative")
@@ -739,6 +740,22 @@ def single_test(test: Dict, verbose: bool, no_llvm: bool, skip_run_with_dbg: boo
             "test \"$count\" = \"2\" #"
         )
         run_test(filename, "c_split_cleanup_dedupe", cmd,
+                filename,
+                update_reference,
+                verify_hash,
+                extra_args)
+
+    if c_split_no_empty_source:
+        cmd = (
+            "tmpdir=$(mktemp -d /tmp/lfortran-c-split-empty.XXXXXX); "
+            "trap 'rm -rf \"$tmpdir\"' EXIT; "
+            "lfortran --backend=c --separate-compilation -c {infile} -o \"$tmpdir/main.o\"; "
+            "test -f \"$tmpdir/main.o\"; "
+            "test -d \"$tmpdir/main.o.tmp.split\"; "
+            "(! find \"$tmpdir/main.o.tmp.split\" -name '*_empty.c' -print -quit | grep -q .); "
+            "test \"$(find \"$tmpdir/main.o.tmp.split\" -name '*.c' | wc -l | tr -d ' ')\" = \"0\" #"
+        )
+        run_test(filename, "c_split_no_empty_source", cmd,
                 filename,
                 update_reference,
                 verify_hash,

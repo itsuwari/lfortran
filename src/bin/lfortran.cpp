@@ -2059,17 +2059,17 @@ int compile_to_object_file_c(const std::string &infile,
         }
 
         if (object_files.empty()) {
-            fs::path empty_src = split_dir / (project_name + "_empty.c");
-            {
-                std::ofstream out(empty_src);
-                out << "/* Header-only split C package: emit an empty object. */\n";
-            }
             std::string cmd = CC;
             if (!optimization_flags.empty()) {
                 cmd += " " + optimization_flags;
             }
+#ifdef _WIN32
+            const char *empty_c_source = "NUL";
+#else
+            const char *empty_c_source = "/dev/null";
+#endif
             cmd += " -o " + outfile
-                + " -c " + empty_src.string();
+                + " -x c -c " + empty_c_source;
             if (verbose) {
                 std::cout << cmd << std::endl;
             }

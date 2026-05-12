@@ -5313,6 +5313,10 @@ run = true
 options = "--backend=c --separate-compilation"
 
 [[test]]
+filename = "c_backend_header_only_module_01.f90"
+c_split_no_empty_source = true
+
+[[test]]
 filename = "c_backend_local_fixed_array_wrapper_01.f90"
 c = true
 

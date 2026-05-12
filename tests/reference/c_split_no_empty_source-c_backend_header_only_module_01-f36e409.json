@@ -1,0 +1,13 @@
+{
+    "basename": "c_split_no_empty_source-c_backend_header_only_module_01-f36e409",
+    "cmd": "tmpdir=$(mktemp -d /tmp/lfortran-c-split-empty.XXXXXX); trap 'rm -rf \"$tmpdir\"' EXIT; lfortran --backend=c --separate-compilation -c {infile} -o \"$tmpdir/main.o\"; test -f \"$tmpdir/main.o\"; test -d \"$tmpdir/main.o.tmp.split\"; (! find \"$tmpdir/main.o.tmp.split\" -name '*_empty.c' -print -quit | grep -q .); test \"$(find \"$tmpdir/main.o.tmp.split\" -name '*.c' | wc -l | tr -d ' ')\" = \"0\" #",
+    "infile": "tests/c_backend_header_only_module_01.f90",
+    "infile_hash": "0a87ccd22fffbcf87d6111b52734ab665de6aaab792d4c9ffadfb60e",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}
