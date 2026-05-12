@@ -2854,6 +2854,7 @@ RUN(NAME nested_22 LABELS gfortran llvm llvm_wasm llvm_wasm_emcc EXTRA_ARGS --re
 RUN(NAME nested_23 LABELS gfortran llvm llvm_wasm llvm_wasm_emcc)
 RUN(NAME nested_24 LABELS gfortran llvm llvm_wasm llvm_wasm_emcc)
 RUN(NAME nested_25 LABELS gfortran llvm)
+RUN(NAME nested_27 LABELS gfortran llvm)
 
 RUN(NAME nested_vars1 LABELS gfortran llvm llvm_wasm llvm_wasm_emcc wasm)
 RUN(NAME nested_vars2 LABELS gfortran llvm llvm_wasm llvm_wasm_emcc wasm)
@@ -4351,6 +4352,8 @@ RUN(NAME separate_compilation_class_star_01 LABELS gfortran llvm
     EXTRAFILES separate_compilation_class_star_01a.f90)
 RUN(NAME separate_compilation_class_star_02 LABELS gfortran llvm
     EXTRAFILES separate_compilation_class_star_02a.f90)
+RUN(NAME separate_compilation_class_star_03 LABELS gfortran llvm
+    EXTRAFILES separate_compilation_class_star_03a.f90)
 RUN(NAME class_star_pointer_01 LABELS gfortran llvm)
 
 RUN(NAME separate_compilation_14 LABELS gfortran llvm EXTRAFILES separate_compilation_14a.f90)
