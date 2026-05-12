@@ -1,0 +1,13 @@
+{
+    "basename": "c_forbid_pattern-c_backend_rank2_reshape_no_temp_01-137db27",
+    "cmd": "lfortran --no-color --show-c {infile} | (! grep -F -q \"__libasr_created__array_reshape_\") #",
+    "infile": "tests/c_backend_rank2_reshape_no_temp_01.f90",
+    "infile_hash": "c0dea658c0d7d95311c20d0ba097732b77b2cf491aa1f5ea34420de1",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

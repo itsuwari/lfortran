@@ -245,19 +245,6 @@ int main(int argc, char* argv[])
     static const double __libasr_created__array_constant_2_data[3] = {0x1.9000000000000p+6, 0x1.9000000000000p+7, 0x1.2c00000000000p+8};
     static struct r64___ __libasr_created__array_constant_2_value = { .data = (double*) __libasr_created__array_constant_2_data, .n_dims = 1, .offset = 0, .is_allocated = true, .dims = {{1, 3, 1}} };
     struct r64___* __libasr_created__array_constant_2 = &__libasr_created__array_constant_2_value;
-    struct r64_____ __libasr_created__array_reshape__value;
-    struct r64_____* __libasr_created__array_reshape_ = &__libasr_created__array_reshape__value;
-    double __libasr_created__array_reshape__data[9];
-    __libasr_created__array_reshape_->data = __libasr_created__array_reshape__data;
-    __libasr_created__array_reshape_->n_dims = 2;
-    __libasr_created__array_reshape_->offset = 0;
-    __libasr_created__array_reshape_->is_allocated = true;
-    __libasr_created__array_reshape_->dims[0].lower_bound = 1;
-    __libasr_created__array_reshape_->dims[0].length = 3;
-    __libasr_created__array_reshape_->dims[0].stride = 1;
-    __libasr_created__array_reshape_->dims[1].lower_bound = 1;
-    __libasr_created__array_reshape_->dims[1].length = 3;
-    __libasr_created__array_reshape_->dims[1].stride = (1*3);
     static const double __libasr_created__intrinsic_array_function_MatMul_data[3] = {0x1.0000000000000p+1, -0x1.0000000000000p+0, 0x1.0000000000000p-1};
     static struct r64___ __libasr_created__intrinsic_array_function_MatMul_value = { .data = (double*) __libasr_created__intrinsic_array_function_MatMul_data, .n_dims = 1, .offset = 0, .is_allocated = true, .dims = {{1, 3, 1}} };
     struct r64___* __libasr_created__intrinsic_array_function_MatMul = &__libasr_created__intrinsic_array_function_MatMul_value;
@@ -359,8 +346,12 @@ int main(int argc, char* argv[])
         if (__lfortran_lhs1copy_stride == 1 && __lfortran_rhs1copy_stride == 1) {
             memcpy(__lfortran_lhs1copy_data + __lfortran_lhs1copy_offset, __lfortran_rhs1copy_data + __lfortran_rhs1copy_offset, (size_t)(__lfortran_lhs1copy_length) * sizeof(*__lfortran_lhs1copy_data));
         } else {
+            int64_t __lfortran_lhs1_index = __lfortran_lhs1copy_offset;
+            int64_t __lfortran_rhs1_index = __lfortran_rhs1copy_offset;
             for (int64_t __lfortran_i = 0; __lfortran_i < __lfortran_lhs1copy_length; __lfortran_i++) {
-                __lfortran_lhs1copy_data[__lfortran_lhs1copy_offset + __lfortran_i * __lfortran_lhs1copy_stride] = __lfortran_rhs1copy_data[__lfortran_rhs1copy_offset + __lfortran_i * __lfortran_rhs1copy_stride];
+                __lfortran_lhs1copy_data[__lfortran_lhs1_index] = __lfortran_rhs1copy_data[__lfortran_rhs1_index];
+                __lfortran_lhs1_index += __lfortran_lhs1copy_stride;
+                __lfortran_rhs1_index += __lfortran_rhs1copy_stride;
             }
         }
     }
@@ -376,32 +367,17 @@ int main(int argc, char* argv[])
     scale1 = 0x1.0000000000000p+1;
     scale2 = -0x1.0000000000000p-2;
     {
-    double *__lfortran_lhs2_data = __libasr_created__array_reshape__data;
-    int64_t __lfortran_lhs2_offset = 0;
-    int64_t __lfortran_lhs2_stride1 = 1;
-    int64_t __lfortran_lhs2_stride2 = 3;
-    int64_t __lfortran_lhs2_length1 = 3;
-    int64_t __lfortran_lhs2_length2 = 3;
-        for (int64_t __lfortran_j = 0; __lfortran_j < __lfortran_lhs2_length2; __lfortran_j++) {
+    double *__lfortran_lhs2_data = aderiv_data;
+    int64_t __lfortran_lhs2_offset = ((0 + 1 * ((1) - 1)) + 3 * ((1) - 1));
+    int64_t __lfortran_lhs2_stride1 = (1 * (1));
+    int64_t __lfortran_lhs2_stride2 = (3 * (1));
+    int64_t __lfortran_lhs2_length1 = (((((1 + 3 - 1)) - (1)) / (1)) + 1);
+    int64_t __lfortran_lhs2_length2 = (((((1 + 3 - 1)) - (1)) / (1)) + 1);
+        for (int64_t __lfortran_j = 0, __lfortran_lhs2_row_index = __lfortran_lhs2_offset; __lfortran_j < __lfortran_lhs2_length2; __lfortran_j++, __lfortran_lhs2_row_index += __lfortran_lhs2_stride2) {
+            int64_t __lfortran_lhs2_index = __lfortran_lhs2_row_index;
             for (int64_t __lfortran_i1 = 0; __lfortran_i1 < __lfortran_lhs2_length1; __lfortran_i1++) {
-                __lfortran_lhs2_data[__lfortran_lhs2_offset + __lfortran_i1 * __lfortran_lhs2_stride1 + __lfortran_j * __lfortran_lhs2_stride2] = (((__lfortran_i1 + __lfortran_j * 3)) == 0 ? (x1) : (((__lfortran_i1 + __lfortran_j * 3)) == 1 ? (x2) : (((__lfortran_i1 + __lfortran_j * 3)) == 2 ? (x3) : (((__lfortran_i1 + __lfortran_j * 3)) == 3 ? (x4) : (((__lfortran_i1 + __lfortran_j * 3)) == 4 ? (x5) : (((__lfortran_i1 + __lfortran_j * 3)) == 5 ? (x6) : (((__lfortran_i1 + __lfortran_j * 3)) == 6 ? (x7) : (((__lfortran_i1 + __lfortran_j * 3)) == 7 ? (x8) : (x9)))))))));
-            }
-        }
-    }
-    {
-    double *__lfortran_lhs2_data1 = aderiv_data;
-    int64_t __lfortran_lhs2_offset1 = ((0 + 1 * ((1) - 1)) + 3 * ((1) - 1));
-    int64_t __lfortran_lhs2_stride11 = (1 * (1));
-    int64_t __lfortran_lhs2_stride21 = (3 * (1));
-    int64_t __lfortran_lhs2_length11 = (((((1 + 3 - 1)) - (1)) / (1)) + 1);
-    int64_t __lfortran_lhs2_length21 = (((((1 + 3 - 1)) - (1)) / (1)) + 1);
-    double *__lfortran_rhs2_data = __libasr_created__array_reshape__data;
-    int64_t __lfortran_rhs2_offset = 0;
-    int64_t __lfortran_rhs2_stride1 = 1;
-    int64_t __lfortran_rhs2_stride2 = 3;
-        for (int64_t __lfortran_j1 = 0; __lfortran_j1 < __lfortran_lhs2_length21; __lfortran_j1++) {
-            for (int64_t __lfortran_i2 = 0; __lfortran_i2 < __lfortran_lhs2_length11; __lfortran_i2++) {
-                __lfortran_lhs2_data1[__lfortran_lhs2_offset1 + __lfortran_i2 * __lfortran_lhs2_stride11 + __lfortran_j1 * __lfortran_lhs2_stride21] = ((__lfortran_rhs2_data[__lfortran_rhs2_offset + __lfortran_i2 * __lfortran_rhs2_stride1 + __lfortran_j1 * __lfortran_rhs2_stride2] * (scale1)) * (scale2));
+                __lfortran_lhs2_data[__lfortran_lhs2_index] = (((((__lfortran_i1 + __lfortran_j * 3)) == 0 ? (x1) : (((__lfortran_i1 + __lfortran_j * 3)) == 1 ? (x2) : (((__lfortran_i1 + __lfortran_j * 3)) == 2 ? (x3) : (((__lfortran_i1 + __lfortran_j * 3)) == 3 ? (x4) : (((__lfortran_i1 + __lfortran_j * 3)) == 4 ? (x5) : (((__lfortran_i1 + __lfortran_j * 3)) == 5 ? (x6) : (((__lfortran_i1 + __lfortran_j * 3)) == 6 ? (x7) : (((__lfortran_i1 + __lfortran_j * 3)) == 7 ? (x8) : (x9))))))))) * (scale1)) * (scale2));
+                __lfortran_lhs2_index += __lfortran_lhs2_stride1;
             }
         }
     }

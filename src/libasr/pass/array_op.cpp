@@ -1300,6 +1300,58 @@ class ArrayOpVisitor: public ASR::CallReplacerOnExpressionsVisitor<ArrayOpVisito
         }
     }
 
+    bool is_c_plain_scalar_array_constructor(const ASR::ArrayConstructor_t &x) const {
+        ASR::ttype_t *type = ASRUtils::type_get_past_allocatable_pointer(x.m_type);
+        if (type == nullptr
+                || ASRUtils::extract_n_dims_from_ttype(type) != 1
+                || !is_c_scalarizable_element_type(type)) {
+            return false;
+        }
+        for (size_t i = 0; i < x.n_args; i++) {
+            if (ASR::is_a<ASR::ImpliedDoLoop_t>(*x.m_args[i])
+                    || !is_c_plain_scalar_expr_for_section_fill(x.m_args[i])) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    bool is_c_rank2_plain_constructor_reshape(ASR::expr_t *expr) const {
+        expr = ASRUtils::get_past_array_physical_cast(expr);
+        if (expr == nullptr || !ASR::is_a<ASR::ArrayReshape_t>(*expr)) {
+            return false;
+        }
+        ASR::ArrayReshape_t *reshape = ASR::down_cast<ASR::ArrayReshape_t>(expr);
+        ASR::ttype_t *reshape_type = ASRUtils::type_get_past_allocatable_pointer(
+            reshape->m_type);
+        ASR::ttype_t *source_type = ASRUtils::type_get_past_allocatable_pointer(
+            ASRUtils::expr_type(reshape->m_array));
+        ASR::ttype_t *reshape_element_type = reshape_type != nullptr
+            ? ASRUtils::type_get_past_array(reshape_type) : nullptr;
+        ASR::ttype_t *source_element_type = source_type != nullptr
+            ? ASRUtils::type_get_past_array(source_type) : nullptr;
+        ASR::expr_t *source = ASRUtils::get_past_array_physical_cast(
+            reshape->m_array);
+        return reshape->m_pad == nullptr
+            && reshape->m_order == nullptr
+            && get_array_constant_value(reshape->m_shape) != nullptr
+            && reshape_type != nullptr
+            && source_type != nullptr
+            && ASRUtils::extract_n_dims_from_ttype(reshape_type) == 2
+            && ASRUtils::extract_n_dims_from_ttype(source_type) == 1
+            && ASRUtils::is_fixed_size_array(reshape_type)
+            && reshape_element_type != nullptr
+            && source_element_type != nullptr
+            && is_c_scalarizable_element_type(reshape_element_type)
+            && is_c_scalarizable_element_type(source_element_type)
+            && ASRUtils::types_equal(reshape_element_type, source_element_type,
+                nullptr, nullptr)
+            && source != nullptr
+            && ASR::is_a<ASR::ArrayConstructor_t>(*source)
+            && is_c_plain_scalar_array_constructor(
+                *ASR::down_cast<ASR::ArrayConstructor_t>(source));
+    }
+
     bool is_c_rank2_scalarizable_array_expr(ASR::expr_t *expr) const {
         expr = ASRUtils::get_past_array_physical_cast(expr);
         if (expr == nullptr) {
@@ -1348,6 +1400,9 @@ class ArrayOpVisitor: public ASR::CallReplacerOnExpressionsVisitor<ArrayOpVisito
             case ASR::exprType::IntegerUnaryMinus: {
                 return is_c_rank2_scalarizable_array_expr(
                     ASR::down_cast<ASR::IntegerUnaryMinus_t>(expr)->m_arg);
+            }
+            case ASR::exprType::ArrayReshape: {
+                return is_c_rank2_plain_constructor_reshape(expr);
             }
             default: {
                 return false;

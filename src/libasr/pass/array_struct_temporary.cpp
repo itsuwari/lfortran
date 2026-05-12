@@ -181,7 +181,15 @@ static bool is_scalar_array_index(const ASR::array_index_t& idx) {
 }
 
 static bool is_compile_time_integer_array_constant(ASR::expr_t *expr) {
-    expr = ASRUtils::get_past_array_physical_cast(expr);
+    while (expr != nullptr) {
+        ASR::expr_t *value = ASRUtils::expr_value(expr);
+        if (value != nullptr && value != expr) {
+            expr = value;
+            continue;
+        }
+        expr = ASRUtils::get_past_array_physical_cast(expr);
+        break;
+    }
     if (expr == nullptr || !ASR::is_a<ASR::ArrayConstant_t>(*expr)) {
         return false;
     }
@@ -2709,6 +2717,62 @@ static bool is_c_rank2_scalarized_nonself_assignment(Allocator &al,
             target_element_type, value_element_type, nullptr, nullptr);
 }
 
+static bool contains_c_rank2_scalar_constructor_reshape(ASR::expr_t *expr) {
+    expr = ASRUtils::get_past_array_physical_cast(expr);
+    if (expr == nullptr) {
+        return false;
+    }
+    switch (expr->type) {
+        case ASR::exprType::ArrayReshape: {
+            return is_c_rank2_scalar_constructor_reshape(expr);
+        }
+        case ASR::exprType::ArrayBroadcast: {
+            return contains_c_rank2_scalar_constructor_reshape(
+                ASR::down_cast<ASR::ArrayBroadcast_t>(expr)->m_array);
+        }
+        case ASR::exprType::RealBinOp: {
+            ASR::RealBinOp_t *binop = ASR::down_cast<ASR::RealBinOp_t>(expr);
+            return contains_c_rank2_scalar_constructor_reshape(
+                    binop->m_left)
+                || contains_c_rank2_scalar_constructor_reshape(
+                    binop->m_right);
+        }
+        case ASR::exprType::IntegerBinOp: {
+            ASR::IntegerBinOp_t *binop = ASR::down_cast<ASR::IntegerBinOp_t>(expr);
+            return contains_c_rank2_scalar_constructor_reshape(
+                    binop->m_left)
+                || contains_c_rank2_scalar_constructor_reshape(
+                    binop->m_right);
+        }
+        case ASR::exprType::UnsignedIntegerBinOp: {
+            ASR::UnsignedIntegerBinOp_t *binop =
+                ASR::down_cast<ASR::UnsignedIntegerBinOp_t>(expr);
+            return contains_c_rank2_scalar_constructor_reshape(
+                    binop->m_left)
+                || contains_c_rank2_scalar_constructor_reshape(
+                    binop->m_right);
+        }
+        case ASR::exprType::RealUnaryMinus: {
+            return contains_c_rank2_scalar_constructor_reshape(
+                ASR::down_cast<ASR::RealUnaryMinus_t>(expr)->m_arg);
+        }
+        case ASR::exprType::IntegerUnaryMinus: {
+            return contains_c_rank2_scalar_constructor_reshape(
+                ASR::down_cast<ASR::IntegerUnaryMinus_t>(expr)->m_arg);
+        }
+        default: {
+            return false;
+        }
+    }
+}
+
+static bool is_c_rank2_scalarized_constructor_reshape_assignment(Allocator &al,
+        ASR::expr_t *lhs_array_var, ASR::expr_t *target, ASR::expr_t *value) {
+    return is_c_rank2_scalarized_nonself_assignment(
+            al, lhs_array_var, target, value)
+        && contains_c_rank2_scalar_constructor_reshape(value);
+}
+
 static bool c_rank2_full_ref_same_target(ASR::expr_t *target, ASR::expr_t *expr) {
     target = ASRUtils::get_past_array_physical_cast(target);
     expr = ASRUtils::get_past_array_physical_cast(expr);
@@ -3231,8 +3295,13 @@ class ArgSimplifier: public ASR::CallReplacerOnExpressionsVisitor<ArgSimplifier>
             && ASRUtils::is_array(ASRUtils::expr_type(x.m_value))
             && is_c_elementwise_array_expr(x.m_value)
             && rhs_refs_are_c_projected_same_base(al, x.m_target, x.m_value);
+        bool c_rank2_scalarized_constructor_reshape_assignment = c_backend &&
+            is_c_rank2_scalarized_constructor_reshape_assignment(
+                al, lhs_array_var, x.m_target, x.m_value);
         lhs_var = lhs_array_var;
-        ASR::CallReplacerOnExpressionsVisitor<ArgSimplifier>::visit_Assignment(x);
+        if (!c_rank2_scalarized_constructor_reshape_assignment) {
+            ASR::CallReplacerOnExpressionsVisitor<ArgSimplifier>::visit_Assignment(x);
+        }
         lhs_var = nullptr;
         c_elementwise_nonalias_vector_assignment =
             saved_c_elementwise_nonalias_vector_assignment;
@@ -4679,11 +4748,15 @@ class ReplaceExprWithTemporaryVisitor:
         bool c_rank2_scalarized_nonself_assignment = c_backend &&
             is_c_rank2_scalarized_nonself_assignment(
                 al, lhs_array_var, x.m_target, x.m_value);
+        bool c_rank2_scalarized_constructor_reshape_assignment = c_backend &&
+            is_c_rank2_scalarized_constructor_reshape_assignment(
+                al, lhs_array_var, x.m_target, x.m_value);
         bool c_rank1_section_array_constant_direct_assignment = c_backend &&
             is_c_rank1_section_array_constant_direct_assignment(
                 x.m_target, x.m_value);
         if( !c_rank2_section_scalar_assignment &&
             !c_rank2_scalarized_nonself_assignment &&
+            !c_rank2_scalarized_constructor_reshape_assignment &&
             !c_rank1_section_array_constant_direct_assignment &&
             (ASR::is_a<ASR::ArraySection_t>(*x.m_target) ||
             ASR::is_a<ASR::ArrayItem_t>(*x.m_target)) ) {
@@ -4773,6 +4846,7 @@ class ReplaceExprWithTemporaryVisitor:
                 && !c_rank2_nonself_section_copy_assignment
                 && !c_rank1_nonself_section_copy_assignment
                 && !c_rank1_section_array_constant_direct_assignment
+                && !c_rank2_scalarized_constructor_reshape_assignment
                 && !c_rank2_section_scalar_assignment) {
             call_replacer();
         }
@@ -4786,7 +4860,8 @@ class ReplaceExprWithTemporaryVisitor:
         }
         bool is_assignment_target_array_section_item = target_has_array_indices &&
                     ASRUtils::is_array(ASRUtils::expr_type(x.m_value)) && !is_directly_addressable_array_expr(x.m_value);
-        if(  (is_assignment_target_array_section_item && !c_elementwise_nonalias_vector_target) ||
+        if(  (!c_rank2_scalarized_constructor_reshape_assignment &&
+            is_assignment_target_array_section_item && !c_elementwise_nonalias_vector_target) ||
             ((ASR::is_a<ASR::ArraySection_t>(*x.m_target) || ASR::is_a<ASR::ArrayItem_t>(*x.m_target)) &&
             is_common_symbol_present_in_lhs_and_rhs(al, lhs_array_var, x.m_value) &&
             !c_elementwise_self_assignment) ||
@@ -4802,7 +4877,8 @@ class ReplaceExprWithTemporaryVisitor:
         current_expr = current_expr_copy_9;
         replacer.is_simd_expression = is_simd_expr_copy;
         replacer.simd_type = simd_type_copy;
-        if( !ASRUtils::is_simd_array(x.m_value) ) {
+        if (!c_rank2_scalarized_constructor_reshape_assignment
+                && !ASRUtils::is_simd_array(x.m_value)) {
             visit_expr(*x.m_value);
         }
         if (c_elementwise_nonalias_vector_target) {
