@@ -6180,30 +6180,31 @@ int32_t last_index_used = -1;
 struct UNIT_FILE unit_to_file[MAXUNITS];
 
 // Pending bytes for sequential unformatted records per unit (shared by all types).
-static int32_t seq_unf_pending[MAXUNITS];
-static int32_t seq_unf_record_len[MAXUNITS];
+#define STATE_INDEX(u) ((u) >= 0 ? (u) : (MAXUNITS - (u)))
+static int32_t seq_unf_pending[MAXUNITS*2];
+static int32_t seq_unf_record_len[MAXUNITS*2];
 
 // Pending list-directed null-repeat state per unit.
-static int32_t lf_list_dir_null_remaining[MAXUNITS];
+static int32_t lf_list_dir_null_remaining[MAXUNITS*2];
 
 static inline void seq_unf_state_reset(int32_t unit_num) {
-    if (unit_num < 0 || unit_num >= MAXUNITS) return;
-    seq_unf_pending[unit_num] = 0;
-    seq_unf_record_len[unit_num] = 0;
+    if (unit_num <= -MAXUNITS || unit_num >= MAXUNITS) return;
+    seq_unf_pending[STATE_INDEX(unit_num)] = 0;
+    seq_unf_record_len[STATE_INDEX(unit_num)] = 0;
 }
 
 // Begin reading from a sequential unformatted record if not already in one.
 // Returns 0 on success, -1 on EOF, 1 on error.
 static inline int seq_unf_begin_record(int32_t unit_num, FILE* filep) {
-    if (unit_num < 0 || unit_num >= MAXUNITS) return 1;
-    if (seq_unf_pending[unit_num] == 0) {
+    if (unit_num <= -MAXUNITS || unit_num >= MAXUNITS) return 1;
+    if (seq_unf_pending[STATE_INDEX(unit_num)] == 0) {
         int32_t marker = 0;
         if (fread(&marker, sizeof(int32_t), 1, filep) != 1) {
             return feof(filep) ? -1 : 1;
         }
         if (marker < 0) return 1;
-        seq_unf_pending[unit_num] = marker;
-        seq_unf_record_len[unit_num] = marker;
+        seq_unf_pending[STATE_INDEX(unit_num)] = marker;
+        seq_unf_record_len[STATE_INDEX(unit_num)] = marker;
     }
     return 0;
 }
@@ -6211,13 +6212,13 @@ static inline int seq_unf_begin_record(int32_t unit_num, FILE* filep) {
 // Finish reading a sequential unformatted record if all bytes consumed.
 // Returns 0 on success, 1 on error.
 static inline int seq_unf_finish_record(int32_t unit_num, FILE* filep) {
-    if (unit_num < 0 || unit_num >= MAXUNITS) return 1;
-    if (seq_unf_pending[unit_num] == 0 && seq_unf_record_len[unit_num] > 0) {
+    if (unit_num <= -MAXUNITS || unit_num >= MAXUNITS) return 1;
+    if (seq_unf_pending[STATE_INDEX(unit_num)] == 0 && seq_unf_record_len[STATE_INDEX(unit_num)] > 0) {
         int32_t end_marker = 0;
         if (fread(&end_marker, sizeof(int32_t), 1, filep) != 1) {
             return 1;
         }
-        if (end_marker != seq_unf_record_len[unit_num]) {
+        if (end_marker != seq_unf_record_len[STATE_INDEX(unit_num)]) {
             return 1;
         }
         seq_unf_state_reset(unit_num);
@@ -6226,8 +6227,8 @@ static inline int seq_unf_finish_record(int32_t unit_num, FILE* filep) {
 }
 
 static inline void list_dir_state_reset(int32_t unit_num) {
-    if (unit_num < 0 || unit_num >= MAXUNITS) return;
-    lf_list_dir_null_remaining[unit_num] = 0;
+    if (unit_num <= -MAXUNITS || unit_num >= MAXUNITS) return;
+    lf_list_dir_null_remaining[STATE_INDEX(unit_num)] = 0;
 }
 
 // Pre-connect standard Fortran units at program startup.
@@ -7191,10 +7192,11 @@ LFORTRAN_API void _lfortran_inquire(const fchar* f_name_data, int64_t f_name_len
             }
         }
         int u_num = -1;
-        for(int i=0; i<1000; i++) {
-            char* unit_name = get_file_name_from_unit(i, &unit_file_bin);
+        for(int i=0; i<=last_index_used; i++) {
+            char* unit_name = unit_to_file[i].filename;
             if (unit_name != NULL && strcmp(unit_name, c_f_name_data) == 0) {
-                u_num = i;
+                u_num = unit_to_file[i].unit;
+                unit_file_bin = unit_to_file[i].unit_file_bin;
                 break;
             }
         }
@@ -7994,9 +7996,9 @@ static void skip_list_directed_comma(FILE *filep) {
 }
 
 static int list_directed_check_null_repeat(int32_t unit_num) {
-    if (unit_num >= 0 && unit_num < MAXUNITS
-            && lf_list_dir_null_remaining[unit_num] > 0) {
-        lf_list_dir_null_remaining[unit_num]--;
+    if (unit_num > -MAXUNITS && unit_num < MAXUNITS
+            && lf_list_dir_null_remaining[STATE_INDEX(unit_num)] > 0) {
+        lf_list_dir_null_remaining[STATE_INDEX(unit_num)]--;
         return 1;
     }
     return 0;
@@ -8097,7 +8099,7 @@ LFORTRAN_API void _lfortran_read_int16(int16_t *p, int32_t unit_num, int32_t *io
                 fprintf(stderr, "Error: Failed to read record marker for int16_t.\n");
                 exit(1);
             }
-            if (seq_unf_pending[unit_num] < (int32_t)sizeof(int16_t)) {
+            if (seq_unf_pending[STATE_INDEX(unit_num)] < (int32_t)sizeof(int16_t)) {
                 if (iostat) { *iostat = 1; return; }
                 fprintf(stderr, "Error: Record too short for int16_t.\n");
                 exit(1);
@@ -8107,7 +8109,7 @@ LFORTRAN_API void _lfortran_read_int16(int16_t *p, int32_t unit_num, int32_t *io
                 fprintf(stderr, "Error: Failed to read int16_t from sequential binary file.\n");
                 exit(1);
             }
-            seq_unf_pending[unit_num] -= (int32_t)sizeof(int16_t);
+            seq_unf_pending[STATE_INDEX(unit_num)] -= (int32_t)sizeof(int16_t);
             if (seq_unf_finish_record(unit_num, filep) != 0) {
                 if (iostat) { *iostat = 1; return; }
                 fprintf(stderr, "Error: Invalid trailing record marker while reading int16_t.\n");
@@ -8194,7 +8196,7 @@ LFORTRAN_API void _lfortran_read_int32(int32_t *p, int32_t unit_num, int32_t *io
                 fprintf(stderr, "Internal Compiler Error: Failed to read record marker for int32_t.\n");
                 exit(1);
             }
-            if (seq_unf_pending[unit_num] < (int32_t)sizeof(int32_t)) {
+            if (seq_unf_pending[STATE_INDEX(unit_num)] < (int32_t)sizeof(int32_t)) {
                 if (iostat) { *iostat = 1; return; }
                 fprintf(stderr, "Internal Compiler Error: Record too short for int32_t.\n");
                 exit(1);
@@ -8204,7 +8206,7 @@ LFORTRAN_API void _lfortran_read_int32(int32_t *p, int32_t unit_num, int32_t *io
                 fprintf(stderr, "Internal Compiler Error: Failed to read int32_t from sequential binary file.\n");
                 exit(1);
             }
-            seq_unf_pending[unit_num] -= (int32_t)sizeof(int32_t);
+            seq_unf_pending[STATE_INDEX(unit_num)] -= (int32_t)sizeof(int32_t);
             if (seq_unf_finish_record(unit_num, filep) != 0) {
                 if (iostat) { *iostat = 1; return; }
                 fprintf(stderr, "Internal Compiler Error: Invalid trailing record marker while reading int32_t.\n");
@@ -8289,7 +8291,7 @@ LFORTRAN_API void _lfortran_read_int64(int64_t *p, int32_t unit_num, int32_t *io
                 fprintf(stderr, "Error: Failed to read record marker for int64_t.\n");
                 exit(1);
             }
-            if (seq_unf_pending[unit_num] < (int32_t)sizeof(int64_t)) {
+            if (seq_unf_pending[STATE_INDEX(unit_num)] < (int32_t)sizeof(int64_t)) {
                 if (iostat) { *iostat = 1; return; }
                 fprintf(stderr, "Error: Record too short for int64_t.\n");
                 exit(1);
@@ -8299,7 +8301,7 @@ LFORTRAN_API void _lfortran_read_int64(int64_t *p, int32_t unit_num, int32_t *io
                 fprintf(stderr, "Error: Failed to read int64_t from sequential binary file.\n");
                 exit(1);
             }
-            seq_unf_pending[unit_num] -= (int32_t)sizeof(int64_t);
+            seq_unf_pending[STATE_INDEX(unit_num)] -= (int32_t)sizeof(int64_t);
             if (seq_unf_finish_record(unit_num, filep) != 0) {
                 if (iostat) { *iostat = 1; return; }
                 fprintf(stderr, "Error: Invalid trailing record marker while reading int64_t.\n");
@@ -8382,7 +8384,7 @@ LFORTRAN_API void _lfortran_read_logical(bool *p, int32_t unit_num, int32_t *ios
                 fprintf(stderr, "Error: Failed to read record marker for logical.\n");
                 exit(1);
             }
-            if (seq_unf_pending[unit_num] < (int32_t)sizeof(int32_t)) {
+            if (seq_unf_pending[STATE_INDEX(unit_num)] < (int32_t)sizeof(int32_t)) {
                 if (iostat) { *iostat = 1; return; }
                 fprintf(stderr, "Error: Record too short for logical.\n");
                 exit(1);
@@ -8392,7 +8394,7 @@ LFORTRAN_API void _lfortran_read_logical(bool *p, int32_t unit_num, int32_t *ios
                 fprintf(stderr, "Error: Failed to read logical from sequential binary file.\n");
                 exit(1);
             }
-            seq_unf_pending[unit_num] -= (int32_t)sizeof(int32_t);
+            seq_unf_pending[STATE_INDEX(unit_num)] -= (int32_t)sizeof(int32_t);
             if (seq_unf_finish_record(unit_num, filep) != 0) {
                 if (iostat) { *iostat = 1; return; }
                 fprintf(stderr, "Error: Invalid trailing record marker while reading logical.\n");
@@ -8502,7 +8504,7 @@ LFORTRAN_API void _lfortran_read_array_int8(int8_t *p, int array_size, int32_t s
                 exit(1);
             }
             int32_t bytes_needed = (int32_t)(array_size * sizeof(int8_t));
-            if (seq_unf_pending[unit_num] < bytes_needed) {
+            if (seq_unf_pending[STATE_INDEX(unit_num)] < bytes_needed) {
                 if (iostat) { *iostat = 1; return; }
                 fprintf(stderr, "Error: Record too short for int8 array.\n");
                 exit(1);
@@ -8524,7 +8526,7 @@ LFORTRAN_API void _lfortran_read_array_int8(int8_t *p, int array_size, int32_t s
                     p[(int64_t)i * (int64_t)stride] = val;
                 }
             }
-            seq_unf_pending[unit_num] -= bytes_needed;
+            seq_unf_pending[STATE_INDEX(unit_num)] -= bytes_needed;
             if (seq_unf_finish_record(unit_num, filep) != 0) {
                 if (iostat) { *iostat = 1; return; }
                 fprintf(stderr, "Error: Invalid trailing record marker in int8 array read.\n");
@@ -8605,7 +8607,7 @@ LFORTRAN_API void _lfortran_read_array_logical(void *p, int array_size, int kind
                 exit(1);
             }
             int32_t bytes_needed = (int32_t)(array_size * kind);
-            if (seq_unf_pending[unit_num] < bytes_needed) {
+            if (seq_unf_pending[STATE_INDEX(unit_num)] < bytes_needed) {
                 if (iostat) { *iostat = 1; return; }
                 fprintf(stderr, "Error: Record too short for logical array.\n");
                 exit(1);
@@ -8632,7 +8634,7 @@ LFORTRAN_API void _lfortran_read_array_logical(void *p, int array_size, int kind
                     memcpy((char*)p + (int64_t)i * (int64_t)stride * kind, tmp, kind);
                 }
             }
-            seq_unf_pending[unit_num] -= bytes_needed;
+            seq_unf_pending[STATE_INDEX(unit_num)] -= bytes_needed;
             if (seq_unf_finish_record(unit_num, filep) != 0) {
                 if (iostat) { *iostat = 1; return; }
                 fprintf(stderr, "Error: Invalid trailing record marker in logical array read.\n");
@@ -8718,7 +8720,7 @@ LFORTRAN_API void _lfortran_read_array_int16(int16_t *p, int array_size, int32_t
                 exit(1);
             }
             int32_t bytes_needed = (int32_t)(array_size * sizeof(int16_t));
-            if (seq_unf_pending[unit_num] < bytes_needed) {
+            if (seq_unf_pending[STATE_INDEX(unit_num)] < bytes_needed) {
                 if (iostat) { *iostat = 1; return; }
                 fprintf(stderr, "Error: Record too short for int16 array.\n");
                 exit(1);
@@ -8740,7 +8742,7 @@ LFORTRAN_API void _lfortran_read_array_int16(int16_t *p, int array_size, int32_t
                     p[(int64_t)i * (int64_t)stride] = val;
                 }
             }
-            seq_unf_pending[unit_num] -= bytes_needed;
+            seq_unf_pending[STATE_INDEX(unit_num)] -= bytes_needed;
             if (seq_unf_finish_record(unit_num, filep) != 0) {
                 if (iostat) { *iostat = 1; return; }
                 fprintf(stderr, "Error: Invalid trailing record marker in int16 array read.\n");
@@ -8821,7 +8823,7 @@ LFORTRAN_API void _lfortran_read_array_int32(int32_t *p, int array_size, int32_t
                 exit(1);
             }
             int32_t bytes_needed = (int32_t)(array_size * sizeof(int32_t));
-            if (seq_unf_pending[unit_num] < bytes_needed) {
+            if (seq_unf_pending[STATE_INDEX(unit_num)] < bytes_needed) {
                 if (iostat) { *iostat = 1; return; }
                 fprintf(stderr, "Error: Record too short for int32 array.\n");
                 exit(1);
@@ -8843,7 +8845,7 @@ LFORTRAN_API void _lfortran_read_array_int32(int32_t *p, int array_size, int32_t
                     p[(int64_t)i * (int64_t)stride] = val;
                 }
             }
-            seq_unf_pending[unit_num] -= bytes_needed;
+            seq_unf_pending[STATE_INDEX(unit_num)] -= bytes_needed;
             if (seq_unf_finish_record(unit_num, filep) != 0) {
                 if (iostat) { *iostat = 1; return; }
                 fprintf(stderr, "Error: Invalid trailing record marker in int32 array read.\n");
@@ -8923,7 +8925,7 @@ LFORTRAN_API void _lfortran_read_array_int64(int64_t *p, int array_size, int32_t
                 exit(1);
             }
             int32_t bytes_needed = (int32_t)(array_size * sizeof(int64_t));
-            if (seq_unf_pending[unit_num] < bytes_needed) {
+            if (seq_unf_pending[STATE_INDEX(unit_num)] < bytes_needed) {
                 if (iostat) { *iostat = 1; return; }
                 fprintf(stderr, "Error: Record too short for int64 array.\n");
                 exit(1);
@@ -8945,7 +8947,7 @@ LFORTRAN_API void _lfortran_read_array_int64(int64_t *p, int array_size, int32_t
                     p[(int64_t)i * (int64_t)stride] = val;
                 }
             }
-            seq_unf_pending[unit_num] -= bytes_needed;
+            seq_unf_pending[STATE_INDEX(unit_num)] -= bytes_needed;
             if (seq_unf_finish_record(unit_num, filep) != 0) {
                 if (iostat) { *iostat = 1; return; }
                 fprintf(stderr, "Error: Invalid trailing record marker in int64 array read.\n");
@@ -9022,7 +9024,7 @@ LFORTRAN_API void _lfortran_read_char(char **p, int64_t p_len, int32_t unit_num,
             pad_with_spaces(*p, data_length, p_len);
         } else {
 
-            if (seq_unf_pending[unit_num] == 0) {
+            if (seq_unf_pending[STATE_INDEX(unit_num)] == 0) {
                 int32_t marker = 0;
                 if (fread(&marker, sizeof(int32_t), 1, filep) != 1) {
                     if (iostat) { *iostat = feof(filep) ? -1 : 1; return; }
@@ -9034,11 +9036,11 @@ LFORTRAN_API void _lfortran_read_char(char **p, int64_t p_len, int32_t unit_num,
                     printf("Error: Invalid record marker while reading character data.\n");
                     exit(1);
                 }
-                seq_unf_pending[unit_num] = marker;
-                seq_unf_record_len[unit_num] = marker;
+                seq_unf_pending[STATE_INDEX(unit_num)] = marker;
+                seq_unf_record_len[STATE_INDEX(unit_num)] = marker;
             }
 
-            int32_t data_length = seq_unf_pending[unit_num];
+            int32_t data_length = seq_unf_pending[STATE_INDEX(unit_num)];
             if (data_length > p_len) data_length = (int32_t)p_len;
 
             if (data_length > 0 && fread(*p, sizeof(char), data_length, filep) != (size_t)data_length) {
@@ -9047,16 +9049,16 @@ LFORTRAN_API void _lfortran_read_char(char **p, int64_t p_len, int32_t unit_num,
                 exit(1);
             }
 
-            seq_unf_pending[unit_num] -= data_length;
+            seq_unf_pending[STATE_INDEX(unit_num)] -= data_length;
 
-            if (seq_unf_pending[unit_num] == 0) {
+            if (seq_unf_pending[STATE_INDEX(unit_num)] == 0) {
                 int32_t end_marker = 0;
                 if (fread(&end_marker, sizeof(int32_t), 1, filep) != 1) {
                     if (iostat) { *iostat = feof(filep) ? -1 : 1; return; }
                     printf("Error reading trailing record marker from file.\n");
                     exit(1);
                 }
-                if (end_marker != seq_unf_record_len[unit_num]) {
+                if (end_marker != seq_unf_record_len[STATE_INDEX(unit_num)]) {
                     if (iostat) { *iostat = 1; return; }
                     printf("Error: Mismatched record markers while reading character data.\n");
                     exit(1);
@@ -9361,7 +9363,7 @@ LFORTRAN_API void _lfortran_read_float(float *p, int32_t unit_num, int32_t *iost
                 fprintf(stderr, "Error: Failed to read record marker for float.\n");
                 exit(1);
             }
-            if (seq_unf_pending[unit_num] < (int32_t)sizeof(float)) {
+            if (seq_unf_pending[STATE_INDEX(unit_num)] < (int32_t)sizeof(float)) {
                 if (iostat) { *iostat = 1; return; }
                 fprintf(stderr, "Error: Record too short for float.\n");
                 exit(1);
@@ -9371,7 +9373,7 @@ LFORTRAN_API void _lfortran_read_float(float *p, int32_t unit_num, int32_t *iost
                 fprintf(stderr, "Error: Failed to read float from sequential binary file.\n");
                 exit(1);
             }
-            seq_unf_pending[unit_num] -= (int32_t)sizeof(float);
+            seq_unf_pending[STATE_INDEX(unit_num)] -= (int32_t)sizeof(float);
             if (seq_unf_finish_record(unit_num, filep) != 0) {
                 if (iostat) { *iostat = 1; return; }
                 fprintf(stderr, "Error: Invalid trailing record marker while reading float.\n");
@@ -9416,8 +9418,8 @@ LFORTRAN_API void _lfortran_read_float(float *p, int32_t unit_num, int32_t *iost
         }
         int null_count = list_directed_parse_null_repeat(buffer);
         if (null_count > 0) {
-            if (unit_num >= 0 && unit_num < MAXUNITS) {
-                lf_list_dir_null_remaining[unit_num] = null_count - 1;
+            if (unit_num > -MAXUNITS && unit_num < MAXUNITS) {
+                lf_list_dir_null_remaining[STATE_INDEX(unit_num)] = null_count - 1;
             }
             return;
         }
@@ -9467,7 +9469,7 @@ LFORTRAN_API void _lfortran_read_complex_float(struct _lfortran_complex_32 *p, i
                 fprintf(stderr, "Error: Failed to read record marker for complex float.\n");
                 exit(1);
             }
-            if (seq_unf_pending[unit_num] < (int32_t)sizeof(struct _lfortran_complex_32)) {
+            if (seq_unf_pending[STATE_INDEX(unit_num)] < (int32_t)sizeof(struct _lfortran_complex_32)) {
                 if (iostat) { *iostat = 1; return; }
                 fprintf(stderr, "Error: Record too short for complex float.\n");
                 exit(1);
@@ -9477,7 +9479,7 @@ LFORTRAN_API void _lfortran_read_complex_float(struct _lfortran_complex_32 *p, i
                 fprintf(stderr, "Error: Failed to read complex float from sequential binary file.\n");
                 exit(1);
             }
-            seq_unf_pending[unit_num] -= (int32_t)sizeof(struct _lfortran_complex_32);
+            seq_unf_pending[STATE_INDEX(unit_num)] -= (int32_t)sizeof(struct _lfortran_complex_32);
             if (seq_unf_finish_record(unit_num, filep) != 0) {
                 if (iostat) { *iostat = 1; return; }
                 fprintf(stderr, "Error: Invalid trailing record marker while reading complex float.\n");
@@ -9506,8 +9508,8 @@ LFORTRAN_API void _lfortran_read_complex_float(struct _lfortran_complex_32 *p, i
         }
         int null_count = list_directed_parse_null_repeat(buffer);
         if (null_count > 0) {
-            if (unit_num >= 0 && unit_num < MAXUNITS) {
-                lf_list_dir_null_remaining[unit_num] = null_count - 1;
+            if (unit_num > -MAXUNITS && unit_num < MAXUNITS) {
+                lf_list_dir_null_remaining[STATE_INDEX(unit_num)] = null_count - 1;
             }
             return;
         }
@@ -9581,7 +9583,7 @@ LFORTRAN_API void _lfortran_read_complex_double(struct _lfortran_complex_64 *p, 
                 fprintf(stderr, "Error: Failed to read record marker for complex double.\n");
                 exit(1);
             }
-            if (seq_unf_pending[unit_num] < (int32_t)sizeof(struct _lfortran_complex_64)) {
+            if (seq_unf_pending[STATE_INDEX(unit_num)] < (int32_t)sizeof(struct _lfortran_complex_64)) {
                 if (iostat) { *iostat = 1; return; }
                 fprintf(stderr, "Error: Record too short for complex double.\n");
                 exit(1);
@@ -9591,7 +9593,7 @@ LFORTRAN_API void _lfortran_read_complex_double(struct _lfortran_complex_64 *p, 
                 fprintf(stderr, "Error: Failed to read complex double from sequential binary file.\n");
                 exit(1);
             }
-            seq_unf_pending[unit_num] -= (int32_t)sizeof(struct _lfortran_complex_64);
+            seq_unf_pending[STATE_INDEX(unit_num)] -= (int32_t)sizeof(struct _lfortran_complex_64);
             if (seq_unf_finish_record(unit_num, filep) != 0) {
                 if (iostat) { *iostat = 1; return; }
                 fprintf(stderr, "Error: Invalid trailing record marker while reading complex double.\n");
@@ -9620,8 +9622,8 @@ LFORTRAN_API void _lfortran_read_complex_double(struct _lfortran_complex_64 *p, 
         }
         int null_count = list_directed_parse_null_repeat(buffer);
         if (null_count > 0) {
-            if (unit_num >= 0 && unit_num < MAXUNITS) {
-                lf_list_dir_null_remaining[unit_num] = null_count - 1;
+            if (unit_num > -MAXUNITS && unit_num < MAXUNITS) {
+                lf_list_dir_null_remaining[STATE_INDEX(unit_num)] = null_count - 1;
             }
             return;
         }
@@ -9703,7 +9705,7 @@ LFORTRAN_API void _lfortran_read_array_complex_float(struct _lfortran_complex_32
                 exit(1);
             }
             int32_t bytes_needed = (int32_t)(array_size * sizeof(struct _lfortran_complex_32));
-            if (seq_unf_pending[unit_num] < bytes_needed) {
+            if (seq_unf_pending[STATE_INDEX(unit_num)] < bytes_needed) {
                 if (iostat) { *iostat = 1; return; }
                 fprintf(stderr, "Error: Record too short for complex float array.\n");
                 exit(1);
@@ -9725,7 +9727,7 @@ LFORTRAN_API void _lfortran_read_array_complex_float(struct _lfortran_complex_32
                     p[(int64_t)i * (int64_t)stride] = val;
                 }
             }
-            seq_unf_pending[unit_num] -= bytes_needed;
+            seq_unf_pending[STATE_INDEX(unit_num)] -= bytes_needed;
             if (seq_unf_finish_record(unit_num, filep) != 0) {
                 if (iostat) { *iostat = 1; return; }
                 fprintf(stderr, "Error: Invalid trailing record marker in complex float array read.\n");
@@ -9837,7 +9839,7 @@ LFORTRAN_API void _lfortran_read_array_complex_double(struct _lfortran_complex_6
                 exit(1);
             }
             int32_t bytes_needed = (int32_t)(array_size * sizeof(struct _lfortran_complex_64));
-            if (seq_unf_pending[unit_num] < bytes_needed) {
+            if (seq_unf_pending[STATE_INDEX(unit_num)] < bytes_needed) {
                 if (iostat) { *iostat = 1; return; }
                 fprintf(stderr, "Error: Record too short for complex double array.\n");
                 exit(1);
@@ -9859,7 +9861,7 @@ LFORTRAN_API void _lfortran_read_array_complex_double(struct _lfortran_complex_6
                     p[(int64_t)i * (int64_t)stride] = val;
                 }
             }
-            seq_unf_pending[unit_num] -= bytes_needed;
+            seq_unf_pending[STATE_INDEX(unit_num)] -= bytes_needed;
             if (seq_unf_finish_record(unit_num, filep) != 0) {
                 if (iostat) { *iostat = 1; return; }
                 fprintf(stderr, "Error: Invalid trailing record marker in complex double array read.\n");
@@ -9974,7 +9976,7 @@ LFORTRAN_API void _lfortran_read_array_float(float *p, int array_size, int32_t s
                 exit(1);
             }
             int32_t bytes_needed = (int32_t)(array_size * sizeof(float));
-            if (seq_unf_pending[unit_num] < bytes_needed) {
+            if (seq_unf_pending[STATE_INDEX(unit_num)] < bytes_needed) {
                 if (iostat) { *iostat = 1; return; }
                 fprintf(stderr, "Error: Record too short for float array.\n");
                 exit(1);
@@ -9996,7 +9998,7 @@ LFORTRAN_API void _lfortran_read_array_float(float *p, int array_size, int32_t s
                     p[(int64_t)i * (int64_t)stride] = val;
                 }
             }
-            seq_unf_pending[unit_num] -= bytes_needed;
+            seq_unf_pending[STATE_INDEX(unit_num)] -= bytes_needed;
             if (seq_unf_finish_record(unit_num, filep) != 0) {
                 if (iostat) { *iostat = 1; return; }
                 fprintf(stderr, "Error: Invalid trailing record marker in float array read.\n");
@@ -10086,7 +10088,7 @@ LFORTRAN_API void _lfortran_read_array_double(double *p, int array_size, int32_t
                 exit(1);
             }
             int32_t bytes_needed = (int32_t)(array_size * sizeof(double));
-            if (seq_unf_pending[unit_num] < bytes_needed) {
+            if (seq_unf_pending[STATE_INDEX(unit_num)] < bytes_needed) {
                 if (iostat) { *iostat = 1; return; }
                 fprintf(stderr, "Error: Record too short for double array.\n");
                 exit(1);
@@ -10108,7 +10110,7 @@ LFORTRAN_API void _lfortran_read_array_double(double *p, int array_size, int32_t
                     p[(int64_t)i * (int64_t)stride] = val;
                 }
             }
-            seq_unf_pending[unit_num] -= bytes_needed;
+            seq_unf_pending[STATE_INDEX(unit_num)] -= bytes_needed;
             if (seq_unf_finish_record(unit_num, filep) != 0) {
                 if (iostat) { *iostat = 1; return; }
                 fprintf(stderr, "Error: Invalid trailing record marker in double array read.\n");
@@ -10186,7 +10188,7 @@ LFORTRAN_API void _lfortran_read_array_char(char *p, int64_t length, int array_s
                 fprintf(stderr, "Error: Failed to read record marker for char array.\n");
                 exit(1);
             }
-            if (seq_unf_pending[unit_num] < (int32_t)want) {
+            if (seq_unf_pending[STATE_INDEX(unit_num)] < (int32_t)want) {
                 if (iostat) { *iostat = 1; return; }
                 fprintf(stderr, "Error: Record too short for char array.\n");
                 exit(1);
@@ -10198,7 +10200,7 @@ LFORTRAN_API void _lfortran_read_array_char(char *p, int64_t length, int array_s
             if (got < want) {
                 memset(p + got, ' ', want - got);
             }
-            seq_unf_pending[unit_num] -= (int32_t)want;
+            seq_unf_pending[STATE_INDEX(unit_num)] -= (int32_t)want;
             if (seq_unf_finish_record(unit_num, filep) != 0) {
                 if (iostat) { *iostat = 1; return; }
                 fprintf(stderr, "Error: Invalid trailing record marker in char array read.\n");
@@ -10266,7 +10268,7 @@ LFORTRAN_API void _lfortran_read_double(double *p, int32_t unit_num, int32_t *io
                 fprintf(stderr, "Error: Failed to read record marker for double.\n");
                 exit(1);
             }
-            if (seq_unf_pending[unit_num] < (int32_t)sizeof(double)) {
+            if (seq_unf_pending[STATE_INDEX(unit_num)] < (int32_t)sizeof(double)) {
                 if (iostat) { *iostat = 1; return; }
                 fprintf(stderr, "Error: Record too short for double.\n");
                 exit(1);
@@ -10276,7 +10278,7 @@ LFORTRAN_API void _lfortran_read_double(double *p, int32_t unit_num, int32_t *io
                 fprintf(stderr, "Error: Failed to read double from sequential binary file.\n");
                 exit(1);
             }
-            seq_unf_pending[unit_num] -= (int32_t)sizeof(double);
+            seq_unf_pending[STATE_INDEX(unit_num)] -= (int32_t)sizeof(double);
             if (seq_unf_finish_record(unit_num, filep) != 0) {
                 if (iostat) { *iostat = 1; return; }
                 fprintf(stderr, "Error: Invalid trailing record marker while reading double.\n");
@@ -10322,8 +10324,8 @@ LFORTRAN_API void _lfortran_read_double(double *p, int32_t unit_num, int32_t *io
         }
         int null_count = list_directed_parse_null_repeat(buffer);
         if (null_count > 0) {
-            if (unit_num >= 0 && unit_num < MAXUNITS) {
-                lf_list_dir_null_remaining[unit_num] = null_count - 1;
+            if (unit_num > -MAXUNITS && unit_num < MAXUNITS) {
+                lf_list_dir_null_remaining[STATE_INDEX(unit_num)] = null_count - 1;
             }
             return;
         }
@@ -11890,8 +11892,8 @@ LFORTRAN_API void _lfortran_empty_read(int32_t unit_num, int32_t* iostat, int32_
                 exit(1);
             }
         }
-        if (seq_unf_pending[unit_num] > 0) {
-            if (fseek(fp, (long)seq_unf_pending[unit_num], SEEK_CUR) != 0) {
+        if (seq_unf_pending[STATE_INDEX(unit_num)] > 0) {
+            if (fseek(fp, (long)seq_unf_pending[STATE_INDEX(unit_num)], SEEK_CUR) != 0) {
                 if (iostat) { *iostat = 1; return; }
                 fprintf(stderr, "Error skipping remaining record data in file.\n");
                 exit(1);
@@ -11902,13 +11904,13 @@ LFORTRAN_API void _lfortran_empty_read(int32_t unit_num, int32_t* iostat, int32_
                 fprintf(stderr, "Error reading trailing record marker from file.\n");
                 exit(1);
             }
-            if (end_marker != seq_unf_record_len[unit_num]) {
+            if (end_marker != seq_unf_record_len[STATE_INDEX(unit_num)]) {
                 if (iostat) { *iostat = 1; return; }
                 fprintf(stderr, "Error: Mismatched record markers while finalizing read.\n");
                 exit(1);
             }
             seq_unf_state_reset(unit_num);
-        } else if (no_values && seq_unf_record_len[unit_num] == 0) {
+        } else if (no_values && seq_unf_record_len[STATE_INDEX(unit_num)] == 0) {
             // Empty record (marker was 0): read trailing marker
             int32_t end_marker = 0;
             if (fread(&end_marker, sizeof(int32_t), 1, fp) != 1) {
