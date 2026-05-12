@@ -2248,6 +2248,55 @@ static bool is_c_simple_array_section_view(ASR::ArraySection_t *section) {
     return found_slice;
 }
 
+static bool is_c_proven_contiguous_no_copy_base(ASR::expr_t *base) {
+    base = ASRUtils::get_past_array_physical_cast(base);
+    ASR::Variable_t *var = ASRUtils::expr_to_variable_or_null(base);
+    if (var == nullptr || ASRUtils::is_pointer(var->m_type)) {
+        return false;
+    }
+    ASR::ttype_t *type = ASRUtils::type_get_past_allocatable_pointer(
+        var->m_type);
+    if (type == nullptr || !ASRUtils::is_array(type)) {
+        return false;
+    }
+    return var->m_contiguous_attr
+        || ASRUtils::is_allocatable(var->m_type)
+        || ASRUtils::is_fixed_size_array(var->m_type);
+}
+
+static bool is_c_packed_contiguous_array_section_view(
+        ASR::ArraySection_t *section) {
+    if (section == nullptr) {
+        return false;
+    }
+    ASR::expr_t *base = ASRUtils::get_past_array_physical_cast(section->m_v);
+    ASR::ttype_t *base_type = base != nullptr
+        ? ASRUtils::type_get_past_allocatable_pointer(ASRUtils::expr_type(base))
+        : nullptr;
+    ASR::ttype_t *section_type = ASRUtils::type_get_past_allocatable_pointer(
+        section->m_type);
+    int base_rank = ASRUtils::extract_n_dims_from_ttype(base_type);
+    int section_rank = ASRUtils::extract_n_dims_from_ttype(section_type);
+    if (base_rank <= 0 || section_rank != base_rank
+            || section->n_args != static_cast<size_t>(base_rank)
+            || !is_c_proven_contiguous_no_copy_base(base)) {
+        return false;
+    }
+    for (int i = 0; i < base_rank; i++) {
+        const ASR::array_index_t &idx = section->m_args[i];
+        bool is_slice = idx.m_left || idx.m_step || idx.m_right == nullptr;
+        if (!is_slice || !is_unit_step_expr(idx.m_step)
+                || !is_c_simple_integer_bound_expr(idx.m_left)
+                || !is_c_simple_integer_bound_expr(idx.m_right)) {
+            return false;
+        }
+        if (i + 1 < base_rank && !is_default_unit_array_slice(idx)) {
+            return false;
+        }
+    }
+    return true;
+}
+
 static bool should_preserve_c_no_copy_section_actual(bool c_backend,
         ASR::expr_t *dummy, ASR::expr_t *actual) {
     if (!c_backend || dummy == nullptr || actual == nullptr
@@ -2258,10 +2307,10 @@ static bool should_preserve_c_no_copy_section_actual(bool c_backend,
     ASR::Variable_t *dummy_var = ASRUtils::expr_to_variable_or_null(dummy);
     if (dummy_var == nullptr
             || ASRUtils::is_allocatable(dummy_var->m_type)
-            || ASRUtils::is_pointer(dummy_var->m_type)
-            || dummy_var->m_contiguous_attr) {
+            || ASRUtils::is_pointer(dummy_var->m_type)) {
         return false;
     }
+    bool dummy_requires_contiguous = dummy_var->m_contiguous_attr;
     if (ASRUtils::extract_physical_type(dummy_var->m_type)
             != ASR::array_physical_typeType::DescriptorArray) {
         return false;
@@ -2278,6 +2327,10 @@ static bool should_preserve_c_no_copy_section_actual(bool c_backend,
         return false;
     }
     if (!is_c_simple_array_section_view(section)) {
+        return false;
+    }
+    if (dummy_requires_contiguous
+            && !is_c_packed_contiguous_array_section_view(section)) {
         return false;
     }
     ASR::expr_t *base = ASRUtils::get_past_array_physical_cast(section->m_v);

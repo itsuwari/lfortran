@@ -1,0 +1,13 @@
+{
+    "basename": "c_forbid_pattern-c_backend_contiguous_call_section_no_temp_01-65f26f7",
+    "cmd": "lfortran --no-color --show-c {infile} | (! grep -F -q \"__libasr_created__subroutine_call_\") #",
+    "infile": "tests/../integration_tests/c_backend_contiguous_call_section_no_temp_01.f90",
+    "infile_hash": "e0f42f72e245120630424d268e5072f48af0c2b74dedb621e16cf4ab",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}
