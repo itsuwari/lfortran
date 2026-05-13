@@ -5381,6 +5381,19 @@ filename = "c_backend_tbp_parent_registration_use_01.f90"
 extrafiles = "c_backend_tbp_parent_registration_mod_01.f90"
 c_split_consumer_forbid_pattern = true
 c_split_consumer_forbid_pattern_value = "_lfortran_register_c_type_parent("
+c_split_consumer_require_pattern = true
+c_split_consumer_require_pattern_value = "__lfortran_force_link_type_parent_"
+
+[[test]]
+filename = "c_backend_split_helper_reachability_01.f90"
+c_split_forbid_pattern = true
+c_split_forbid_pattern_value = "list_insert_i32_"
+c_split_budget = true
+c_split_budget_max_helpers = 4
+c_split_budget_max_generated_c_bytes = 4000
+c_split_budget_max_object_bytes = 6000
+c_split_budget_max_executable_bytes = 1000000
+c_split_budget_max_text_bytes = 10000
 
 [[test]]
 filename = "c_backend_small_vector_assignment_setup_01.f90"

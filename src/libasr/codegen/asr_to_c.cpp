@@ -41,7 +41,9 @@ public:
     std::string string_concat_helper_name;
     bool defer_c_tbp_parent_registration_defs = false;
     std::set<int64_t> deferred_c_tbp_parent_registration_type_ids;
+    std::set<int64_t> deferred_c_tbp_parent_force_link_type_ids;
     std::string deferred_c_tbp_parent_registration_decls;
+    std::string deferred_c_tbp_parent_owner_anchor_defs;
     std::string deferred_c_tbp_parent_registration_body;
     bool defer_c_struct_runtime_info_defs = false;
     std::string deferred_c_struct_runtime_info_defs;
@@ -1505,6 +1507,136 @@ R"(
         return out;
     }
 
+    struct SplitHelperPruneResult {
+        std::string defs;
+        std::set<std::string> all_names;
+        std::set<std::string> kept_names;
+    };
+
+    std::string extract_c_function_def_name(const std::string &stmt) const {
+        size_t brace = stmt.find('{');
+        if (brace == std::string::npos) {
+            return "";
+        }
+        std::string signature = trim_copy(stmt.substr(0, brace));
+        if (signature.empty() || signature.find(';') != std::string::npos) {
+            return "";
+        }
+        return extract_c_function_decl_name(signature);
+    }
+
+    bool split_helper_def_is_required_root(const std::string &stmt) const {
+        return stmt.find("LFORTRAN_C_BACKEND_CONSTRUCTOR") != std::string::npos;
+    }
+
+    SplitHelperPruneResult prune_split_helper_defs(
+            const std::string &helper_defs,
+            const std::string &root_src) const {
+        struct HelperDef {
+            std::string name;
+            std::string text;
+            bool required_root = false;
+        };
+
+        SplitHelperPruneResult result;
+        if (helper_defs.empty()) {
+            return result;
+        }
+
+        std::vector<HelperDef> helpers;
+        std::unordered_set<std::string> helper_name_set;
+        std::vector<std::string> passthrough_stmts;
+        for (const auto &stmt : split_top_level_statements(helper_defs)) {
+            std::string name = extract_c_function_def_name(stmt);
+            if (name.empty()) {
+                passthrough_stmts.push_back(stmt);
+                continue;
+            }
+            helpers.push_back({name, stmt, split_helper_def_is_required_root(stmt)});
+            result.all_names.insert(name);
+            helper_name_set.insert(name);
+        }
+
+        std::vector<std::string> worklist;
+        std::unordered_set<std::string> root_tokens =
+            collect_c_identifier_tokens(root_src);
+        for (const auto &helper : helpers) {
+            if (helper.required_root
+                    || root_tokens.find(helper.name) != root_tokens.end()) {
+                if (result.kept_names.insert(helper.name).second) {
+                    worklist.push_back(helper.name);
+                }
+            }
+        }
+
+        std::map<std::string, const HelperDef*> helper_by_name;
+        for (const auto &helper : helpers) {
+            helper_by_name[helper.name] = &helper;
+        }
+
+        for (size_t i = 0; i < worklist.size(); i++) {
+            auto it = helper_by_name.find(worklist[i]);
+            if (it == helper_by_name.end()) {
+                continue;
+            }
+            std::unordered_set<std::string> tokens =
+                collect_c_identifier_tokens(it->second->text);
+            for (const auto &token : tokens) {
+                if (helper_name_set.find(token) == helper_name_set.end()) {
+                    continue;
+                }
+                if (result.kept_names.insert(token).second) {
+                    worklist.push_back(token);
+                }
+            }
+        }
+
+        std::string out;
+        for (const auto &stmt : passthrough_stmts) {
+            out += stmt;
+            if (!endswith(out, "\n")) {
+                out += "\n";
+            }
+            out += "\n";
+        }
+        for (const auto &helper : helpers) {
+            if (result.kept_names.find(helper.name) == result.kept_names.end()) {
+                continue;
+            }
+            out += helper.text;
+            if (!endswith(out, "\n")) {
+                out += "\n";
+            }
+            out += "\n";
+        }
+        result.defs = out;
+        return result;
+    }
+
+    std::string prune_split_helper_decls(
+            const std::string &decl_src,
+            const std::set<std::string> &all_helper_names,
+            const std::set<std::string> &kept_helper_names) const {
+        if (decl_src.empty() || all_helper_names.empty()) {
+            return decl_src;
+        }
+        std::string out;
+        for (const auto &stmt : split_top_level_statements(decl_src)) {
+            std::string trimmed = trim_copy(stmt);
+            std::string name = extract_c_function_decl_name(trimmed);
+            if (!name.empty()
+                    && all_helper_names.find(name) != all_helper_names.end()
+                    && kept_helper_names.find(name) == kept_helper_names.end()) {
+                continue;
+            }
+            out += stmt;
+            if (!endswith(out, "\n")) {
+                out += "\n";
+            }
+        }
+        return out;
+    }
+
     std::vector<std::string> group_statements_into_chunks(
             const std::vector<std::string> &stmts, size_t max_chunk_lines) const {
         std::vector<std::string> chunks;
@@ -2045,11 +2177,46 @@ R"(
 
     void append_c_tbp_parent_registration(const ASR::Struct_t &x,
             std::string &src_dest) {
-        if (suppress_c_tbp_parent_registration) {
-            return;
-        }
         SymbolTable *saved_scope = current_scope;
         current_scope = global_scope;
+        if (suppress_c_tbp_parent_registration) {
+            if (x.m_parent == nullptr) {
+                current_scope = saved_scope;
+                return;
+            }
+            int64_t type_id = get_struct_runtime_type_id(
+                reinterpret_cast<ASR::symbol_t*>(const_cast<ASR::Struct_t*>(&x)));
+            if (!deferred_c_tbp_parent_force_link_type_ids.insert(type_id).second) {
+                current_scope = saved_scope;
+                return;
+            }
+            std::string force_link_decls;
+            std::string force_link_body;
+            if (!get_c_tbp_parent_force_link_reference_parts(
+                    x, force_link_decls, force_link_body)) {
+                current_scope = saved_scope;
+                return;
+            }
+            if (defer_c_tbp_parent_registration_defs) {
+                deferred_c_tbp_parent_registration_decls += force_link_decls;
+                deferred_c_tbp_parent_registration_body += force_link_body;
+                current_scope = saved_scope;
+                return;
+            }
+            std::string safe_name = CUtils::sanitize_c_identifier(
+                CUtils::get_c_symbol_name(
+                    reinterpret_cast<ASR::symbol_t*>(const_cast<ASR::Struct_t*>(&x))));
+            std::string registrar_name = get_unique_local_name(
+                "__lfortran_reference_type_parent_" + safe_name
+                + "_x" + std::to_string(static_cast<uint64_t>(type_id)), false);
+            src_dest += force_link_decls
+                + "LFORTRAN_C_BACKEND_CONSTRUCTOR static void "
+                + registrar_name + "(void)\n{\n"
+                + force_link_body
+                + "}\n\n";
+            current_scope = saved_scope;
+            return;
+        }
         if (!defer_c_tbp_parent_registration_defs) {
             std::string registration = emit_c_tbp_parent_registration(x);
             current_scope = saved_scope;
@@ -2072,6 +2239,8 @@ R"(
                 x, force_link_decls, registration_body);
             if (has_registration) {
                 deferred_c_tbp_parent_registration_decls += force_link_decls;
+                deferred_c_tbp_parent_owner_anchor_defs +=
+                    emit_c_tbp_parent_owner_anchor_def(x);
                 deferred_c_tbp_parent_registration_body += registration_body;
             }
         }
@@ -4254,6 +4423,8 @@ R"(
         is_string_concat_present = false;
         global_scope = x.m_symtab;
         emitted_c_tbp_parent_force_link_type_ids.clear();
+        deferred_c_tbp_parent_force_link_type_ids.clear();
+        deferred_c_tbp_parent_owner_anchor_defs.clear();
         defer_c_struct_runtime_info_defs = false;
         deferred_c_struct_runtime_info_defs.clear();
         suppress_c_tbp_parent_registration = false;
@@ -4439,7 +4610,9 @@ R"(
         compact_constant_data_decls.clear();
         defer_c_tbp_parent_registration_defs = true;
         deferred_c_tbp_parent_registration_type_ids.clear();
+        deferred_c_tbp_parent_force_link_type_ids.clear();
         deferred_c_tbp_parent_registration_decls.clear();
+        deferred_c_tbp_parent_owner_anchor_defs.clear();
         deferred_c_tbp_parent_registration_body.clear();
         defer_c_struct_runtime_info_defs = true;
         deferred_c_struct_runtime_info_defs.clear();
@@ -4651,6 +4824,24 @@ R"(
         }
         std::string split_owned_defs;
         hoist_split_header_enum_name_defs(header_array_type_decls, split_owned_defs);
+        std::string helper_root_src = split_owned_defs
+            + deferred_c_tbp_parent_registration_decls
+            + deferred_c_tbp_parent_owner_anchor_defs
+            + deferred_c_tbp_parent_registration_body
+            + deferred_c_struct_runtime_info_defs
+            + deferred_c_struct_cleanup_defs
+            + global_var_defs
+            + compact_constant_data_body;
+        for (const auto &unit : unit_bodies) {
+            helper_root_src += unit.second;
+        }
+        SplitHelperPruneResult helper_prune =
+            prune_split_helper_defs(helper_defs, helper_root_src);
+        helper_defs = std::move(helper_prune.defs);
+        header_array_type_decls = prune_split_helper_decls(
+            header_array_type_decls,
+            helper_prune.all_names,
+            helper_prune.kept_names);
         std::string function_decls = dedupe_decl_lines(
             forward_decl_functions + split_func_decls + compact_constant_data_decls);
         if (is_string_concat_present) {
@@ -4678,6 +4869,7 @@ R"(
         }
         if (!deferred_c_tbp_parent_registration_body.empty()) {
             shared_body += deferred_c_tbp_parent_registration_decls
+                + deferred_c_tbp_parent_owner_anchor_defs
                 + "LFORTRAN_C_BACKEND_CONSTRUCTOR static void "
                 "__lfortran_register_type_parents(void)\n{\n"
                 + deferred_c_tbp_parent_registration_body

@@ -87,7 +87,9 @@ def single_test(test: Dict, verbose: bool, no_llvm: bool, skip_run_with_dbg: boo
     c_split_no_empty_source = is_included("c_split_no_empty_source")
     c_split_require_pattern = is_included("c_split_require_pattern")
     c_split_forbid_pattern = is_included("c_split_forbid_pattern")
+    c_split_budget = is_included("c_split_budget")
     c_split_consumer_forbid_pattern = is_included("c_split_consumer_forbid_pattern")
+    c_split_consumer_require_pattern = is_included("c_split_consumer_require_pattern")
     c_require_pattern = is_included("c_require_pattern")
     c_forbid_pattern = is_included("c_forbid_pattern")
     is_cumulative_pass = is_included("cumulative")
@@ -104,7 +106,13 @@ def single_test(test: Dict, verbose: bool, no_llvm: bool, skip_run_with_dbg: boo
     c_split_cleanup_dedupe_symbol = test.get("c_split_cleanup_dedupe_symbol", "")
     c_split_require_pattern_value = test.get("c_split_require_pattern_value", "")
     c_split_forbid_pattern_value = test.get("c_split_forbid_pattern_value", "")
+    c_split_budget_max_helpers = test.get("c_split_budget_max_helpers", "")
+    c_split_budget_max_generated_c_bytes = test.get("c_split_budget_max_generated_c_bytes", "")
+    c_split_budget_max_object_bytes = test.get("c_split_budget_max_object_bytes", "")
+    c_split_budget_max_executable_bytes = test.get("c_split_budget_max_executable_bytes", "")
+    c_split_budget_max_text_bytes = test.get("c_split_budget_max_text_bytes", "")
     c_split_consumer_forbid_pattern_value = test.get("c_split_consumer_forbid_pattern_value", "")
+    c_split_consumer_require_pattern_value = test.get("c_split_consumer_require_pattern_value", "")
     c_require_pattern_value = test.get("c_require_pattern_value", "")
     c_forbid_pattern_value = test.get("c_forbid_pattern_value", "")
     pass_ = test.get("pass", None)
@@ -788,10 +796,42 @@ def single_test(test: Dict, verbose: bool, no_llvm: bool, skip_run_with_dbg: boo
         cmd = (
             "tmpdir=$(mktemp -d /tmp/lfortran-c-split-forbid.XXXXXX); "
             "trap 'rm -rf \"$tmpdir\"' EXIT; "
-            "lfortran --backend=c --separate-compilation -c {infile} -o \"$tmpdir/main.o\"; "
-            f"(! grep -R -F -q \"{c_split_forbid_pattern_value}\" \"$tmpdir\"/*.o.tmp.split/*.c) #"
+            "lfortran --backend=c --separate-compilation -c {infile} "
+            "-o \"$tmpdir/main.o\" > \"$tmpdir/compile.out\" 2> \"$tmpdir/compile.err\" && "
+            f"(! grep -R -F -q \"{c_split_forbid_pattern_value}\" "
+            "\"$tmpdir\"/*.o.tmp.split/*.c \"$tmpdir\"/*.o.tmp.split/*.h) #"
         )
         run_test(filename, "c_split_forbid_pattern", cmd,
+                filename,
+                update_reference,
+                verify_hash,
+                extra_args)
+
+    if c_split_budget:
+        if not all([
+                c_split_budget_max_helpers,
+                c_split_budget_max_generated_c_bytes,
+                c_split_budget_max_object_bytes,
+                c_split_budget_max_executable_bytes,
+                c_split_budget_max_text_bytes]):
+            raise Exception("c_split_budget requires all c_split_budget_max_* values")
+        cmd = (
+            "tmpdir=$(mktemp -d /tmp/lfortran-c-split-budget.XXXXXX); "
+            "trap 'rm -rf \"$tmpdir\"' EXIT; "
+            "lfortran --backend=c --separate-compilation -c {infile} "
+            "-o \"$tmpdir/main.o\" > \"$tmpdir/compile-object.out\" "
+            "2> \"$tmpdir/compile-object.err\" && "
+            "lfortran --backend=c --separate-compilation {infile} "
+            "-o \"$tmpdir/a.out\" > \"$tmpdir/compile-exe.out\" "
+            "2> \"$tmpdir/compile-exe.err\" && "
+            f"python3 tests/c_split_budget.py \"$tmpdir\" "
+            f"--max-helpers {c_split_budget_max_helpers} "
+            f"--max-generated-c-bytes {c_split_budget_max_generated_c_bytes} "
+            f"--max-object-bytes {c_split_budget_max_object_bytes} "
+            f"--max-executable-bytes {c_split_budget_max_executable_bytes} "
+            f"--max-text-bytes {c_split_budget_max_text_bytes} #"
+        )
+        run_test(filename, "c_split_budget", cmd,
                 filename,
                 update_reference,
                 verify_hash,
@@ -811,6 +851,27 @@ def single_test(test: Dict, verbose: bool, no_llvm: bool, skip_run_with_dbg: boo
             f"(! grep -R -F -q \"{c_split_consumer_forbid_pattern_value}\" \"$tmpdir/main.o.tmp.split\"/*.c) #"
         )
         run_test(filename, "c_split_consumer_forbid_pattern", cmd,
+                filename,
+                update_reference,
+                verify_hash,
+                extra_args)
+
+    if c_split_consumer_require_pattern:
+        module_file = extrafiles[0].strip() if extrafiles else ""
+        if not module_file:
+            raise Exception("c_split_consumer_require_pattern requires extrafiles")
+        if not c_split_consumer_require_pattern_value:
+            raise Exception("c_split_consumer_require_pattern requires c_split_consumer_require_pattern_value")
+        cmd = (
+            "tmpdir=$(mktemp -d /tmp/lfortran-c-split-consumer-require.XXXXXX); "
+            "trap 'rm -rf \"$tmpdir\"' EXIT; "
+            f"lfortran --backend=c --separate-compilation -c tests/{module_file} -o \"$tmpdir/mod.o\" "
+            "> \"$tmpdir/mod.out\" 2> \"$tmpdir/mod.err\" && "
+            "lfortran --backend=c --separate-compilation -I\"$tmpdir\" -c {infile} -o \"$tmpdir/main.o\" "
+            "> \"$tmpdir/main.out\" 2> \"$tmpdir/main.err\" && "
+            f"grep -R -F -q \"{c_split_consumer_require_pattern_value}\" \"$tmpdir/main.o.tmp.split\"/*.c #"
+        )
+        run_test(filename, "c_split_consumer_require_pattern", cmd,
                 filename,
                 update_reference,
                 verify_hash,

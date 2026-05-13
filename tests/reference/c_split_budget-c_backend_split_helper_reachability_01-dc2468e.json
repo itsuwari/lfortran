@@ -1,0 +1,13 @@
+{
+    "basename": "c_split_budget-c_backend_split_helper_reachability_01-dc2468e",
+    "cmd": "tmpdir=$(mktemp -d /tmp/lfortran-c-split-budget.XXXXXX); trap 'rm -rf \"$tmpdir\"' EXIT; lfortran --backend=c --separate-compilation -c {infile} -o \"$tmpdir/main.o\" > \"$tmpdir/compile-object.out\" 2> \"$tmpdir/compile-object.err\" && lfortran --backend=c --separate-compilation {infile} -o \"$tmpdir/a.out\" > \"$tmpdir/compile-exe.out\" 2> \"$tmpdir/compile-exe.err\" && python3 tests/c_split_budget.py \"$tmpdir\" --max-helpers 4 --max-generated-c-bytes 4000 --max-object-bytes 6000 --max-executable-bytes 1000000 --max-text-bytes 10000 #",
+    "infile": "tests/c_backend_split_helper_reachability_01.f90",
+    "infile_hash": "7c294067a91ca93cf1e4f1a3d84246d53d2e4d3abcd9e7c9f08001a3",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

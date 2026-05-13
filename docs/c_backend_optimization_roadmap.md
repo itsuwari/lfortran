@@ -75,20 +75,23 @@ Observed top contributors:
    typed C initializer. This keeps the procedure/shared TUs from carrying the
    initializer payload and adds no runtime copy or floating-point reordering.
 3. In progress: deduplicate emitted helpers/scaffolding by ownership and
-   structural signature. First checkpoint suppresses duplicate type-bound
-   parent-registration constructors for loaded modules; remaining helper
-   families still need structural analysis before backend changes.
+   structural signature. Current checkpoints prune unreachable split helper
+   bodies and make type-bound parent metadata owner-emitted with downstream
+   force-link references. Remaining helper families still need structural
+   analysis before backend changes.
 4. Later: broaden no-copy descriptor/view lowering.
 5. Always: avoid math/codegen transformations that reorder floating-point
    operations.
 
-Current blocker: the standard-C path still emits typed C initializers in the
-constants-data TU. That is correctness-preserving and removes the initializer
-payload from hot procedure/shared TUs, but it does not remove all C
-parse/typecheck work for those literals. Eliminating that remaining work without
-runtime copies would require a separate binary/object data path or a
-toolchain-specific embedding mechanism; that needs a build-driver design before
-implementation.
+Current blocker: route-level compile cost is still dominated by generated C
+volume and descriptor scaffolding, not by duplicate type-parent constructors.
+The latest tblite build still emits 95.88 MB of `.c` and 2.88 MB of generated
+headers. The largest translation units are packed module data and generated
+module bodies (`mstore/amino20x4`, `multicharge/eeqbc`, `tblite/mesh/lebedev`,
+`dftd3/reference_constants_data`). The standard-C constants-data path is
+correctness-preserving, but it still asks Clang to parse typed numeric
+initializers; eliminating that remaining work needs a separate binary/object
+data path or a toolchain-specific embedding mechanism.
 
 ## Experiment Log
 
@@ -192,6 +195,92 @@ artifacts still show 1394 `tbp_parent_registration` pattern hits, 2594
 `struct_deepcopy` hits, 14152 array-view hits, and heavy descriptor/temporary
 scaffolding. The next dedupe changes must be based on measured duplicate helper
 families, not name-only matches.
+
+Correction after route testing: suppressing the loaded-module registration body
+alone is not sufficient for static archives. A downstream object must still
+reference owner metadata, otherwise the object that owns the real constructor
+can be left out of `libtblite.a` linking and runtime dispatch can fail before
+the first calculation. The failing tblite smoke was:
+`Deferred type-bound dispatch failed for info`.
+
+### 2026-05-14: Split Helper Reachability And TBP Owner Anchors
+
+Hypothesis: the split-C backend should treat helper emission as a compiler pass.
+Declarations are needed for ABI/type visibility, but helper bodies should be
+emitted only when reachable from actual generated call sites or required
+constructors. Loaded-module metadata should have one owner; downstream users
+should reference the owner rather than re-emitting registration bodies.
+
+Exact change:
+
+- Build a per-split-unit helper-use graph over generated helper function
+  definitions.
+- Root the graph with emitted unit bodies, owned split definitions, global data,
+  compact constant-data hooks, and required runtime constructor bodies.
+- Drop unreachable helper bodies and matching helper prototypes.
+- Add a focused split-C budget gate for generated C bytes, helper count, object
+  bytes, executable bytes, and `__text` bytes.
+- For type-bound parent metadata, owner modules now emit the real
+  `_lfortran_register_c_type_parent(...)` constructor plus a stable
+  `__lfortran_force_link_type_parent_*` anchor. Loaded-module consumers emit
+  only extern calls to that owner anchor and TBP method anchors.
+
+Expected win: less generated helper scaffolding in focused split-C cases, fewer
+duplicate type-parent registration constructors in real module consumers, and
+no numerical change because no arithmetic or data layout order is rewritten.
+
+Correctness risk: medium for static archives. Owner-only metadata is correct
+only if consumers keep a force-link reference that pulls the owner object into
+the final executable. This is now covered by a consumer regression that requires
+the force-link anchor and forbids consumer-side registration.
+
+Test evidence:
+
+- Red check: before the anchor fix, the downstream consumer split C contained
+  no `__lfortran_force_link_type_parent_` reference.
+- `cmake --build build -j`
+- `python3 -m py_compile run_tests.py tests/c_split_budget.py`
+- `PATH=build/src/bin:$PATH python3 run_tests.py -t c_backend_tbp_parent_registration_use_01`
+- `PATH=build/src/bin:$PATH python3 run_tests.py -t c_backend_split_helper_reachability_01`
+- `PATH=build/src/bin:$PATH python3 run_tests.py -t c_backend_large_parameter_array_data_unit_01`
+- `cd integration_tests && PATH=../build/src/bin:$PATH python3 run_tests.py -b c -t c_backend_tbp_parent_force_link_dedup_01`
+- `cd integration_tests && PATH=../build/src/bin:$PATH python3 run_tests.py -b c -t c_backend_alloc_class_constructor_result_01`
+- `cd integration_tests && PATH=../build/src/bin:$PATH python3 run_tests.py -b c -t separate_compilation_53`
+- `cd integration_tests && PATH=../build/src/bin:$PATH python3 run_tests.py -b c -t class_15`
+
+Route evidence on fresh no-tests tblite builds:
+
+| Metric | LFortran C emit | gfortran |
+| --- | ---: | ---: |
+| Build wall | 141.616 s | 14.213 s |
+| Build max RSS | 2225.54 MB | 248.92 MB |
+| Generated `.c` | 1499 files, 95,878,233 bytes | n/a |
+| Generated headers | 398 files, 2,876,948 bytes | n/a |
+| Ninja `.o` edge sum | 749.114 s | n/a |
+| Object bytes | 52,798,939 | 9,962,296 |
+| `libtblite.a` | 8,608,248 bytes | 3,075,144 bytes |
+| `app/tblite` | 8,879,256 bytes | 5,763,992 bytes |
+| `__text` | 4,755,304 bytes | 1,893,604 bytes |
+| `tblite --version` warm avg | 2.812 ms | 5.314 ms |
+
+Focused ammonia CLI parity against the fresh gfortran build:
+
+| Observable | Difference |
+| --- | ---: |
+| Total energy | 1.42e-14 Eh |
+| Orbital energies max abs | 4.88e-15 Eh |
+| Gradient max abs | 4.71e-16 Eh/bohr |
+| Virial max abs | 4.44e-16 |
+| Warm CLI wall median | 93.72 ms vs 48.24 ms |
+| Warm CLI RSS median | 10.99 MB vs 13.29 MB |
+
+Result: keep, with revised interpretation. The owner-anchor fix is required for
+correct static-archive behavior and the helper graph is a valid split-C
+invariant. The route-level compile-size win is still small: compared with the
+older measured LFortran-C artifact, `tbp_parent_registration` pattern hits drop
+from 1394 to 93, but generated C remains about 96 MB because packed data,
+module-body scaffolding, descriptor temporaries, and generic helper calls are
+still the dominant work.
 
 ## Design Goals
 

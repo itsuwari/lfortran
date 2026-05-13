@@ -1,0 +1,13 @@
+{
+    "basename": "c_split_consumer_require_pattern-c_backend_tbp_parent_registration_use_01-fe0a6a1",
+    "cmd": "tmpdir=$(mktemp -d /tmp/lfortran-c-split-consumer-require.XXXXXX); trap 'rm -rf \"$tmpdir\"' EXIT; lfortran --backend=c --separate-compilation -c tests/c_backend_tbp_parent_registration_mod_01.f90 -o \"$tmpdir/mod.o\" > \"$tmpdir/mod.out\" 2> \"$tmpdir/mod.err\" && lfortran --backend=c --separate-compilation -I\"$tmpdir\" -c {infile} -o \"$tmpdir/main.o\" > \"$tmpdir/main.out\" 2> \"$tmpdir/main.err\" && grep -R -F -q \"__lfortran_force_link_type_parent_\" \"$tmpdir/main.o.tmp.split\"/*.c #",
+    "infile": "tests/c_backend_tbp_parent_registration_use_01.f90",
+    "infile_hash": "4b37f2b4a892eb51ce495a47a276e9825448486accdc50e9143a9951",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

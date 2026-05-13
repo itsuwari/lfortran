@@ -12809,12 +12809,29 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         return "(void*)" + self_pointer_expr;
     }
 
-    bool get_c_tbp_parent_registration_parts(const ASR::Struct_t &x,
-            std::string &force_link_decls, std::string &registration_body) {
+    std::string get_c_tbp_parent_force_link_anchor_name(const ASR::Struct_t &x) {
+        ASR::symbol_t *struct_sym =
+            reinterpret_cast<ASR::symbol_t*>(const_cast<ASR::Struct_t*>(&x));
+        int64_t type_id = get_struct_runtime_type_id(struct_sym);
+        return "__lfortran_force_link_type_parent_"
+            + CUtils::sanitize_c_identifier(CUtils::get_c_symbol_name(struct_sym))
+            + "_x" + std::to_string(static_cast<uint64_t>(type_id));
+    }
+
+    std::string emit_c_tbp_parent_owner_anchor_def(const ASR::Struct_t &x) {
+        if (!is_c || x.m_parent == nullptr) {
+            return "";
+        }
+        ensure_c_backend_constructor_macro_decl();
+        std::string anchor_name = get_c_tbp_parent_force_link_anchor_name(x);
+        return "LFORTRAN_C_BACKEND_WEAK void " + anchor_name + "(void)\n{\n}\n\n";
+    }
+
+    bool get_c_tbp_parent_method_force_link_parts(const ASR::Struct_t &x,
+            std::string &force_link_decls, std::string &force_link_body) {
         if (!is_c || x.m_parent == nullptr) {
             return false;
         }
-        ensure_c_backend_constructor_macro_decl();
         ASR::symbol_t *parent_sym = ASRUtils::symbol_get_past_external(x.m_parent);
         if (parent_sym == nullptr || !ASR::is_a<ASR::Struct_t>(*parent_sym)) {
             return false;
@@ -12822,17 +12839,52 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         ASR::Struct_t *parent_struct = ASR::down_cast<ASR::Struct_t>(parent_sym);
         std::vector<ASR::StructMethodDeclaration_t*> parent_methods;
         collect_direct_concrete_struct_methods(parent_struct, parent_methods);
-        std::string force_link_calls;
         int64_t parent_type_id = get_struct_runtime_type_id(parent_sym);
+        if (!emitted_c_tbp_parent_force_link_type_ids.insert(parent_type_id).second) {
+            return false;
+        }
+        for (ASR::StructMethodDeclaration_t *method: parent_methods) {
+            std::string anchor_name = get_c_tbp_force_link_anchor_name(parent_struct, method);
+            force_link_decls += "extern void " + anchor_name + "(void);\n";
+            force_link_body += "    " + anchor_name + "();\n";
+        }
+        return !force_link_body.empty();
+    }
+
+    bool get_c_tbp_parent_force_link_reference_parts(const ASR::Struct_t &x,
+            std::string &force_link_decls, std::string &force_link_body) {
+        if (!is_c || x.m_parent == nullptr) {
+            return false;
+        }
+        ensure_c_backend_constructor_macro_decl();
+        std::string anchor_name = get_c_tbp_parent_force_link_anchor_name(x);
+        force_link_decls = "extern void " + anchor_name + "(void);\n";
+        force_link_body = "    " + anchor_name + "();\n";
+        std::string method_force_link_decls;
+        std::string method_force_link_body;
+        if (get_c_tbp_parent_method_force_link_parts(
+                x, method_force_link_decls, method_force_link_body)) {
+            force_link_decls += method_force_link_decls;
+            force_link_body += method_force_link_body;
+        }
+        return true;
+    }
+
+    bool get_c_tbp_parent_registration_parts(const ASR::Struct_t &x,
+            std::string &force_link_decls, std::string &registration_body) {
+        if (!is_c || x.m_parent == nullptr) {
+            return false;
+        }
+        ensure_c_backend_constructor_macro_decl();
         int64_t child_type_id = get_struct_runtime_type_id(
             reinterpret_cast<ASR::symbol_t*>(const_cast<ASR::Struct_t*>(&x)));
-        if (emitted_c_tbp_parent_force_link_type_ids.insert(parent_type_id).second) {
-            for (ASR::StructMethodDeclaration_t *method: parent_methods) {
-                std::string anchor_name = get_c_tbp_force_link_anchor_name(parent_struct, method);
-                force_link_decls += "extern void " + anchor_name + "(void);\n";
-                force_link_calls += "    " + anchor_name + "();\n";
-            }
+        ASR::symbol_t *parent_sym = ASRUtils::symbol_get_past_external(x.m_parent);
+        if (parent_sym == nullptr || !ASR::is_a<ASR::Struct_t>(*parent_sym)) {
+            return false;
         }
+        int64_t parent_type_id = get_struct_runtime_type_id(parent_sym);
+        std::string force_link_calls;
+        get_c_tbp_parent_method_force_link_parts(x, force_link_decls, force_link_calls);
         registration_body = "    _lfortran_register_c_type_parent("
             + std::to_string(child_type_id)
             + ", "
@@ -12860,7 +12912,8 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             + "LFORTRAN_C_BACKEND_CONSTRUCTOR LFORTRAN_C_BACKEND_WEAK void "
             + registrar_name + "(void)\n{\n"
             + registration_body
-            + "}\n\n";
+            + "}\n\n"
+            + emit_c_tbp_parent_owner_anchor_def(x);
     }
 
     std::string emit_c_tbp_registration_wrapper(const ASR::Function_t &x) {
