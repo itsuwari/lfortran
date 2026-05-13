@@ -7636,31 +7636,52 @@ R"(    // Initialise Numpy
             counter += 1;
             std::string size_name = "__lfortran_write_size_" + unique_suffix;
             std::string buffer_name = "__lfortran_write_buffer_" + unique_suffix;
+            std::string heap_buffer_name = "__lfortran_write_heap_buffer_" + unique_suffix;
+            std::string inner_indent = indent + std::string(indentation_spaces, ' ');
+            auto append_snprintf_call = [&](std::string &code,
+                    const std::string &target, const std::string &target_size) {
+                code += "snprintf(" + target + ", " + target_size + ", " + snprintf_fmt;
+                for (auto &arg: fmt_args) {
+                    code += ", " + arg;
+                }
+                code += ")";
+            };
+            auto append_formatted_write = [&](std::string &code,
+                    const std::string &current_indent,
+                    const std::string &current_buffer,
+                    const std::string &current_size) {
+                if (is_string_unit) {
+                    code += current_indent
+                        + "_lfortran_string_write(_lfortran_get_default_allocator(), &(" + unit + "), "
+                        + (is_unit_allocatable ? "true" : "false") + ", "
+                        + (is_unit_deferred ? "true" : "false") + ", false, 1, &"
+                        + unit_len_name + ", " + iostat_ptr + ", \"%s\", 2, "
+                        + current_buffer + ", " + current_size + ");\n";
+                } else {
+                    code += current_indent + "_lfortran_file_write(" + unit + ", " + iostat_ptr
+                        + ", \"%s%s\", 4, " + current_buffer + ", " + current_size
+                        + ", " + end_arg.first + ", " + end_arg.second + ");\n";
+                }
+            };
 
-            src = indent + "int " + size_name + " = snprintf(NULL, 0, " + snprintf_fmt;
-            for (auto &arg: fmt_args) {
-                src += ", " + arg;
-            }
-            src += ");\n";
-            src += indent + "char *" + buffer_name + " = (char*) malloc((size_t)" + size_name + " + 1);\n";
-            src += indent + "snprintf(" + buffer_name + ", (size_t)" + size_name + " + 1, " + snprintf_fmt;
-            for (auto &arg: fmt_args) {
-                src += ", " + arg;
-            }
-            src += ");\n";
-            if (is_string_unit) {
-                src += unit_setup;
-                src += indent + "_lfortran_string_write(_lfortran_get_default_allocator(), &(" + unit + "), "
-                    + (is_unit_allocatable ? "true" : "false") + ", "
-                    + (is_unit_deferred ? "true" : "false") + ", false, 1, &"
-                    + unit_len_name + ", " + iostat_ptr + ", \"%s\", 2, "
-                    + buffer_name + ", (int64_t)" + size_name + ");\n";
-            } else {
-                src += indent + "_lfortran_file_write(" + unit + ", " + iostat_ptr + ", \"%s%s\", 4, "
-                    + buffer_name + ", (int64_t)" + size_name + ", "
-                    + end_arg.first + ", " + end_arg.second + ");\n";
-            }
-            src += indent + "free(" + buffer_name + ");\n";
+            src = unit_setup;
+            src += indent + "char " + buffer_name + "[4096];\n";
+            src += indent + "int " + size_name + " = ";
+            append_snprintf_call(src, buffer_name, "sizeof(" + buffer_name + ")");
+            src += ";\n";
+            src += indent + "if (" + size_name + " >= 0 && (size_t)" + size_name
+                + " < sizeof(" + buffer_name + ")) {\n";
+            append_formatted_write(src, inner_indent, buffer_name, "(int64_t)" + size_name);
+            src += indent + "} else {\n";
+            src += inner_indent + "if (" + size_name + " < 0) " + size_name + " = 0;\n";
+            src += inner_indent + "char *" + heap_buffer_name
+                + " = (char*) malloc((size_t)" + size_name + " + 1);\n";
+            src += inner_indent;
+            append_snprintf_call(src, heap_buffer_name, "(size_t)" + size_name + " + 1");
+            src += ";\n";
+            append_formatted_write(src, inner_indent, heap_buffer_name, "(int64_t)" + size_name);
+            src += inner_indent + "free(" + heap_buffer_name + ");\n";
+            src += indent + "}\n";
             return;
         }
 

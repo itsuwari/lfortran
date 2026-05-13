@@ -1081,6 +1081,7 @@ RUN(NAME c_backend_implicit_f77_function_array_section_01 LABELS gfortran c EXTR
 RUN(NAME c_backend_intent_out_do_var_01 LABELS gfortran c)
 RUN(NAME c_backend_integer_power_pow_name_01 LABELS gfortran c)
 RUN(NAME c_backend_stop_string_01 LABELS gfortran c)
+RUN(NAME c_backend_formatted_stack_write_01 LABELS gfortran c)
 RUN(NAME c_backend_formatted_char_implied_do_01 LABELS gfortran c EXTRA_ARGS --fixed-form GFORTRAN_ARGS -ffixed-form)
 RUN(NAME c_backend_formatted_char_array_write_01 LABELS gfortran c)
 RUN(NAME c_backend_list_read_trailing_text_01 LABELS gfortran c)
