@@ -329,6 +329,35 @@ if (WITH_LLVM)
     endif()
 endif()
 
+set(LFORTRAN_LLVM_DWARFDUMP ""
+    CACHE FILEPATH "Path to llvm-dwarfdump executable")
+if (WITH_DWARFDUMP OR WITH_RUNTIME_STACKTRACE)
+    if (NOT LFORTRAN_LLVM_DWARFDUMP)
+        set(_LFORTRAN_LLVM_DWARFDUMP_HINTS)
+        if (LLVM_TOOLS_BINARY_DIR)
+            list(APPEND _LFORTRAN_LLVM_DWARFDUMP_HINTS "${LLVM_TOOLS_BINARY_DIR}")
+        endif()
+        find_program(_LFORTRAN_LLVM_DWARFDUMP
+            NAMES llvm-dwarfdump
+            HINTS ${_LFORTRAN_LLVM_DWARFDUMP_HINTS}
+            PATHS
+                /opt/homebrew/opt/llvm/bin
+                /opt/homebrew/opt/llvm@21/bin
+                /opt/homebrew/opt/llvm@20/bin
+                /usr/local/opt/llvm/bin
+                /usr/local/opt/llvm@21/bin
+                /usr/local/opt/llvm@20/bin
+        )
+        if (_LFORTRAN_LLVM_DWARFDUMP)
+            set(LFORTRAN_LLVM_DWARFDUMP "${_LFORTRAN_LLVM_DWARFDUMP}"
+                CACHE FILEPATH "Path to llvm-dwarfdump executable" FORCE)
+        else()
+            set(LFORTRAN_LLVM_DWARFDUMP "llvm-dwarfdump"
+                CACHE FILEPATH "Path to llvm-dwarfdump executable" FORCE)
+        endif()
+    endif()
+endif()
+
 # XEUS (Fortran kernel)
 set(WITH_XEUS no CACHE BOOL "Build with XEUS support")
 if (WITH_XEUS)
@@ -427,6 +456,7 @@ message("WITH_LIBUNWIND: ${WITH_LIBUNWIND}")
 message("WITH_BFD: ${WITH_BFD}")
 message("WITH_LLVM_STACKTRACE: ${WITH_LLVM_STACKTRACE}")
 message("WITH_DWARFDUMP: ${WITH_DWARFDUMP}")
+message("LFORTRAN_LLVM_DWARFDUMP: ${LFORTRAN_LLVM_DWARFDUMP}")
 message("WITH_LINKH: ${WITH_LINKH}")
 message("WITH_MACHO: ${WITH_MACHO}")
 message("HAVE_LFORTRAN_DEMANGLE: ${HAVE_LFORTRAN_DEMANGLE}")

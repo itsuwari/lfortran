@@ -118,6 +118,35 @@ std::string get_system_temp_dir()
 
 std::string LFORTRAN_TEMP_DIR = get_system_temp_dir();
 
+std::string shell_quote(const std::string &value)
+{
+    std::string quoted = "'";
+    for (char c : value) {
+        if (c == '\'') {
+            quoted += "'\\''";
+        } else {
+            quoted += c;
+        }
+    }
+    quoted += "'";
+    return quoted;
+}
+
+std::string llvm_dwarfdump_path()
+{
+    char *env_p = std::getenv("LFORTRAN_LLVM_DWARFDUMP");
+    if (env_p && env_p[0] != '\0') {
+        return std::string(env_p);
+    }
+    std::string configured = LFORTRAN_LLVM_DWARFDUMP;
+    if (!configured.empty() && configured != "LFORTRAN_LLVM_DWARFDUMP-NOTFOUND") {
+        if (configured.find('/') == std::string::npos || std::filesystem::exists(configured)) {
+            return configured;
+        }
+    }
+    return "llvm-dwarfdump";
+}
+
 std::string c_compiler_optimization_flags(const std::vector<std::string> &O_flags)
 {
     std::string flags;
@@ -2492,24 +2521,29 @@ int link_executable(const std::vector<std::string> &infiles,
 
 #ifdef HAVE_RUNTIME_STACKTRACE
         if (compiler_options.emit_debug_info) {
-            // TODO: Replace the following hardcoded part
-            std::string cmd = "";
+            std::string cmd;
+            std::string dwarfdump = shell_quote(llvm_dwarfdump_path());
+            std::string ldd_file = file_name + "_ldd.txt";
+            std::string lines_file = file_name + "_lines.txt";
+            std::string lines_dat_file = file_name + "_lines.dat";
 #ifdef HAVE_LFORTRAN_MACHO
-            cmd += "dsymutil " + outfile + " && llvm-dwarfdump --debug-line "
-                + outfile + ".dSYM > ";
+            cmd += "dsymutil " + shell_quote(outfile) + " && " + dwarfdump
+                + " --debug-line " + shell_quote(outfile + ".dSYM") + " > ";
 #else
-            cmd += "llvm-dwarfdump --debug-line " + outfile + " > ";
+            cmd += dwarfdump + " --debug-line " + shell_quote(outfile) + " > ";
 #endif
             std::string dwarf_scripts_path = LCompilers::LFortran::get_dwarf_scripts_dir();
-            cmd += file_name + "_ldd.txt && (" + dwarf_scripts_path + "/dwarf_convert.py "
-                + file_name + "_ldd.txt " + file_name + "_lines.txt "
-                + file_name + "_lines.dat && " + dwarf_scripts_path + "/dat_convert.py "
-                + file_name + "_lines.dat)";
+            cmd += shell_quote(ldd_file) + " && ("
+                + shell_quote(dwarf_scripts_path + "/dwarf_convert.py")
+                + " " + shell_quote(ldd_file) + " " + shell_quote(lines_file)
+                + " " + shell_quote(lines_dat_file) + " && "
+                + shell_quote(dwarf_scripts_path + "/dat_convert.py")
+                + " " + shell_quote(lines_dat_file) + ")";
             int status = system(cmd.c_str());
             if ( status != 0 ) {
                 std::cerr << "Error in creating the files used to generate "
                     "the debug information. This might be caused because either"
-                    " `llvm-dwarfdump` or `Python` are not available. "
+                    " `" << llvm_dwarfdump_path() << "` or `Python` are not available. "
                     "Please activate the CONDA environment and compile again.\n";
                 return status;
             }

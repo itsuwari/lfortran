@@ -71,7 +71,7 @@ if (WITH_STACKTRACE AND APPLE AND CMAKE_CXX_COMPILER_ID MATCHES Clang)
         add_custom_command(
             TARGET lfortran
             POST_BUILD
-            COMMAND llvm-dwarfdump --debug-line lfortran.dSYM > lfortran.dSYM/raw.txt
+            COMMAND ${LFORTRAN_LLVM_DWARFDUMP} --debug-line lfortran.dSYM > lfortran.dSYM/raw.txt
         )
         add_custom_command(
             TARGET lfortran

@@ -29,6 +29,7 @@
 #cmakedefine HAVE_LFORTRAN_MACHO
 #cmakedefine HAVE_LFORTRAN_UNWIND
 #cmakedefine HAVE_LFORTRAN_LLVM_STACKTRACE
+#define LFORTRAN_LLVM_DWARFDUMP "@LFORTRAN_LLVM_DWARFDUMP@"
 
 /* Define if cxxabi.h is present */
 #cmakedefine HAVE_LFORTRAN_DEMANGLE
