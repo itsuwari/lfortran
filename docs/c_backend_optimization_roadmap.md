@@ -23,6 +23,61 @@ The parity gap is now small for this case. The remaining problem is generated
 code quality: the C backend is materializing too many Fortran array semantics
 as heap descriptors, array copies, and generic runtime calls.
 
+## Current Compile Budget Workflow
+
+Use `ci/report_c_emit_budget.py` on a C-emitted build directory or directly on
+one or more `*.o.tmp.split` directories before accepting further C-backend
+compile-size changes:
+
+```bash
+python3 ci/report_c_emit_budget.py /path/to/tblite-build --top 25 \
+  --json /path/to/report.json
+```
+
+The report records:
+
+- generated `.c` file count, bytes, and lines
+- generated header count, bytes, and lines
+- largest generated C translation units and headers
+- helper/scaffolding pattern counts
+- longest `.ninja_log` compile edges when Ninja timing data is present
+- whether per-file RSS data is available
+
+Current measured tblite C-emitted artifact:
+
+| Metric | Value |
+| --- | ---: |
+| split directories | 398 |
+| generated `.c` files | 1486 |
+| generated `.c` size | 91.19 MiB |
+| generated `.c` lines | 984067 |
+| generated headers | 398 |
+| generated header size | 2.74 MiB |
+| largest C TU | `mstore/amino20x4` at 2.59 MiB |
+| longest Ninja edge | `tblite/mesh/lebedev.f90.o` at 101.576 s |
+
+Observed top contributors:
+
+- static molecule/reference-data builders emit many local `static const`
+  numeric arrays inside generated procedures
+- descriptor and temporary scaffolding remains high, with 265740
+  `__libasr_created__` occurrences and 14152 array-view occurrences in the
+  measured C files
+- the existing compact constant-copy helper path did not appear in this older
+  tblite artifact, so the next validation must use freshly generated C before
+  judging large-constant coverage
+
+## Active Action List
+
+1. Done: add generated-C budget reporting.
+2. Next: validate current large-constant/static-data coverage on a fresh split-C
+   artifact, then extend only the missed cases that can be represented as
+   immutable data without changing arithmetic.
+3. Later: deduplicate emitted helpers by structural signature.
+4. Later: broaden no-copy descriptor/view lowering.
+5. Always: avoid math/codegen transformations that reorder floating-point
+   operations.
+
 ## Design Goals
 
 1. Keep Fortran semantics explicit before final C emission.
