@@ -2706,22 +2706,36 @@ void handle_octal(const char* format, Primitive_Types type,
 
 typedef struct stack {
     int64_t* p;
+    int64_t inline_storage[10];
     int32_t stack_size;
     int32_t top_index;
+    bool owns_self;
 } Stack;  
+
+static inline void init_stack(Stack* s){
+    s->stack_size = 10; // intial value
+    s->p = s->inline_storage;
+    s->top_index = -1;
+    s->owns_self = false;
+}
 
 Stack* create_stack(){
     Stack* s = (Stack*)internal_malloc(sizeof(Stack));
-    s->stack_size = 10; // intial value
-    s->p = (int64_t*)internal_malloc(s->stack_size * sizeof(int64_t));
-    s->top_index = -1;
+    init_stack(s);
+    s->owns_self = true;
     return s;
 }
 
 void push_stack(Stack* x, int64_t val){
     if(x->top_index == x->stack_size - 1){ // Check if extending is needed.
+        int32_t old_stack_size = x->stack_size;
         x->stack_size *= 2;
-        x->p = (int64_t*)internal_realloc(x->p, x->stack_size * sizeof(int64_t));
+        if (x->p == x->inline_storage) {
+            x->p = (int64_t*)internal_malloc(x->stack_size * sizeof(int64_t));
+            memcpy(x->p, x->inline_storage, old_stack_size * sizeof(int64_t));
+        } else {
+            x->p = (int64_t*)internal_realloc(x->p, x->stack_size * sizeof(int64_t));
+        }
     }
     x->p[++x->top_index] = val;
 }
@@ -2742,8 +2756,12 @@ static inline bool stack_empty(Stack* s){
     return s->top_index == -1;
 }
 void free_stack(Stack* x){
-    internal_free(x->p);
-    internal_free(x);
+    if (x->p != x->inline_storage) {
+        internal_free(x->p);
+    }
+    if (x->owns_self) {
+        internal_free(x);
+    }
 }
 
 
@@ -3444,9 +3462,13 @@ static char* string_format_fortran_impl(lfortran_allocator_t* al,
 
     // Setup s_info
     struct serialization_info s_info;
+    Stack array_serialiation_start_index;
+    Stack array_sizes_stack;
+    init_stack(&array_serialiation_start_index);
+    init_stack(&array_sizes_stack);
     s_info.serialization_string = serialization_string;
-    s_info.array_serialiation_start_index = create_stack();
-    s_info.array_sizes_stack = create_stack();
+    s_info.array_serialiation_start_index = &array_serialiation_start_index;
+    s_info.array_sizes_stack = &array_sizes_stack;
     s_info.current_stop = 0;
     s_info.current_arg_info.args = args;
     s_info.current_element_type = NONE_TYPE;
