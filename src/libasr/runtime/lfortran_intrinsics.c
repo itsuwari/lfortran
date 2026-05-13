@@ -3298,13 +3298,49 @@ void strip_outer_parenthesis(const char* str, int len, char* output) {
     }
 }
 
-void default_formatting(lfortran_allocator_t* al, char** result, int64_t *result_size_ptr, struct serialization_info* s_info){
-    int64_t result_capacity = 100;
+static inline void reserve_format_result(lfortran_allocator_t* al, char** result,
+        int64_t* result_capacity, bool* result_allocator_owned,
+        int64_t required_capacity, int64_t initialized_len) {
+    if (required_capacity <= *result_capacity) {
+        return;
+    }
+    if (*result_allocator_owned) {
+        *result = (char*)ALLOCATOR_REALLOC(al, *result,
+            (required_capacity + 1) * sizeof(char));
+    } else {
+        char* new_result = (char*)ALLOCATOR_ALLOC(al,
+            (required_capacity + 1) * sizeof(char));
+        int64_t copy_len = initialized_len;
+        if (copy_len > *result_capacity) copy_len = *result_capacity;
+        if (copy_len < 0) copy_len = 0;
+        memcpy(new_result, *result, (size_t)copy_len);
+        new_result[copy_len] = '\0';
+        *result = new_result;
+        *result_allocator_owned = true;
+    }
+    *result_capacity = required_capacity;
+}
+
+static inline void replace_format_result(lfortran_allocator_t* al, char** result,
+        int64_t* result_capacity, bool* result_allocator_owned,
+        int64_t new_capacity) {
+    if (*result_allocator_owned) {
+        ALLOCATOR_DEALLOC(al, *result);
+    }
+    *result = (char*)ALLOCATOR_ALLOC(al, (new_capacity + 1) * sizeof(char));
+    (*result)[0] = '\0';
+    *result_capacity = new_capacity;
+    *result_allocator_owned = true;
+}
+
+void default_formatting(lfortran_allocator_t* al, char** result,
+        int64_t* result_capacity, bool* result_allocator_owned,
+        int64_t *result_size_ptr, struct serialization_info* s_info){
     int64_t result_size = 0;
     const int default_spacing_len = 1;
     const char* default_spacing = " ";
     ASSERT(default_spacing_len == strlen(default_spacing));
-    *result = ALLOCATOR_REALLOC(al, *result, result_capacity + 1 /*Null Character*/ );
+    reserve_format_result(al, result, result_capacity, result_allocator_owned, 100, 0);
     bool prev_is_char = false;
     bool prev_is_logical = false;
     bool prev_is_integer = false;
@@ -3322,15 +3358,16 @@ void default_formatting(lfortran_allocator_t* al, char** result, int64_t *result
         } else {
             size_to_allocate = (60 + default_spacing_len) * sizeof(char);
         }
-        int64_t old_capacity = result_capacity;
-        while(result_capacity <= size_to_allocate + result_size){ // Check if string extension is needed.
-            if(result_size + size_to_allocate > result_capacity*2){
-                result_capacity = size_to_allocate + result_size ;
+        int64_t new_capacity = *result_capacity;
+        while(new_capacity <= size_to_allocate + result_size){ // Check if string extension is needed.
+            if(result_size + size_to_allocate > new_capacity*2){
+                new_capacity = size_to_allocate + result_size ;
             } else {
-                result_capacity *=2;
+                new_capacity *=2;
             }
         }
-        if(result_capacity != old_capacity){*result = (char*)ALLOCATOR_REALLOC(al, *result, result_capacity + 1);}
+        reserve_format_result(al, result, result_capacity, result_allocator_owned,
+            new_capacity, result_size);
         if(result_size > 0 && !(prev_is_char && curr_is_char)){
             if (prev_is_logical || curr_is_logical) {
                 (*result)[result_size] = ' ';
@@ -3351,6 +3388,7 @@ void default_formatting(lfortran_allocator_t* al, char** result, int64_t *result
     }
 
     (*result_size_ptr) = result_size;
+    (*result)[result_size] = '\0';
 }
 void free_serialization_info(Serialization_Info* s_info){
     internal_free(s_info->array_sizes.ptr);
@@ -3373,11 +3411,13 @@ static inline int64_t get_current_record_column(int64_t result_len, const char* 
 }
 
 static inline char* write_to_result_at_pos(lfortran_allocator_t* al,
-        char* dest, int64_t* used_len, int64_t pos,
+        char* dest, int64_t* result_capacity, bool* result_allocator_owned,
+        int64_t* used_len, int64_t pos,
         const char* src, int64_t src_len) {
     int64_t new_end = pos + src_len;
     int64_t cap_len = (*used_len > new_end) ? *used_len : new_end;
-    dest = (char*)ALLOCATOR_REALLOC(al, dest, (cap_len + 1) * sizeof(char));
+    reserve_format_result(al, &dest, result_capacity, result_allocator_owned,
+        cap_len, *used_len);
     if (pos > *used_len) {
         memset(dest + *used_len, ' ', pos - *used_len);
     }
@@ -3391,12 +3431,12 @@ static inline char* write_to_result_at_pos(lfortran_allocator_t* al,
 
 FILE* get_file_pointer_from_unit(int32_t unit_num, bool *unit_file_bin, int *access_id, bool *read_access, bool *write_access, int *delim, bool *blank_zero, int32_t *recl, int *sign_mode, int *decimal_mode, int *encoding_mode, int *round_mode, int *pad_mode);
 
-LFORTRAN_API char* _lcompilers_string_format_fortran(lfortran_allocator_t* al, const char* format, int64_t format_len, const char* serialization_string,
-    int64_t *result_size, int32_t array_sizes_cnt, int32_t string_lengths_cnt, int decimal_mode, int sign_mode, int round_mode, ...)
+static char* string_format_fortran_impl(lfortran_allocator_t* al,
+    char* result, int64_t result_capacity, bool result_allocator_owned,
+    const char* format, int64_t format_len, const char* serialization_string,
+    int64_t *result_size, int32_t array_sizes_cnt, int32_t string_lengths_cnt,
+    int decimal_mode, int sign_mode, int round_mode, va_list *args)
 {
-    va_list args;
-    va_start(args, round_mode);
-    char* result = (char*)ALLOCATOR_ALLOC(al, sizeof(char));
     result[0] = '\0';
     (*result_size) = 0;
     int64_t result_len = 0;     // Current cursor position
@@ -3408,7 +3448,7 @@ LFORTRAN_API char* _lcompilers_string_format_fortran(lfortran_allocator_t* al, c
     s_info.array_serialiation_start_index = create_stack();
     s_info.array_sizes_stack = create_stack();
     s_info.current_stop = 0;
-    s_info.current_arg_info.args = &args;
+    s_info.current_arg_info.args = args;
     s_info.current_element_type = NONE_TYPE;
     s_info.current_arg_info.is_complex = false;
     s_info.array_sizes.current_index = 0;
@@ -3417,20 +3457,24 @@ LFORTRAN_API char* _lcompilers_string_format_fortran(lfortran_allocator_t* al, c
     s_info.string_lengths.count = string_lengths_cnt;
     s_info.just_peeked = false;
 
-    int64_t* array_sizes = (int64_t*) internal_malloc(array_sizes_cnt * sizeof(int64_t));
+    int64_t* array_sizes = array_sizes_cnt > 0
+        ? (int64_t*) internal_malloc(array_sizes_cnt * sizeof(int64_t))
+        : NULL;
     for(int i=0; i<array_sizes_cnt; i++){
-        array_sizes[i] = va_arg(args, int64_t);
+        array_sizes[i] = va_arg(*args, int64_t);
     }
     s_info.array_sizes.ptr = array_sizes;
 
-    int64_t* string_lengths = (int64_t*) internal_malloc(string_lengths_cnt * sizeof(int64_t));
+    int64_t* string_lengths = string_lengths_cnt > 0
+        ? (int64_t*) internal_malloc(string_lengths_cnt * sizeof(int64_t))
+        : NULL;
     for(int i=0; i<string_lengths_cnt; i++){
-        string_lengths[i] = va_arg(args, int64_t);
+        string_lengths[i] = va_arg(*args, int64_t);
     }
     s_info.string_lengths.ptr = string_lengths;
 
     if (s_info.serialization_string[s_info.current_stop] != '\0') {
-        s_info.current_arg_info.current_arg = va_arg(args, void*);
+        s_info.current_arg_info.current_arg = va_arg(*args, void*);
     } else {
         s_info.current_arg_info.current_arg = NULL;
     }
@@ -3440,7 +3484,8 @@ LFORTRAN_API char* _lcompilers_string_format_fortran(lfortran_allocator_t* al, c
     {fprintf(stderr,"Internal Error : default formatting error\n");exit(1);}
 
     if(format == NULL){
-        default_formatting(al, &result, result_size, &s_info);
+        default_formatting(al, &result, &result_capacity, &result_allocator_owned,
+            result_size, &s_info);
         free_serialization_info(&s_info);
         return result;
     }
@@ -3538,7 +3583,8 @@ LFORTRAN_API char* _lcompilers_string_format_fortran(lfortran_allocator_t* al, c
                     result_len = content_end;
                 }
                 result[result_len] = '\0';
-                result = write_to_result_at_pos(al, result, &result_extent, result_len, "\n", 1);
+                result = write_to_result_at_pos(al, result, &result_capacity,
+                    &result_allocator_owned, &result_extent, result_len, "\n", 1);
                 result_len += 1;
                 content_end = result_len;  // reset for next record
             } else if (value[0] == '*') {
@@ -3556,7 +3602,8 @@ LFORTRAN_API char* _lcompilers_string_format_fortran(lfortran_allocator_t* al, c
                 char* inner_value = substring(value, 1, strlen(value) - 1);
                 int64_t val_len = 0;
                 char* unescaped_value = unescape_quoted_literal(inner_value, strlen(inner_value), quote_char, &val_len);
-                result = write_to_result_at_pos(al, result, &result_extent, result_len, unescaped_value, val_len);
+                result = write_to_result_at_pos(al, result, &result_capacity,
+                    &result_allocator_owned, &result_extent, result_len, unescaped_value, val_len);
                 result_len += val_len;
                 if (result_len > content_end) content_end = result_len;
                 internal_free(inner_value);
@@ -3570,8 +3617,8 @@ LFORTRAN_API char* _lcompilers_string_format_fortran(lfortran_allocator_t* al, c
                 // allocation when X is the last descriptor.
                 int64_t new_pos = result_len + 1;
                 if (new_pos > result_extent) {
-                    result = (char*)ALLOCATOR_REALLOC(al, result,
-                        (new_pos + 1) * sizeof(char));
+                    reserve_format_result(al, &result, &result_capacity,
+                        &result_allocator_owned, new_pos, result_extent);
                     memset(result + result_extent, ' ',
                         (size_t)(new_pos - result_extent));
                     result_extent = new_pos;
@@ -3621,8 +3668,8 @@ LFORTRAN_API char* _lcompilers_string_format_fortran(lfortran_allocator_t* al, c
                     if (spaces_needed > 0) {
                         int64_t new_pos = result_len + spaces_needed;
                         if (new_pos > result_extent) {
-                            result = (char*)ALLOCATOR_REALLOC(al, result,
-                                (new_pos + 1) * sizeof(char));
+                            reserve_format_result(al, &result, &result_capacity,
+                                &result_allocator_owned, new_pos, result_extent);
                             memset(result + result_extent, ' ',
                                 (size_t)(new_pos - result_extent));
                             result_extent = new_pos;
@@ -3636,8 +3683,8 @@ LFORTRAN_API char* _lcompilers_string_format_fortran(lfortran_allocator_t* al, c
                     int64_t record_start = get_current_record_start(search_pos, result);
                     int64_t target_len = record_start + (tab_position - 1);
                     if (target_len > result_extent) {
-                        result = (char*)ALLOCATOR_REALLOC(al, result,
-                            (target_len + 1) * sizeof(char));
+                        reserve_format_result(al, &result, &result_capacity,
+                            &result_allocator_owned, target_len, result_extent);
                         memset(result + result_extent, ' ',
                             (size_t)(target_len - result_extent));
                         result_extent = target_len;
@@ -3666,8 +3713,8 @@ LFORTRAN_API char* _lcompilers_string_format_fortran(lfortran_allocator_t* al, c
                             type = "CHARACTER";
                             break;
                     }
-                    ALLOCATOR_DEALLOC(al, result);
-                    result = (char*)ALLOCATOR_ALLOC(al, 150 * sizeof(char));
+                    replace_format_result(al, &result, &result_capacity,
+                        &result_allocator_owned, 150);
                     sprintf(result, " Runtime Error : Got argument of type (%s), while the format specifier is (%c)\n", type, value[0]);
                     // Special indication for error --> "\b" to be handled by `lfortran_print` or `lfortran_file_write`
                     result[0] = '\b';
@@ -3725,18 +3772,21 @@ LFORTRAN_API char* _lcompilers_string_format_fortran(lfortran_allocator_t* al, c
                         s_info.current_element_type == INTEGER_64_TYPE ) {
                         char achar_val = (char)((unsigned char)integer_val);
                         if (strlen(value) == 1) {
-                            result = write_to_result_at_pos(al, result, &result_extent, result_len, &achar_val, 1);
+                            result = write_to_result_at_pos(al, result, &result_capacity,
+                                &result_allocator_owned, &result_extent, result_len, &achar_val, 1);
                             result_len += 1;
                         } else {
                             int64_t width = atoi(value + 1);
                             if (width <= 1) {
-                                result = write_to_result_at_pos(al, result, &result_extent, result_len, &achar_val, 1);
+                                result = write_to_result_at_pos(al, result, &result_capacity,
+                                    &result_allocator_owned, &result_extent, result_len, &achar_val, 1);
                                 result_len += 1;
                             } else {
                                 char *field = (char*)internal_malloc((size_t)width);
                                 memset(field, ' ', (size_t)width);
                                 field[width - 1] = achar_val;
-                                result = write_to_result_at_pos(al, result, &result_extent, result_len, field, width);
+                                result = write_to_result_at_pos(al, result, &result_capacity,
+                                    &result_allocator_owned, &result_extent, result_len, field, width);
                                 result_len += width;
                                 internal_free(field);
                             }
@@ -3752,7 +3802,8 @@ LFORTRAN_API char* _lcompilers_string_format_fortran(lfortran_allocator_t* al, c
                             s_info.current_arg_info.current_arg,
                             s_info.current_element_type), &temp_buf);
                         int64_t temp_len = strlen(temp_buf);
-                        result = write_to_result_at_pos(al, result, &result_extent, result_len, temp_buf, temp_len);
+                        result = write_to_result_at_pos(al, result, &result_capacity,
+                            &result_allocator_owned, &result_extent, result_len, temp_buf, temp_len);
                         result_len += temp_len;
                         internal_free(temp_buf);
                         if (result_len > content_end) content_end = result_len;
@@ -3762,7 +3813,9 @@ LFORTRAN_API char* _lcompilers_string_format_fortran(lfortran_allocator_t* al, c
                     if (arg == NULL) continue;
                     if (strlen(value) == 1) {
                         // Simple 'A' format - use full string length, preserve embedded nulls
-                        result = write_to_result_at_pos(al, result, &result_extent, result_len, arg, s_info.current_arg_info.current_string_len);
+                        result = write_to_result_at_pos(al, result, &result_capacity,
+                            &result_allocator_owned, &result_extent, result_len, arg,
+                            s_info.current_arg_info.current_string_len);
                         result_len += s_info.current_arg_info.current_string_len;
                     } else {
                         // 'Aw' format with width: right-justify if width > len, truncate leading part if width < len.
@@ -3776,7 +3829,8 @@ LFORTRAN_API char* _lcompilers_string_format_fortran(lfortran_allocator_t* al, c
                             memset(field, ' ', (size_t)pad_len);
                         }
                         memcpy(field + pad_len, arg, (size_t)copy_len);
-                        result = write_to_result_at_pos(al, result, &result_extent, result_len, field, width);
+                        result = write_to_result_at_pos(al, result, &result_capacity,
+                            &result_allocator_owned, &result_extent, result_len, field, width);
                         result_len += width;
                         internal_free(field);
                     }
@@ -3785,7 +3839,8 @@ LFORTRAN_API char* _lcompilers_string_format_fortran(lfortran_allocator_t* al, c
                     char* temp_buf = (char*)internal_malloc(1); temp_buf[0] = '\0';
                     handle_integer(value, integer_val, &temp_buf, is_SP_specifier);
                     int64_t temp_len = strlen(temp_buf);
-                    result = write_to_result_at_pos(al, result, &result_extent, result_len, temp_buf, temp_len);
+                    result = write_to_result_at_pos(al, result, &result_capacity,
+                        &result_allocator_owned, &result_extent, result_len, temp_buf, temp_len);
                     result_len += temp_len;
                     internal_free(temp_buf);
                 } else if (tolower(value[0]) == 'b') {
@@ -3826,7 +3881,8 @@ LFORTRAN_API char* _lcompilers_string_format_fortran(lfortran_allocator_t* al, c
                             bit_size = 64;
                         }
                     } else {
-                        result = write_to_result_at_pos(al, result, &result_extent, result_len, "<unsupported>", 13);
+                        result = write_to_result_at_pos(al, result, &result_capacity,
+                            &result_allocator_owned, &result_extent, result_len, "<unsupported>", 13);
                         result_len += 13;
                         break;
                     }
@@ -3852,11 +3908,13 @@ LFORTRAN_API char* _lcompilers_string_format_fortran(lfortran_allocator_t* al, c
                     int bin_len = strlen(binary_str);
 
                     if (width == 0) {
-                        result = write_to_result_at_pos(al, result, &result_extent, result_len, binary_str, bin_len);
+                        result = write_to_result_at_pos(al, result, &result_capacity,
+                            &result_allocator_owned, &result_extent, result_len, binary_str, bin_len);
                         result_len += bin_len;
                     } else if (bin_len > width) {
                         // Output asterisks for overflow
-                        result = (char*)ALLOCATOR_REALLOC(al, result, result_len + width + 1);
+                        reserve_format_result(al, &result, &result_capacity,
+                            &result_allocator_owned, result_len + width, result_extent);
                         memset(result + result_len, '*', width);
                         result_len += width;
                         result[result_len] = '\0';
@@ -3880,12 +3938,14 @@ LFORTRAN_API char* _lcompilers_string_format_fortran(lfortran_allocator_t* al, c
                         // Step 2: Pad with spaces to meet width
                         int padding_needed = width - bin_len;
                         if (padding_needed > 0) {
-                            result = (char*)ALLOCATOR_REALLOC(al, result, result_len + padding_needed + 1);
+                            reserve_format_result(al, &result, &result_capacity,
+                                &result_allocator_owned, result_len + padding_needed, result_extent);
                             memset(result + result_len, ' ', padding_needed);
                             result_len += padding_needed;
                             result[result_len] = '\0';
                         }
-                        result = write_to_result_at_pos(al, result, &result_extent, result_len, binary_str, bin_len);
+                        result = write_to_result_at_pos(al, result, &result_capacity,
+                            &result_allocator_owned, &result_extent, result_len, binary_str, bin_len);
                         result_len += bin_len;
                     }
                 } else if (tolower(value[0]) == 'z') {
@@ -3893,7 +3953,8 @@ LFORTRAN_API char* _lcompilers_string_format_fortran(lfortran_allocator_t* al, c
                     handle_hexadecimal(value, s_info.current_element_type,
                         s_info.current_arg_info.current_arg, &temp_buf);
                     int64_t temp_len = strlen(temp_buf);
-                    result = write_to_result_at_pos(al, result, &result_extent, result_len, temp_buf, temp_len);
+                    result = write_to_result_at_pos(al, result, &result_capacity,
+                        &result_allocator_owned, &result_extent, result_len, temp_buf, temp_len);
                     result_len += temp_len;
                     internal_free(temp_buf);
                 } else if (tolower(value[0]) == 'o') {
@@ -3901,7 +3962,8 @@ LFORTRAN_API char* _lcompilers_string_format_fortran(lfortran_allocator_t* al, c
                     handle_octal(value, s_info.current_element_type,
                         s_info.current_arg_info.current_arg, &temp_buf);
                     int64_t temp_len = strlen(temp_buf);
-                    result = write_to_result_at_pos(al, result, &result_extent, result_len, temp_buf, temp_len);
+                    result = write_to_result_at_pos(al, result, &result_capacity,
+                        &result_allocator_owned, &result_extent, result_len, temp_buf, temp_len);
                     result_len += temp_len;
                     internal_free(temp_buf);
                 } else if (tolower(value[0]) == 'g') {
@@ -4045,7 +4107,8 @@ LFORTRAN_API char* _lcompilers_string_format_fortran(lfortran_allocator_t* al, c
                             buffer[width] = '\0';
                             buf_len = width;
                         }
-                        result = write_to_result_at_pos(al, result, &result_extent, result_len, buffer, buf_len);
+                        result = write_to_result_at_pos(al, result, &result_capacity,
+                            &result_allocator_owned, &result_extent, result_len, buffer, buf_len);
                         result_len += buf_len;
                     } else if (s_info.current_element_type == INTEGER_8_TYPE ||
                                s_info.current_element_type == INTEGER_16_TYPE ||
@@ -4053,17 +4116,22 @@ LFORTRAN_API char* _lcompilers_string_format_fortran(lfortran_allocator_t* al, c
                                s_info.current_element_type == INTEGER_64_TYPE) {
                         snprintf(buffer, sizeof(buffer), "%"PRId64, integer_val);
                         int64_t buf_len = strlen(buffer);
-                        result = write_to_result_at_pos(al, result, &result_extent, result_len, buffer, buf_len);
+                        result = write_to_result_at_pos(al, result, &result_capacity,
+                            &result_allocator_owned, &result_extent, result_len, buffer, buf_len);
                         result_len += buf_len;
                     } else if (s_info.current_element_type == CHAR_PTR_TYPE ||
                         s_info.current_element_type == STRING_DESCRIPTOR_TYPE) {
-                        result = write_to_result_at_pos(al, result, &result_extent, result_len, char_val, s_info.current_arg_info.current_string_len);
+                        result = write_to_result_at_pos(al, result, &result_capacity,
+                            &result_allocator_owned, &result_extent, result_len, char_val,
+                            s_info.current_arg_info.current_string_len);
                         result_len += s_info.current_arg_info.current_string_len;
                     } else if (is_logical_type(s_info.current_element_type)) {
-                        result = write_to_result_at_pos(al, result, &result_extent, result_len, bool_val ? "T" : "F", 1);
+                        result = write_to_result_at_pos(al, result, &result_capacity,
+                            &result_allocator_owned, &result_extent, result_len, bool_val ? "T" : "F", 1);
                         result_len += 1;
                     } else {
-                        result = write_to_result_at_pos(al, result, &result_extent, result_len, "<unsupported>", 13);
+                        result = write_to_result_at_pos(al, result, &result_capacity,
+                            &result_allocator_owned, &result_extent, result_len, "<unsupported>", 13);
                         result_len += 13;
                     }
                 } else if (tolower(value[0]) == 'd') {
@@ -4071,7 +4139,8 @@ LFORTRAN_API char* _lcompilers_string_format_fortran(lfortran_allocator_t* al, c
                     char* temp_buf = (char*)internal_malloc(1); temp_buf[0] = '\0';
                     handle_decimal(value, double_val, scale, &temp_buf, "D", is_SP_specifier, rounding_mode);
                     int64_t temp_len = strlen(temp_buf);
-                    result = write_to_result_at_pos(al, result, &result_extent, result_len, temp_buf, temp_len);
+                    result = write_to_result_at_pos(al, result, &result_capacity,
+                        &result_allocator_owned, &result_extent, result_len, temp_buf, temp_len);
                     result_len += temp_len;
                     internal_free(temp_buf);
                 } else if (tolower(value[0]) == 'e') {
@@ -4091,7 +4160,8 @@ LFORTRAN_API char* _lcompilers_string_format_fortran(lfortran_allocator_t* al, c
                         handle_decimal(value, double_val, scale, &temp_buf, "E", is_SP_specifier, rounding_mode);
                     }
                     int64_t temp_len = strlen(temp_buf);
-                    result = write_to_result_at_pos(al, result, &result_extent, result_len, temp_buf, temp_len);
+                    result = write_to_result_at_pos(al, result, &result_capacity,
+                        &result_allocator_owned, &result_extent, result_len, temp_buf, temp_len);
                     result_len += temp_len;
                     internal_free(temp_buf);
                 } else if (tolower(value[0]) == 'f') {
@@ -4111,7 +4181,8 @@ LFORTRAN_API char* _lcompilers_string_format_fortran(lfortran_allocator_t* al, c
                         }
                     }
                     int64_t temp_len = strlen(temp_buf);
-                    result = write_to_result_at_pos(al, result, &result_extent, result_len, temp_buf, temp_len);
+                    result = write_to_result_at_pos(al, result, &result_capacity,
+                        &result_allocator_owned, &result_extent, result_len, temp_buf, temp_len);
                     result_len += temp_len;
                     internal_free(temp_buf);
                 } else if (tolower(value[0]) == 'l') {
@@ -4121,7 +4192,8 @@ LFORTRAN_API char* _lcompilers_string_format_fortran(lfortran_allocator_t* al, c
                     char* temp_buf = (char*)internal_malloc(1); temp_buf[0] = '\0';
                     handle_logical(value, val, &temp_buf);
                     int64_t temp_len = strlen(temp_buf);
-                    result = write_to_result_at_pos(al, result, &result_extent, result_len, temp_buf, temp_len);
+                    result = write_to_result_at_pos(al, result, &result_capacity,
+                        &result_allocator_owned, &result_extent, result_len, temp_buf, temp_len);
                     result_len += temp_len;
                     internal_free(temp_buf);
                 } else if (strlen(value) != 0) {
@@ -4133,8 +4205,8 @@ LFORTRAN_API char* _lcompilers_string_format_fortran(lfortran_allocator_t* al, c
         if(BreakWhileLoop) break;
         if (move_to_next_element(&s_info, true)) {
             if (!consumed_data_item_in_cycle) {
-                ALLOCATOR_DEALLOC(al, result);
-                result = (char*)ALLOCATOR_ALLOC(al, 128 * sizeof(char));
+                replace_format_result(al, &result, &result_capacity,
+                    &result_allocator_owned, 128);
                 sprintf(result, " Runtime Error : data transfer list has more items than format descriptors\n");
                 // Special indication for error --> "\b" to be handled by `lfortran_print` or `lfortran_file_write`
                 result[0] = '\b';
@@ -4151,7 +4223,8 @@ LFORTRAN_API char* _lcompilers_string_format_fortran(lfortran_allocator_t* al, c
                     result_len = content_end;
                 }
                 result[result_len] = '\0';
-                result = write_to_result_at_pos(al, result, &result_extent, result_len, "\n", 1);
+                result = write_to_result_at_pos(al, result, &result_capacity,
+                    &result_allocator_owned, &result_extent, result_len, "\n", 1);
                 result_len += 1;
                 content_end = result_len;
             }
@@ -4183,6 +4256,37 @@ LFORTRAN_API char* _lcompilers_string_format_fortran(lfortran_allocator_t* al, c
 
     (*result_size) = result_extent;
     return result;
+}
+
+LFORTRAN_API char* _lcompilers_string_format_fortran(lfortran_allocator_t* al, const char* format, int64_t format_len, const char* serialization_string,
+    int64_t *result_size, int32_t array_sizes_cnt, int32_t string_lengths_cnt, int decimal_mode, int sign_mode, int round_mode, ...)
+{
+    va_list args;
+    va_start(args, round_mode);
+    char* result = (char*)ALLOCATOR_ALLOC(al, sizeof(char));
+    return string_format_fortran_impl(al, result, 0, true, format, format_len,
+        serialization_string, result_size, array_sizes_cnt, string_lengths_cnt,
+        decimal_mode, sign_mode, round_mode, &args);
+}
+
+LFORTRAN_API char* _lcompilers_string_format_fortran_stack(lfortran_allocator_t* al, char* result_buffer,
+    int64_t result_buffer_len, const char* format, int64_t format_len, const char* serialization_string,
+    int64_t *result_size, int32_t array_sizes_cnt, int32_t string_lengths_cnt, int decimal_mode, int sign_mode, int round_mode, ...)
+{
+    va_list args;
+    va_start(args, round_mode);
+    bool result_allocator_owned = false;
+    int64_t result_capacity = result_buffer_len - 1;
+    char* result = result_buffer;
+    if (result == NULL || result_buffer_len <= 0) {
+        result = (char*)ALLOCATOR_ALLOC(al, sizeof(char));
+        result_capacity = 0;
+        result_allocator_owned = true;
+    }
+    return string_format_fortran_impl(al, result, result_capacity,
+        result_allocator_owned, format, format_len, serialization_string,
+        result_size, array_sizes_cnt, string_lengths_cnt, decimal_mode,
+        sign_mode, round_mode, &args);
 }
 
 /*

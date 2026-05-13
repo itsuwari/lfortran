@@ -1,0 +1,13 @@
+{
+    "basename": "c-c_backend_formatted_fortran_stack_write_01-e40ebfb",
+    "cmd": "lfortran --no-color --show-c {infile}",
+    "infile": "tests/../integration_tests/c_backend_formatted_fortran_stack_write_01.f90",
+    "infile_hash": "0a162b2b1488b6de6879757685858f8deb56316bc867af4f3b40c49b",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": "c-c_backend_formatted_fortran_stack_write_01-e40ebfb.stdout",
+    "stdout_hash": "940a6441a5eb3a76f7b9095a0ccea326c419481b8ee94604af6a62f8",
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

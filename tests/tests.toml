@@ -5683,6 +5683,14 @@ c_forbid_pattern = true
 c_forbid_pattern_value = "__lfortran_write_heap_buffer_"
 
 [[test]]
+filename = "../integration_tests/c_backend_formatted_fortran_stack_write_01.f90"
+c = true
+c_require_pattern = true
+c_require_pattern_value = "_lcompilers_string_format_fortran_stack"
+c_forbid_pattern = true
+c_forbid_pattern_value = "_lcompilers_string_format_fortran(_lfortran_get_default_allocator()"
+
+[[test]]
 filename = "c_backend_iso_fortran_env_no_data_01.f90"
 c_forbid_pattern = true
 c_forbid_pattern_value = "lfortran_intrinsic_iso_fortran_env__integer_kinds"

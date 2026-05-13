@@ -7551,10 +7551,13 @@ R"(    // Initialise Numpy
                 counter += 1;
                 std::string size_name = "__lfortran_write_size_" + unique_suffix;
                 std::string buffer_name = "__lfortran_write_buffer_" + unique_suffix;
+                std::string stack_buffer_name = "__lfortran_write_stack_buffer_" + unique_suffix;
 
                 src = format_arg_setup + indent + "int64_t " + size_name + " = 0;\n";
+                src += indent + "char " + stack_buffer_name + "[4096];\n";
                 src += indent + "char *" + buffer_name
-                    + " = _lcompilers_string_format_fortran(_lfortran_get_default_allocator(), "
+                    + " = _lcompilers_string_format_fortran_stack(_lfortran_get_default_allocator(), "
+                    + stack_buffer_name + ", sizeof(" + stack_buffer_name + "), "
                     + format_value + ", (int64_t)(" + format_len + "), \""
                     + CUtils::escape_c_string_literal(serialization) + "\", &"
                     + size_name + ", " + std::to_string(array_sizes.size()) + ", "
@@ -7585,7 +7588,10 @@ R"(    // Initialise Numpy
                         + buffer_name + ", " + size_name + ", "
                         + end_arg.first + ", " + end_arg.second + ");\n";
                 }
-                src += indent + "_lfortran_free_alloc(_lfortran_get_default_allocator(), " + buffer_name + ");\n";
+                src += indent + "if (" + buffer_name + " != " + stack_buffer_name + ") {\n";
+                src += indent + std::string(indentation_spaces, ' ')
+                    + "_lfortran_free_alloc(_lfortran_get_default_allocator(), " + buffer_name + ");\n";
+                src += indent + "}\n";
                 return;
             }
 

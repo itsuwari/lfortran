@@ -1,0 +1,13 @@
+{
+    "basename": "c_require_pattern-c_backend_formatted_fortran_stack_write_01-5890615",
+    "cmd": "lfortran --no-color --show-c {infile} | grep -F -q \"_lcompilers_string_format_fortran_stack\" #",
+    "infile": "tests/../integration_tests/c_backend_formatted_fortran_stack_write_01.f90",
+    "infile_hash": "0a162b2b1488b6de6879757685858f8deb56316bc867af4f3b40c49b",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

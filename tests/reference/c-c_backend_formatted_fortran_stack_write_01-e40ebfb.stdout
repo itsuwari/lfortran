@@ -1,0 +1,227 @@
+#include <inttypes.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include <stdlib.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <string.h>
+#include <lfortran_intrinsics.h>
+
+
+#ifndef LFORTRAN_C_BACKEND_CONSTRUCTOR
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_CONSTRUCTOR __attribute__((constructor))
+#else
+#define LFORTRAN_C_BACKEND_CONSTRUCTOR
+#endif
+#endif
+#ifndef LFORTRAN_C_BACKEND_WEAK
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_WEAK __attribute__((weak))
+#else
+#define LFORTRAN_C_BACKEND_WEAK static
+#endif
+#endif
+#ifndef LFORTRAN_C_BACKEND_COMMON
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_COMMON __attribute__((common))
+#else
+#define LFORTRAN_C_BACKEND_COMMON
+#endif
+#endif
+
+
+struct dimension_descriptor
+{
+    int32_t lower_bound, length, stride;
+};
+#ifndef LFORTRAN_C_BACKEND_CONSTRUCTOR
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_CONSTRUCTOR __attribute__((constructor))
+#else
+#define LFORTRAN_C_BACKEND_CONSTRUCTOR
+#endif
+#endif
+#ifndef LFORTRAN_C_BACKEND_WEAK
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_WEAK __attribute__((weak))
+#else
+#define LFORTRAN_C_BACKEND_WEAK static
+#endif
+#endif
+#ifndef LFORTRAN_C_BACKEND_COMMON
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_COMMON __attribute__((common))
+#else
+#define LFORTRAN_C_BACKEND_COMMON
+#endif
+#endif
+
+int32_t __lfortran__lcompilers_index_str(char * str, char * substr, bool back, int32_t kind);
+int32_t __lfortran__lcompilers_index_str1(char * str, char * substr, bool back, int32_t kind);
+int32_t __lfortran__lcompilers_index_str2(char * str, char * substr, bool back, int32_t kind);
+
+
+
+
+// Implementations
+int32_t __lfortran__lcompilers_index_str(char * str, char * substr, bool back, int32_t kind)
+{
+    int32_t _lcompilers_index_str;
+    bool found;
+    int32_t i;
+    int32_t j;
+    int32_t k;
+    int32_t pos;
+    _lcompilers_index_str = 0;
+    i = 1;
+    found = true;
+    if (((str) != NULL ? _lfortran_str_len(str) : 0) < ((substr) != NULL ? _lfortran_str_len(substr) : 0)) {
+        found = false;
+    }
+    while (i < ((str) != NULL ? _lfortran_str_len(str) : 0) + 1 && found == true) {
+        k = 0;
+        j = 1;
+        while (j <= ((substr) != NULL ? _lfortran_str_len(substr) : 0) && found == true) {
+            pos = i + k;
+            if (str_compare((str + (((pos) - 1))), ((pos) - (((pos) - 1))), (substr + (((j) - 1))), ((j) - (((j) - 1))))  !=  0) {
+                found = false;
+            }
+            j = j + 1;
+            k = k + 1;
+        }
+        if (found == true) {
+            _lcompilers_index_str = i;
+            found = back;
+        } else {
+            found = true;
+        }
+        i = i + 1;
+    }
+    return _lcompilers_index_str;
+}
+
+int32_t __lfortran__lcompilers_index_str1(char * str, char * substr, bool back, int32_t kind)
+{
+    int32_t _lcompilers_index_str1;
+    bool found;
+    int32_t i;
+    int32_t j;
+    int32_t k;
+    int32_t pos;
+    _lcompilers_index_str1 = 0;
+    i = 1;
+    found = true;
+    if (((str) != NULL ? _lfortran_str_len(str) : 0) < ((substr) != NULL ? _lfortran_str_len(substr) : 0)) {
+        found = false;
+    }
+    while (i < ((str) != NULL ? _lfortran_str_len(str) : 0) + 1 && found == true) {
+        k = 0;
+        j = 1;
+        while (j <= ((substr) != NULL ? _lfortran_str_len(substr) : 0) && found == true) {
+            pos = i + k;
+            if (str_compare((str + (((pos) - 1))), ((pos) - (((pos) - 1))), (substr + (((j) - 1))), ((j) - (((j) - 1))))  !=  0) {
+                found = false;
+            }
+            j = j + 1;
+            k = k + 1;
+        }
+        if (found == true) {
+            _lcompilers_index_str1 = i;
+            found = back;
+        } else {
+            found = true;
+        }
+        i = i + 1;
+    }
+    return _lcompilers_index_str1;
+}
+
+int32_t __lfortran__lcompilers_index_str2(char * str, char * substr, bool back, int32_t kind)
+{
+    int32_t _lcompilers_index_str2;
+    bool found;
+    int32_t i;
+    int32_t j;
+    int32_t k;
+    int32_t pos;
+    _lcompilers_index_str2 = 0;
+    i = 1;
+    found = true;
+    if (((str) != NULL ? _lfortran_str_len(str) : 0) < ((substr) != NULL ? _lfortran_str_len(substr) : 0)) {
+        found = false;
+    }
+    while (i < ((str) != NULL ? _lfortran_str_len(str) : 0) + 1 && found == true) {
+        k = 0;
+        j = 1;
+        while (j <= ((substr) != NULL ? _lfortran_str_len(substr) : 0) && found == true) {
+            pos = i + k;
+            if (str_compare((str + (((pos) - 1))), ((pos) - (((pos) - 1))), (substr + (((j) - 1))), ((j) - (((j) - 1))))  !=  0) {
+                found = false;
+            }
+            j = j + 1;
+            k = k + 1;
+        }
+        if (found == true) {
+            _lcompilers_index_str2 = i;
+            found = back;
+        } else {
+            found = true;
+        }
+        i = i + 1;
+    }
+    return _lcompilers_index_str2;
+}
+
+int main(int argc, char* argv[])
+{
+    _lpython_set_argv(argc, argv);
+    lfortran_allocator_t* __lfortran_default_allocator = _lfortran_get_default_allocator();
+    int32_t i;
+    char __lfortran_fixed_char_lfortran_iomsg[1] = {0}; char *lfortran_iomsg = __lfortran_fixed_char_lfortran_iomsg;
+    char __lfortran_fixed_char_lfortran_iomsg1[1] = {0}; char *lfortran_iomsg1 = __lfortran_fixed_char_lfortran_iomsg1;
+    char __lfortran_fixed_char_line[96] = {0}; char *line = __lfortran_fixed_char_line;
+    char __lfortran_fixed_char_long_line[4104] = {0}; char *long_line = __lfortran_fixed_char_long_line;
+    bool ok;
+    float x;
+    i = 42;
+    x = 0x1.a00000p+1f;
+    ok = true;
+    int64_t __lfortran_write_size_0 = 0;
+    char __lfortran_write_stack_buffer_0[4096];
+    char *__lfortran_write_buffer_0 = _lcompilers_string_format_fortran_stack(__lfortran_default_allocator, __lfortran_write_stack_buffer_0, sizeof(__lfortran_write_stack_buffer_0), (char*)"(i4,1x,f7.2,1x,l2)", (int64_t)(18), "I4,R4,L32", &__lfortran_write_size_0, 0, 0, 0, 0, 0, &((int32_t){i}), &((float){x}), &((bool){ok}));
+    int64_t __lfortran_unit_len = (int64_t)(96);
+    if (line == NULL) line = (char*) _lfortran_string_malloc_alloc(__lfortran_default_allocator, __lfortran_unit_len);
+    _lfortran_string_write(__lfortran_default_allocator, &(line), false, false, false, 1, &__lfortran_unit_len, NULL, "%s", 2, __lfortran_write_buffer_0, __lfortran_write_size_0);
+    if (__lfortran_write_buffer_0 != __lfortran_write_stack_buffer_0) {
+        _lfortran_free_alloc(__lfortran_default_allocator, __lfortran_write_buffer_0);
+    }
+    if (__lfortran__lcompilers_index_str(line, (char*)"42", false, 4) == 0) {
+        exit(1);
+    }
+    if (__lfortran__lcompilers_index_str1(line, (char*)"3.25", false, 4) == 0) {
+        exit(2);
+    }
+    if (__lfortran__lcompilers_index_str2(line, (char*)"T", false, 4) == 0) {
+        exit(3);
+    }
+    int64_t __lfortran_write_size_1 = 0;
+    char __lfortran_write_stack_buffer_1[4096];
+    char *__lfortran_write_buffer_1 = _lcompilers_string_format_fortran_stack(__lfortran_default_allocator, __lfortran_write_stack_buffer_1, sizeof(__lfortran_write_stack_buffer_1), (char*)"(i4100)", (int64_t)(7), "I4", &__lfortran_write_size_1, 0, 0, 0, 0, 0, &((int32_t){7}));
+    int64_t __lfortran_unit_len1 = (int64_t)(4104);
+    if (long_line == NULL) long_line = (char*) _lfortran_string_malloc_alloc(__lfortran_default_allocator, __lfortran_unit_len1);
+    _lfortran_string_write(__lfortran_default_allocator, &(long_line), false, false, false, 1, &__lfortran_unit_len1, NULL, "%s", 2, __lfortran_write_buffer_1, __lfortran_write_size_1);
+    if (__lfortran_write_buffer_1 != __lfortran_write_stack_buffer_1) {
+        _lfortran_free_alloc(__lfortran_default_allocator, __lfortran_write_buffer_1);
+    }
+    if (str_compare((long_line + (((4100) - 1))), ((4100) - (((4100) - 1))), (char*)"7", 1)  !=  0) {
+        exit(4);
+    }
+    _lfortran_string_len_unregister(long_line);
+    _lfortran_string_len_unregister(line);
+    _lfortran_string_len_unregister(lfortran_iomsg1);
+    _lfortran_string_len_unregister(lfortran_iomsg);
+    return 0;
+}

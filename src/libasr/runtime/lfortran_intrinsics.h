@@ -627,6 +627,7 @@ LFORTRAN_API void _lcompilers_runtime_error(lfortran_allocator_t* al, Label *lab
 #define LFORTRAN_IOSTAT_NML_PARSE_ERROR             5018  // General parsing error
 
 LFORTRAN_API char* _lcompilers_string_format_fortran(lfortran_allocator_t* al, const char* format, int64_t format_len, const char* serialization_string, int64_t *result_size, int32_t array_sizes_cnt, int32_t string_lengths_cnt, int32_t decimal_mode, int32_t sign_mode, int32_t round_mode, ...);
+LFORTRAN_API char* _lcompilers_string_format_fortran_stack(lfortran_allocator_t* al, char* result_buffer, int64_t result_buffer_len, const char* format, int64_t format_len, const char* serialization_string, int64_t *result_size, int32_t array_sizes_cnt, int32_t string_lengths_cnt, int32_t decimal_mode, int32_t sign_mode, int32_t round_mode, ...);
 LFORTRAN_API char* _lfortran_alloc_copy_free(lfortran_allocator_t* al, char* malloc_buf, int64_t size);
 LFORTRAN_API uint64_t _lfortran_i64sys_clock_count(void);
 LFORTRAN_API int64_t _lfortran_i64sys_clock_count_rate(void);
