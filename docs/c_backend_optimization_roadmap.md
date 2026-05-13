@@ -74,7 +74,10 @@ Observed top contributors:
    split constants-data translation units when the data is fixed-size and has a
    typed C initializer. This keeps the procedure/shared TUs from carrying the
    initializer payload and adds no runtime copy or floating-point reordering.
-3. Later: deduplicate emitted helpers by structural signature.
+3. In progress: deduplicate emitted helpers/scaffolding by ownership and
+   structural signature. First checkpoint suppresses duplicate type-bound
+   parent-registration constructors for loaded modules; remaining helper
+   families still need structural analysis before backend changes.
 4. Later: broaden no-copy descriptor/view lowering.
 5. Always: avoid math/codegen transformations that reorder floating-point
    operations.
@@ -138,6 +141,57 @@ parameter arrays are no longer emitted as inline `static const double` data in
 the referencing TUs, and the C-emitted run passes. This is a compile-structure
 win, not a full literal-parse elimination; the latter is tracked as a separate
 binary/object-data design problem.
+
+### 2026-05-13: Loaded-Module Type-Parent Registration Ownership
+
+Hypothesis: type-bound parent-registration constructors should be emitted by
+the object that owns the defining module. Consumer objects that load the module
+from `.mod` need the type declarations, but re-emitting the constructor repeats
+compile-time scaffolding and startup work.
+
+Exact change: split-C aggregate declaration collection now suppresses
+type-bound parent-registration emission for `m_loaded_from_mod` modules, using
+the same ownership rule already applied to struct cleanup/runtime-info
+registration. Current-module child types still emit their own parent
+registration.
+
+Expected win: fewer generated constructor bodies and force-link declarations in
+consumer split objects. This is a no-arithmetic change and does not touch
+floating-point execution.
+
+Correctness risk: low when the module object is linked, because the defining
+module still emits the registration. The focused test compiles the module and a
+separate consumer to catch accidental consumer-side re-emission.
+
+Test evidence:
+
+- Red check before the backend change: the consumer split `main_shared.c`
+  contained `_lfortran_register_c_type_parent(...)`.
+- `cmake --build build -j`
+- `PATH=build/src/bin:$PATH python3 run_tests.py -t c_backend_tbp_parent_registration_use_01 -s`
+- `PATH=build/src/bin:$PATH lfortran --backend=c --separate-compilation tests/c_backend_tbp_parent_registration_mod_01.f90 tests/c_backend_tbp_parent_registration_use_01.f90`
+- Existing split-C checks rerun:
+  `c_backend_large_parameter_array_data_unit_01`,
+  `c_backend_header_only_module_01`, and
+  `c_backend_specialized_pass_array_no_copy_01`
+
+Focused generated-C budget after the change:
+
+| Metric | Value |
+| --- | ---: |
+| split directories | 2 |
+| generated `.c` files | 4 |
+| generated `.c` size | 4204 bytes |
+| generated headers | 2 |
+| tbp parent registrations | 1 |
+| consumer-side parent registrations | 0 |
+
+Result: keep. This removes a repeated ownership-side effect without changing
+numeric code. The broader helper problem remains: old tblite generated-C
+artifacts still show 1394 `tbp_parent_registration` pattern hits, 2594
+`struct_deepcopy` hits, 14152 array-view hits, and heavy descriptor/temporary
+scaffolding. The next dedupe changes must be based on measured duplicate helper
+families, not name-only matches.
 
 ## Design Goals
 

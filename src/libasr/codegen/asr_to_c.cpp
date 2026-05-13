@@ -49,6 +49,7 @@ public:
     std::set<int64_t> deferred_c_struct_cleanup_type_ids;
     std::string deferred_c_struct_cleanup_defs;
     std::set<int64_t> emitted_c_struct_runtime_info_type_ids;
+    bool suppress_c_tbp_parent_registration = false;
     bool suppress_c_struct_cleanup_registration = false;
     bool suppress_c_struct_runtime_info_registration = false;
 
@@ -1762,11 +1763,14 @@ R"(
                 }
                 bool saved_cleanup_suppress = suppress_c_struct_cleanup_registration;
                 bool saved_runtime_info_suppress = suppress_c_struct_runtime_info_registration;
+                bool saved_tbp_parent_suppress = suppress_c_tbp_parent_registration;
                 suppress_c_struct_cleanup_registration = mod->m_loaded_from_mod;
                 suppress_c_struct_runtime_info_registration = mod->m_loaded_from_mod;
+                suppress_c_tbp_parent_registration = mod->m_loaded_from_mod;
                 visit_symbol(*struct_sym);
                 suppress_c_struct_cleanup_registration = saved_cleanup_suppress;
                 suppress_c_struct_runtime_info_registration = saved_runtime_info_suppress;
+                suppress_c_tbp_parent_registration = saved_tbp_parent_suppress;
                 decls += src;
             }
         }
@@ -2041,6 +2045,9 @@ R"(
 
     void append_c_tbp_parent_registration(const ASR::Struct_t &x,
             std::string &src_dest) {
+        if (suppress_c_tbp_parent_registration) {
+            return;
+        }
         SymbolTable *saved_scope = current_scope;
         current_scope = global_scope;
         if (!defer_c_tbp_parent_registration_defs) {
@@ -4249,6 +4256,7 @@ R"(
         emitted_c_tbp_parent_force_link_type_ids.clear();
         defer_c_struct_runtime_info_defs = false;
         deferred_c_struct_runtime_info_defs.clear();
+        suppress_c_tbp_parent_registration = false;
         suppress_c_struct_cleanup_registration = false;
         suppress_c_struct_runtime_info_registration = false;
         // All loose statements must be converted to a function, so the items
@@ -4441,6 +4449,7 @@ R"(
         emitted_c_struct_runtime_info_type_ids.clear();
         required_c_struct_runtime_info_type_ids.clear();
         emitted_c_tbp_parent_force_link_type_ids.clear();
+        suppress_c_tbp_parent_registration = false;
         suppress_c_struct_cleanup_registration = false;
         suppress_c_struct_runtime_info_registration = false;
         global_scope = x.m_symtab;
