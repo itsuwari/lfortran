@@ -70,13 +70,74 @@ Observed top contributors:
 ## Active Action List
 
 1. Done: add generated-C budget reporting.
-2. Next: validate current large-constant/static-data coverage on a fresh split-C
-   artifact, then extend only the missed cases that can be represented as
-   immutable data without changing arithmetic.
+2. Done: hoist large immutable local and module-scope parameter-array data into
+   split constants-data translation units when the data is fixed-size and has a
+   typed C initializer. This keeps the procedure/shared TUs from carrying the
+   initializer payload and adds no runtime copy or floating-point reordering.
 3. Later: deduplicate emitted helpers by structural signature.
 4. Later: broaden no-copy descriptor/view lowering.
 5. Always: avoid math/codegen transformations that reorder floating-point
    operations.
+
+Current blocker: the standard-C path still emits typed C initializers in the
+constants-data TU. That is correctness-preserving and removes the initializer
+payload from hot procedure/shared TUs, but it does not remove all C
+parse/typecheck work for those literals. Eliminating that remaining work without
+runtime copies would require a separate binary/object data path or a
+toolchain-specific embedding mechanism; that needs a build-driver design before
+implementation.
+
+## Experiment Log
+
+### 2026-05-13: Large Immutable Parameter Data Hoist
+
+Hypothesis: large immutable parameter arrays should live in a split
+constants-data TU instead of the generated procedure/shared TU that references
+them. This reduces the largest active translation units and cannot change
+numeric order because the generated code still reads the same typed const data.
+
+Exact change: for split-C only, local fixed-size `parameter` arrays and
+module-scope fixed-size `parameter` arrays with large typed initializers are
+registered as `extern const __lfortran_const_data_*[...]` declarations and
+defined once in `<unit>_constants_data.c`. The local/module descriptor wrapper
+points directly at that data; no runtime allocation or copy is introduced.
+
+Expected win: smaller generated procedure/shared TUs, less repeated C frontend
+work in files that also contain executable code, and cleaner budget visibility
+through the new `typed_const_data_units` count.
+
+Correctness risk: low for numeric parity, because there is no arithmetic
+rewrite and no data copy. The remaining risk is C linkage/type spelling for
+extern typed arrays, covered by split-C compile/run tests.
+
+Test evidence:
+
+- `cmake --build build -j`
+- `python3 -m py_compile ci/report_c_emit_budget.py`
+- `python3 ci/report_c_emit_budget.py --self-test`
+- `PATH=build/src/bin:$PATH python3 run_tests.py -t c_backend_large_parameter_array_data_unit_01 -s`
+- `PATH=build/src/bin:$PATH python3 run_tests.py -t c_backend_header_only_module_01 -s`
+- `PATH=build/src/bin:$PATH python3 run_tests.py -t c_backend_specialized_pass_array_no_copy_01 -s`
+
+Focused generated-C budget for the new regression:
+
+| Metric | Value |
+| --- | ---: |
+| split directories | 1 |
+| generated `.c` files | 4 |
+| generated `.c` size | 17355 bytes |
+| generated headers | 1 |
+| largest C TU | `main_constants_data.c` at 13905 bytes |
+| procedure TU size | 1637 bytes |
+| module data TU size | 826 bytes |
+| typed const data occurrences | 12 |
+| malloc/realloc/memcpy calls | 0 |
+
+Result: keep. The focused regression proves both local and module-scope large
+parameter arrays are no longer emitted as inline `static const double` data in
+the referencing TUs, and the C-emitted run passes. This is a compile-structure
+win, not a full literal-parse elimination; the latter is tracked as a separate
+binary/object-data design problem.
 
 ## Design Goals
 

@@ -22,6 +22,7 @@ PATTERNS = OrderedDict(
         ("compiler_created_values", "__libasr_created__"),
         ("array_views", "__lfortran_array_view"),
         ("array_constants", "array_constant_"),
+        ("typed_const_data_units", "__lfortran_const_data_"),
         ("compact_const_blobs", "__lfortran_const_blob"),
         ("compact_const_copy_helpers", "__lfortran_const_copy"),
         ("malloc_calls", "_lfortran_malloc"),

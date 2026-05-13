@@ -1,0 +1,13 @@
+{
+    "basename": "c_split_require_pattern-c_backend_large_parameter_array_data_unit_01-5827c00",
+    "cmd": "tmpdir=$(mktemp -d /tmp/lfortran-c-split-require.XXXXXX); trap 'rm -rf \"$tmpdir\"' EXIT; lfortran --backend=c --separate-compilation -c {infile} -o \"$tmpdir/main.o\"; grep -R -F -q \"__lfortran_const_data_\" \"$tmpdir\"/*.o.tmp.split/*.c #",
+    "infile": "tests/c_backend_large_parameter_array_data_unit_01.f90",
+    "infile_hash": "3a77c9e002ce7102c9cbd06225dfa8a7f4cd8ddf1a64fa9cef6c3a30",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

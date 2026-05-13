@@ -85,6 +85,8 @@ def single_test(test: Dict, verbose: bool, no_llvm: bool, skip_run_with_dbg: boo
     c = is_included("c")
     c_split_cleanup_dedupe = is_included("c_split_cleanup_dedupe")
     c_split_no_empty_source = is_included("c_split_no_empty_source")
+    c_split_require_pattern = is_included("c_split_require_pattern")
+    c_split_forbid_pattern = is_included("c_split_forbid_pattern")
     c_require_pattern = is_included("c_require_pattern")
     c_forbid_pattern = is_included("c_forbid_pattern")
     is_cumulative_pass = is_included("cumulative")
@@ -99,6 +101,8 @@ def single_test(test: Dict, verbose: bool, no_llvm: bool, skip_run_with_dbg: boo
     interactive = is_included("interactive")
     options = test.get("options", "")
     c_split_cleanup_dedupe_symbol = test.get("c_split_cleanup_dedupe_symbol", "")
+    c_split_require_pattern_value = test.get("c_split_require_pattern_value", "")
+    c_split_forbid_pattern_value = test.get("c_split_forbid_pattern_value", "")
     c_require_pattern_value = test.get("c_require_pattern_value", "")
     c_forbid_pattern_value = test.get("c_forbid_pattern_value", "")
     pass_ = test.get("pass", None)
@@ -756,6 +760,36 @@ def single_test(test: Dict, verbose: bool, no_llvm: bool, skip_run_with_dbg: boo
             "test \"$(find \"$tmpdir/main.o.tmp.split\" -name '*.c' | wc -l | tr -d ' ')\" = \"0\" #"
         )
         run_test(filename, "c_split_no_empty_source", cmd,
+                filename,
+                update_reference,
+                verify_hash,
+                extra_args)
+
+    if c_split_require_pattern:
+        if not c_split_require_pattern_value:
+            raise Exception("c_split_require_pattern requires c_split_require_pattern_value")
+        cmd = (
+            "tmpdir=$(mktemp -d /tmp/lfortran-c-split-require.XXXXXX); "
+            "trap 'rm -rf \"$tmpdir\"' EXIT; "
+            "lfortran --backend=c --separate-compilation -c {infile} -o \"$tmpdir/main.o\"; "
+            f"grep -R -F -q \"{c_split_require_pattern_value}\" \"$tmpdir\"/*.o.tmp.split/*.c #"
+        )
+        run_test(filename, "c_split_require_pattern", cmd,
+                filename,
+                update_reference,
+                verify_hash,
+                extra_args)
+
+    if c_split_forbid_pattern:
+        if not c_split_forbid_pattern_value:
+            raise Exception("c_split_forbid_pattern requires c_split_forbid_pattern_value")
+        cmd = (
+            "tmpdir=$(mktemp -d /tmp/lfortran-c-split-forbid.XXXXXX); "
+            "trap 'rm -rf \"$tmpdir\"' EXIT; "
+            "lfortran --backend=c --separate-compilation -c {infile} -o \"$tmpdir/main.o\"; "
+            f"(! grep -R -F -q \"{c_split_forbid_pattern_value}\" \"$tmpdir\"/*.o.tmp.split/*.c) #"
+        )
+        run_test(filename, "c_split_forbid_pattern", cmd,
                 filename,
                 update_reference,
                 verify_hash,

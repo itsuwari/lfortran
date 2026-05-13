@@ -5368,6 +5368,15 @@ filename = "c_backend_local_parameter_array_static_01.f90"
 c = true
 
 [[test]]
+filename = "c_backend_large_parameter_array_data_unit_01.f90"
+run = true
+options = "--backend=c --separate-compilation"
+c_split_require_pattern = true
+c_split_require_pattern_value = "__lfortran_const_data_"
+c_split_forbid_pattern = true
+c_split_forbid_pattern_value = "static const double"
+
+[[test]]
 filename = "c_backend_small_vector_assignment_setup_01.f90"
 c = true
 

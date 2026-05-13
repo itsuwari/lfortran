@@ -1,0 +1,13 @@
+{
+    "basename": "run-c_backend_large_parameter_array_data_unit_01-b173191",
+    "cmd": "lfortran --no-color {infile}",
+    "infile": "tests/c_backend_large_parameter_array_data_unit_01.f90",
+    "infile_hash": "3a77c9e002ce7102c9cbd06225dfa8a7f4cd8ddf1a64fa9cef6c3a30",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

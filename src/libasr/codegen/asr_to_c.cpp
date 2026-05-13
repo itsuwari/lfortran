@@ -61,6 +61,32 @@ public:
         return std::string(indentation_level * indentation_spaces, ' ');
     }
 
+    bool should_emit_split_static_constant_data_unit(
+            int64_t total_size, const std::string &init_brace) const {
+        static const int64_t min_elements = 128;
+        static const size_t min_initializer_bytes = 4096;
+        return emit_compact_constant_data_units
+            && total_size >= min_elements
+            && init_brace.size() >= min_initializer_bytes;
+    }
+
+    std::string register_split_static_constant_data_unit(
+            const std::string &base_name, const std::string &type_name,
+            const std::string &dims, const std::string &init_brace) {
+        std::string suffix = std::to_string(compact_constant_data_count++);
+        if (!lcompilers_unique_ID_separate_compilation.empty()) {
+            suffix += "_" + lcompilers_unique_ID_separate_compilation;
+        }
+        std::string data_name = "__lfortran_const_data_"
+            + CUtils::sanitize_c_identifier(base_name) + "_" + suffix;
+        compact_constant_data_decls += "extern const "
+            + format_type_c(dims, type_name, data_name, false, false) + ";\n";
+        compact_constant_data_body += "const "
+            + format_type_c(dims, type_name, data_name, false, false)
+            + " = " + init_brace + ";\n\n";
+        return data_name;
+    }
+
     bool prepare_string_readback_target(ASR::expr_t *value_expr, const std::string &value_len,
             std::string &tmp_name, std::string &setup, std::string &post) {
         ASR::expr_t *target_expr = unwrap_c_lvalue_expr(value_expr);
@@ -513,15 +539,23 @@ R"(
             && !init_brace.empty() && !element_needs_null_init;
 
         std::string sub;
-        sub += "static " + format_type_c("[" + std::to_string(total_size) + "]",
-            readonly_parameter_data ? "const " + type_name : type_name,
-            data_name, false, false);
-        if (!init_brace.empty()) {
-            sub += " = " + init_brace;
-        } else if (element_needs_null_init) {
-            sub += " = {0}";
+        if (readonly_parameter_data
+                && should_emit_split_static_constant_data_unit(
+                    total_size, init_brace)) {
+            data_name = register_split_static_constant_data_unit(
+                data_name, type_name, "[" + std::to_string(total_size) + "]",
+                init_brace);
+        } else {
+            sub += "static " + format_type_c("[" + std::to_string(total_size) + "]",
+                readonly_parameter_data ? "const " + type_name : type_name,
+                data_name, false, false);
+            if (!init_brace.empty()) {
+                sub += " = " + init_brace;
+            } else if (element_needs_null_init) {
+                sub += " = {0}";
+            }
+            sub += ";\n";
         }
-        sub += ";\n";
 
         std::vector<std::string> lower_bounds(n_dims);
         std::vector<std::string> lengths(n_dims);
@@ -2506,9 +2540,20 @@ R"(
                 if (static_parameter_data && is_fixed_size && !is_pointer && !dummy) {
                     std::string data_name = std::string(v_m_name) + "_data";
                     std::string variable_name = std::string(v_m_name) + "_value";
-                    sub = "static "
-                        + format_type_c(dims, "const " + type_name_copy, data_name, use_ref, dummy)
-                        + " = " + init_brace + ";\n";
+                    int64_t total_size = ASRUtils::get_fixed_size_of_array(
+                        m_dims, n_dims);
+                    if (should_emit_split_static_constant_data_unit(
+                            total_size, init_brace)) {
+                        data_name = register_split_static_constant_data_unit(
+                            std::string(v_m_name) + "_data", type_name_copy,
+                            dims, init_brace);
+                        sub.clear();
+                    } else {
+                        sub = "static "
+                            + format_type_c(dims, "const " + type_name_copy,
+                                data_name, use_ref, dummy)
+                            + " = " + init_brace + ";\n";
+                    }
                     sub += indent + "static "
                         + format_type_c("", type_name_without_ptr, variable_name, use_ref, dummy)
                         + " = { .data = (" + type_name_copy + "*) " + data_name
