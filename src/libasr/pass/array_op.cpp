@@ -1300,6 +1300,58 @@ class ArrayOpVisitor: public ASR::CallReplacerOnExpressionsVisitor<ArrayOpVisito
         }
     }
 
+    bool is_c_scalarizable_array_constructor_arg(ASR::expr_t *expr) const {
+        expr = ASRUtils::get_past_array_physical_cast(expr);
+        if (expr == nullptr) {
+            return false;
+        }
+        ASR::ttype_t *type = ASRUtils::type_get_past_allocatable_pointer(
+            ASRUtils::expr_type(expr));
+        if (type == nullptr || ASRUtils::is_array(type)
+                || ASRUtils::is_character(*type)) {
+            return false;
+        }
+        switch (expr->type) {
+            case ASR::exprType::ArrayItem: {
+                return ASRUtils::is_integer(*type)
+                    || ASRUtils::is_unsigned_integer(*type)
+                    || ASRUtils::is_real(*type)
+                    || ASRUtils::is_logical(*type);
+            }
+            case ASR::exprType::IntegerUnaryMinus: {
+                return is_c_scalarizable_array_constructor_arg(
+                    ASR::down_cast<ASR::IntegerUnaryMinus_t>(expr)->m_arg);
+            }
+            case ASR::exprType::RealUnaryMinus: {
+                return is_c_scalarizable_array_constructor_arg(
+                    ASR::down_cast<ASR::RealUnaryMinus_t>(expr)->m_arg);
+            }
+            case ASR::exprType::IntegerBinOp: {
+                ASR::IntegerBinOp_t *binop = ASR::down_cast<ASR::IntegerBinOp_t>(expr);
+                return is_c_scalarizable_array_constructor_arg(binop->m_left)
+                    && is_c_scalarizable_array_constructor_arg(binop->m_right);
+            }
+            case ASR::exprType::UnsignedIntegerBinOp: {
+                ASR::UnsignedIntegerBinOp_t *binop =
+                    ASR::down_cast<ASR::UnsignedIntegerBinOp_t>(expr);
+                return is_c_scalarizable_array_constructor_arg(binop->m_left)
+                    && is_c_scalarizable_array_constructor_arg(binop->m_right);
+            }
+            case ASR::exprType::RealBinOp: {
+                ASR::RealBinOp_t *binop = ASR::down_cast<ASR::RealBinOp_t>(expr);
+                return is_c_scalarizable_array_constructor_arg(binop->m_left)
+                    && is_c_scalarizable_array_constructor_arg(binop->m_right);
+            }
+            case ASR::exprType::Cast: {
+                return is_c_scalarizable_array_constructor_arg(
+                    ASR::down_cast<ASR::Cast_t>(expr)->m_arg);
+            }
+            default: {
+                return is_c_plain_scalar_expr_for_section_fill(expr);
+            }
+        }
+    }
+
     bool is_c_plain_scalar_array_constructor(const ASR::ArrayConstructor_t &x) const {
         ASR::ttype_t *type = ASRUtils::type_get_past_allocatable_pointer(x.m_type);
         if (type == nullptr
@@ -1309,7 +1361,7 @@ class ArrayOpVisitor: public ASR::CallReplacerOnExpressionsVisitor<ArrayOpVisito
         }
         for (size_t i = 0; i < x.n_args; i++) {
             if (ASR::is_a<ASR::ImpliedDoLoop_t>(*x.m_args[i])
-                    || !is_c_plain_scalar_expr_for_section_fill(x.m_args[i])) {
+                    || !is_c_scalarizable_array_constructor_arg(x.m_args[i])) {
                 return false;
             }
         }

@@ -6187,11 +6187,21 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         ASR::ttype_t *reshape_type = ASRUtils::type_get_past_allocatable_pointer(x.m_type);
         ASR::ttype_t *source_type = ASRUtils::type_get_past_allocatable_pointer(
             ASRUtils::expr_type(x.m_array));
+        ASR::dimension_t *reshape_dims = nullptr;
+        int reshape_rank = reshape_type != nullptr
+            ? ASRUtils::extract_dimensions_from_ttype(reshape_type, reshape_dims) : 0;
+        int64_t dim1_length = -1, dim2_length = -1;
         return reshape_type != nullptr
             && source_type != nullptr
-            && ASRUtils::extract_n_dims_from_ttype(reshape_type) == 2
+            && reshape_rank == 2
             && ASRUtils::extract_n_dims_from_ttype(source_type) == 1
-            && ASRUtils::is_fixed_size_array(reshape_type)
+            && reshape_dims != nullptr
+            && reshape_dims[0].m_length != nullptr
+            && reshape_dims[1].m_length != nullptr
+            && get_c_constant_int_expr_value(reshape_dims[0].m_length, dim1_length)
+            && get_c_constant_int_expr_value(reshape_dims[1].m_length, dim2_length)
+            && dim1_length > 0
+            && dim2_length > 0
             && is_c_scalarizable_array_expr(x.m_array);
     }
 
@@ -15405,6 +15415,19 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                     src = "creal(" + src + ")";
                 } else {
                     src = "std::real(" + src + ")";
+                }
+                last_expr_precedence = 2;
+                break;
+            }
+            case (ASR::cast_kindType::ComplexToInteger) : {
+                int dest_kind = ASRUtils::extract_kind_from_ttype_t(x.m_type);
+                if (is_c) {
+                    headers.insert("complex.h");
+                    src = "(int" + std::to_string(dest_kind * 8)
+                        + "_t)(creal(" + src + "))";
+                } else {
+                    src = "(int" + std::to_string(dest_kind * 8)
+                        + "_t)(std::real(" + src + "))";
                 }
                 last_expr_precedence = 2;
                 break;
