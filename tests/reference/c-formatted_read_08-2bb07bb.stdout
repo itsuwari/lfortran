@@ -1,5 +1,4 @@
 #include <inttypes.h>
-#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -18,6 +17,20 @@
 #define LFORTRAN_C_BACKEND_CONSTRUCTOR
 #endif
 #endif
+#ifndef LFORTRAN_C_BACKEND_WEAK
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_WEAK __attribute__((weak))
+#else
+#define LFORTRAN_C_BACKEND_WEAK static
+#endif
+#endif
+#ifndef LFORTRAN_C_BACKEND_COMMON
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_COMMON __attribute__((common))
+#else
+#define LFORTRAN_C_BACKEND_COMMON
+#endif
+#endif
 
 
 struct dimension_descriptor
@@ -29,6 +42,20 @@ struct dimension_descriptor
 #define LFORTRAN_C_BACKEND_CONSTRUCTOR __attribute__((constructor))
 #else
 #define LFORTRAN_C_BACKEND_CONSTRUCTOR
+#endif
+#endif
+#ifndef LFORTRAN_C_BACKEND_WEAK
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_WEAK __attribute__((weak))
+#else
+#define LFORTRAN_C_BACKEND_WEAK static
+#endif
+#endif
+#ifndef LFORTRAN_C_BACKEND_COMMON
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_COMMON __attribute__((common))
+#else
+#define LFORTRAN_C_BACKEND_COMMON
 #endif
 #endif
 
@@ -46,15 +73,15 @@ void __lfortran_lfortran_intrinsic_custom__newunit_int_4(int32_t *unit);
 int32_t __lfortran_lfortran_intrinsic_custom__get_valid_newunit()
 {
     int32_t lun;
-    const int32_t lun_max = 1000;
-    const int32_t lun_min = 0;
+    const int32_t lun_max = -10;
+    const int32_t lun_min = -999;
     bool opened;
     int32_t unit;
-    for (lun=lun_min; lun<=lun_max; lun++) {
+    for (lun=lun_max; lun>=lun_min; lun--) {
         _lfortran_inquire(NULL, 0, NULL, lun, &(opened), NULL, NULL, NULL, 0, NULL, 0, NULL, 0, NULL, 0, NULL, 0, NULL, 0, NULL, NULL, NULL, NULL, 0, NULL, 0, NULL, 0, NULL, 0, NULL, 0, NULL, NULL, NULL, 0, NULL, 0, NULL, 0, NULL, 0, NULL, 0, NULL, 0, NULL, 0, NULL, NULL, 0, NULL, 0, NULL, 0, NULL, 0);
         if (!opened) {
             unit = lun;
-            return unit;
+                        return unit;
         }
     }
     printf("%s\n",(char*)"All unit numbers are utilized");
@@ -65,12 +92,14 @@ int32_t __lfortran_lfortran_intrinsic_custom__get_valid_newunit()
 
 void __lfortran_lfortran_intrinsic_custom__newunit_int_1(int8_t *unit)
 {
-    if (__lfortran_lfortran_intrinsic_custom__get_valid_newunit() >= pow(2, 8)) {
+    int32_t valid_unit;
+    valid_unit = __lfortran_lfortran_intrinsic_custom__get_valid_newunit();
+    if (valid_unit < -128) {
         printf("%s\n",(char*)"integer(KIND=1) is has small limit. Use larger kind for the unit number");
         fprintf(stderr, "ERROR STOP");
         exit(1);
     }
-    (*unit) = __lfortran__lcompilers_int_i32(__lfortran_lfortran_intrinsic_custom__get_valid_newunit());
+    (*unit) = __lfortran__lcompilers_int_i32(valid_unit);
 }
 
 void __lfortran_lfortran_intrinsic_custom__newunit_int_2(int16_t *unit)
@@ -119,20 +148,19 @@ int64_t __lfortran__lcompilers_int_i323(int32_t a)
 int main(int argc, char* argv[])
 {
     _lpython_set_argv(argc, argv);
-    char * lfortran_iomsg = NULL;
-    char * line = NULL;
+    lfortran_allocator_t* __lfortran_default_allocator = _lfortran_get_default_allocator();
+    char __lfortran_fixed_char_lfortran_iomsg[1] = {0}; char *lfortran_iomsg = __lfortran_fixed_char_lfortran_iomsg;
+    char __lfortran_fixed_char_line[512] = {0}; char *line = __lfortran_fixed_char_line;
     int32_t size;
     int32_t stat;
     int32_t unit;
     __lfortran_lfortran_intrinsic_custom__newunit_int_4(&unit);
     _lfortran_open(unit, NULL, 0, (char*)"scratch", strlen((char*)"scratch"), (char*)"formatted", strlen((char*)"formatted"), NULL, 0, NULL, 0, NULL, (char*)"readwrite", strlen((char*)"readwrite"), NULL, 0, NULL, 0, NULL, 0, NULL, 0, NULL, NULL, 0, NULL, 0, NULL, 0, NULL, 0);
-    int __lfortran_write_size_0 = snprintf(NULL, 0, "%s", (char*)"abc");
-    char *__lfortran_write_buffer_0 = (char*) malloc((size_t)__lfortran_write_size_0 + 1);
-    snprintf(__lfortran_write_buffer_0, (size_t)__lfortran_write_size_0 + 1, "%s", (char*)"abc");
+    char __lfortran_write_buffer_0[4];
+    int __lfortran_write_size_0 = snprintf(__lfortran_write_buffer_0, sizeof(__lfortran_write_buffer_0), "%s", (char*)"abc");
     _lfortran_file_write(unit, NULL, "%s%s", 4, __lfortran_write_buffer_0, (int64_t)__lfortran_write_size_0, "\n", 1);
-    free(__lfortran_write_buffer_0);
     _lfortran_rewind(unit, NULL, NULL, 0);
-    if (line == NULL) line = (char*) _lfortran_string_malloc_alloc(_lfortran_get_default_allocator(), 512);
+    if (line == NULL) line = (char*) _lfortran_string_malloc_alloc(__lfortran_default_allocator, 512);
     _lfortran_formatted_read(unit, &(stat), &(size), (char*)"no", 2, (char*)"(a)", 3, 1, NULL, 0, 0, 0, &(line), (int64_t)(512));
     if (stat != -2 && stat != 0) {
         fprintf(stderr, "ERROR STOP");
@@ -147,5 +175,7 @@ int main(int argc, char* argv[])
         exit(1);
     }
     _lfortran_close(unit, NULL, 0, NULL);
+    _lfortran_string_len_unregister(line);
+    _lfortran_string_len_unregister(lfortran_iomsg);
     return 0;
 }

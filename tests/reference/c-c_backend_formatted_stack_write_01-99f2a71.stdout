@@ -201,17 +201,9 @@ int main(int argc, char* argv[])
 }
     int64_t __lfortran_unit_len = (int64_t)(64);
     if (line == NULL) line = (char*) _lfortran_string_malloc_alloc(__lfortran_default_allocator, __lfortran_unit_len);
-    char __lfortran_write_buffer_0[4096];
+    char __lfortran_write_buffer_0[22];
     int __lfortran_write_size_0 = snprintf(__lfortran_write_buffer_0, sizeof(__lfortran_write_buffer_0), "%s %s %s", left, (char*)"mid", right);
-    if (__lfortran_write_size_0 >= 0 && (size_t)__lfortran_write_size_0 < sizeof(__lfortran_write_buffer_0)) {
-        _lfortran_string_write(__lfortran_default_allocator, &(line), false, false, false, 1, &__lfortran_unit_len, NULL, "%s", 2, __lfortran_write_buffer_0, (int64_t)__lfortran_write_size_0);
-    } else {
-        if (__lfortran_write_size_0 < 0) __lfortran_write_size_0 = 0;
-        char *__lfortran_write_heap_buffer_0 = (char*) malloc((size_t)__lfortran_write_size_0 + 1);
-        snprintf(__lfortran_write_heap_buffer_0, (size_t)__lfortran_write_size_0 + 1, "%s %s %s", left, (char*)"mid", right);
-        _lfortran_string_write(__lfortran_default_allocator, &(line), false, false, false, 1, &__lfortran_unit_len, NULL, "%s", 2, __lfortran_write_heap_buffer_0, (int64_t)__lfortran_write_size_0);
-        free(__lfortran_write_heap_buffer_0);
-    }
+    _lfortran_string_write(__lfortran_default_allocator, &(line), false, false, false, 1, &__lfortran_unit_len, NULL, "%s", 2, __lfortran_write_buffer_0, (int64_t)__lfortran_write_size_0);
     if (__lfortran__lcompilers_index_str(line, (char*)"alpha", false, 4) != 1) {
         exit(1);
     }

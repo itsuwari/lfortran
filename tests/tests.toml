@@ -5680,7 +5680,7 @@ c = true
 c_require_pattern = true
 c_require_pattern_value = "char __lfortran_write_buffer_"
 c_forbid_pattern = true
-c_forbid_pattern_value = "snprintf(NULL, 0"
+c_forbid_pattern_value = "__lfortran_write_heap_buffer_"
 
 [[test]]
 filename = "c_backend_iso_fortran_env_no_data_01.f90"

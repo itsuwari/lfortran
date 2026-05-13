@@ -7081,15 +7081,31 @@ R"(    // Initialise Numpy
 
         if (ASR::is_a<ASR::StringFormat_t>(*x.m_values[0])) {
             ASR::StringFormat_t *str_fmt = ASR::down_cast<ASR::StringFormat_t>(x.m_values[0]);
+            auto get_static_character_len = [](ASR::ttype_t *type) -> int64_t {
+                ASR::String_t *str_type = ASRUtils::get_string_type(type);
+                int64_t fixed_len = 0;
+                if (str_type && str_type->m_len
+                        && ASRUtils::extract_value(str_type->m_len, fixed_len)
+                        && fixed_len > 0) {
+                    return fixed_len;
+                }
+                return -1;
+            };
             bool has_non_character_arg = false;
+            bool has_unbounded_character_arg = false;
             for (size_t i=0; i<str_fmt->n_args; i++) {
                 ASR::ttype_t *arg_type = ASRUtils::type_get_past_allocatable_pointer(
                     ASRUtils::expr_type(str_fmt->m_args[i]));
+                int64_t fixed_array_size = 1;
                 if (ASRUtils::is_array(arg_type)) {
+                    fixed_array_size = ASRUtils::get_fixed_size_of_array(arg_type);
                     arg_type = ASRUtils::extract_type(arg_type);
                 }
                 if (!ASRUtils::is_character(*ASRUtils::extract_type(arg_type))) {
                     has_non_character_arg = true;
+                } else if (fixed_array_size <= 0
+                        || get_static_character_len(arg_type) <= 0) {
+                    has_unbounded_character_arg = true;
                 }
             }
             bool has_literal_format_descriptor = str_fmt->n_args == 0;
@@ -7103,7 +7119,8 @@ R"(    // Initialise Numpy
                 }
             }
             if (str_fmt->m_kind == ASR::string_format_kindType::FormatFortran
-                    && (has_non_character_arg || has_literal_format_descriptor)) {
+                    && (has_non_character_arg || has_literal_format_descriptor
+                        || has_unbounded_character_arg)) {
                 std::string format_value = "NULL";
                 std::string format_len = "0";
                 if (str_fmt->m_fmt) {
@@ -7574,6 +7591,7 @@ R"(    // Initialise Numpy
 
             std::string snprintf_fmt = "\"";
             std::vector<std::string> fmt_args;
+            int64_t max_formatted_len = 0;
             bool has_hash_prefix = false;
             if (str_fmt->m_fmt) {
                 ASR::expr_t *fmt_value = ASRUtils::expr_value(str_fmt->m_fmt);
@@ -7581,6 +7599,7 @@ R"(    // Initialise Numpy
                     std::string fmt_text = ASR::down_cast<ASR::StringConstant_t>(fmt_value)->m_s;
                     if (fmt_text == "(\"#\", *(1x, g0))") {
                         snprintf_fmt += "#";
+                        max_formatted_len += 1;
                         has_hash_prefix = true;
                     }
                 }
@@ -7601,8 +7620,15 @@ R"(    // Initialise Numpy
                     for (int64_t j = 0; j < fixed_size; j++) {
                         if ((i != 0 || has_hash_prefix) || j != 0) {
                             snprintf_fmt += " ";
+                            max_formatted_len += 1;
                         }
                         snprintf_fmt += c_ds_api->get_print_type(printable_type, false);
+                        int64_t fixed_len = get_static_character_len(printable_type);
+                        if (fixed_len <= 0) {
+                            throw CodeGenError("C backend FileWrite expected statically bounded character array values in formatted stack writes",
+                                str_fmt->m_args[i]->base.loc);
+                        }
+                        max_formatted_len += fixed_len;
                         std::string elem_value = arg_value + "->data[" + arg_value + "->offset";
                         if (j != 0) {
                             elem_value += " + (" + arg_value + "->dims[0].stride * "
@@ -7619,9 +7645,16 @@ R"(    // Initialise Numpy
                 } else {
                     if (i != 0 || has_hash_prefix) {
                         snprintf_fmt += " ";
+                        max_formatted_len += 1;
                     }
                     snprintf_fmt += c_ds_api->get_print_type(printable_type,
                         ASR::is_a<ASR::ArrayItem_t>(*(str_fmt->m_args[i])));
+                    int64_t fixed_len = get_static_character_len(printable_type);
+                    if (fixed_len <= 0) {
+                        throw CodeGenError("C backend FileWrite expected statically bounded character values in formatted stack writes",
+                            str_fmt->m_args[i]->base.loc);
+                    }
+                    max_formatted_len += fixed_len;
                     if (ASR::is_a<ASR::Complex_t>(*printable_type)) {
                         fmt_args.push_back("creal(" + arg_value + ")");
                         fmt_args.push_back("cimag(" + arg_value + ")");
@@ -7636,8 +7669,6 @@ R"(    // Initialise Numpy
             counter += 1;
             std::string size_name = "__lfortran_write_size_" + unique_suffix;
             std::string buffer_name = "__lfortran_write_buffer_" + unique_suffix;
-            std::string heap_buffer_name = "__lfortran_write_heap_buffer_" + unique_suffix;
-            std::string inner_indent = indent + std::string(indentation_spaces, ' ');
             auto append_snprintf_call = [&](std::string &code,
                     const std::string &target, const std::string &target_size) {
                 code += "snprintf(" + target + ", " + target_size + ", " + snprintf_fmt;
@@ -7665,23 +7696,12 @@ R"(    // Initialise Numpy
             };
 
             src = unit_setup;
-            src += indent + "char " + buffer_name + "[4096];\n";
+            src += indent + "char " + buffer_name + "["
+                + std::to_string(max_formatted_len + 1) + "];\n";
             src += indent + "int " + size_name + " = ";
             append_snprintf_call(src, buffer_name, "sizeof(" + buffer_name + ")");
             src += ";\n";
-            src += indent + "if (" + size_name + " >= 0 && (size_t)" + size_name
-                + " < sizeof(" + buffer_name + ")) {\n";
-            append_formatted_write(src, inner_indent, buffer_name, "(int64_t)" + size_name);
-            src += indent + "} else {\n";
-            src += inner_indent + "if (" + size_name + " < 0) " + size_name + " = 0;\n";
-            src += inner_indent + "char *" + heap_buffer_name
-                + " = (char*) malloc((size_t)" + size_name + " + 1);\n";
-            src += inner_indent;
-            append_snprintf_call(src, heap_buffer_name, "(size_t)" + size_name + " + 1");
-            src += ";\n";
-            append_formatted_write(src, inner_indent, heap_buffer_name, "(int64_t)" + size_name);
-            src += inner_indent + "free(" + heap_buffer_name + ");\n";
-            src += indent + "}\n";
+            append_formatted_write(src, indent, buffer_name, "(int64_t)" + size_name);
             return;
         }
 
