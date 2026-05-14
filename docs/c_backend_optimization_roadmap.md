@@ -74,26 +74,129 @@ Observed top contributors:
    split constants-data translation units when the data is fixed-size and has a
    typed C initializer. This keeps the procedure/shared TUs from carrying the
    initializer payload and adds no runtime copy or floating-point reordering.
-3. In progress: deduplicate emitted helpers/scaffolding by ownership and
+3. Done: emit large immutable numeric parameter-array payloads as binary data
+   files with typed `extern const` declarations and assembler `.incbin`
+   definitions. This removes the C frontend's decimal initializer parse work
+   for those payloads while preserving the typed read-only object ABI.
+4. In progress: deduplicate emitted helpers/scaffolding by ownership and
    structural signature. Current checkpoints prune unreachable split helper
    bodies and make type-bound parent metadata owner-emitted with downstream
    force-link references. Remaining helper families still need structural
    analysis before backend changes.
-4. Later: broaden no-copy descriptor/view lowering.
-5. Always: avoid math/codegen transformations that reorder floating-point
+5. Later: broaden no-copy descriptor/view lowering.
+6. Always: avoid math/codegen transformations that reorder floating-point
    operations.
 
 Current blocker: route-level compile cost is still dominated by generated C
-volume and descriptor scaffolding, not by duplicate type-parent constructors.
-The latest tblite build still emits 95.88 MB of `.c` and 2.88 MB of generated
-headers. The largest translation units are packed module data and generated
-module bodies (`mstore/amino20x4`, `multicharge/eeqbc`, `tblite/mesh/lebedev`,
-`dftd3/reference_constants_data`). The standard-C constants-data path is
-correctness-preserving, but it still asks Clang to parse typed numeric
-initializers; eliminating that remaining work needs a separate binary/object
-data path or a toolchain-specific embedding mechanism.
+volume and descriptor/module-body scaffolding, not by constant initializer
+text. The binary-data path removes about 3.4 MB of generated `.c` from the
+fresh tblite build, but the build is still dominated by large non-constant TUs
+such as `tblite/mesh/lebedev.f90.o`, `mstore/amino20x4`, `multicharge/eeqbc`,
+`tblite/coulomb/multipole`, and `tblite/xtb/calculator`. The next high-value
+work should reduce real emitted scaffolding in those module bodies, especially
+descriptor/view setup, generated temporaries, helper fan-out, and repeated
+metadata paths. Do not chase build-policy-only changes unless they remove
+emitted work or artifact bloat.
 
 ## Experiment Log
+
+### 2026-05-14: Binary Data For Large Immutable Constants
+
+Hypothesis: after hoisting large immutable parameter arrays into split
+constants-data TUs, the remaining parse/typecheck work comes from decimal C
+initializer text. Emitting the payload as binary/object data with typed
+`extern const` declarations should reduce C source volume without changing
+arithmetic order, runtime initialization, or descriptor semantics.
+
+Exact change: split-C now records raw ASR array-constant bytes for integer,
+unsigned integer, real, and complex parameter arrays. Supported large constant
+arrays are emitted as `__lfortran_const_data_blob_*.bin` files plus a small
+constants-data C file that declares the typed `extern const T name[N]` object
+and defines it with GNU/Clang-style assembler `.incbin`. Logical arrays keep
+the typed C initializer path because C `bool` does not have the same storage
+contract as LFortran logical kinds. Unsupported cases fall back to the existing
+typed C initializer path.
+
+Expected win: less generated `.c` text, less Clang frontend work for large
+lookup tables, smaller object payloads for constants-heavy files, and no
+runtime copy. This is a compile/artifact optimization; it should not change
+numeric behavior.
+
+Correctness risk: low for current gcc/clang split-C targets because the typed
+C declaration still describes the object used by generated code and the byte
+payload comes from the same ASR constant storage order used by the old C
+initializer. The portability caveat is explicit: this path currently requires
+GNU-style inline assembly and uses absolute `.incbin` paths in generated split
+packages, so MSVC and package relocation need a later object-file or CMake
+embedding path.
+
+Test evidence:
+
+- Red check: after changing the focused regression to require `.incbin`, the
+  old backend emitted no `.incbin` in the generated split C.
+- `cmake --build build -j`
+- `PATH=build/src/bin:$PATH python3 ./run_tests.py -t c_backend_large_parameter_array_data_unit_01`
+- `PATH=build/src/bin:$PATH python3 ./run_tests.py -t c_backend_large_logical_parameter_array_data_unit_01`
+- `PATH=build/src/bin:$PATH python3 ./run_tests.py -t c_backend_split_helper_reachability_01`
+- `PATH=build/src/bin:$PATH python3 ./run_tests.py -t c_backend_tbp_parent_registration_use_01`
+- `python3 -m py_compile run_tests.py tests/c_split_budget.py ci/report_c_emit_budget.py`
+- `python3 ci/report_c_emit_budget.py --self-test`
+- `lfortran --backend=c --show-c-split <pkg> tests/c_backend_large_parameter_array_data_unit_01.f90`,
+  followed by CMake configure, build, and execution of the generated package
+- Fresh no-tests tblite LFortran-C build with the same flags as the previous
+  helper-graph baseline
+- Focused ammonia CLI parity against the fresh gfortran build
+
+Focused regression result: the old constants-data TU was 13905 bytes of typed
+initializer text. The new generated package emits three 1600-byte binary
+payloads and a 4365-byte constants-data C wrapper. The split package builds
+and runs.
+
+Fresh tblite route metrics:
+
+| Metric | Previous LFortran C | Binary-data LFortran C | gfortran |
+| --- | ---: | ---: | ---: |
+| Build wall | 141.616 s | 145.558 s | 14.213 s |
+| Build max RSS | 2225.54 MB | 2222.72 MB | 248.92 MB |
+| Generated `.c` | 1499 files, 95,878,233 bytes | 1499 files, 92,475,440 bytes | n/a |
+| Binary constant blobs | 0 generated const blobs | 244 files, 2,741,296 bytes | n/a |
+| Generated headers | 398 files, 2,876,948 bytes | 398 files, 2,876,948 bytes | n/a |
+| Ninja `.o` edge sum | 749.114 s | 775.319 s | n/a |
+| Object bytes | 52,798,939 | 51,999,075 | 9,962,296 |
+| `libtblite.a` | 8,608,248 bytes | 8,608,656 bytes | 3,075,144 bytes |
+| `app/tblite` | 8,879,256 bytes | 8,879,592 bytes | 5,763,992 bytes |
+| `__TEXT` segment | 8,011,776 bytes | 5,505,024 bytes | n/a |
+| `__text` | 4,755,304 bytes | 4,755,304 bytes | 1,893,604 bytes |
+
+Fresh binary-data budget:
+
+| Metric | Value |
+| --- | ---: |
+| split directories | 398 |
+| generated `.c` size | 88.19 MiB |
+| generated `.c` lines | 992,518 |
+| binary constant blobs | 244 files, 2.61 MiB |
+| `.incbin` references | 488 |
+| longest Ninja edge | `tblite/mesh/lebedev.f90.o` at 100.290 s |
+| largest C TU | `mstore/amino20x4` at 2.72 MB |
+
+Focused ammonia CLI parity:
+
+| Metric | LFortran C | gfortran |
+| --- | ---: | ---: |
+| JSON max numeric diff | 1.42e-14 at `energy` | reference |
+| JSON nonnumeric mismatches | 0 | reference |
+| Warm CLI wall median | 93.26 ms | 47.63 ms |
+| Warm CLI RSS median | 11.08 MB | 13.32 MB |
+
+Result: keep, with revised expectations. The patch does exactly remove real C
+initializer text and slightly reduces object bytes, without changing runtime
+numeric behavior in the focused tblite smoke. It does not reduce full tblite
+build wall time in this run because the remaining dominant work is generated
+module-body C and descriptor/helper scaffolding, not constant literal parsing.
+The next compile-volume win should target the largest non-constant TUs and
+helper/view emission; the next portability revision should replace absolute
+`.incbin` paths with a relocatable object-data emission path.
 
 ### 2026-05-13: Large Immutable Parameter Data Hoist
 

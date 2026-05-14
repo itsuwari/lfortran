@@ -35,6 +35,15 @@ class ASRToCVisitor : public BaseCCPPVisitor<ASRToCVisitor>
 {
 public:
 
+    struct SplitBinaryConstantDataUnit {
+        std::string symbol_name;
+        std::string type_name;
+        std::string dims;
+        std::string file_name;
+        std::vector<unsigned char> bytes;
+        size_t alignment_power;
+    };
+
     int counter;
     std::set<std::string> emitted_aggregate_names;
     std::unordered_map<const ASR::symbol_t*, std::string> enum_name_map;
@@ -54,6 +63,7 @@ public:
     bool suppress_c_tbp_parent_registration = false;
     bool suppress_c_struct_cleanup_registration = false;
     bool suppress_c_struct_runtime_info_registration = false;
+    std::vector<SplitBinaryConstantDataUnit> compact_constant_binary_data_units;
 
     bool target_offload_enabled;
     std::vector<std::string> kernel_func_names;
@@ -87,6 +97,41 @@ public:
         compact_constant_data_body += "const "
             + format_type_c(dims, type_name, data_name, false, false)
             + " = " + init_brace + ";\n\n";
+        return data_name;
+    }
+
+    size_t get_binary_constant_alignment_power(size_t element_size) const {
+        size_t alignment = 1;
+        while (alignment < element_size && alignment < 16) {
+            alignment <<= 1;
+        }
+        size_t power = 0;
+        while ((static_cast<size_t>(1) << power) < alignment) {
+            power++;
+        }
+        return power;
+    }
+
+    std::string register_split_static_constant_binary_data_unit(
+            const std::string &base_name, const std::string &type_name,
+            const std::string &dims, const std::vector<unsigned char> &bytes,
+            size_t element_size) {
+        std::string suffix = std::to_string(compact_constant_data_count++);
+        if (!lcompilers_unique_ID_separate_compilation.empty()) {
+            suffix += "_" + lcompilers_unique_ID_separate_compilation;
+        }
+        std::string data_name = "__lfortran_const_data_"
+            + CUtils::sanitize_c_identifier(base_name) + "_" + suffix;
+        compact_constant_data_decls += "extern const "
+            + format_type_c(dims, type_name, data_name, false, false) + ";\n";
+        compact_constant_binary_data_units.push_back({
+            data_name,
+            type_name,
+            dims,
+            "__lfortran_const_data_blob_" + suffix + ".bin",
+            bytes,
+            get_binary_constant_alignment_power(element_size),
+        });
         return data_name;
     }
 
@@ -537,6 +582,8 @@ R"(
         ASR::expr_t *init_expr = get_variable_init_value_expr(v);
         std::string init_brace = init_expr != nullptr
             ? emit_c_array_constant_brace_init(init_expr, v.m_type) : "";
+        ASR::ArrayConstant_t *init_array_constant =
+            init_expr != nullptr ? get_c_array_constant_expr(init_expr) : nullptr;
         bool element_needs_null_init = type_name == "char *" || type_name == "char*";
         bool readonly_parameter_data = v.m_storage == ASR::storage_typeType::Parameter
             && !init_brace.empty() && !element_needs_null_init;
@@ -545,9 +592,18 @@ R"(
         if (readonly_parameter_data
                 && should_emit_split_static_constant_data_unit(
                     total_size, init_brace)) {
-            data_name = register_split_static_constant_data_unit(
-                data_name, type_name, "[" + std::to_string(total_size) + "]",
-                init_brace);
+            std::vector<unsigned char> binary_data =
+                get_c_array_constant_binary_data(
+                    init_array_constant, v.m_type, element_type);
+            if (!binary_data.empty()) {
+                data_name = register_split_static_constant_binary_data_unit(
+                    data_name, type_name, "[" + std::to_string(total_size) + "]",
+                    binary_data, get_c_array_constant_element_size(element_type));
+            } else {
+                data_name = register_split_static_constant_data_unit(
+                    data_name, type_name, "[" + std::to_string(total_size) + "]",
+                    init_brace);
+            }
         } else {
             sub += "static " + format_type_c("[" + std::to_string(total_size) + "]",
                 readonly_parameter_data ? "const " + type_name : type_name,
@@ -726,6 +782,50 @@ R"(
         std::ofstream out_file(path);
         out_file << contents;
         out_file.close();
+    }
+
+    void write_binary_file(const std::filesystem::path &path,
+            const std::vector<unsigned char> &contents) {
+        std::ofstream out_file(path, std::ios::binary);
+        if (!contents.empty()) {
+            out_file.write(reinterpret_cast<const char*>(contents.data()),
+                static_cast<std::streamsize>(contents.size()));
+        }
+        out_file.close();
+    }
+
+    std::string emit_binary_constant_data_asm(
+            const SplitBinaryConstantDataUnit &unit,
+            const std::filesystem::path &binary_path) {
+        std::string escaped_path = escape_c_string_literal(binary_path.string());
+        std::string size = std::to_string(unit.bytes.size());
+        std::string align = std::to_string(unit.alignment_power);
+        std::string c_decl = "extern const "
+            + format_type_c(unit.dims, unit.type_name, unit.symbol_name, false, false)
+            + ";\n";
+        return c_decl
+            + "#if defined(__APPLE__)\n"
+            + "__asm__(\n"
+            + "\".section __DATA,__const\\n\"\n"
+            + "\".globl _" + unit.symbol_name + "\\n\"\n"
+            + "\".p2align " + align + "\\n\"\n"
+            + "\"_" + unit.symbol_name + ":\\n\"\n"
+            + "\".incbin \\\"" + escaped_path + "\\\"\\n\"\n"
+            + ");\n"
+            + "#elif defined(__GNUC__) || defined(__clang__)\n"
+            + "__asm__(\n"
+            + "\".section .rodata,\\\"a\\\",@progbits\\n\"\n"
+            + "\".globl " + unit.symbol_name + "\\n\"\n"
+            + "\".type " + unit.symbol_name + ", @object\\n\"\n"
+            + "\".p2align " + align + "\\n\"\n"
+            + "\"" + unit.symbol_name + ":\\n\"\n"
+            + "\".incbin \\\"" + escaped_path + "\\\"\\n\"\n"
+            + "\".size " + unit.symbol_name + ", " + size + "\\n\"\n"
+            + "\".previous\\n\"\n"
+            + ");\n"
+            + "#else\n"
+            + "#error \"LFortran binary constant data requires GNU-style inline assembly\"\n"
+            + "#endif\n\n";
     }
 
     std::string emit_module_variable_defs(const ASR::Module_t &x) {
@@ -2720,9 +2820,24 @@ R"(
                         m_dims, n_dims);
                     if (should_emit_split_static_constant_data_unit(
                             total_size, init_brace)) {
-                        data_name = register_split_static_constant_data_unit(
-                            std::string(v_m_name) + "_data", type_name_copy,
-                            dims, init_brace);
+                        ASR::ttype_t *array_type = ASRUtils::type_get_past_pointer(
+                            ASRUtils::type_get_past_allocatable(var->m_type));
+                        ASR::ttype_t *element_type = ASRUtils::type_get_past_array(
+                            ASRUtils::type_get_past_allocatable_pointer(var->m_type));
+                        std::vector<unsigned char> binary_data =
+                            get_c_array_constant_binary_data(
+                                get_c_array_constant_expr(init_expr),
+                                array_type, element_type);
+                        if (!binary_data.empty()) {
+                            data_name = register_split_static_constant_binary_data_unit(
+                                std::string(v_m_name) + "_data", type_name_copy,
+                                dims, binary_data,
+                                get_c_array_constant_element_size(element_type));
+                        } else {
+                            data_name = register_split_static_constant_data_unit(
+                                std::string(v_m_name) + "_data", type_name_copy,
+                                dims, init_brace);
+                        }
                         sub.clear();
                     } else {
                         sub = "static "
@@ -4608,6 +4723,7 @@ R"(
         compact_constant_data_count = 0;
         compact_constant_data_body.clear();
         compact_constant_data_decls.clear();
+        compact_constant_binary_data_units.clear();
         defer_c_tbp_parent_registration_defs = true;
         deferred_c_tbp_parent_registration_type_ids.clear();
         deferred_c_tbp_parent_force_link_type_ids.clear();
@@ -4895,11 +5011,19 @@ R"(
             source_files.push_back(shared_name);
         }
 
-        if (!compact_constant_data_body.empty()) {
+        if (!compact_constant_data_body.empty()
+                || !compact_constant_binary_data_units.empty()) {
             std::string data_name = safe_project_name + "_constants_data.c";
+            std::string data_body = compact_constant_data_body;
+            for (const SplitBinaryConstantDataUnit &unit :
+                    compact_constant_binary_data_units) {
+                fs::path binary_path = fs::path(output_dir) / unit.file_name;
+                write_binary_file(binary_path, unit.bytes);
+                data_body += emit_binary_constant_data_asm(unit, binary_path);
+            }
             write_text_file(fs::path(output_dir) / data_name,
-                get_unit_file_prelude(header_name, compact_constant_data_body,
-                    split_unit_decls) + compact_constant_data_body);
+                get_unit_file_prelude(header_name, data_body, split_unit_decls)
+                    + data_body);
             source_files.push_back(data_name);
         }
 

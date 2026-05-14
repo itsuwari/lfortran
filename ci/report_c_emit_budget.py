@@ -23,6 +23,7 @@ PATTERNS = OrderedDict(
         ("array_views", "__lfortran_array_view"),
         ("array_constants", "array_constant_"),
         ("typed_const_data_units", "__lfortran_const_data_"),
+        ("binary_const_incbins", ".incbin"),
         ("compact_const_blobs", "__lfortran_const_blob"),
         ("compact_const_copy_helpers", "__lfortran_const_copy"),
         ("malloc_calls", "_lfortran_malloc"),
@@ -81,6 +82,19 @@ def find_split_dirs(roots: Iterable[Path]) -> list[Path]:
     return sorted(set(dirs))
 
 
+def find_binary_const_blobs(roots: Iterable[Path]) -> list[Path]:
+    files: list[Path] = []
+    for root in roots:
+        if root.is_file() and root.name.startswith("__lfortran_const_data_blob_") and root.suffix == ".bin":
+            files.append(root)
+        elif root.is_dir():
+            files.extend(
+                path for path in root.rglob("__lfortran_const_data_blob_*.bin")
+                if path.is_file()
+            )
+    return sorted(set(files))
+
+
 def display_path(path: Path, roots: list[Path]) -> str:
     candidates = [path]
     for root in roots:
@@ -135,10 +149,13 @@ def mib(value: int) -> float:
 def summarize(roots: list[Path], top: int) -> dict[str, object]:
     c_paths = find_files(roots, ".c")
     h_paths = find_files(roots, ".h")
+    binary_blob_paths = find_binary_const_blobs(roots)
     c_budgets = [read_file_budget(path) for path in c_paths]
     h_budgets = [read_file_budget(path) for path in h_paths]
+    binary_blob_budgets = [read_file_budget(path) for path in binary_blob_paths]
     c_budgets.sort(key=lambda item: item.bytes, reverse=True)
     h_budgets.sort(key=lambda item: item.bytes, reverse=True)
+    binary_blob_budgets.sort(key=lambda item: item.bytes, reverse=True)
 
     pattern_counts = count_patterns(c_paths)
     ninja_edges = parse_ninja_logs(roots)
@@ -165,6 +182,11 @@ def summarize(roots: list[Path], top: int) -> dict[str, object]:
             "bytes": sum(item.bytes for item in h_budgets),
             "lines": sum(item.lines for item in h_budgets),
             "largest": [file_entry(item) for item in h_budgets[:top]],
+        },
+        "binary_constant_blobs": {
+            "files": len(binary_blob_budgets),
+            "bytes": sum(item.bytes for item in binary_blob_budgets),
+            "largest": [file_entry(item) for item in binary_blob_budgets[:top]],
         },
         "patterns": pattern_counts,
         "compile_time": [
@@ -197,8 +219,10 @@ def print_file_table(title: str, entries: list[dict[str, object]]) -> None:
 def print_report(report: dict[str, object]) -> None:
     c_info = report["c"]
     h_info = report["headers"]
+    binary_info = report["binary_constant_blobs"]
     assert isinstance(c_info, dict)
     assert isinstance(h_info, dict)
+    assert isinstance(binary_info, dict)
 
     print("Generated C budget")
     print("Roots:")
@@ -213,10 +237,16 @@ def print_report(report: dict[str, object]) -> None:
         f"Headers: {h_info['files']} files, {h_info['bytes']} bytes "
         f"({mib(int(h_info['bytes'])):.2f} MiB), {h_info['lines']} lines"
     )
+    print(
+        f"Binary constant blobs: {binary_info['files']} files, "
+        f"{binary_info['bytes']} bytes ({mib(int(binary_info['bytes'])):.2f} MiB)"
+    )
     print()
     print_file_table("Largest C translation units:", c_info["largest"])
     print()
     print_file_table("Largest headers:", h_info["largest"])
+    print()
+    print_file_table("Largest binary constant blobs:", binary_info["largest"])
     print()
     print("Helper pattern counts in .c files:")
     patterns = report["patterns"]
@@ -249,9 +279,12 @@ def run_self_test() -> None:
             "void g(void) { memcpy(0, 0, 0); }\n"
         )
         (split / "case_constants_data.c").write_text(
+            "extern const double __lfortran_const_data_a[2];\n"
+            "__asm__(\".incbin \\\"__lfortran_const_data_blob_0.bin\\\"\\n\");\n"
             "static const unsigned char __lfortran_const_blob0[2] = {1, 2};\n"
             "void __lfortran_const_copy0(void *dst, int64_t stride) {}\n"
         )
+        (split / "__lfortran_const_data_blob_0.bin").write_bytes(b"\x01\x02")
         (root / ".ninja_log").write_text(
             "# ninja log v5\n"
             "0\t12\t0\tcase.o.tmp.split/case_pack_0.c.o\tabc\n"
@@ -260,8 +293,11 @@ def run_self_test() -> None:
         assert report["split_dirs"] == 1
         assert report["c"]["files"] == 2
         assert report["headers"]["files"] == 1
+        assert report["binary_constant_blobs"]["files"] == 1
+        assert report["binary_constant_blobs"]["bytes"] == 2
         assert report["patterns"]["compiler_created_values"] == 1
         assert report["patterns"]["struct_deepcopy"] == 1
+        assert report["patterns"]["binary_const_incbins"] == 1
         assert report["patterns"]["compact_const_blobs"] == 1
         assert report["patterns"]["compact_const_copy_helpers"] == 1
         assert report["patterns"]["memcpy_calls"] == 1

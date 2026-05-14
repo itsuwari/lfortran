@@ -5812,6 +5812,37 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         return init;
     }
 
+    std::vector<unsigned char> get_c_array_constant_binary_data(
+            ASR::ArrayConstant_t *arr, ASR::ttype_t *array_type,
+            ASR::ttype_t *element_type) {
+        std::vector<unsigned char> bytes;
+        size_t element_size = get_c_array_constant_element_size(element_type);
+        if (element_size == 0 || arr == nullptr || arr->m_data == nullptr) {
+            return bytes;
+        }
+        ASR::ttype_t *type = ASRUtils::type_get_past_pointer(
+            ASRUtils::type_get_past_allocatable(element_type));
+        if (type == nullptr
+                || !(ASRUtils::is_integer(*type)
+                    || ASRUtils::is_unsigned_integer(*type)
+                    || ASRUtils::is_real(*type)
+                    || ASRUtils::is_complex(*type))) {
+            return bytes;
+        }
+        size_t n = ASRUtils::get_fixed_size_of_array(array_type);
+        const unsigned char *raw_data =
+            reinterpret_cast<const unsigned char*>(arr->m_data);
+        bytes.reserve(n * element_size);
+        for (size_t i = 0; i < n; i++) {
+            size_t storage_index =
+                get_c_array_constant_storage_index(arr, array_type, i);
+            const unsigned char *element =
+                raw_data + storage_index * element_size;
+            bytes.insert(bytes.end(), element, element + element_size);
+        }
+        return bytes;
+    }
+
     void ensure_compact_constant_data_prelude() {
         if (!compact_constant_data_body.empty()) {
             return;
