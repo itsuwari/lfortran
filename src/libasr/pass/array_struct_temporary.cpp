@@ -2387,6 +2387,306 @@ static bool is_c_simple_integer_bound_expr(ASR::expr_t *expr) {
     }
 }
 
+static ASR::Variable_t *get_c_raw_helper_arg_var(ASR::Function_t *func,
+        size_t i) {
+    if (func == nullptr || i >= func->n_args || func->m_args[i] == nullptr
+            || !ASR::is_a<ASR::Var_t>(*func->m_args[i])) {
+        return nullptr;
+    }
+    ASR::symbol_t *sym = ASRUtils::symbol_get_past_external(
+        ASR::down_cast<ASR::Var_t>(func->m_args[i])->m_v);
+    if (sym == nullptr || !ASR::is_a<ASR::Variable_t>(*sym)) {
+        return nullptr;
+    }
+    return ASR::down_cast<ASR::Variable_t>(sym);
+}
+
+static bool is_c_raw_helper_scalar_arg(const ASR::Variable_t *arg) {
+    ASR::ttype_t *arg_type_unwrapped = arg == nullptr ? nullptr
+        : ASRUtils::type_get_past_allocatable_pointer(arg->m_type);
+    if (arg == nullptr || arg_type_unwrapped == nullptr
+            || !ASRUtils::is_arg_dummy(arg->m_intent)
+            || arg->m_presence == ASR::presenceType::Optional
+            || arg->m_value_attr || arg->m_target_attr
+            || ASRUtils::is_array(arg->m_type)
+            || ASRUtils::is_allocatable(arg->m_type)
+            || ASRUtils::is_pointer(arg->m_type)
+            || ASRUtils::is_character(*arg_type_unwrapped)
+            || ASRUtils::is_aggregate_type(arg->m_type)
+            || ASRUtils::is_class_type(arg->m_type)) {
+        return false;
+    }
+    return is_c_plain_scalar_array_element_type(arg_type_unwrapped);
+}
+
+static bool is_c_raw_helper_array_arg(const ASR::Variable_t *arg) {
+    if (arg == nullptr || !ASRUtils::is_arg_dummy(arg->m_intent)
+            || arg->m_presence == ASR::presenceType::Optional
+            || arg->m_value_attr || arg->m_target_attr
+            || ASRUtils::is_allocatable(arg->m_type)
+            || ASRUtils::is_pointer(arg->m_type)) {
+        return false;
+    }
+    ASR::ttype_t *arg_type =
+        ASRUtils::type_get_past_allocatable_pointer(arg->m_type);
+    if (arg_type == nullptr || !ASR::is_a<ASR::Array_t>(*arg_type)
+            || !is_c_plain_scalar_array_element_type(
+                ASRUtils::type_get_past_array(arg_type))) {
+        return false;
+    }
+    ASR::Array_t *array_type = ASR::down_cast<ASR::Array_t>(arg_type);
+    return array_type->m_physical_type
+        == ASR::array_physical_typeType::UnboundedPointerArray;
+}
+
+static bool is_c_private_or_internal_source_subroutine(
+        ASR::Function_t *func) {
+    if (func == nullptr || std::string(func->m_name) == "main") {
+        return false;
+    }
+    ASR::FunctionType_t *func_type = ASRUtils::get_FunctionType(func);
+    if (func_type == nullptr || func_type->m_abi != ASR::abiType::Source
+            || func_type->m_deftype != ASR::deftypeType::Implementation
+            || func->m_return_var != nullptr) {
+        return false;
+    }
+    if (func->m_access == ASR::accessType::Private) {
+        return true;
+    }
+    SymbolTable *parent = ASRUtils::symbol_parent_symtab(
+        reinterpret_cast<ASR::symbol_t*>(func));
+    ASR::asr_t *owner = parent ? parent->asr_owner : nullptr;
+    if (owner == nullptr || !ASR::is_a<ASR::symbol_t>(*owner)) {
+        return false;
+    }
+    ASR::symbol_t *owner_sym = ASR::down_cast<ASR::symbol_t>(owner);
+    return ASR::is_a<ASR::Function_t>(*owner_sym)
+        || ASR::is_a<ASR::Program_t>(*owner_sym);
+}
+
+static ASR::expr_t *get_c_raw_helper_array_index_expr(
+        const ASR::array_index_t &idx) {
+    if (idx.m_right != nullptr) {
+        return idx.m_right;
+    }
+    if (idx.m_left != nullptr) {
+        return idx.m_left;
+    }
+    return nullptr;
+}
+
+static bool is_c_raw_helper_raw_var_expr(ASR::expr_t *expr,
+        const std::set<ASR::symbol_t*> &raw_arg_symbols) {
+    expr = ASRUtils::get_past_array_physical_cast(expr);
+    if (expr == nullptr || !ASR::is_a<ASR::Var_t>(*expr)) {
+        return false;
+    }
+    ASR::symbol_t *sym = ASRUtils::symbol_get_past_external(
+        ASR::down_cast<ASR::Var_t>(expr)->m_v);
+    return raw_arg_symbols.find(sym) != raw_arg_symbols.end();
+}
+
+class CBackendRawArrayUseVerifier:
+        public ASR::BaseWalkVisitor<CBackendRawArrayUseVerifier> {
+public:
+    const std::set<ASR::symbol_t*> &raw_arg_symbols;
+    bool ok = true;
+
+    CBackendRawArrayUseVerifier(
+            const std::set<ASR::symbol_t*> &raw_arg_symbols):
+        raw_arg_symbols(raw_arg_symbols) {}
+
+    bool is_raw_var(ASR::expr_t *expr) {
+        return is_c_raw_helper_raw_var_expr(expr, raw_arg_symbols);
+    }
+
+    void visit_Var(const ASR::Var_t &x) {
+        ASR::symbol_t *sym = ASRUtils::symbol_get_past_external(x.m_v);
+        if (raw_arg_symbols.find(sym) != raw_arg_symbols.end()) {
+            ok = false;
+        }
+    }
+
+    void visit_ArrayItem(const ASR::ArrayItem_t &x) {
+        if (!ok) {
+            return;
+        }
+        if (!is_raw_var(x.m_v)) {
+            ASR::BaseWalkVisitor<CBackendRawArrayUseVerifier>::
+                visit_ArrayItem(x);
+            return;
+        }
+        if (ASRUtils::is_array(x.m_type)) {
+            ok = false;
+            return;
+        }
+        for (size_t i = 0; i < x.n_args; i++) {
+            ASR::expr_t *idx_expr =
+                get_c_raw_helper_array_index_expr(x.m_args[i]);
+            if (idx_expr == nullptr
+                    || ASRUtils::is_array(ASRUtils::expr_type(idx_expr))) {
+                ok = false;
+                return;
+            }
+            this->visit_expr(*idx_expr);
+        }
+    }
+
+    void visit_ArraySection(const ASR::ArraySection_t &x) {
+        if (is_raw_var(x.m_v)) {
+            ok = false;
+            return;
+        }
+        ASR::BaseWalkVisitor<CBackendRawArrayUseVerifier>::
+            visit_ArraySection(x);
+    }
+
+    void visit_ArraySize(const ASR::ArraySize_t &x) {
+        if (!ok) {
+            return;
+        }
+        if (!is_raw_var(x.m_v)) {
+            ASR::BaseWalkVisitor<CBackendRawArrayUseVerifier>::
+                visit_ArraySize(x);
+            return;
+        }
+        if (x.m_dim != nullptr) {
+            this->visit_expr(*x.m_dim);
+        }
+    }
+
+    void visit_ArrayBound(const ASR::ArrayBound_t &x) {
+        if (!ok) {
+            return;
+        }
+        if (!is_raw_var(x.m_v)) {
+            ASR::BaseWalkVisitor<CBackendRawArrayUseVerifier>::
+                visit_ArrayBound(x);
+            return;
+        }
+        if (x.m_dim != nullptr) {
+            this->visit_expr(*x.m_dim);
+        }
+    }
+};
+
+static bool can_specialize_c_raw_helper_body(ASR::Function_t *func,
+        const std::vector<size_t> &raw_positions) {
+    if (func == nullptr || raw_positions.empty()) {
+        return false;
+    }
+    std::set<ASR::symbol_t*> raw_arg_symbols;
+    for (size_t pos: raw_positions) {
+        ASR::Variable_t *arg = get_c_raw_helper_arg_var(func, pos);
+        if (arg == nullptr) {
+            return false;
+        }
+        raw_arg_symbols.insert(ASRUtils::symbol_get_past_external(
+            reinterpret_cast<ASR::symbol_t*>(arg)));
+    }
+    CBackendRawArrayUseVerifier verifier(raw_arg_symbols);
+    for (size_t i = 0; i < func->n_body && verifier.ok; i++) {
+        verifier.visit_stmt(*func->m_body[i]);
+    }
+    return verifier.ok;
+}
+
+static bool get_c_raw_helper_args(bool c_backend, ASR::Function_t *func,
+        std::vector<size_t> &raw_positions) {
+    raw_positions.clear();
+    if (!c_backend || !is_c_private_or_internal_source_subroutine(func)) {
+        return false;
+    }
+    for (size_t i = 0; i < func->n_args; i++) {
+        ASR::Variable_t *arg = get_c_raw_helper_arg_var(func, i);
+        if (arg == nullptr) {
+            return false;
+        }
+        if (is_c_raw_helper_array_arg(arg)) {
+            raw_positions.push_back(i);
+            continue;
+        }
+        if (!is_c_raw_helper_scalar_arg(arg)) {
+            return false;
+        }
+    }
+    return can_specialize_c_raw_helper_body(func, raw_positions);
+}
+
+static bool is_c_raw_helper_array_actual(ASR::Variable_t *formal,
+        ASR::expr_t *actual) {
+    ASR::expr_t *actual_no_cast =
+        actual == nullptr ? nullptr
+        : ASRUtils::get_past_array_physical_cast(actual);
+    if (!is_c_raw_helper_array_arg(formal) || actual_no_cast == nullptr
+            || ASR::is_a<ASR::FunctionParam_t>(*actual_no_cast)) {
+        return false;
+    }
+    ASR::expr_t *unwrapped = actual_no_cast;
+    ASR::ArrayItem_t *item = ASR::is_a<ASR::ArrayItem_t>(*unwrapped)
+        ? ASR::down_cast<ASR::ArrayItem_t>(unwrapped) : nullptr;
+    ASR::ArraySection_t *section =
+        ASR::is_a<ASR::ArraySection_t>(*unwrapped)
+        ? ASR::down_cast<ASR::ArraySection_t>(unwrapped) : nullptr;
+    if (item == nullptr && section == nullptr) {
+        return false;
+    }
+    ASR::expr_t *base = item != nullptr ? item->m_v : section->m_v;
+    ASR::ttype_t *base_type =
+        ASRUtils::type_get_past_allocatable_pointer(
+            ASRUtils::expr_type(base));
+    ASR::ttype_t *formal_type =
+        ASRUtils::type_get_past_allocatable_pointer(formal->m_type);
+    if (base_type == nullptr || formal_type == nullptr) {
+        return false;
+    }
+    int base_rank = ASRUtils::extract_n_dims_from_ttype(base_type);
+    int formal_rank = ASRUtils::extract_n_dims_from_ttype(formal_type);
+    if (base_rank <= 0 || formal_rank <= 0 || base_rank != formal_rank
+            || (item != nullptr
+                && item->n_args != static_cast<size_t>(base_rank))
+            || (section != nullptr
+                && section->n_args != static_cast<size_t>(base_rank))
+            || !is_c_plain_scalar_array_element_type(
+                ASRUtils::type_get_past_array(base_type))
+            || !ASRUtils::types_equal(
+                ASRUtils::type_get_past_array(base_type),
+                ASRUtils::type_get_past_array(formal_type),
+                nullptr, nullptr)) {
+        return false;
+    }
+    const ASR::array_index_t *indices =
+        item != nullptr ? item->m_args : section->m_args;
+    for (int i = 0; i < base_rank; i++) {
+        if (!is_unit_step_expr(indices[i].m_step)
+                || !is_c_simple_integer_bound_expr(indices[i].m_left)
+                || !is_c_simple_integer_bound_expr(indices[i].m_right)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static std::vector<bool> get_c_raw_helper_call_temp_bypass(bool c_backend,
+        ASR::Function_t *func, ASR::call_arg_t *args, size_t n_args) {
+    std::vector<bool> bypass(n_args, false);
+    std::vector<size_t> raw_positions;
+    if (func == nullptr || n_args != func->n_args
+            || !get_c_raw_helper_args(c_backend, func, raw_positions)) {
+        return bypass;
+    }
+    for (size_t pos: raw_positions) {
+        ASR::Variable_t *formal = get_c_raw_helper_arg_var(func, pos);
+        if (args[pos].m_value == nullptr
+                || !is_c_raw_helper_array_actual(
+                    formal, args[pos].m_value)) {
+            return std::vector<bool>(n_args, false);
+        }
+        bypass[pos] = true;
+    }
+    return bypass;
+}
+
 static bool is_c_rank2_allocatable_self_section_assignment(
         ASR::expr_t *lhs_array_var, ASR::expr_t *target, ASR::expr_t *value) {
     target = ASRUtils::get_past_array_physical_cast(target);
@@ -3145,7 +3445,15 @@ class ArgSimplifier: public ASR::CallReplacerOnExpressionsVisitor<ArgSimplifier>
         const std::string& name_hint) {
         /* For other frontends, we might need to traverse the arguments
            in reverse order. */
+        std::vector<bool> bypass_raw_helper_array_temps =
+            get_c_raw_helper_call_temp_bypass(
+                c_backend, func, x_m_args, x_n_args);
         for( size_t i = 0; i < x_n_args; i++ ) {
+            if (bypass_raw_helper_array_temps.size() > i
+                    && bypass_raw_helper_array_temps[i]) {
+                x_m_args_vec.push_back(al, x_m_args[i]);
+                continue;
+            }
             if (orig_args &&
                 (x_m_args[i].m_value && !ASR::is_a<ASR::ArraySection_t>(*ASRUtils::get_past_array_physical_cast(x_m_args[i].m_value)))) {
                 ASR::Variable_t* orig_variable = ASRUtils::expr_to_variable_or_null(orig_args[i]);
@@ -4536,9 +4844,15 @@ class ReplaceExprWithTemporaryVisitor:
     }
 
     bool should_skip_call_arg_replacement(ASR::Function_t *func,
-            ASR::call_arg_t *args, size_t i) {
+            ASR::call_arg_t *args, size_t n_args, size_t i) {
         if (func == nullptr || i >= func->n_args) {
             return false;
+        }
+        std::vector<bool> bypass_raw_helper_array_temps =
+            get_c_raw_helper_call_temp_bypass(c_backend, func, args, n_args);
+        if (bypass_raw_helper_array_temps.size() > i
+                && bypass_raw_helper_array_temps[i]) {
+            return true;
         }
         return should_preserve_c_sequence_association_actual(
                 c_backend, func, func->m_args[i], args[i].m_value)
@@ -4549,7 +4863,8 @@ class ReplaceExprWithTemporaryVisitor:
     void visit_FunctionCall(const ASR::FunctionCall_t &x) {
         ASR::Function_t *func = get_call_function(x.m_name);
         for (size_t i = 0; i < x.n_args; i++) {
-            if (should_skip_call_arg_replacement(func, x.m_args, i)) {
+            if (should_skip_call_arg_replacement(
+                    func, x.m_args, x.n_args, i)) {
                 continue;
             }
             visit_call_arg(x.m_args[i]);
@@ -4572,7 +4887,8 @@ class ReplaceExprWithTemporaryVisitor:
     void visit_SubroutineCall(const ASR::SubroutineCall_t &x) {
         ASR::Function_t *func = get_call_function(x.m_name);
         for (size_t i = 0; i < x.n_args; i++) {
-            if (should_skip_call_arg_replacement(func, x.m_args, i)) {
+            if (should_skip_call_arg_replacement(
+                    func, x.m_args, x.n_args, i)) {
                 continue;
             }
             visit_call_arg(x.m_args[i]);
@@ -5279,7 +5595,13 @@ class VerifySimplifierASROutput:
 
     void traverse_call_args(ASR::call_arg_t* m_args, size_t n_args,
             ASR::expr_t **orig_args = nullptr, ASR::Function_t *func = nullptr) {
+        std::vector<bool> bypass_raw_helper_array_temps =
+            get_c_raw_helper_call_temp_bypass(c_backend, func, m_args, n_args);
         for( size_t i = 0; i < n_args; i++ ) {
+            if (bypass_raw_helper_array_temps.size() > i
+                    && bypass_raw_helper_array_temps[i]) {
+                continue;
+            }
             if (orig_args &&
                 (m_args[i].m_value && !ASR::is_a<ASR::ArraySection_t>(*ASRUtils::get_past_array_physical_cast(m_args[i].m_value)))) {
                 ASR::Variable_t* orig_variable = ASRUtils::expr_to_variable_or_null(orig_args[i]);

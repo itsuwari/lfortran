@@ -1,0 +1,13 @@
+{
+    "basename": "run-c_backend_raw_array_helper_call_01-ac88d95",
+    "cmd": "lfortran --no-color {infile}",
+    "infile": "tests/c_backend_raw_array_helper_call_01.f90",
+    "infile_hash": "089c7de91ec5cf2c4a7cef0a137970dbe05bda58bac4404bfe3543fc",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

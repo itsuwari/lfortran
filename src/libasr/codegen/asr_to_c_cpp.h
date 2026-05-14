@@ -174,6 +174,15 @@ struct CArrayDescriptorCache {
     std::vector<std::string> strides;
 };
 
+struct CRawArrayArgInfo {
+    std::string arg_name;
+    std::string data_arg;
+    std::string offset_arg;
+    std::vector<std::string> lower_bound_args;
+    std::vector<std::string> length_args;
+    std::vector<std::string> stride_args;
+};
+
 struct CScalarExprCacheEntry {
     std::string name;
     std::set<ASR::symbol_t*> deps;
@@ -3422,6 +3431,585 @@ R"(#include <stdio.h>
         }
     }
 
+    bool is_c_raw_array_helper_scalar_type(ASR::ttype_t *type) {
+        type = ASRUtils::type_get_past_allocatable_pointer(type);
+        return type != nullptr
+            && !ASRUtils::is_pointer(type)
+            && !ASRUtils::is_allocatable(type)
+            && (ASRUtils::is_integer(*type)
+                || ASRUtils::is_unsigned_integer(*type)
+                || ASRUtils::is_real(*type)
+                || ASRUtils::is_logical(*type));
+    }
+
+    bool is_c_raw_array_helper_array_arg(const ASR::Variable_t *arg) {
+        if (!is_c || arg == nullptr
+                || !ASRUtils::is_arg_dummy(arg->m_intent)
+                || arg->m_presence == ASR::presenceType::Optional
+                || arg->m_value_attr || arg->m_target_attr
+                || ASRUtils::is_allocatable(arg->m_type)
+                || ASRUtils::is_pointer(arg->m_type)
+                || !is_c_scalarizable_element_type(arg->m_type)) {
+            return false;
+        }
+        ASR::ttype_t *arg_type =
+            ASRUtils::type_get_past_allocatable_pointer(arg->m_type);
+        if (arg_type == nullptr || !ASR::is_a<ASR::Array_t>(*arg_type)) {
+            return false;
+        }
+        ASR::Array_t *array_type = ASR::down_cast<ASR::Array_t>(arg_type);
+        return array_type->m_physical_type
+            == ASR::array_physical_typeType::UnboundedPointerArray;
+    }
+
+    bool is_c_raw_array_helper_scalar_arg(const ASR::Variable_t *arg) {
+        ASR::ttype_t *arg_type_unwrapped = arg == nullptr ? nullptr
+            : ASRUtils::type_get_past_allocatable_pointer(arg->m_type);
+        if (!is_c || arg == nullptr
+                || arg_type_unwrapped == nullptr
+                || !ASRUtils::is_arg_dummy(arg->m_intent)
+                || arg->m_presence == ASR::presenceType::Optional
+                || arg->m_value_attr || arg->m_target_attr
+                || ASRUtils::is_array(arg->m_type)
+                || ASRUtils::is_allocatable(arg->m_type)
+                || ASRUtils::is_pointer(arg->m_type)
+                || ASRUtils::is_character(*arg_type_unwrapped)
+                || ASRUtils::is_aggregate_type(arg->m_type)
+                || ASRUtils::is_class_type(arg->m_type)) {
+            return false;
+        }
+        return is_c_raw_array_helper_scalar_type(arg->m_type);
+    }
+
+    bool is_c_private_or_internal_source_function(const ASR::Function_t &x) {
+        ASR::FunctionType_t *f_type = ASRUtils::get_FunctionType(x);
+        if (f_type->m_abi != ASR::abiType::Source
+                || f_type->m_deftype != ASR::deftypeType::Implementation
+                || x.m_return_var != nullptr
+                || std::string(x.m_name) == "main") {
+            return false;
+        }
+        if (x.m_access == ASR::accessType::Private) {
+            return true;
+        }
+        SymbolTable *parent = ASRUtils::symbol_parent_symtab(
+            reinterpret_cast<ASR::symbol_t*>(
+                const_cast<ASR::Function_t*>(&x)));
+        ASR::asr_t *owner = parent ? parent->asr_owner : nullptr;
+        return owner != nullptr
+            && (CUtils::is_symbol_owner<ASR::Function_t>(owner)
+                || CUtils::is_symbol_owner<ASR::Program_t>(owner));
+    }
+
+    ASR::Variable_t *get_c_raw_helper_arg_var(const ASR::Function_t &x,
+            size_t i) {
+        if (i >= x.n_args || x.m_args[i] == nullptr
+                || !ASR::is_a<ASR::Var_t>(*x.m_args[i])) {
+            return nullptr;
+        }
+        ASR::symbol_t *sym = ASRUtils::symbol_get_past_external(
+            ASR::down_cast<ASR::Var_t>(x.m_args[i])->m_v);
+        if (sym == nullptr || !ASR::is_a<ASR::Variable_t>(*sym)) {
+            return nullptr;
+        }
+        return ASR::down_cast<ASR::Variable_t>(sym);
+    }
+
+    bool is_c_raw_helper_raw_var_expr(ASR::expr_t *expr,
+            const std::set<uint64_t> &raw_arg_hashes) {
+        expr = unwrap_c_lvalue_expr(expr);
+        if (expr == nullptr || !ASR::is_a<ASR::Var_t>(*expr)) {
+            return false;
+        }
+        ASR::symbol_t *sym = ASRUtils::symbol_get_past_external(
+            ASR::down_cast<ASR::Var_t>(expr)->m_v);
+        return sym != nullptr
+            && raw_arg_hashes.find(get_hash(reinterpret_cast<ASR::asr_t*>(sym)))
+                != raw_arg_hashes.end();
+    }
+
+    bool can_specialize_c_raw_array_helper_body(const ASR::Function_t &x,
+            const std::vector<size_t> &raw_positions) {
+        if (raw_positions.empty()) {
+            return false;
+        }
+        std::set<uint64_t> raw_arg_hashes;
+        for (size_t pos: raw_positions) {
+            ASR::Variable_t *arg = get_c_raw_helper_arg_var(x, pos);
+            if (arg == nullptr) {
+                return false;
+            }
+            raw_arg_hashes.insert(
+                get_hash(reinterpret_cast<ASR::asr_t*>(
+                    ASRUtils::symbol_get_past_external(
+                        reinterpret_cast<ASR::symbol_t*>(arg)))));
+        }
+
+        struct RawArrayUseVerifier:
+                public ASR::BaseWalkVisitor<RawArrayUseVerifier> {
+            BaseCCPPVisitor<StructType> &parent;
+            const std::set<uint64_t> &raw_arg_hashes;
+            bool ok = true;
+
+            RawArrayUseVerifier(BaseCCPPVisitor<StructType> &parent,
+                    const std::set<uint64_t> &raw_arg_hashes):
+                parent(parent), raw_arg_hashes(raw_arg_hashes) {}
+
+            bool is_raw_var(ASR::expr_t *expr) {
+                return parent.is_c_raw_helper_raw_var_expr(expr, raw_arg_hashes);
+            }
+
+            void visit_Var(const ASR::Var_t &x) {
+                ASR::symbol_t *sym = ASRUtils::symbol_get_past_external(x.m_v);
+                if (sym != nullptr
+                        && raw_arg_hashes.find(get_hash(
+                            reinterpret_cast<ASR::asr_t*>(sym)))
+                            != raw_arg_hashes.end()) {
+                    ok = false;
+                }
+            }
+
+            void visit_ArrayItem(const ASR::ArrayItem_t &x) {
+                if (!ok) {
+                    return;
+                }
+                if (!is_raw_var(x.m_v)) {
+                    ASR::BaseWalkVisitor<RawArrayUseVerifier>::
+                        visit_ArrayItem(x);
+                    return;
+                }
+                if (ASRUtils::is_array(x.m_type)) {
+                    ok = false;
+                    return;
+                }
+                for (size_t i = 0; i < x.n_args; i++) {
+                    ASR::expr_t *idx_expr =
+                        parent.get_array_index_expr(x.m_args[i]);
+                    if (idx_expr == nullptr
+                            || parent.is_vector_subscript_expr(idx_expr)) {
+                        ok = false;
+                        return;
+                    }
+                    this->visit_expr(*idx_expr);
+                }
+            }
+
+            void visit_ArraySize(const ASR::ArraySize_t &x) {
+                if (!ok) {
+                    return;
+                }
+                if (!is_raw_var(x.m_v)) {
+                    ASR::BaseWalkVisitor<RawArrayUseVerifier>::
+                        visit_ArraySize(x);
+                    return;
+                }
+                if (x.m_dim != nullptr) {
+                    this->visit_expr(*x.m_dim);
+                }
+            }
+
+            void visit_ArrayBound(const ASR::ArrayBound_t &x) {
+                if (!ok) {
+                    return;
+                }
+                if (!is_raw_var(x.m_v)) {
+                    ASR::BaseWalkVisitor<RawArrayUseVerifier>::
+                        visit_ArrayBound(x);
+                    return;
+                }
+                if (x.m_dim != nullptr) {
+                    this->visit_expr(*x.m_dim);
+                }
+            }
+        };
+
+        RawArrayUseVerifier verifier(*this, raw_arg_hashes);
+        for (size_t i = 0; i < x.n_body && verifier.ok; i++) {
+            verifier.visit_stmt(*x.m_body[i]);
+        }
+        return verifier.ok;
+    }
+
+    bool get_c_raw_array_helper_args(const ASR::Function_t &x,
+            std::vector<size_t> &raw_positions) {
+        raw_positions.clear();
+        if (!is_c || !is_c_private_or_internal_source_function(x)) {
+            return false;
+        }
+        for (size_t i = 0; i < x.n_args; i++) {
+            ASR::Variable_t *arg = get_c_raw_helper_arg_var(x, i);
+            if (arg == nullptr) {
+                return false;
+            }
+            if (is_c_raw_array_helper_array_arg(arg)) {
+                raw_positions.push_back(i);
+                continue;
+            }
+            if (!is_c_raw_array_helper_scalar_arg(arg)) {
+                return false;
+            }
+        }
+        return can_specialize_c_raw_array_helper_body(x, raw_positions);
+    }
+
+    std::string get_c_raw_array_helper_local_name(const ASR::Function_t &x) {
+        return std::string(x.m_name) + "__rawptr";
+    }
+
+    bool is_c_raw_array_helper_arg_position(
+            const std::vector<size_t> &raw_positions, size_t i) {
+        return std::find(raw_positions.begin(), raw_positions.end(), i)
+            != raw_positions.end();
+    }
+
+    CRawArrayArgInfo get_c_raw_array_arg_info(const ASR::Variable_t &arg) {
+        CRawArrayArgInfo info;
+        info.arg_name = CUtils::get_c_variable_name(arg);
+        info.data_arg = info.arg_name + "__raw_data";
+        info.offset_arg = info.arg_name + "__raw_offset";
+        ASR::dimension_t *dims = nullptr;
+        int n_dims = ASRUtils::extract_dimensions_from_ttype(arg.m_type, dims);
+        for (int j = 0; j < n_dims; j++) {
+            std::string dim_name = info.arg_name + "__raw_dim"
+                + std::to_string(j + 1);
+            info.lower_bound_args.push_back(dim_name + "_lower_bound");
+            info.length_args.push_back(dim_name + "_length");
+            info.stride_args.push_back(dim_name + "_stride");
+        }
+        return info;
+    }
+
+    std::string get_c_raw_array_helper_decl(const ASR::Function_t &x,
+            const std::string &target_name,
+            const std::vector<size_t> &raw_positions) {
+        bool has_typevar = false;
+        std::string decl = "void " + target_name + "(";
+        for (size_t i = 0; i < x.n_args; i++) {
+            if (i > 0) {
+                decl += ", ";
+            }
+            ASR::Variable_t *arg = get_c_raw_helper_arg_var(x, i);
+            if (arg == nullptr) {
+                return "";
+            }
+            if (is_c_raw_array_helper_arg_position(raw_positions, i)) {
+                CRawArrayArgInfo raw = get_c_raw_array_arg_info(*arg);
+                decl += CUtils::get_c_array_element_type_from_ttype_t(arg->m_type)
+                    + " * restrict " + raw.data_arg + ", int32_t "
+                    + raw.offset_arg;
+                for (size_t j = 0; j < raw.lower_bound_args.size(); j++) {
+                    decl += ", int32_t " + raw.lower_bound_args[j]
+                        + ", int32_t " + raw.length_args[j]
+                        + ", int32_t " + raw.stride_args[j];
+                }
+                continue;
+            }
+            CDeclarationOptions c_decl_options;
+            c_decl_options.pre_initialise_derived_type = false;
+            decl += self().convert_variable_decl(*arg, &c_decl_options);
+            if (ASR::is_a<ASR::TypeParameter_t>(*arg->m_type)) {
+                has_typevar = true;
+                break;
+            }
+        }
+        decl += ")";
+        return has_typevar ? "" : decl;
+    }
+
+    std::string rewrite_c_raw_array_helper_body(std::string body,
+            const ASR::Function_t &x,
+            const std::vector<size_t> &raw_positions) {
+        for (size_t pos: raw_positions) {
+            ASR::Variable_t *arg = get_c_raw_helper_arg_var(x, pos);
+            if (arg == nullptr) {
+                return "";
+            }
+            CRawArrayArgInfo raw = get_c_raw_array_arg_info(*arg);
+            for (size_t j = 0; j < raw.lower_bound_args.size(); j++) {
+                std::vector<std::string> dim_refs = {
+                    raw.arg_name + "->dims[" + std::to_string(j) + "]",
+                    raw.arg_name + "->dims[" + std::to_string(j + 1) + "-1]"
+                };
+                for (const std::string &dim_ref: dim_refs) {
+                    body = replace_all_substrings(body,
+                        dim_ref + ".lower_bound", raw.lower_bound_args[j]);
+                    body = replace_all_substrings(body,
+                        dim_ref + ".length", raw.length_args[j]);
+                    body = replace_all_substrings(body,
+                        dim_ref + ".stride", raw.stride_args[j]);
+                }
+            }
+            body = replace_all_substrings(body,
+                raw.arg_name + "->data", raw.data_arg);
+            body = replace_all_substrings(body,
+                raw.arg_name + "->offset", raw.offset_arg);
+            if (body.find(raw.arg_name + "->") != std::string::npos) {
+                return "";
+            }
+        }
+        return body;
+    }
+
+    std::string get_c_raw_array_helper_function(const ASR::Function_t &x,
+            const std::string &local_decl, const std::string &local_body) {
+        std::vector<size_t> raw_positions;
+        if (!get_c_raw_array_helper_args(x, raw_positions)) {
+            return "";
+        }
+        std::string target_name = get_emitted_function_name_with_local_name(
+            x, get_c_raw_array_helper_local_name(x));
+        std::string decl = get_c_raw_array_helper_decl(x, target_name,
+            raw_positions);
+        if (decl.empty()) {
+            return "";
+        }
+        std::string body = rewrite_c_raw_array_helper_body(
+            local_decl + local_body, x, raw_positions);
+        if (body.empty()) {
+            return "";
+        }
+        record_generated_forward_decl(decl);
+        return decl + "\n{\n" + body + "}\n";
+    }
+
+    bool get_c_raw_array_direct_call_target(const ASR::Function_t &x,
+            std::string &target_name, std::vector<size_t> &raw_positions) {
+        if (!get_c_raw_array_helper_args(x, raw_positions)) {
+            return false;
+        }
+        target_name = get_emitted_function_name_with_local_name(
+            x, get_c_raw_array_helper_local_name(x));
+        return !target_name.empty();
+    }
+
+    bool get_c_raw_array_dim_constant_expr(ASR::expr_t *expr,
+            std::string &value) {
+        if (expr == nullptr) {
+            value = "1";
+            return true;
+        }
+        int64_t int_value = 0;
+        if (!get_c_constant_int_expr_value(expr, int_value)) {
+            return false;
+        }
+        value = std::to_string(int_value);
+        return true;
+    }
+
+    bool append_c_raw_array_actual_args(ASR::Variable_t *param,
+            ASR::expr_t *call_arg, std::string &args,
+            std::string &call_arg_setup) {
+        if (param == nullptr || call_arg == nullptr
+                || !is_c_raw_array_helper_array_arg(param)) {
+            return false;
+        }
+        ASR::expr_t *unwrapped_call_arg = unwrap_c_lvalue_expr(call_arg);
+        if (unwrapped_call_arg == nullptr) {
+            return false;
+        }
+        ASR::ArrayItem_t *item = ASR::is_a<ASR::ArrayItem_t>(*unwrapped_call_arg)
+            ? ASR::down_cast<ASR::ArrayItem_t>(unwrapped_call_arg) : nullptr;
+        ASR::ArraySection_t *section =
+            ASR::is_a<ASR::ArraySection_t>(*unwrapped_call_arg)
+            ? ASR::down_cast<ASR::ArraySection_t>(unwrapped_call_arg) : nullptr;
+        if (item == nullptr && section == nullptr) {
+            return false;
+        }
+        ASR::expr_t *base_expr = unwrap_c_lvalue_expr(
+            item != nullptr ? item->m_v : section->m_v);
+        if (base_expr == nullptr || is_data_only_array_expr(base_expr)
+                || is_fixed_size_array_storage_expr(base_expr)) {
+            return false;
+        }
+        ASR::ttype_t *base_type =
+            ASRUtils::type_get_past_allocatable_pointer(
+                ASRUtils::expr_type(base_expr));
+        ASR::ttype_t *param_type =
+            ASRUtils::type_get_past_allocatable_pointer(param->m_type);
+        int base_rank = ASRUtils::extract_n_dims_from_ttype(base_type);
+        int target_rank = ASRUtils::extract_n_dims_from_ttype(param_type);
+        if (base_rank <= 0 || target_rank <= 0 || base_rank != target_rank
+                || (item != nullptr
+                    && item->n_args != static_cast<size_t>(base_rank))
+                || (section != nullptr
+                    && section->n_args != static_cast<size_t>(base_rank))) {
+            return false;
+        }
+
+        std::string saved_src = src;
+        self().visit_expr(*base_expr);
+        std::string base_src = src;
+        std::string setup = drain_tmp_buffer();
+        setup += extract_stmt_setup_from_expr(base_src);
+
+        std::vector<std::string> indices;
+        std::vector<std::string> upper_bounds;
+        indices.reserve(base_rank);
+        upper_bounds.reserve(base_rank);
+        for (int i = 0; i < base_rank; i++) {
+            ASR::expr_t *idx_expr = nullptr;
+            ASR::expr_t *upper_expr = nullptr;
+            if (item != nullptr) {
+                idx_expr = get_array_index_expr(item->m_args[i]);
+                upper_expr = idx_expr;
+            } else {
+                ASR::array_index_t idx = section->m_args[i];
+                if (!is_c_unit_step_expr(idx.m_step)
+                        || is_vector_subscript_expr(idx.m_left)
+                        || is_vector_subscript_expr(idx.m_right)) {
+                    src = saved_src;
+                    return false;
+                }
+                idx_expr = idx.m_left;
+                upper_expr = idx.m_right;
+            }
+            std::string idx_src;
+            if (idx_expr != nullptr) {
+                if (is_vector_subscript_expr(idx_expr)) {
+                    src = saved_src;
+                    return false;
+                }
+                self().visit_expr(*idx_expr);
+                idx_src = src;
+                setup += drain_tmp_buffer();
+                setup += extract_stmt_setup_from_expr(idx_src);
+            } else {
+                idx_src = base_src + "->dims[" + std::to_string(i)
+                    + "].lower_bound";
+            }
+            indices.push_back(idx_src);
+            std::string upper_src;
+            if (upper_expr != nullptr) {
+                self().visit_expr(*upper_expr);
+                upper_src = src;
+                setup += drain_tmp_buffer();
+                setup += extract_stmt_setup_from_expr(upper_src);
+            } else {
+                upper_src = "(" + base_src + "->dims[" + std::to_string(i)
+                    + "].length + " + base_src + "->dims["
+                    + std::to_string(i) + "].lower_bound - 1)";
+            }
+            upper_bounds.push_back(upper_src);
+        }
+        src = saved_src;
+        if (!setup.empty()) {
+            call_arg_setup += setup;
+        }
+
+        ASR::dimension_t *target_dims = nullptr;
+        ASRUtils::extract_dimensions_from_ttype(param->m_type, target_dims);
+        std::string offset = cmo_convertor_single_element(
+            base_src, indices, base_rank, false);
+        auto append_one = [&](const std::string &arg) {
+            if (!args.empty()) {
+                args += ", ";
+            }
+            args += arg;
+        };
+        append_one(get_c_array_data_expr(base_expr, base_src));
+        append_one(offset);
+        for (int dim = 0; dim < target_rank; dim++) {
+            std::string lower_bound;
+            if (!get_c_raw_array_dim_constant_expr(
+                    target_dims[dim].m_start, lower_bound)) {
+                return false;
+            }
+            std::string length;
+            if (target_dims[dim].m_length != nullptr) {
+                if (!get_c_raw_array_dim_constant_expr(
+                        target_dims[dim].m_length, length)) {
+                    return false;
+                }
+            } else {
+                length = "((((" + upper_bounds[dim] + ") - (" + indices[dim]
+                    + ")) / (1)) + 1)";
+            }
+            append_one(lower_bound);
+            append_one(length);
+            append_one(base_src + "->dims[" + std::to_string(dim) + "].stride");
+        }
+        return true;
+    }
+
+    bool append_c_raw_array_scalar_actual(ASR::Variable_t *param,
+            ASR::expr_t *call_arg, std::string &args,
+            std::string &call_arg_setup) {
+        if (param == nullptr || call_arg == nullptr
+                || !is_c_raw_array_helper_scalar_arg(param)) {
+            return false;
+        }
+        ASR::expr_t *raw_call_arg = unwrap_c_lvalue_expr(call_arg);
+        ASR::expr_t *shape_call_arg = raw_call_arg ? raw_call_arg : call_arg;
+        bool pass_by_ref = param->m_intent == ASRUtils::intent_inout
+            || param->m_intent == ASRUtils::intent_out
+            || is_c_unspecified_scalar_ref_dummy(param);
+        if (pass_by_ref
+                && !is_addressable_fortran_external_actual(shape_call_arg)) {
+            return false;
+        }
+        std::string saved_src = src;
+        visit_expr_without_c_pow_cache(*call_arg);
+        std::string arg_src = src;
+        std::string setup = drain_tmp_buffer();
+        setup += extract_stmt_setup_from_expr(arg_src);
+        src = saved_src;
+        if (!setup.empty()) {
+            call_arg_setup += setup;
+        }
+        if (!args.empty()) {
+            args += ", ";
+        }
+        if (pass_by_ref) {
+            args += "&" + get_addressable_call_arg_src(shape_call_arg, arg_src);
+        } else {
+            args += arg_src;
+        }
+        return true;
+    }
+
+    bool try_construct_c_raw_array_direct_call_args(ASR::Function_t *f,
+            size_t n_args, ASR::call_arg_t *m_args,
+            const std::vector<size_t> &raw_positions, std::string &args) {
+        if (!is_c || f == nullptr || n_args != f->n_args) {
+            return false;
+        }
+        std::string call_arg_setup;
+        for (size_t i = 0; i < n_args; i++) {
+            if (m_args[i].m_value == nullptr) {
+                return false;
+            }
+            ASR::Variable_t *param = get_c_raw_helper_arg_var(*f, i);
+            if (param == nullptr) {
+                return false;
+            }
+            if (is_c_raw_array_helper_arg_position(raw_positions, i)) {
+                if (!append_c_raw_array_actual_args(
+                        param, m_args[i].m_value, args, call_arg_setup)) {
+                    return false;
+                }
+                continue;
+            }
+            if (!append_c_raw_array_scalar_actual(
+                    param, m_args[i].m_value, args, call_arg_setup)) {
+                return false;
+            }
+        }
+        if (!call_arg_setup.empty()) {
+            tmp_buffer_src.push_back(call_arg_setup);
+        }
+        return true;
+    }
+
+    void record_c_raw_array_direct_call_decl(const ASR::Function_t &x,
+            const std::string &target_name,
+            const std::vector<size_t> &raw_positions) {
+        std::string decl = get_c_raw_array_helper_decl(
+            x, target_name, raw_positions);
+        if (!decl.empty()) {
+            record_generated_forward_decl(decl);
+        }
+    }
+
     bool is_pass_array_by_data_hidden_arg_name(const std::string &candidate,
             const std::string &base_name) {
         if (candidate.size() <= 2 + base_name.size()
@@ -4990,6 +5578,8 @@ R"(#include <stdio.h>
             }
 
             cache_c_default_allocator(decl, current_body, indent);
+            std::string raw_array_helper = get_c_raw_array_helper_function(
+                x, decl, current_body);
 
             if (decl.size() > 0 || current_body.size() > 0) {
                 sub += "{\n" + decl + current_body + "}\n";
@@ -4999,6 +5589,9 @@ R"(#include <stdio.h>
                     empty_body = indent + "return " + get_current_return_var_name() + ";\n";
                 }
                 sub += "{\n" + empty_body + "}\n";
+            }
+            if (!raw_array_helper.empty()) {
+                sub += raw_array_helper + "\n";
             }
             current_return_var_name.clear();
             current_function_has_explicit_return = false;
@@ -18844,9 +19437,19 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         bool callee_is_procedure_variable = ASR::is_a<ASR::Variable_t>(*callee_sym);
         std::string call_args;
         if (is_c && !callee_is_procedure_variable) {
+            std::vector<size_t> raw_array_indices;
             std::vector<size_t> pass_array_by_data_indices;
             std::string direct_target_name;
-            if (get_pass_array_by_data_direct_call_target(
+            std::string direct_call_args;
+            if (get_c_raw_array_direct_call_target(
+                    *s, direct_target_name, raw_array_indices)
+                    && try_construct_c_raw_array_direct_call_args(
+                        s, x.n_args, x.m_args, raw_array_indices, direct_call_args)) {
+                record_c_raw_array_direct_call_decl(
+                    *s, direct_target_name, raw_array_indices);
+                sym_name = direct_target_name;
+                call_args = direct_call_args;
+            } else if (get_pass_array_by_data_direct_call_target(
                     *s, direct_target_name, pass_array_by_data_indices)
                     && try_construct_pass_array_by_data_direct_call_args(
                         s, x.n_args, x.m_args, pass_array_by_data_indices, call_args)) {

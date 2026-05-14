@@ -1,0 +1,13 @@
+{
+    "basename": "c_split_require_pattern-c_backend_raw_array_helper_call_01-e25453d",
+    "cmd": "tmpdir=$(mktemp -d /tmp/lfortran-c-split-require.XXXXXX); trap 'rm -rf \"$tmpdir\"' EXIT; lfortran --backend=c --separate-compilation -c {infile} -o \"$tmpdir/main.o\"; grep -R -F -q \"__rawptr\" \"$tmpdir\"/*.o.tmp.split/*.c #",
+    "infile": "tests/c_backend_raw_array_helper_call_01.f90",
+    "infile_hash": "089c7de91ec5cf2c4a7cef0a137970dbe05bda58bac4404bfe3543fc",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

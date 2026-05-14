@@ -5408,6 +5408,15 @@ c_split_forbid_pattern = true
 c_split_forbid_pattern_value = "inline __attribute__((always_inline))"
 
 [[test]]
+filename = "c_backend_raw_array_helper_call_01.f90"
+run = true
+options = "--backend=c --separate-compilation -O2"
+c_split_require_pattern = true
+c_split_require_pattern_value = "__rawptr"
+c_split_forbid_pattern = true
+c_split_forbid_pattern_value = "__libasr_created__subroutine_call_gen"
+
+[[test]]
 filename = "c_backend_small_vector_assignment_setup_01.f90"
 c = true
 
