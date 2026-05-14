@@ -1791,50 +1791,6 @@ R"(
         return CUtils::sanitize_c_identifier(stem);
     }
 
-    std::string add_inline_hint_to_small_split_unit(const std::string &body,
-            size_t max_inline_unit_lines) const {
-        if (count_lines(body) > max_inline_unit_lines) {
-            return body;
-        }
-        if (body.find("_lfortran_malloc_alloc") != std::string::npos
-                || body.find("_lfortran_free_alloc") != std::string::npos) {
-            return body;
-        }
-        size_t line_start = 0;
-        while (line_start < body.size()) {
-            size_t line_end = body.find('\n', line_start);
-            if (line_end == std::string::npos) {
-                line_end = body.size();
-            }
-            std::string line = body.substr(line_start, line_end - line_start);
-            std::string trimmed = trim_copy(line);
-            if (trimmed.empty()) {
-                line_start = line_end + (line_end < body.size() ? 1 : 0);
-                continue;
-            }
-            if (startswith(trimmed, "int main(")
-                    || startswith(trimmed, "__attribute__((always_inline))")
-                    || startswith(trimmed, "inline __attribute__((always_inline))")
-                    || trimmed.find('(') == std::string::npos
-                    || trimmed.find(';') != std::string::npos) {
-                return body;
-            }
-            size_t open_paren = trimmed.find('(');
-            std::string before_args = trim_copy(trimmed.substr(0, open_paren));
-            size_t name_start = before_args.find_last_of(" *\t");
-            std::string function_name = before_args.substr(
-                name_start == std::string::npos ? 0 : name_start + 1);
-            if (!function_name.empty()
-                    && body.find(function_name + "(", line_end) != std::string::npos) {
-                return body;
-            }
-            return body.substr(0, line_start)
-                + "inline __attribute__((always_inline)) "
-                + body.substr(line_start);
-        }
-        return body;
-    }
-
     std::vector<std::pair<std::string, std::string>> pack_split_units_by_budget(
             const std::vector<std::pair<std::string, std::string>> &units,
             const std::string &project_name) const {
@@ -1842,7 +1798,6 @@ R"(
         // with file-scope static state or preprocessor lines still stay split.
         static const size_t pack_line_budget = 48000;
         static const size_t max_packable_unit_lines = 20000;
-        static const size_t max_inline_hint_unit_lines = 250;
 
         struct PackState {
             size_t index = 0;
@@ -1886,8 +1841,7 @@ R"(
 
             PackState &current_pack = active_packs[group];
             current_pack.body += "\n/* split-C packed from " + unit.first + " */\n";
-            current_pack.body += add_inline_hint_to_small_split_unit(
-                unit.second, max_inline_hint_unit_lines);
+            current_pack.body += unit.second;
             if (!endswith(current_pack.body, "\n")) {
                 current_pack.body += "\n";
             }

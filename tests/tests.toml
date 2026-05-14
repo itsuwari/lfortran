@@ -5403,6 +5403,11 @@ c_split_budget_max_executable_bytes = 1000000
 c_split_budget_max_text_bytes = 10000
 
 [[test]]
+filename = "c_backend_split_pack_no_force_inline_01.f90"
+c_split_forbid_pattern = true
+c_split_forbid_pattern_value = "inline __attribute__((always_inline))"
+
+[[test]]
 filename = "c_backend_small_vector_assignment_setup_01.f90"
 c = true
 

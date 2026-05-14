@@ -78,27 +78,129 @@ Observed top contributors:
    files with typed `extern const` declarations and assembler `.incbin`
    definitions. This removes the C frontend's decimal initializer parse work
    for those payloads while preserving the typed read-only object ABI.
-4. In progress: deduplicate emitted helpers/scaffolding by ownership and
+4. Done: remove the split-packer `always_inline` heuristic. Packed split-C
+   units now keep normal C function definitions and let the host compiler make
+   its own inlining decisions. This is a build-policy-neutral codegen cleanup;
+   `-O2` remains a build choice, not the fix.
+5. In progress: deduplicate emitted helpers/scaffolding by ownership and
    structural signature. Current checkpoints prune unreachable split helper
    bodies and make type-bound parent metadata owner-emitted with downstream
    force-link references. Remaining helper families still need structural
    analysis before backend changes.
-5. Later: broaden no-copy descriptor/view lowering.
-6. Always: avoid math/codegen transformations that reorder floating-point
+6. Later: specialize private/internal helper ABIs for provably nonescaping
+   contiguous array actuals. The target shape is calls such as
+   `gen_oh*(n, x(1,n), w(n), ...)`, where private helpers can take typed raw
+   pointers plus stride/extent facts instead of full Fortran descriptors.
+7. Later: reuse descriptor locals by liveness and descriptor type when a
+   descriptor is still semantically required, following the same principle as
+   C backends that maintain reusable backend locals instead of naming a fresh
+   object for every call site.
+8. Always: avoid math/codegen transformations that reorder floating-point
    operations.
 
-Current blocker: route-level compile cost is still dominated by generated C
-volume and descriptor/module-body scaffolding, not by constant initializer
-text. The binary-data path removes about 3.4 MB of generated `.c` from the
-fresh tblite build, but the build is still dominated by large non-constant TUs
-such as `tblite/mesh/lebedev.f90.o`, `mstore/amino20x4`, `multicharge/eeqbc`,
-`tblite/coulomb/multipole`, and `tblite/xtb/calculator`. The next high-value
-work should reduce real emitted scaffolding in those module bodies, especially
-descriptor/view setup, generated temporaries, helper fan-out, and repeated
-metadata paths. Do not chase build-policy-only changes unless they remove
-emitted work or artifact bloat.
+Current blocker: after removing forced inlining, `tblite/mesh/lebedev.f90.o`
+is no longer the compile-time long pole. The fresh `-O2` LFortran-C route has
+`lebedev.f90.o` at 3.906 s instead of the previous 100.290 s, and the longest
+edge is now `tblite/api/container.f90.o` at 10.530 s. Route-level compile cost
+is still dominated by generated C volume and descriptor/module-body
+scaffolding, not by host C optimization level or constant initializer text.
+The next high-value work should reduce real emitted scaffolding in large module
+bodies, especially descriptor/view setup, generated temporaries, helper
+fan-out, repeated metadata paths, and private helper ABI overhead. Do not
+chase build-policy-only changes unless they remove emitted work or artifact
+bloat.
 
 ## Experiment Log
+
+### 2026-05-14: Remove Split-Packer Forced Inlining
+
+Hypothesis: the split-C packer was creating an artificial host-compiler
+pathology by adding `inline __attribute__((always_inline))` to small packed
+split units. In `tblite/mesh/lebedev.f90`, many small generated helper
+procedures are called repeatedly; forcing Clang to inline them causes a large
+optimization/typecheck/codegen blow-up without changing Fortran semantics.
+
+Exact change: remove the split-packer inline-hint helper and append each
+packable split unit unchanged to its pack. Internal helpers are emitted as
+ordinary C functions. The backend no longer forces inlining in packed split
+units; `-O2` is used only as a build policy for validation.
+
+Expected win: large reduction in Clang work for packed helper-heavy files,
+especially `lebedev.f90.o`; smaller object and executable text because Clang
+is free not to inline every helper body at each call site. No numeric change is
+expected because this only changes a host-C optimization hint.
+
+Correctness risk: low. Removing `always_inline` does not change C call
+semantics, argument evaluation order, or floating-point operation order inside
+the helpers. It can only change whether the host compiler chooses to inline a
+call. Making helpers `static` or changing private helper ABIs was intentionally
+not bundled here because that needs symbol-visibility and descriptor-lifetime
+proofs.
+
+Test evidence:
+
+- Red check: before the compiler change, the new focused regression generated
+  `inline __attribute__((always_inline))` for both small module procedures.
+- `cmake --build build -j`
+- `PATH=build/src/bin:$PATH python3 ./run_tests.py -t c_backend_split_pack_no_force_inline_01`
+- `PATH=build/src/bin:$PATH python3 ./run_tests.py -t c_backend_split_helper_reachability_01`
+- `PATH=build/src/bin:$PATH python3 ./run_tests.py -t c_backend_large_parameter_array_data_unit_01`
+- `PATH=build/src/bin:$PATH python3 ./run_tests.py -t c_backend_large_logical_parameter_array_data_unit_01`
+- `PATH=build/src/bin:$PATH python3 ./run_tests.py -t c_backend_tbp_parent_registration_use_01`
+- Fresh no-tests tblite LFortran-C build with `--backend=c
+  --implicit-interface --realloc-lhs-arrays -O2` and Release C flags set to
+  `-O2 -DNDEBUG`
+- Focused ammonia CLI parity and MnO2 route parity against the gfortran build
+
+Fresh tblite route metrics:
+
+| Metric | Previous binary-data LFortran C | No forced inline LFortran C (`-O2`) | gfortran |
+| --- | ---: | ---: | ---: |
+| Build wall | 145.558 s | 156.453 s | 14.213 s |
+| Build max RSS | 2222.72 MB | 366.35 MB | 248.92 MB |
+| Generated `.c` | 1499 files, 92,475,440 bytes | 1499 files, 92,431,436 bytes | n/a |
+| Generated headers | 398 files, 2,876,948 bytes | 398 files, 2,876,948 bytes | n/a |
+| Binary constant blobs | 244 files, 2,741,296 bytes | 244 files, 2,741,296 bytes | n/a |
+| Ninja `.o` edge sum | 775.319 s | 683.281 s | n/a |
+| `lebedev.f90.o` edge | 100.290 s | 3.906 s | n/a |
+| Longest edge | `lebedev.f90.o`, 100.290 s | `api/container.f90.o`, 10.530 s | n/a |
+| Object bytes | 51,999,075 | 46,494,155 | 9,962,296 |
+| `libtblite.a` | 8,608,656 bytes | 6,653,448 bytes | 3,075,144 bytes |
+| `app/tblite` | 8,879,592 bytes | 8,224,792 bytes | 5,763,992 bytes |
+| `__TEXT` segment | 5,505,024 bytes | 4,849,664 bytes | n/a |
+| `__text` | 4,755,304 bytes | 4,460,588 bytes | 1,893,604 bytes |
+
+Focused ammonia CLI parity:
+
+| Metric | LFortran C (`-O2`) | gfortran |
+| --- | ---: | ---: |
+| JSON max numeric diff | 1.42e-14 at `energy` | reference |
+| JSON nonnumeric mismatches | 0 | reference |
+| Warm CLI wall median | 100.88 ms | 61.26 ms |
+| Warm CLI RSS median | 11.06 MB | 13.30 MB |
+
+MnO2 route parity:
+
+| Metric | LFortran C (`-O2`) | gfortran |
+| --- | ---: | ---: |
+| JSON energy | 1.3832952093580 Eh | 1.3832952102334 Eh |
+| Energy diff | 8.75e-10 Eh | reference |
+| Max gradient diff | 3.85e-05 | reference |
+| Max virial diff | 1.82e-04 | reference |
+| SCF iterations | 42 | 41 |
+| Wall | 6.075 s | 3.901 s |
+| Max RSS | 10.35 MB | 12.48 MB |
+
+Result: keep. The targeted compile pathology is fixed: `lebedev.f90.o`
+dropped from about 100 s to 3.9 s and build RSS fell sharply. Full build wall
+did not improve in this one run despite a lower edge-sum, so route-level wall
+must continue to be judged over fresh repeated builds. Artifact size and text
+size moved in the right direction, proving the forced-inline path was causing
+real duplicate host-codegen work. The remaining runtime and compile gaps are
+now ordinary generated-C scaffolding problems: full descriptors for private
+helper calls, fresh descriptor locals at many call sites, repeated helper and
+metadata setup, and large module bodies. Those require separate
+semantics-aware lowering changes rather than another host-C optimization flag.
 
 ### 2026-05-14: Binary Data For Large Immutable Constants
 
