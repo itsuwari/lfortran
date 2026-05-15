@@ -965,9 +965,6 @@ class CCPPDSUtils {
                     ASR::ttype_t *alloc_value_type = type_alloc->m_type;
                     if (ASRUtils::is_array(alloc_value_type)) {
                         if (is_c) {
-                            std::string element_type_name =
-                                CUtils::get_c_array_element_type_from_ttype_t(
-                                    alloc_value_type);
                             ASR::dimension_t *m_dims = nullptr;
                             int n_dims = ASRUtils::extract_dimensions_from_ttype(
                                 alloc_value_type, m_dims);
@@ -984,11 +981,10 @@ class CCPPDSUtils {
                                 result += std::string("        _lfortran_free_alloc_plain(")
                                     + "_lfortran_get_default_allocator(), (char*) "
                                     + target + "->data);\n";
+                                result += "        " + target + "->data = NULL;\n";
                                 result += "    }\n";
-                                result += std::string("    _lfortran_free_alloc_plain(")
-                                    + "_lfortran_get_default_allocator(), (char*) "
-                                    + target + ");\n";
-                                result += "    " + target + " = NULL;\n";
+                                result += "    " + target + "->offset = 0;\n";
+                                result += "    " + target + "->is_allocated = false;\n";
                                 result += "}";
                                 break;
                             }
@@ -1003,26 +999,26 @@ class CCPPDSUtils {
                             result += std::string("            _lfortran_free_alloc_plain(")
                                 + "_lfortran_get_default_allocator(), (char*) "
                                 + target + "->data);\n";
+                            result += "            " + target + "->data = NULL;\n";
                             result += "        }\n";
-                            result += std::string("        _lfortran_free_alloc_plain(")
-                                + "_lfortran_get_default_allocator(), (char*) "
-                                + target + ");\n";
-                            result += "        " + target + " = NULL;\n";
+                            result += "        " + target + "->offset = 0;\n";
+                            result += "        " + target + "->is_allocated = false;\n";
                             result += "    }\n";
-                            result += "    " + target + " = _lfortran_malloc_alloc("
+                            result += "    if (" + target + " == NULL) {\n";
+                            result += "        " + target + " = _lfortran_malloc_alloc("
                                 + "_lfortran_get_default_allocator(), sizeof(*"
                                 + target + "));\n";
+                            result += "    }\n";
                             result += "    memset(" + target + ", 0, sizeof(*"
                                 + target + "));\n";
                             result += "    int32_t " + size_var + " = "
                                 + array_size_expr + ";\n";
-                            result += "    " + target + "->data = ("
-                                + element_type_name + "*) _lfortran_malloc_alloc("
+                            result += "    " + target + "->data = _lfortran_malloc_alloc("
                                 + "_lfortran_get_default_allocator(), " + size_var
-                                + " * sizeof(" + element_type_name + "));\n";
+                                + " * sizeof(*" + target + "->data));\n";
                             result += "    memcpy(" + target + "->data, " + value
                                 + "->data, " + size_var + " * sizeof("
-                                + element_type_name + "));\n";
+                                + "*" + target + "->data));\n";
                             result += "    memcpy(" + target + "->dims, " + value
                                 + "->dims, 32 * sizeof(struct dimension_descriptor));\n";
                             result += "    " + target + "->n_dims = " + value
@@ -1039,11 +1035,10 @@ class CCPPDSUtils {
                             result += std::string("            _lfortran_free_alloc_plain(")
                                 + "_lfortran_get_default_allocator(), (char*) "
                                 + target + "->data);\n";
+                            result += "            " + target + "->data = NULL;\n";
                             result += "        }\n";
-                            result += std::string("        _lfortran_free_alloc_plain(")
-                                + "_lfortran_get_default_allocator(), (char*) "
-                                + target + ");\n";
-                            result += "        " + target + " = NULL;\n";
+                            result += "        " + target + "->offset = 0;\n";
+                            result += "        " + target + "->is_allocated = false;\n";
                             result += "    }\n";
                             result += "}";
                         } else {

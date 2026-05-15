@@ -5439,7 +5439,13 @@ R"(    // Initialise Numpy
         int kind = ASRUtils::extract_kind_from_ttype_t(x.m_type);
         std::string re = CUtils::format_c_real_hex_literal(x.m_re, kind);
         std::string im = CUtils::format_c_real_hex_literal(x.m_im, kind);
-        src = "CMPLX(" + re + ", " + im + ")";
+        if (kind == 4) {
+            src = "((float_complex_t)((float)(" + re + ") + I * (float)("
+                + im + ")))";
+        } else {
+            src = "((double_complex_t)((double)(" + re
+                + ") + I * (double)(" + im + ")))";
+        }
 
         last_expr_precedence = 2;
     }
@@ -5751,6 +5757,21 @@ R"(    // Initialise Numpy
         headers.insert("string.h");
         std::string indent(indentation_level * indentation_spaces, ' ');
 
+        auto is_c_scalar_allocatable_storage_expr = [&](ASR::expr_t *expr) -> bool {
+            if (expr == nullptr) {
+                return false;
+            }
+            ASR::ttype_t *type = ASRUtils::expr_type(expr);
+            if (type == nullptr || !ASR::is_a<ASR::Allocatable_t>(*type)
+                    || ASRUtils::is_array(type)) {
+                return false;
+            }
+            ASR::ttype_t *value_type = ASRUtils::type_get_past_allocatable_pointer(type);
+            return value_type != nullptr
+                && !ASRUtils::is_character(*value_type)
+                && !ASRUtils::is_aggregate_type(value_type);
+        };
+
         auto visit_string_arg = [&](ASR::expr_t *expr) -> std::pair<std::string, std::string> {
             if (!expr) return {"NULL", "0"};
             this->visit_expr(*expr);
@@ -6052,11 +6073,18 @@ R"(    // Initialise Numpy
                         return;
                     }
 
+                    bool scalar_allocatable_storage =
+                        is_c_scalar_allocatable_storage_expr(value_expr);
+                    std::string value_ptr = scalar_allocatable_storage
+                        ? value : "&(" + value + ")";
+                    std::string value_lvalue = scalar_allocatable_storage
+                        ? "(*(" + value + "))" : value;
+
                     if (ASR::is_a<ASR::Logical_t>(*value_type_past_allocatable)) {
                         std::string tmp_name = get_unique_local_name("__lfortran_fmt_logical");
                         internal_read_code += indent + "int32_t " + tmp_name + " = 0;\n";
                         args += ", 0, 1, &" + tmp_name;
-                        post += indent + value + " = (" + tmp_name + " != 0);\n";
+                        post += indent + value_lvalue + " = (" + tmp_name + " != 0);\n";
                         arg_count++;
                         return;
                     }
@@ -6064,9 +6092,9 @@ R"(    // Initialise Numpy
                     if (ASR::is_a<ASR::Integer_t>(*value_type_past_allocatable)) {
                         int kind = ASR::down_cast<ASR::Integer_t>(value_type_past_allocatable)->m_kind;
                         if (kind == 4) {
-                            args += ", 0, 2, &(" + value + ")";
+                            args += ", 0, 2, " + value_ptr;
                         } else if (kind == 8) {
-                            args += ", 0, 3, &(" + value + ")";
+                            args += ", 0, 3, " + value_ptr;
                         } else {
                             throw CodeGenError("C backend FileRead supports formatted internal scalar integer reads only for kind=4 or kind=8",
                                 value_expr->base.loc);
@@ -6078,9 +6106,9 @@ R"(    // Initialise Numpy
                     if (ASR::is_a<ASR::Real_t>(*value_type_past_allocatable)) {
                         int kind = ASR::down_cast<ASR::Real_t>(value_type_past_allocatable)->m_kind;
                         if (kind == 4) {
-                            args += ", 0, 4, &(" + value + ")";
+                            args += ", 0, 4, " + value_ptr;
                         } else if (kind == 8) {
-                            args += ", 0, 5, &(" + value + ")";
+                            args += ", 0, 5, " + value_ptr;
                         } else {
                             throw CodeGenError("C backend FileRead supports formatted internal scalar real reads only for kind=4 or kind=8",
                                 value_expr->base.loc);
@@ -6092,9 +6120,9 @@ R"(    // Initialise Numpy
                     if (ASR::is_a<ASR::Complex_t>(*value_type_past_allocatable)) {
                         int kind = ASR::down_cast<ASR::Complex_t>(value_type_past_allocatable)->m_kind;
                         if (kind == 4) {
-                            args += ", 0, 6, &(" + value + ")";
+                            args += ", 0, 6, " + value_ptr;
                         } else if (kind == 8) {
-                            args += ", 0, 7, &(" + value + ")";
+                            args += ", 0, 7, " + value_ptr;
                         } else {
                             throw CodeGenError("C backend FileRead supports formatted internal scalar complex reads only for kind=4 or kind=8",
                                 value_expr->base.loc);
@@ -6308,17 +6336,23 @@ R"(    // Initialise Numpy
 
                 this->visit_expr(*value_expr);
                 std::string value = src;
+                bool scalar_allocatable_storage =
+                    is_c_scalar_allocatable_storage_expr(value_expr);
+                std::string value_ptr = scalar_allocatable_storage
+                    ? value : "&(" + value + ")";
+                std::string value_lvalue = scalar_allocatable_storage
+                    ? "(*(" + value + "))" : value;
 
                 if (ASR::is_a<ASR::Integer_t>(*value_type_past_allocatable)) {
                     int kind = ASR::down_cast<ASR::Integer_t>(value_type_past_allocatable)->m_kind;
                     if (kind == 1) {
-                        emit_scalar_read("_lfortran_string_read_i8", "&(" + value + ")");
+                        emit_scalar_read("_lfortran_string_read_i8", value_ptr);
                     } else if (kind == 2) {
-                        emit_scalar_read("_lfortran_string_read_i16", "&(" + value + ")");
+                        emit_scalar_read("_lfortran_string_read_i16", value_ptr);
                     } else if (kind == 4) {
-                        emit_scalar_read("_lfortran_string_read_i32", "&(" + value + ")");
+                        emit_scalar_read("_lfortran_string_read_i32", value_ptr);
                     } else if (kind == 8) {
-                        emit_scalar_read("_lfortran_string_read_i64", "&(" + value + ")");
+                        emit_scalar_read("_lfortran_string_read_i64", value_ptr);
                     } else {
                         throw CodeGenError("C backend FileRead does not support this integer kind for internal string reads",
                             value_expr->base.loc);
@@ -6326,9 +6360,9 @@ R"(    // Initialise Numpy
                 } else if (ASR::is_a<ASR::Real_t>(*value_type_past_allocatable)) {
                     int kind = ASR::down_cast<ASR::Real_t>(value_type_past_allocatable)->m_kind;
                     if (kind == 4) {
-                        emit_scalar_read("_lfortran_string_read_f32", "&(" + value + ")");
+                        emit_scalar_read("_lfortran_string_read_f32", value_ptr);
                     } else if (kind == 8) {
-                        emit_scalar_read("_lfortran_string_read_f64", "&(" + value + ")");
+                        emit_scalar_read("_lfortran_string_read_f64", value_ptr);
                     } else {
                         throw CodeGenError("C backend FileRead does not support this real kind for internal string reads",
                             value_expr->base.loc);
@@ -6336,9 +6370,9 @@ R"(    // Initialise Numpy
                 } else if (ASR::is_a<ASR::Complex_t>(*value_type_past_allocatable)) {
                     int kind = ASR::down_cast<ASR::Complex_t>(value_type_past_allocatable)->m_kind;
                     if (kind == 4) {
-                        emit_scalar_read("_lfortran_string_read_c32", "&(" + value + ")");
+                        emit_scalar_read("_lfortran_string_read_c32", value_ptr);
                     } else if (kind == 8) {
-                        emit_scalar_read("_lfortran_string_read_c64", "&(" + value + ")");
+                        emit_scalar_read("_lfortran_string_read_c64", value_ptr);
                     } else {
                         throw CodeGenError("C backend FileRead does not support this complex kind for internal string reads",
                             value_expr->base.loc);
@@ -6347,7 +6381,7 @@ R"(    // Initialise Numpy
                     std::string tmp_name = get_unique_local_name("__lfortran_read_logical");
                     internal_read_code += indent + "int32_t " + tmp_name + " = 0;\n";
                     emit_scalar_read("_lfortran_string_read_bool", "&" + tmp_name);
-                    internal_read_code += indent + value + " = (" + tmp_name + " != 0);\n";
+                    internal_read_code += indent + value_lvalue + " = (" + tmp_name + " != 0);\n";
                 } else if (ASRUtils::is_character(*value_type_past_allocatable)) {
                     ASR::String_t *value_str_type = ASRUtils::get_string_type(value_expr);
                     std::string value_len = "strlen(" + value + ")";
@@ -8801,9 +8835,12 @@ R"(    // Initialise Numpy
             std::string section_step = get_dim_expr(x.m_args[0].m_step, "1");
 
             std::string wrapper_type = get_c_declared_array_wrapper_type_name(x.m_type);
-            src = "(&(" + wrapper_type + "){ .data = (" + base_expr + " + ((" + section_lb
-                + ") - (" + base_lb + "))), .dims = {{1, ((((" + section_ub + ") - ("
-                + section_lb + ")) / (" + section_step + ")) + 1), " + section_step
+            std::string data_ptr_type = CUtils::get_c_array_element_type_from_ttype_t(
+                x.m_type) + "*";
+            src = "(&(" + wrapper_type + "){ .data = ((" + data_ptr_type + ")(" + base_expr
+                + " + ((" + section_lb + ") - (" + base_lb + ")))), .dims = {{1, (((("
+                + section_ub + ") - (" + section_lb + ")) / (" + section_step
+                + ")) + 1), " + section_step
                 + "}}, .n_dims = 1, .offset = 0, .is_allocated = true })";
             if (!setup.empty()) {
                 tmp_buffer_src.push_back(setup);
@@ -8850,9 +8887,11 @@ R"(    // Initialise Numpy
                 std::string section_ub = get_dim_expr(x.m_args[0].m_right, base_ub);
                 std::string section_step = get_dim_expr(x.m_args[0].m_step, "1");
                 std::string wrapper_type = get_c_declared_array_wrapper_type_name(x.m_type);
+                std::string data_ptr_type = CUtils::get_c_array_element_type_from_ttype_t(
+                    x.m_type) + "*";
 
-                src = "(&(" + wrapper_type + "){ .data = " + base_expr
-                    + "->data, .dims = {{1, ((((" + section_ub + ") - ("
+                src = "(&(" + wrapper_type + "){ .data = ((" + data_ptr_type + ")"
+                    + base_expr + "->data), .dims = {{1, ((((" + section_ub + ") - ("
                     + section_lb + ")) / (" + section_step + ")) + 1), ("
                     + base_expr + "->dims[0].stride * (" + section_step
                     + "))}}, .n_dims = 1, .offset = (" + base_expr

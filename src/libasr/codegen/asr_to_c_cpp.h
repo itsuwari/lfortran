@@ -10421,6 +10421,25 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             array_types_decls, false);
     }
 
+    std::string get_c_array_wrapper_data_pointer_type(ASR::ttype_t *type,
+            const std::string &wrapper_type, ASR::symbol_t *type_decl=nullptr) {
+        ASR::ttype_t *array_base = get_c_array_wrapper_base_type(type);
+        if (array_base == nullptr) {
+            return "";
+        }
+        ASR::ttype_t *element_type = ASRUtils::type_get_past_array(array_base);
+        ASR::symbol_t *element_type_decl =
+            get_c_array_element_type_declaration_symbol(type, type_decl);
+        std::string element_c_type =
+            get_c_concrete_type_from_ttype_t(element_type, element_type_decl);
+        if (element_c_type == "void*" && element_type != nullptr
+                && ASR::is_a<ASR::StructType_t>(*element_type)
+                && wrapper_type.rfind("struct x", 0) == 0) {
+            element_c_type = "struct " + wrapper_type.substr(std::string("struct x").size());
+        }
+        return element_c_type + "*";
+    }
+
     std::string cast_c_array_wrapper_ptr_to_target_type(ASR::ttype_t *target_type,
             ASR::ttype_t *value_type, const std::string &value_expr,
             ASR::symbol_t *target_type_decl=nullptr,
@@ -10634,8 +10653,11 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 }
                 dims_init += dim_inits[i];
             }
-            return "(&(" + target_wrapper + "){ .data = " + base_src
-                + "->data, .dims = {" + dims_init + "}, .n_dims = "
+            std::string target_data_ptr_type =
+                get_c_array_wrapper_data_pointer_type(target_type, target_wrapper);
+            return "(&(" + target_wrapper + "){ .data = ((" + target_data_ptr_type
+                + ")" + base_src
+                + "->data), .dims = {" + dims_init + "}, .n_dims = "
                 + std::to_string(target_rank) + ", .offset = " + offset
                 + ", .is_allocated = " + base_src + "->is_allocated })";
         };
@@ -10732,8 +10754,11 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                     + target_lengths[i] + ", "
                     + target_strides[i] + "}";
             }
-            return "(&(" + target_wrapper + "){ .data = " + source_data
-                + ", .dims = {" + dims_init + "}, .n_dims = "
+            std::string target_data_ptr_type =
+                get_c_array_wrapper_data_pointer_type(target_type, target_wrapper);
+            return "(&(" + target_wrapper + "){ .data = ((" + target_data_ptr_type
+                + ")" + source_data
+                + "), .dims = {" + dims_init + "}, .n_dims = "
                 + std::to_string(target_rank)
                 + ", .offset = " + source_offset
                 + ", .is_allocated = " + source_is_allocated + " })";
@@ -10784,8 +10809,11 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             }
             dims_init += dim_inits[i];
         }
-        return "(&(" + target_wrapper + "){ .data = " + source_data
-            + ", .dims = {" + dims_init + "}, .n_dims = " + std::to_string(source_rank)
+        std::string target_data_ptr_type =
+            get_c_array_wrapper_data_pointer_type(target_type, target_wrapper);
+        return "(&(" + target_wrapper + "){ .data = ((" + target_data_ptr_type
+            + ")" + source_data
+            + "), .dims = {" + dims_init + "}, .n_dims = " + std::to_string(source_rank)
             + ", .offset = " + source_offset
             + ", .is_allocated = " + source_is_allocated + " })";
     }
@@ -10951,8 +10979,11 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 offset += offset_terms[i];
             }
             offset += ")";
-            std::string view_init = "{ .data = " + source_src_copy
-                + "->data, .dims = {" + dims_init + "}, .n_dims = "
+            std::string target_data_ptr_type =
+                get_c_array_wrapper_data_pointer_type(
+                    target_type, target_wrapper, target_type_decl);
+            std::string view_init = "{ .data = ((" + target_data_ptr_type + ")"
+                + source_src_copy + "->data), .dims = {" + dims_init + "}, .n_dims = "
                 + std::to_string(target_rank) + ", .offset = " + offset
                 + ", .is_allocated = " + source_src_copy + "->is_allocated }";
             if (!setup.empty()) {
@@ -11003,11 +11034,14 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
 
         std::string view_name = get_unique_local_name("__lfortran_array_view");
         std::string data_ptr = get_c_array_data_expr(source_expr, source_src_copy);
+        std::string target_data_ptr_type =
+            get_c_array_wrapper_data_pointer_type(target_type, target_wrapper, target_type_decl);
         std::string offset = get_c_array_offset_expr(source_expr, source_src_copy);
         std::string is_allocated = get_c_array_is_allocated_expr(source_expr, source_src_copy);
         if (!use_named_stack_view) {
-            std::string view_expr = "(&(" + target_wrapper + "){ .data = " + data_ptr
-                + ", .dims = {" + dims_init + "}, .n_dims = "
+            std::string view_expr = "(&(" + target_wrapper + "){ .data = (("
+                + target_data_ptr_type + ")" + data_ptr
+                + "), .dims = {" + dims_init + "}, .n_dims = "
                 + std::to_string(target_rank)
                 + ", .offset = " + offset
                 + ", .is_allocated = " + is_allocated + " })";
@@ -11018,8 +11052,8 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         }
         std::string indent(indentation_level * indentation_spaces, ' ');
         std::string view_decl = indent + target_wrapper + " " + view_name
-            + " = { .data = " + data_ptr
-            + ", .dims = {" + dims_init + "}, .n_dims = "
+            + " = { .data = ((" + target_data_ptr_type + ")" + data_ptr
+            + "), .dims = {" + dims_init + "}, .n_dims = "
             + std::to_string(target_rank)
             + ", .offset = " + offset
             + ", .is_allocated = " + is_allocated + " };\n";
@@ -12530,7 +12564,15 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 && ASR::is_a<ASR::Variable_t>(
                     *ASRUtils::symbol_get_past_external(
                         ASR::down_cast<ASR::Var_t>(shape_call_arg)->m_v))) {
-                if (wants_aggregate_pointer_actual) {
+                if (is_c && param != nullptr
+                        && (param->m_value_attr
+                            || (f_type != nullptr && f_type->m_abi == ASR::abiType::BindC))
+                        && param_type_unwrapped != nullptr
+                        && type_unwrapped != nullptr
+                        && ASR::is_a<ASR::CPtr_t>(*param_type_unwrapped)
+                        && ASR::is_a<ASR::CPtr_t>(*type_unwrapped)) {
+                    args += src;
+                } else if (wants_aggregate_pointer_actual) {
                     std::string ptr_actual = actual_emits_aggregate_value
                         ? address_of_src(src) : src;
                     args += cast_aggregate_pointer_actual_to_param_type(param, ptr_actual);
@@ -13104,7 +13146,15 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 && ASR::is_a<ASR::Variable_t>(
                     *ASRUtils::symbol_get_past_external(
                         ASR::down_cast<ASR::Var_t>(shape_call_arg)->m_v))) {
-                if (wants_aggregate_pointer_actual) {
+                if (is_c && param != nullptr
+                        && (param->m_value_attr
+                            || (f_type != nullptr && f_type->m_abi == ASR::abiType::BindC))
+                        && param_type_unwrapped != nullptr
+                        && type_unwrapped != nullptr
+                        && ASR::is_a<ASR::CPtr_t>(*param_type_unwrapped)
+                        && ASR::is_a<ASR::CPtr_t>(*type_unwrapped)) {
+                    args += src;
+                } else if (wants_aggregate_pointer_actual) {
                     std::string ptr_actual = actual_emits_aggregate_value
                         ? address_of_src(src) : src;
                     args += cast_aggregate_pointer_actual_to_param_type(param, ptr_actual);
@@ -13832,6 +13882,14 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             std::string call_args = construct_call_args(
                 fn, x.n_args, x.m_args, force_generated_call_abi,
                 true, false);
+            if (is_c && fn_name == "strlen" && x.n_args == 1
+                    && x.m_args[0].m_value != nullptr
+                    && ASR::is_a<ASR::CPtr_t>(
+                        *ASRUtils::type_get_past_allocatable_pointer(
+                            ASRUtils::expr_type(x.m_args[0].m_value)))
+                    && call_args.rfind("&", 0) == 0) {
+                call_args = call_args.substr(1);
+            }
             src = drain_tmp_buffer() + fn_name + "(" + call_args + ")";
         }
         last_expr_precedence = 2;
@@ -15904,6 +15962,10 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                     && var_name == "to"
                     && !ASRUtils::is_array(sv->m_type)) {
                 src = "(*((void**)" + var_name + "))";
+            } else if (sv->m_value_attr
+                    && ASR::is_a<ASR::CPtr_t>(*ASRUtils::type_get_past_allocatable_pointer(sv->m_type))
+                    && !ASRUtils::is_array(sv->m_type)) {
+                src = var_name;
             } else if (force_storage_expr_in_call_args
                 && ASRUtils::is_pointer(sv->m_type)
                 && !ASRUtils::is_array(sv->m_type)
@@ -16079,7 +16141,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             case (ASR::cast_kindType::IntegerToComplex) : {
                 if (is_c) {
                     headers.insert("complex.h");
-                    src = "CMPLX(" + src + ", 0)";
+                    src = get_c_complex_expr(x.m_type, src, "0");
                 } else {
                     src = "std::complex<double>(" + src + ")";
                 }
@@ -16112,7 +16174,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             case (ASR::cast_kindType::RealToComplex) : {
                 if (is_c) {
                     headers.insert("complex.h");
-                    src = "CMPLX(" + src + ", 0.0)";
+                    src = get_c_complex_expr(x.m_type, src, "0.0");
                 } else {
                     src = "std::complex<double>(" + src + ")";
                 }
@@ -16856,12 +16918,24 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         handle_BinOp(x);
     }
 
+    std::string get_c_complex_expr(ASR::ttype_t *type,
+            const std::string &re, const std::string &im) {
+        int kind = ASRUtils::extract_kind_from_ttype_t(type);
+        if (kind == 4) {
+            return "((float_complex_t)((float)(" + re + ") + I * (float)("
+                + im + ")))";
+        }
+        return "((double_complex_t)((double)(" + re + ") + I * (double)("
+            + im + ")))";
+    }
+
     void visit_ComplexConstructor(const ASR::ComplexConstructor_t &x) {
+        headers.insert("complex.h");
         self().visit_expr(*x.m_re);
         std::string re = std::move(src);
         self().visit_expr(*x.m_im);
         std::string im = std::move(src);
-        src = "CMPLX(" + re + "," + im + ")";
+        src = get_c_complex_expr(x.m_type, re, im);
     }
 
     void visit_StructConstructor(const ASR::StructConstructor_t &x) {
@@ -17311,6 +17385,8 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                     target_var = var;
                     if (is_c && is_aggregate_dummy_slot_type(var)) {
                         sym = "(*" + CUtils::get_c_variable_name(*var) + ")";
+                    } else if (is_c && is_scalar_allocatable_dummy_slot_type(var)) {
+                        sym = "(*" + get_c_var_storage_name(var) + ")";
                     } else if (is_c && is_scalar_allocatable_storage_type(var->m_type)) {
                         sym = get_c_var_storage_name(var);
                     } else {

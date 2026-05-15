@@ -189,7 +189,7 @@ bool c_compiler_supports_lto_by_default(const CompilerOptions &compiler_options,
     std::string name = std::filesystem::path(compiler).filename().string();
     bool looks_like_gnu_gcc = name == "gcc" || LCompilers::startswith(name, "gcc-");
     if (c_is_macos_platform(compiler_options)) {
-        return looks_like_gnu_gcc || name == "cc" || name == "clang"
+        return name == "cc" || name == "clang"
             || LCompilers::startswith(name, "clang-");
     }
     return looks_like_gnu_gcc;
