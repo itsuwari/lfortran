@@ -17519,6 +17519,38 @@ public:
         return;
     }
 
+    bool use_has_simple_attribute(const AST::Use_t &x,
+            AST::simple_attributeType attribute) const {
+        for (size_t i = 0; i < x.n_nature; i++) {
+            if (!AST::is_a<AST::SimpleAttribute_t>(*x.m_nature[i])) {
+                continue;
+            }
+            AST::SimpleAttribute_t *simple_attr =
+                AST::down_cast<AST::SimpleAttribute_t>(x.m_nature[i]);
+            if (simple_attr->m_attr == attribute) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    bool use_declares_intrinsic(const AST::Use_t &x) const {
+        return use_has_simple_attribute(x,
+            AST::simple_attributeType::AttrIntrinsic);
+    }
+
+    bool use_declares_non_intrinsic(const AST::Use_t &x) const {
+        return use_has_simple_attribute(x,
+            AST::simple_attributeType::AttrNon_Intrinsic);
+    }
+
+    std::string get_semantic_use_module_name(const AST::Use_t &x) const {
+        std::string msym = to_lower(x.m_module);
+        if (!use_declares_non_intrinsic(x) && msym == "ieee_arithmetic") {
+            return "lfortran_intrinsic_" + msym;
+        }
+        return msym;
+    }
 
     ASR::symbol_t* resolve_intrinsic_function(const Location &loc, const std::string &remote_sym) {
         if (!intrinsic_procedures.is_intrinsic(remote_sym)) {

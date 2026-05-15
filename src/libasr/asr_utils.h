@@ -2794,7 +2794,8 @@ ASR::Module_t* load_module(Allocator &al, SymbolTable *symtab,
                             const std::function<void (const std::string &, const Location &)> err,
                             LCompilers::LocationManager &lm,
                             bool generate_object_code = false,
-                            bool load_submodules = false);
+                            bool load_submodules = false,
+                            bool prefer_intrinsic_modules = true);
 
 void load_dependent_submodules(Allocator &al, SymbolTable *symtab,
                                ASR::Module_t* mod, const Location &loc,

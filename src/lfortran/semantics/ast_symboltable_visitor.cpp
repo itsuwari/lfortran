@@ -4283,10 +4283,7 @@ public:
     }
 
     void visit_Use(const AST::Use_t &x) {
-        std::string msym = to_lower(x.m_module);
-        if (msym == "ieee_arithmetic") {
-            msym = "lfortran_intrinsic_" + msym;
-        }
+        std::string msym = get_semantic_use_module_name(x);
         Str msym_c; msym_c.from_str_view(msym);
         char *msym_cc = msym_c.c_str(al);
         current_module_dependencies.push_back(al, msym_cc);
@@ -4294,15 +4291,19 @@ public:
         ASR::symbol_t *t = current_scope->resolve_symbol(msym);
         SymbolTable *tu_symtab = current_scope->get_global_scope();
         bool load_submodules = (!compiler_options.separate_compilation && in_program);
+        bool intrinsic = use_declares_intrinsic(x)
+            || startswith(msym, "lfortran_intrinsic_");
+        bool prefer_intrinsic_modules = !use_declares_non_intrinsic(x);
         if (!t) {
             t = (ASR::symbol_t*)(ASRUtils::load_module(al, tu_symtab,
-                msym, x.base.base.loc, false, loaded_submodules, compiler_options.po, true,
+                msym, x.base.base.loc, intrinsic, loaded_submodules, compiler_options.po, true,
                 [&](const std::string &msg, const Location &loc) {
                     diag.add(diag::Diagnostic(
                         msg, diag::Level::Error, diag::Stage::Semantic, {
                             diag::Label("", {loc})}));
                     throw SemanticAbort();
-            }, lm, compiler_options.separate_compilation, load_submodules));
+            }, lm, compiler_options.separate_compilation, load_submodules,
+                prefer_intrinsic_modules));
         } else {
             if (!ASR::is_a<ASR::Module_t>(*t)) {
                 diag.add(diag::Diagnostic(

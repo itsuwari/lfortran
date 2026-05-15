@@ -472,6 +472,8 @@ RUN(NAME use_01 LABELS gfortran llvm llvm_wasm llvm_wasm_emcc c wasm fortran)
 RUN(NAME use_02 LABELS gfortran llvm llvm_wasm llvm_wasm_emcc c wasm fortran)
 RUN(NAME use_03 LABELS gfortran llvm llvm_wasm llvm_wasm_emcc c wasm)
 RUN(NAME use_04 LABELS gfortran llvm llvm_wasm llvm_wasm_emcc c wasm)
+RUN(NAME use_non_intrinsic_iso_c_binding_01 LABELS gfortran llvm c
+    EXTRAFILES use_non_intrinsic_iso_c_binding_01_mod.f90)
 RUN(NAME symbol_table_jloop_01 LABELS gfortran llvm)
 
 RUN(NAME value_attribute_01 LABELS gfortran llvm)
@@ -3460,6 +3462,7 @@ RUN(NAME array_section_32 LABELS gfortran c)
 RUN(NAME array_section_33 LABELS gfortran c)
 RUN(NAME array_section_34 LABELS gfortran c)
 RUN(NAME array_section_35 LABELS gfortran c)
+RUN(NAME array_section_36 LABELS gfortran llvm c)
 RUN(NAME c_backend_imported_sum_helper_01 LABELS gfortran c
     EXTRAFILES c_backend_imported_sum_helper_01_mod.f90
     EXTRA_ARGS --separate-compilation)

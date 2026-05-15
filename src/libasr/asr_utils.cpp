@@ -1027,6 +1027,39 @@ void fix_translation_unit(Allocator &al, ASR::TranslationUnit_t *tu, SymbolTable
     }
 }
 
+static bool is_standard_intrinsic_module_name(const std::string &module_name) {
+    return module_name == "iso_c_binding"
+        || module_name == "iso_fortran_env"
+        || module_name == "ieee_arithmetic";
+}
+
+static std::string get_lfortran_intrinsic_module_name(const std::string &module_name) {
+    if (startswith(module_name, "lfortran_intrinsic_")) {
+        return module_name;
+    }
+    return "lfortran_intrinsic_" + module_name;
+}
+
+static Result<ASR::TranslationUnit_t*, ErrorMessage> find_and_load_module_resolving_intrinsic(
+        Allocator &al, const std::string &module_name, SymbolTable &symtab,
+        bool intrinsic, bool prefer_intrinsic_modules,
+        LCompilers::PassOptions& pass_options,
+        LCompilers::LocationManager &lm) {
+    if (intrinsic || (prefer_intrinsic_modules
+            && is_standard_intrinsic_module_name(module_name))) {
+        Result<ASR::TranslationUnit_t*, ErrorMessage> res =
+            find_and_load_module(al, get_lfortran_intrinsic_module_name(module_name),
+                symtab, true, pass_options, lm);
+        if (res.ok) {
+            return res.result;
+        }
+        if (intrinsic) {
+            return res.error;
+        }
+    }
+    return find_and_load_module(al, module_name, symtab, intrinsic, pass_options, lm);
+}
+
 ASR::Module_t* load_module(Allocator &al, SymbolTable *symtab,
                             const std::string &module_name,
                             const Location &loc, bool intrinsic,
@@ -1036,7 +1069,8 @@ ASR::Module_t* load_module(Allocator &al, SymbolTable *symtab,
                             const std::function<void (const std::string &, const Location &)> err,
                             LCompilers::LocationManager &lm,
                             bool generate_object_code,
-                            bool load_submodules) {
+                            bool load_submodules,
+                            bool prefer_intrinsic_modules) {
     LCOMPILERS_ASSERT(symtab);
     if (symtab->get_symbol(module_name) != nullptr) {
         ASR::symbol_t *m = symtab->get_symbol(module_name);
@@ -1049,27 +1083,13 @@ ASR::Module_t* load_module(Allocator &al, SymbolTable *symtab,
     LCOMPILERS_ASSERT(symtab->parent == nullptr);
     ASR::TranslationUnit_t* mod1 = nullptr;
     Result<ASR::TranslationUnit_t*, ErrorMessage> res
-        = find_and_load_module(al, module_name, *symtab, intrinsic, pass_options, lm);
+        = find_and_load_module_resolving_intrinsic(al, module_name, *symtab,
+            intrinsic, prefer_intrinsic_modules, pass_options, lm);
     std::string error_message = "Module '" + module_name + "' not declared in the current source and the modfile was not found";
     if (res.ok) {
         mod1 = res.result;
     } else {
         error_message = res.error.message;
-        if (!intrinsic) {
-            // Module not found as a regular module. Try intrinsic module
-            if (module_name == "iso_c_binding"
-                ||module_name == "iso_fortran_env"
-                ||module_name == "ieee_arithmetic") {
-                Result<ASR::TranslationUnit_t*, ErrorMessage> res
-                    = find_and_load_module(al, "lfortran_intrinsic_" + module_name,
-                        *symtab, true, pass_options, lm);
-                if (res.ok) {
-                    mod1 = res.result;
-                } else {
-                    error_message = res.error.message;
-                }
-            }
-        }
     }
     if (mod1 == nullptr) {
         err(error_message, loc);
@@ -1107,26 +1127,13 @@ ASR::Module_t* load_module(Allocator &al, SymbolTable *symtab,
                 bool is_intrinsic = startswith(item, "lfortran_intrinsic");
                 ASR::TranslationUnit_t *mod1 = nullptr;
                 Result<ASR::TranslationUnit_t*, ErrorMessage> res
-                    = find_and_load_module(al, item, *symtab, is_intrinsic, pass_options, lm);
+                    = find_and_load_module_resolving_intrinsic(al, item, *symtab,
+                        is_intrinsic, true, pass_options, lm);
                 std::string error_message = "Module '" + item + "' modfile was not found";
                 if (res.ok) {
                     mod1 = res.result;
                 } else {
                     error_message =  res.error.message;
-                    if (!is_intrinsic) {
-                        // Module not found as a regular module. Try intrinsic module
-                        if (item == "iso_c_binding"
-                            ||item == "iso_fortran_env") {
-                            Result<ASR::TranslationUnit_t*, ErrorMessage> res
-                                = find_and_load_module(al, "lfortran_intrinsic_" + item,
-                                *symtab, true, pass_options, lm);
-                            if (res.ok) {
-                                mod1 = res.result;
-                            } else {
-                                error_message =  res.error.message;
-                            }
-                        }
-                    }
                 }
 
                 if (mod1 == nullptr) {
@@ -1252,26 +1259,13 @@ void load_dependent_submodules(Allocator &al, SymbolTable *symtab,
                 bool is_intrinsic = startswith(item, "lfortran_intrinsic");
                 ASR::TranslationUnit_t *mod1 = nullptr;
                 Result<ASR::TranslationUnit_t*, ErrorMessage> res
-                    = find_and_load_module(al, item, *symtab, is_intrinsic, pass_options, lm);
+                    = find_and_load_module_resolving_intrinsic(al, item, *symtab,
+                        is_intrinsic, true, pass_options, lm);
                 std::string error_message = "Module '" + item + "' modfile was not found";
                 if (res.ok) {
                     mod1 = res.result;
                 } else {
                     error_message =  res.error.message;
-                    if (!is_intrinsic) {
-                        // Module not found as a regular module. Try intrinsic module
-                        if (item == "iso_c_binding"
-                            ||item == "iso_fortran_env") {
-                            Result<ASR::TranslationUnit_t*, ErrorMessage> res
-                                = find_and_load_module(al, "lfortran_intrinsic_" + item,
-                                *symtab, true, pass_options, lm);
-                            if (res.ok) {
-                                mod1 = res.result;
-                            } else {
-                                error_message =  res.error.message;
-                            }
-                        }
-                    }
                 }
 
                 if (mod1 == nullptr) {

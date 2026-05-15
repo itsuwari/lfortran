@@ -9229,10 +9229,12 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         std::string target_expr, target_length;
         std::string index_name = get_unique_local_name("__lfortran_i");
         int64_t compile_time_length = -1;
-        bool use_unrolled = get_c_rank1_compile_time_length(
-            plan.target_expr, compile_time_length)
-            && compile_time_length > 0 && compile_time_length <= 8;
-        bool need_length = !use_unrolled;
+        bool has_compile_time_length = get_c_rank1_compile_time_length(
+            plan.target_expr, compile_time_length) && compile_time_length > 0;
+        bool use_unrolled = has_compile_time_length && compile_time_length <= 2;
+        bool use_fixed_count_loop = has_compile_time_length
+            && compile_time_length > 2 && compile_time_length <= 8;
+        bool need_length = !(use_unrolled || use_fixed_count_loop);
         if (!get_c_rank1_array_element_expr(plan.target_expr, "__lfortran_lhs",
                 index_name, setup, target_expr, target_length, need_length)) {
             return false;
@@ -9333,8 +9335,10 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             src += indent + "}\n";
             return true;
         }
+        std::string loop_length = use_fixed_count_loop
+            ? std::to_string(compile_time_length) : target_length;
         src += inner_indent + "for (int64_t " + index_name + " = 0; "
-            + index_name + " < " + target_length + "; " + index_name + "++) {\n";
+            + index_name + " < " + loop_length + "; " + index_name + "++) {\n";
         indentation_level++;
         std::string loop_indent(indentation_level * indentation_spaces, ' ');
         src += loop_indent + target_expr + " = " + value_expr + ";\n";
@@ -15065,18 +15069,33 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         int n_args, bool check_for_bounds, bool is_unbounded_pointer_to_data) {
         std::string prod = "1";
         std::string idx = "0";
+        auto append_index_term = [&](const std::string &term) {
+            if (idx == "0") {
+                idx = term;
+            } else {
+                idx = "(" + idx + " + " + term + ")";
+            }
+        };
+        auto update_product = [&](const std::string &dim_size) {
+            if (prod == "1") {
+                prod = dim_size;
+            } else {
+                prod = "(" + prod + " * " + dim_size + ")";
+            }
+        };
         if (is_unbounded_pointer_to_data) {
             for (int r = 0, r1 = 0; r < n_args; r++, r1 += 2) {
                 std::string curr_llvm_idx = m_args[r];
                 std::string lval = diminfo[r1];
-                curr_llvm_idx = "(" + curr_llvm_idx + " - " + lval + ")";
+                curr_llvm_idx = "((" + curr_llvm_idx + ") - (" + lval + "))";
                 if( check_for_bounds ) {
                     // check_single_element(curr_llvm_idx, arr); TODO: To be implemented
                 }
-                idx = "(" + idx + " + " + "(" + prod + " * " + curr_llvm_idx + ")" + ")";
+                append_index_term(prod == "1"
+                    ? curr_llvm_idx : "(" + prod + " * " + curr_llvm_idx + ")");
                 if (r + 1 < n_args) {
                     std::string dim_size = diminfo[r1 + 1];
-                    prod = "(" + prod + " * " + dim_size + ")";
+                    update_product(dim_size);
                 }
             }
             return idx;
@@ -15084,14 +15103,15 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         for( int r = 0, r1 = 0; r < n_args; r++, r1 += 2) {
             std::string curr_llvm_idx = m_args[r];
             std::string lval = diminfo[r1];
-            curr_llvm_idx = "(" + curr_llvm_idx + " - " + lval + ")";
+            curr_llvm_idx = "((" + curr_llvm_idx + ") - (" + lval + "))";
             if( check_for_bounds ) {
                 // check_single_element(curr_llvm_idx, arr); TODO: To be implemented
             }
-            idx = "(" + idx + " + " + "(" + prod + " * " + curr_llvm_idx + ")" + ")";
+            append_index_term(prod == "1"
+                ? curr_llvm_idx : "(" + prod + " * " + curr_llvm_idx + ")");
             if (r + 1 < n_args) {
                 std::string dim_size = diminfo[r1 + 1];
-                prod = "(" + prod + " * " + dim_size + ")";
+                update_product(dim_size);
             }
         }
         return idx;
