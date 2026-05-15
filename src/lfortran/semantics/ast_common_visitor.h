@@ -29,8 +29,6 @@ using LCompilers::diag::Diagnostic;
 
 namespace LCompilers::LFortran {
 
-static std::map<std::string, std::vector<ASR::Variable_t*>> vars_with_deferred_struct_declaration;
-static std::map<std::string, int> assumed_rank_arrays;
 static int PDT_SENTINEL = 1000;
 
 static inline bool extract_bindc_name_constant_from_asr(ASR::expr_t *value,
@@ -1665,6 +1663,8 @@ template <class Derived>
 class CommonVisitor : public AST::BaseVisitor<Derived> {
 public:
     diag::Diagnostics &diag;
+    std::map<std::string, std::vector<ASR::Variable_t*>> vars_with_deferred_struct_declaration;
+    std::map<std::string, int> assumed_rank_arrays;
     std::map<AST::operatorType, std::string> binop2str = {
         {AST::operatorType::Mul, "~mul"},
         {AST::operatorType::Add, "~add"},
