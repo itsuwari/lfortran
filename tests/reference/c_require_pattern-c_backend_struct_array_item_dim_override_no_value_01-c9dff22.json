@@ -1,0 +1,13 @@
+{
+    "basename": "c_require_pattern-c_backend_struct_array_item_dim_override_no_value_01-c9dff22",
+    "cmd": "lfortran --no-color --show-c {infile} | grep -F -q \"__lfortran_call_arg\" #",
+    "infile": "tests/c_backend_struct_array_item_dim_override_no_value_01.f90",
+    "infile_hash": "55320cbce03570678c889d8f3af54deb5bb4ce27fbb798f12295f153",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

@@ -2405,6 +2405,47 @@ static bool should_preserve_c_no_copy_section_actual(bool c_backend,
         nullptr, nullptr);
 }
 
+static bool should_preserve_c_intent_in_struct_array_item_actual(bool c_backend,
+        ASR::expr_t *dummy, ASR::expr_t *actual) {
+    if (!c_backend || dummy == nullptr || actual == nullptr) {
+        return false;
+    }
+    ASR::Variable_t *dummy_var = ASRUtils::expr_to_variable_or_null(dummy);
+    if (dummy_var == nullptr || dummy_var->m_intent != ASRUtils::intent_in
+            || ASRUtils::is_array(dummy_var->m_type)) {
+        return false;
+    }
+    ASR::ttype_t *dummy_type = ASRUtils::type_get_past_allocatable_pointer(
+        dummy_var->m_type);
+    if (dummy_type == nullptr || !ASR::is_a<ASR::StructType_t>(*dummy_type)) {
+        return false;
+    }
+    ASR::expr_t *actual_unwrapped =
+        ASRUtils::get_past_array_physical_cast(actual);
+    if (actual_unwrapped == nullptr
+            || !ASR::is_a<ASR::ArrayItem_t>(*actual_unwrapped)
+            || ASRUtils::is_array(ASRUtils::expr_type(actual_unwrapped))) {
+        return false;
+    }
+    ASR::ttype_t *actual_type = ASRUtils::type_get_past_allocatable_pointer(
+        ASRUtils::expr_type(actual_unwrapped));
+    if (actual_type == nullptr || !ASR::is_a<ASR::StructType_t>(*actual_type)) {
+        return false;
+    }
+    ASR::ArrayItem_t *item = ASR::down_cast<ASR::ArrayItem_t>(actual_unwrapped);
+    ASR::ttype_t *base_type = ASRUtils::type_get_past_allocatable_pointer(
+        ASRUtils::expr_type(item->m_v));
+    if (base_type == nullptr || !ASRUtils::is_array(base_type)) {
+        return false;
+    }
+    for (size_t i = 0; i < item->n_args; i++) {
+        if (!is_scalar_array_index(item->m_args[i])) {
+            return false;
+        }
+    }
+    return true;
+}
+
 static bool is_c_simple_integer_bound_expr(ASR::expr_t *expr) {
     if (expr == nullptr) {
         return true;
@@ -3552,6 +3593,12 @@ class ArgSimplifier: public ASR::CallReplacerOnExpressionsVisitor<ArgSimplifier>
             }
             if (orig_args && func && i < func->n_args &&
                     should_preserve_c_no_copy_section_actual(
+                        c_backend, orig_args[i], x_m_args[i].m_value)) {
+                x_m_args_vec.push_back(al, x_m_args[i]);
+                continue;
+            }
+            if (orig_args && func && i < func->n_args &&
+                    should_preserve_c_intent_in_struct_array_item_actual(
                         c_backend, orig_args[i], x_m_args[i].m_value)) {
                 x_m_args_vec.push_back(al, x_m_args[i]);
                 continue;
@@ -4934,6 +4981,8 @@ class ReplaceExprWithTemporaryVisitor:
         return should_preserve_c_sequence_association_actual(
                 c_backend, func, func->m_args[i], args[i].m_value)
             || should_preserve_c_no_copy_section_actual(
+                c_backend, func->m_args[i], args[i].m_value)
+            || should_preserve_c_intent_in_struct_array_item_actual(
                 c_backend, func->m_args[i], args[i].m_value);
     }
 
@@ -5698,6 +5747,11 @@ class VerifySimplifierASROutput:
             }
             if (orig_args && func && i < func->n_args &&
                     should_preserve_c_no_copy_section_actual(
+                        c_backend, orig_args[i], m_args[i].m_value)) {
+                continue;
+            }
+            if (orig_args && func && i < func->n_args &&
+                    should_preserve_c_intent_in_struct_array_item_actual(
                         c_backend, orig_args[i], m_args[i].m_value)) {
                 continue;
             }

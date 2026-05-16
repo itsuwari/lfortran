@@ -5188,6 +5188,23 @@ c_forbid_pattern = true
 c_forbid_pattern_value = "((*self).values) != NULL && ((*self).values)->data != NULL"
 
 [[test]]
+filename = "c_backend_struct_array_item_intent_in_no_copy_01.f90"
+c_forbid_pattern = true
+c_forbid_pattern_value = "__lfsc_sum_item"
+
+[[test]]
+filename = "c_backend_struct_array_item_dim_override_no_value_01.f90"
+c_require_pattern = true
+c_require_pattern_value = "__lfortran_call_arg"
+c_forbid_pattern = true
+c_forbid_pattern_value = "])->tag"
+
+[[test]]
+filename = "c_backend_struct_array_item_function_expr_no_temp_01.f90"
+c_forbid_pattern = true
+c_forbid_pattern_value = "__lfortran_call_arg"
+
+[[test]]
 filename = "../integration_tests/c_backend_rank2_self_section_realloc_01.f90"
 options = "--realloc-lhs-arrays"
 c_forbid_pattern = true

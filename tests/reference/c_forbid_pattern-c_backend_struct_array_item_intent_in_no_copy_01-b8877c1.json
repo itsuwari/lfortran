@@ -1,0 +1,13 @@
+{
+    "basename": "c_forbid_pattern-c_backend_struct_array_item_intent_in_no_copy_01-b8877c1",
+    "cmd": "lfortran --no-color --show-c {infile} | (! grep -F -q \"__lfsc_sum_item\") #",
+    "infile": "tests/c_backend_struct_array_item_intent_in_no_copy_01.f90",
+    "infile_hash": "baf96718f2a5c0e8594f6aca8d2183c7d8c6fac9843f73997a3e7ca4",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

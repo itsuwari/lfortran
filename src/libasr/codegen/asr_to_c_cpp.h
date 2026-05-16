@@ -12142,6 +12142,52 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         return "((struct " + CUtils::get_c_symbol_name(type_sym) + "*)(" + ptr_expr + "))";
     }
 
+    bool should_name_c_aggregate_pointer_actual(ASR::expr_t *actual) {
+        if (!is_c || actual == nullptr) {
+            return false;
+        }
+        actual = unwrap_c_lvalue_expr(actual);
+        actual = ASRUtils::get_past_array_physical_cast(actual);
+        return actual != nullptr && ASR::is_a<ASR::ArrayItem_t>(*actual);
+    }
+
+    std::string get_c_aggregate_pointer_actual_src(ASR::Variable_t *param,
+            ASR::expr_t *actual, const std::string &actual_src,
+            bool actual_emits_aggregate_value, std::string &setup,
+            std::map<ASR::expr_t*, std::string> &named_actuals,
+            bool allow_named_actuals) {
+        std::string ptr_actual = actual_src;
+        if (actual_emits_aggregate_value) {
+            ASR::expr_t *raw_actual = unwrap_c_lvalue_expr(actual);
+            ASR::expr_t *shape_actual = raw_actual ? raw_actual : actual;
+            ptr_actual = "&" + get_addressable_call_arg_src(
+                shape_actual, actual_src);
+        }
+        ptr_actual = cast_aggregate_pointer_actual_to_param_type(
+            param, ptr_actual);
+        if (!allow_named_actuals
+                || !actual_emits_aggregate_value
+                || !should_name_c_aggregate_pointer_actual(actual)) {
+            return ptr_actual;
+        }
+        auto named = named_actuals.find(actual);
+        if (named != named_actuals.end()) {
+            return named->second;
+        }
+        std::string actual_type = get_c_concrete_type_from_ttype_t(
+            param ? param->m_type : nullptr,
+            param ? param->m_type_declaration : nullptr);
+        if (actual_type.empty() || actual_type == "void*") {
+            return ptr_actual;
+        }
+        std::string tmp_name = get_unique_local_name("__lfortran_call_arg");
+        std::string indent(indentation_level * indentation_spaces, ' ');
+        setup += indent + actual_type + " *" + tmp_name + " = "
+            + ptr_actual + ";\n";
+        named_actuals[actual] = tmp_name;
+        return tmp_name;
+    }
+
     bool param_expects_raw_pointer_actual(ASR::Variable_t *param,
             ASR::ttype_t *param_type, ASR::ttype_t *param_type_unwrapped) {
         if (!is_c || param == nullptr || param_type == nullptr) {
@@ -12743,7 +12789,8 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
     std::string construct_call_args(ASR::Function_t* f, size_t n_args,
             ASR::call_arg_t* m_args, bool force_generated_abi=false,
             bool allow_no_copy_descriptor_views=true,
-            bool use_named_no_copy_descriptor_views=true) {
+            bool use_named_no_copy_descriptor_views=true,
+            bool allow_named_aggregate_pointer_actuals=false) {
         if (!force_generated_abi && f != nullptr
                 && is_fortran_external_interface_function(*f)) {
             return construct_fortran_external_call_args(f, 0, n_args, m_args);
@@ -12759,6 +12806,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         std::string count_mask_arg_src;
         std::string args = "";
         std::string call_arg_setup;
+        std::map<ASR::expr_t*, std::string> named_aggregate_pointer_actuals;
         std::string no_copy_hidden_base_name;
         std::string no_copy_hidden_shape_src;
         int no_copy_hidden_rank = 0;
@@ -13137,7 +13185,26 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                         continue;
                     }
                     self().visit_expr(*m_args[j].m_value);
-                    dim_expr_overrides[CUtils::get_c_variable_name(*dim_param)] = src;
+                    std::string dim_actual_src = src;
+                    ASR::ttype_t *dim_param_type_unwrapped =
+                        ASRUtils::type_get_past_allocatable_pointer(dim_param->m_type);
+                    ASR::ttype_t *dim_actual_type_unwrapped =
+                        ASRUtils::type_get_past_allocatable_pointer(
+                            ASRUtils::expr_type(m_args[j].m_value));
+                    bool dim_wants_aggregate_pointer_actual = is_c
+                        && is_struct_or_class_type(dim_param_type_unwrapped)
+                        && is_struct_or_class_type(dim_actual_type_unwrapped)
+                        && !is_pointer_dummy_slot_type(dim_param)
+                        && !is_aggregate_dummy_slot_type(dim_param);
+                    if (dim_wants_aggregate_pointer_actual) {
+                        dim_actual_src = get_c_aggregate_pointer_actual_src(
+                            dim_param, m_args[j].m_value, dim_actual_src,
+                            !is_pointer_backed_struct_expr(m_args[j].m_value),
+                            call_arg_setup, named_aggregate_pointer_actuals,
+                            allow_named_aggregate_pointer_actuals);
+                    }
+                    dim_expr_overrides[CUtils::get_c_variable_name(*dim_param)] =
+                        dim_actual_src;
                 }
                 src = saved_src;
                 if (is_c && ASR::is_a<ASR::ArrayPhysicalCast_t>(*call_arg)) {
@@ -13202,9 +13269,10 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                         && ASR::is_a<ASR::CPtr_t>(*type_unwrapped)) {
                     args += src;
                 } else if (wants_aggregate_pointer_actual) {
-                    std::string ptr_actual = actual_emits_aggregate_value
-                        ? address_of_src(src) : src;
-                    args += cast_aggregate_pointer_actual_to_param_type(param, ptr_actual);
+                    args += get_c_aggregate_pointer_actual_src(
+                        param, call_arg, src, actual_emits_aggregate_value,
+                        call_arg_setup, named_aggregate_pointer_actuals,
+                        allow_named_aggregate_pointer_actuals);
                 } else if (wants_pointer_dummy_slot_actual) {
                     if (pointer_dummy_slot_actual) {
                         args += src;
@@ -13277,9 +13345,10 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                     raw_pointer_actual = true;
                 }
                 if (wants_aggregate_pointer_actual) {
-                    std::string ptr_actual = actual_emits_aggregate_value
-                        ? address_of_src(src) : src;
-                    args += cast_aggregate_pointer_actual_to_param_type(param, ptr_actual);
+                    args += get_c_aggregate_pointer_actual_src(
+                        param, call_arg, src, actual_emits_aggregate_value,
+                        call_arg_setup, named_aggregate_pointer_actuals,
+                        allow_named_aggregate_pointer_actuals);
                 } else if (wants_pointer_dummy_slot_actual) {
                     if (raw_pointer_actual) {
                         args += src;
@@ -13333,8 +13402,10 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 }
             } else {
                 if (wants_aggregate_pointer_actual) {
-                    args += cast_aggregate_pointer_actual_to_param_type(
-                        param, address_of_src(src));
+                    args += get_c_aggregate_pointer_actual_src(
+                        param, call_arg, src, true, call_arg_setup,
+                        named_aggregate_pointer_actuals,
+                        allow_named_aggregate_pointer_actuals);
                 } else if (wants_aggregate_dummy_slot_actual) {
                     args += address_of_src(src);
                 } else if (wants_scalar_alloc_dummy_slot_actual) {
@@ -13366,7 +13437,8 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
     std::string construct_call_args_from_index(ASR::Function_t* f, size_t start_idx,
             size_t n_args, ASR::call_arg_t* m_args, bool force_generated_abi=false,
             bool allow_no_copy_descriptor_views=true,
-            bool use_named_no_copy_descriptor_views=true) {
+            bool use_named_no_copy_descriptor_views=true,
+            bool allow_named_aggregate_pointer_actuals=false) {
         if (!force_generated_abi && f != nullptr
                 && is_fortran_external_interface_function(*f)) {
             return construct_fortran_external_call_args(f, start_idx, n_args, m_args);
@@ -13382,6 +13454,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         std::string count_mask_arg_src;
         std::string args = "";
         std::string call_arg_setup;
+        std::map<ASR::expr_t*, std::string> named_aggregate_pointer_actuals;
         std::string no_copy_hidden_base_name;
         std::string no_copy_hidden_shape_src;
         int no_copy_hidden_rank = 0;
@@ -13724,7 +13797,26 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                         continue;
                     }
                     self().visit_expr(*m_args[j].m_value);
-                    dim_expr_overrides[CUtils::get_c_variable_name(*dim_param)] = src;
+                    std::string dim_actual_src = src;
+                    ASR::ttype_t *dim_param_type_unwrapped =
+                        ASRUtils::type_get_past_allocatable_pointer(dim_param->m_type);
+                    ASR::ttype_t *dim_actual_type_unwrapped =
+                        ASRUtils::type_get_past_allocatable_pointer(
+                            ASRUtils::expr_type(m_args[j].m_value));
+                    bool dim_wants_aggregate_pointer_actual = is_c
+                        && is_struct_or_class_type(dim_param_type_unwrapped)
+                        && is_struct_or_class_type(dim_actual_type_unwrapped)
+                        && !is_pointer_dummy_slot_type(dim_param)
+                        && !is_aggregate_dummy_slot_type(dim_param);
+                    if (dim_wants_aggregate_pointer_actual) {
+                        dim_actual_src = get_c_aggregate_pointer_actual_src(
+                            dim_param, m_args[j].m_value, dim_actual_src,
+                            !is_pointer_backed_struct_expr(m_args[j].m_value),
+                            call_arg_setup, named_aggregate_pointer_actuals,
+                            allow_named_aggregate_pointer_actuals);
+                    }
+                    dim_expr_overrides[CUtils::get_c_variable_name(*dim_param)] =
+                        dim_actual_src;
                 }
                 src = saved_src;
                 if (is_c && ASR::is_a<ASR::ArrayPhysicalCast_t>(*call_arg)) {
@@ -13784,9 +13876,10 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                         && ASR::is_a<ASR::CPtr_t>(*type_unwrapped)) {
                     args += src;
                 } else if (wants_aggregate_pointer_actual) {
-                    std::string ptr_actual = actual_emits_aggregate_value
-                        ? address_of_src(src) : src;
-                    args += cast_aggregate_pointer_actual_to_param_type(param, ptr_actual);
+                    args += get_c_aggregate_pointer_actual_src(
+                        param, call_arg, src, actual_emits_aggregate_value,
+                        call_arg_setup, named_aggregate_pointer_actuals,
+                        allow_named_aggregate_pointer_actuals);
                 } else if (wants_pointer_dummy_slot_actual) {
                     if (pointer_dummy_slot_actual) {
                         args += src;
@@ -13859,9 +13952,10 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                     raw_pointer_actual = true;
                 }
                 if (wants_aggregate_pointer_actual) {
-                    std::string ptr_actual = actual_emits_aggregate_value
-                        ? address_of_src(src) : src;
-                    args += cast_aggregate_pointer_actual_to_param_type(param, ptr_actual);
+                    args += get_c_aggregate_pointer_actual_src(
+                        param, call_arg, src, actual_emits_aggregate_value,
+                        call_arg_setup, named_aggregate_pointer_actuals,
+                        allow_named_aggregate_pointer_actuals);
                 } else if (wants_pointer_dummy_slot_actual) {
                     if (raw_pointer_actual) {
                         args += src;
@@ -13915,8 +14009,10 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 }
             } else {
                 if (wants_aggregate_pointer_actual) {
-                    args += cast_aggregate_pointer_actual_to_param_type(
-                        param, address_of_src(src));
+                    args += get_c_aggregate_pointer_actual_src(
+                        param, call_arg, src, true, call_arg_setup,
+                        named_aggregate_pointer_actuals,
+                        allow_named_aggregate_pointer_actuals);
                 } else if (wants_aggregate_dummy_slot_actual) {
                     args += address_of_src(src);
                 } else if (wants_scalar_alloc_dummy_slot_actual) {
@@ -14743,7 +14839,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                         record_forward_decl_for_function(*concrete_fn);
                         std::string call_args =
                             construct_call_args(concrete_fn, n_args, m_args,
-                                false, true, is_subroutine);
+                                false, true, is_subroutine, is_subroutine);
                         std::string call_setup = drain_tmp_buffer();
                         std::string call_expr = get_c_function_target_name(*concrete_fn)
                             + "(" + call_args + ")";
@@ -14790,7 +14886,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             return false;
         }
         std::string tail_args = construct_call_args_from_index(iface_fn, 1,
-            n_args, m_args, false, true, is_subroutine);
+            n_args, m_args, false, true, is_subroutine, is_subroutine);
         std::string tail_setup = drain_tmp_buffer();
         std::string call_expr = "((" + wrapper_type + ")" + lookup_var + ")(" + dispatch_self;
         if (!tail_args.empty()) {
@@ -20751,11 +20847,12 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                     s, x.n_args, x.m_args, call_args)) {
             } else {
                 call_args = construct_call_args(
-                    s, x.n_args, x.m_args, false, true, true);
+                    s, x.n_args, x.m_args, false, true, true, true);
             }
         } else {
             call_args = construct_call_args(
-                s, x.n_args, x.m_args, callee_is_procedure_variable, true, true);
+                s, x.n_args, x.m_args, callee_is_procedure_variable, true,
+                true, true);
         }
         src = drain_tmp_buffer() + function_result_slot_setup
             + indent + sym_name + "(" + call_args + ");\n";
