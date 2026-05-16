@@ -1,0 +1,13 @@
+{
+    "basename": "run-c_backend_constant_if_elision_01-d728bc8",
+    "cmd": "lfortran --no-color {infile}",
+    "infile": "tests/c_backend_constant_if_elision_01.f90",
+    "infile_hash": "05051140b1e0c58afb9b2beef835d2a4b409392859a170d52ea753ad",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

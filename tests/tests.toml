@@ -5164,6 +5164,12 @@ c_forbid_pattern = true
 c_forbid_pattern_value = "x->dims[1-1].lower_bound"
 
 [[test]]
+filename = "c_backend_constant_if_elision_01.f90"
+run = true
+c_forbid_pattern = true
+c_forbid_pattern_value = "if (!true)"
+
+[[test]]
 filename = "c_backend_local_fixed_array_descriptor_init_01.f90"
 c_forbid_pattern = true
 c_forbid_pattern_value = "a->dims[0].lower_bound = 1"

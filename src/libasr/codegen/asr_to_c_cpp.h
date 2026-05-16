@@ -19572,12 +19572,62 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         current_function_pow_cache.clear();
         current_body = "";
         std::string indent(indentation_level*indentation_spaces, ' ');
+        auto emit_selected_body = [&](ASR::stmt_t **selected_body,
+                size_t n_selected_body) {
+            if (n_selected_body == 0) {
+                src = "";
+            } else {
+                std::string out = indent + "{\n";
+                indentation_level += 1;
+                for (size_t i=0; i<n_selected_body; i++) {
+                    self().visit_stmt(*selected_body[i]);
+                    current_body += check_tmp_buffer() + src;
+                }
+                indentation_level -= 1;
+                out += current_body;
+                out += indent + "}\n";
+                src = out;
+            }
+            current_body = current_body_copy;
+            current_function_pow_cache = pow_cache_copy;
+        };
+        ASR::expr_t *test_value = ASRUtils::expr_value(x.m_test);
+        bool test_bool = false;
+        if (ASRUtils::is_value_constant(test_value, test_bool)) {
+            ASR::stmt_t **selected_body = test_bool ? x.m_body : x.m_orelse;
+            size_t n_selected_body = test_bool ? x.n_body : x.n_orelse;
+            emit_selected_body(selected_body, n_selected_body);
+            return;
+        }
+        auto get_c_logical_literal_value = [](const std::string &expr,
+                bool &value) {
+            if (expr == "true" || expr == "(true)" || expr == "!false"
+                    || expr == "(!false)") {
+                value = true;
+                return true;
+            }
+            if (expr == "false" || expr == "(false)" || expr == "!true"
+                    || expr == "(!true)") {
+                value = false;
+                return true;
+            }
+            return false;
+        };
         std::string out = indent + "if (";
         bracket_open++;
         self().visit_expr(*x.m_test);
-        out += src + ") {\n";
+        std::string test_src = src;
         bracket_open--;
-        out = check_tmp_buffer() + out;
+        std::string test_setup = check_tmp_buffer();
+        if (test_setup.empty()
+                && get_c_logical_literal_value(test_src, test_bool)) {
+            ASR::stmt_t **selected_body = test_bool ? x.m_body : x.m_orelse;
+            size_t n_selected_body = test_bool ? x.n_body : x.n_orelse;
+            emit_selected_body(selected_body, n_selected_body);
+            return;
+        }
+        out += test_src + ") {\n";
+        out = test_setup + out;
         indentation_level += 1;
         for (size_t i=0; i<x.n_body; i++) {
             self().visit_stmt(*x.m_body[i]);
