@@ -632,6 +632,86 @@ public:
         return bypass;
     }
 
+    bool is_c_inlineable_dot_product_array_arg(ASR::Function_t *func,
+            size_t pos) {
+        if (!pass_options.c_backend || func == nullptr || pos >= func->n_args
+                || func->m_args[pos] == nullptr
+                || !ASR::is_a<ASR::Var_t>(*func->m_args[pos])) {
+            return false;
+        }
+        ASR::Variable_t *formal = ASRUtils::EXPR2VAR(func->m_args[pos]);
+        if (formal->m_intent != ASR::intentType::In) {
+            return false;
+        }
+        ASR::ttype_t *formal_type =
+            ASRUtils::type_get_past_allocatable_pointer(formal->m_type);
+        if (formal_type == nullptr || !ASRUtils::is_array(formal_type)
+                || ASRUtils::extract_n_dims_from_ttype(formal_type) != 1) {
+            return false;
+        }
+        ASR::ttype_t *element_type = ASRUtils::type_get_past_allocatable_pointer(
+            ASRUtils::type_get_past_array(formal_type));
+        return element_type != nullptr
+            && (ASRUtils::is_real(*element_type)
+                || ASRUtils::is_integer(*element_type));
+    }
+
+    bool is_c_inlineable_dot_product_helper(ASR::Function_t *func,
+            std::vector<size_t> &array_positions) {
+        array_positions.clear();
+        if (!pass_options.c_backend || func == nullptr
+                || (func->n_args != 2 && func->n_args != 4)
+                || std::string(func->m_name).find("lcompilers_dot_product")
+                    == std::string::npos
+                || func->m_return_var == nullptr) {
+            return false;
+        }
+        ASR::ttype_t *return_type = ASRUtils::type_get_past_allocatable_pointer(
+            ASRUtils::expr_type(func->m_return_var));
+        if (return_type == nullptr
+                || !(ASRUtils::is_real(*return_type)
+                    || ASRUtils::is_integer(*return_type))) {
+            return false;
+        }
+        size_t rhs_pos = func->n_args == 4 ? 2 : 1;
+        if (!is_c_inlineable_dot_product_array_arg(func, 0)
+                || !is_c_inlineable_dot_product_array_arg(func, rhs_pos)) {
+            return false;
+        }
+        array_positions.push_back(0);
+        array_positions.push_back(rhs_pos);
+        return true;
+    }
+
+    bool is_c_inlineable_dot_product_array_actual(ASR::expr_t *actual) {
+        if (actual == nullptr
+                || !is_descriptor_array_casted_to_pointer_to_data(actual)) {
+            return false;
+        }
+        ASR::expr_t *actual_no_cast =
+            ASRUtils::get_past_array_physical_cast(actual);
+        return actual_no_cast != nullptr
+            && ASR::is_a<ASR::ArraySection_t>(*actual_no_cast);
+    }
+
+    std::vector<bool> get_c_inlineable_dot_product_call_temp_bypass(
+            ASR::Function_t *func, ASR::call_arg_t *args, size_t n_args) {
+        std::vector<bool> bypass(n_args, false);
+        std::vector<size_t> array_positions;
+        if (!is_c_inlineable_dot_product_helper(func, array_positions)
+                || n_args != func->n_args) {
+            return bypass;
+        }
+        for (size_t pos: array_positions) {
+            if (pos < n_args
+                    && is_c_inlineable_dot_product_array_actual(
+                        args[pos].m_value)) {
+                bypass[pos] = true;
+            }
+        }
+        return bypass;
+    }
+
     bool is_descriptor_array_casted_to_pointer_to_data( ASR::expr_t* expr ) {
         if ( ASRUtils::is_array(ASRUtils::expr_type(expr) ) &&
              ASR::is_a<ASR::ArrayPhysicalCast_t>(*expr) ) {
@@ -1696,6 +1776,15 @@ public:
             bool is_func_bind_c = func_type->m_abi == ASR::abiType::BindC;
             std::vector<bool> bypass_raw_helper_array_temps =
                 get_c_raw_helper_call_temp_bypass(func, x.m_args, x.n_args);
+            std::vector<bool> bypass_inline_dot_product_array_temps =
+                get_c_inlineable_dot_product_call_temp_bypass(
+                    func, x.m_args, x.n_args);
+            for (size_t i = 0; i < bypass_raw_helper_array_temps.size()
+                    && i < bypass_inline_dot_product_array_temps.size(); i++) {
+                bypass_raw_helper_array_temps[i] =
+                    bypass_raw_helper_array_temps[i]
+                    || bypass_inline_dot_product_array_temps[i];
+            }
             for (size_t i = 0; i < func->n_args; i++ ) {
                 if ( ASR::is_a<ASR::Var_t>(*func->m_args[i]) ) {
                     ASR::Var_t* var_ = ASR::down_cast<ASR::Var_t>(func->m_args[i]);

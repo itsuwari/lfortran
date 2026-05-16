@@ -8100,18 +8100,48 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             }
             return expr;
         };
-        setup += indent + "if (" + lhs_length + " == 3) {\n";
-        setup += inner_indent + result_name + " = " + unrolled_sum_expr(3) + ";\n";
-        setup += indent + "} else if (" + lhs_length + " == 6) {\n";
-        setup += inner_indent + result_name + " = " + unrolled_sum_expr(6) + ";\n";
-        setup += indent + "} else {\n";
-        setup += inner_indent + "for (int64_t " + index_name + " = 0; "
+        auto can_emit_unrolled_length = [&](int64_t length) {
+            int64_t lhs_static_length = 0;
+            if (get_c_rank1_compile_time_length(lhs, lhs_static_length)
+                    && lhs_static_length < length) {
+                return false;
+            }
+            int64_t rhs_static_length = 0;
+            if (get_c_rank1_compile_time_length(rhs, rhs_static_length)
+                    && rhs_static_length < length) {
+                return false;
+            }
+            return true;
+        };
+        std::vector<int64_t> unrolled_lengths;
+        if (can_emit_unrolled_length(3)) {
+            unrolled_lengths.push_back(3);
+        }
+        if (can_emit_unrolled_length(6)) {
+            unrolled_lengths.push_back(6);
+        }
+        for (size_t i = 0; i < unrolled_lengths.size(); i++) {
+            int64_t length = unrolled_lengths[i];
+            setup += indent + (i == 0 ? "if" : "} else if") + " ("
+                + lhs_length + " == " + std::to_string(length) + ") {\n";
+            setup += inner_indent + result_name + " = "
+                + unrolled_sum_expr(length) + ";\n";
+        }
+        if (!unrolled_lengths.empty()) {
+            setup += indent + "} else {\n";
+        }
+        std::string loop_indent = unrolled_lengths.empty() ? indent : inner_indent;
+        std::string loop_body_indent((indentation_level
+            + (unrolled_lengths.empty() ? 1 : 2)) * indentation_spaces, ' ');
+        setup += loop_indent + "for (int64_t " + index_name + " = 0; "
             + index_name + " < " + lhs_length + "; " + index_name + "++) {\n";
-        setup += std::string((indentation_level + 2) * indentation_spaces, ' ')
+        setup += loop_body_indent
             + result_name + " += " + lhs_item + " * "
             + rhs_item + ";\n";
-        setup += inner_indent + "}\n";
-        setup += indent + "}\n";
+        setup += loop_indent + "}\n";
+        if (!unrolled_lengths.empty()) {
+            setup += indent + "}\n";
+        }
         tmp_buffer_src.push_back(setup);
         out = result_name;
         return true;

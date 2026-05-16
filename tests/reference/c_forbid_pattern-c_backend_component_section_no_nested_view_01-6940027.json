@@ -1,0 +1,13 @@
+{
+    "basename": "c_forbid_pattern-c_backend_component_section_no_nested_view_01-6940027",
+    "cmd": "lfortran --no-color --show-c {infile} | (! grep -F -q \"__libasr_created__function_call__lcompilers_dot_product_\") #",
+    "infile": "tests/c_backend_component_section_no_nested_view_01.f90",
+    "infile_hash": "b75be14a23532b7287849f0c6ab87ea7915df61b458b3346b1a44f6d",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}
