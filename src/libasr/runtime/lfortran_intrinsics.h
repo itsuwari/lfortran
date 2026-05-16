@@ -99,6 +99,9 @@ LFORTRAN_API lfortran_c_tbp_func_ptr _lfortran_get_c_tbp_impl_by_hash(
         const char* method_name, uint64_t method_hash, int64_t type_id);
 LFORTRAN_API lfortran_c_tbp_func_ptr _lfortran_get_c_tbp_impl_by_hash_or_die(
         const char* method_name, uint64_t method_hash, int64_t type_id);
+LFORTRAN_API lfortran_c_tbp_func_ptr _lfortran_get_c_tbp_impl_by_hash_cached_or_die(
+        const char* method_name, uint64_t method_hash, int64_t type_id,
+        int64_t *cached_type_id, lfortran_c_tbp_func_ptr *cached_func);
 LFORTRAN_API lfortran_c_tbp_func_ptr _lfortran_get_c_tbp_impl(const char* method_name,
         int64_t type_id);
 LFORTRAN_API void _lfortran_register_c_struct_cleanup(int64_t type_id,

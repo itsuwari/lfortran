@@ -1739,6 +1739,28 @@ public:
                 "#define LFORTRAN_C_BACKEND_COMMON\n"
                 "#endif\n"
                 "#endif\n\n";
+            head += "#ifndef LFORTRAN_C_BACKEND_THREAD_LOCAL\n"
+                "#if defined(_MSC_VER)\n"
+                "#define LFORTRAN_C_BACKEND_THREAD_LOCAL __declspec(thread)\n"
+                "#elif defined(__GNUC__) || defined(__clang__)\n"
+                "#define LFORTRAN_C_BACKEND_THREAD_LOCAL __thread\n"
+                "#elif defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L\n"
+                "#define LFORTRAN_C_BACKEND_THREAD_LOCAL _Thread_local\n"
+                "#else\n"
+                "#define LFORTRAN_C_BACKEND_THREAD_LOCAL\n"
+                "#endif\n"
+                "#endif\n\n";
+            head += "#ifndef LFORTRAN_C_BACKEND_TBP_CACHE_STORAGE\n"
+                "#if defined(_MSC_VER)\n"
+                "#define LFORTRAN_C_BACKEND_TBP_CACHE_STORAGE static __declspec(thread)\n"
+                "#elif defined(__GNUC__) || defined(__clang__)\n"
+                "#define LFORTRAN_C_BACKEND_TBP_CACHE_STORAGE static __thread\n"
+                "#elif defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L\n"
+                "#define LFORTRAN_C_BACKEND_TBP_CACHE_STORAGE static _Thread_local\n"
+                "#else\n"
+                "#define LFORTRAN_C_BACKEND_TBP_CACHE_STORAGE\n"
+                "#endif\n"
+                "#endif\n\n";
         }
         if( is_string_concat_present ) {
             std::string strcat_def = "";
@@ -1840,6 +1862,28 @@ public:
             "#define LFORTRAN_C_BACKEND_COMMON __attribute__((common))\n"
             "#else\n"
             "#define LFORTRAN_C_BACKEND_COMMON\n"
+            "#endif\n"
+            "#endif\n"
+            "#ifndef LFORTRAN_C_BACKEND_THREAD_LOCAL\n"
+            "#if defined(_MSC_VER)\n"
+            "#define LFORTRAN_C_BACKEND_THREAD_LOCAL __declspec(thread)\n"
+            "#elif defined(__GNUC__) || defined(__clang__)\n"
+            "#define LFORTRAN_C_BACKEND_THREAD_LOCAL __thread\n"
+            "#elif defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L\n"
+            "#define LFORTRAN_C_BACKEND_THREAD_LOCAL _Thread_local\n"
+            "#else\n"
+            "#define LFORTRAN_C_BACKEND_THREAD_LOCAL\n"
+            "#endif\n"
+            "#endif\n"
+            "#ifndef LFORTRAN_C_BACKEND_TBP_CACHE_STORAGE\n"
+            "#if defined(_MSC_VER)\n"
+            "#define LFORTRAN_C_BACKEND_TBP_CACHE_STORAGE static __declspec(thread)\n"
+            "#elif defined(__GNUC__) || defined(__clang__)\n"
+            "#define LFORTRAN_C_BACKEND_TBP_CACHE_STORAGE static __thread\n"
+            "#elif defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L\n"
+            "#define LFORTRAN_C_BACKEND_TBP_CACHE_STORAGE static _Thread_local\n"
+            "#else\n"
+            "#define LFORTRAN_C_BACKEND_TBP_CACHE_STORAGE\n"
             "#endif\n"
             "#endif\n\n";
         if (array_types_decls.find("#ifndef LFORTRAN_C_BACKEND_CONSTRUCTOR\n")
@@ -14794,6 +14838,22 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         return wrapper_src;
     }
 
+    std::string build_c_tbp_cached_lookup_call(const std::string &method_name,
+            const std::string &method_hash, const std::string &runtime_tag_expr,
+            std::string &setup) {
+        ensure_c_backend_constructor_macro_decl();
+        std::string indent = get_current_indent();
+        std::string cached_type = get_unique_local_name("__lfortran_tbp_cached_type");
+        std::string cached_func = get_unique_local_name("__lfortran_tbp_cached_func");
+        setup = indent + "LFORTRAN_C_BACKEND_TBP_CACHE_STORAGE int64_t "
+            + cached_type + " = 0;\n"
+            + indent + "LFORTRAN_C_BACKEND_TBP_CACHE_STORAGE lfortran_c_tbp_func_ptr "
+            + cached_func + " = NULL;\n";
+        return "_lfortran_get_c_tbp_impl_by_hash_cached_or_die(\"" + method_name
+            + "\", " + method_hash + ", " + runtime_tag_expr + ", &"
+            + cached_type + ", &" + cached_func + ")";
+    }
+
     bool build_deferred_struct_method_dispatch(ASR::symbol_t *callee_sym, size_t n_args,
             ASR::call_arg_t *m_args, std::string &out, bool is_subroutine) {
         ASR::symbol_t *base_sym = ASRUtils::symbol_get_past_external(callee_sym);
@@ -14909,10 +14969,13 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
 
         if (is_subroutine) {
             std::string indent = get_current_indent();
+            std::string lookup_setup;
+            std::string lookup_call = build_c_tbp_cached_lookup_call(
+                method_name, method_hash, runtime_tag_expr, lookup_setup);
             out = force_link_src
+                + lookup_setup
                 + indent + "lfortran_c_tbp_func_ptr " + lookup_var
-                + " = _lfortran_get_c_tbp_impl_by_hash_or_die(\"" + method_name + "\", "
-                + method_hash + ", " + runtime_tag_expr + ");\n"
+                + " = " + lookup_call + ";\n"
                 + tail_setup
                 + indent + call_expr + ";\n";
             return true;
@@ -14926,14 +14989,24 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         if (ASRUtils::is_aggregate_type(ret_type)) {
             return false;
         }
-        std::string lookup_call = "_lfortran_get_c_tbp_impl_by_hash_or_die(\"" + method_name
-            + "\", " + method_hash + ", " + runtime_tag_expr + ")";
-        out = tail_setup + "((" + wrapper_type + ")" + lookup_call + ")("
+        std::string lookup_setup;
+        std::string lookup_call = build_c_tbp_cached_lookup_call(
+            method_name, method_hash, runtime_tag_expr, lookup_setup);
+        std::string call = "((" + wrapper_type + ")" + lookup_call + ")("
             + dispatch_self;
         if (!tail_args.empty()) {
-            out += ", " + tail_args;
+            call += ", " + tail_args;
         }
-        out += ")";
+        call += ")";
+        std::string result_type = CUtils::get_c_type_from_ttype_t(ret_type);
+        if (result_type.empty()) {
+            return false;
+        }
+        std::string result_var = get_unique_local_name("__lfortran_tbp_result");
+        tmp_buffer_src.push_back(force_link_src + lookup_setup + tail_setup
+            + get_current_indent() + result_type + " " + result_var
+            + " = " + call + ";\n");
+        out = result_var;
         return true;
     }
 
@@ -14944,7 +15017,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             std::string deferred_dispatch;
             if (build_deferred_struct_method_dispatch(x.m_name, x.n_args, x.m_args,
                     deferred_dispatch, false)) {
-                src = check_tmp_buffer() + deferred_dispatch;
+                src = deferred_dispatch;
                 last_expr_precedence = 16;
                 return;
             }
@@ -20417,6 +20490,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         current_function_pow_cache.clear();
         current_body = "";
         std::string loop_end_decl = "";
+        std::string loop_setup = "";
         std::string indent(indentation_level*indentation_spaces, ' ');
         std::string out = indent + "for (";
         ASR::symbol_t *loop_sym = nullptr;
@@ -20462,9 +20536,15 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
 
             out += lvname + "=";
             self().visit_expr(*a);
-            out += src + "; " + lvname + cmp_op;
+            std::string start = std::move(src);
+            loop_setup += drain_tmp_buffer();
+            loop_setup += extract_stmt_setup_from_expr(start);
+            out += start + "; " + lvname + cmp_op;
             self().visit_expr(*b);
-            out += src + "; " + lvname;
+            std::string end = std::move(src);
+            loop_setup += drain_tmp_buffer();
+            loop_setup += extract_stmt_setup_from_expr(end);
+            out += end + "; " + lvname;
             if (increment == 1) {
                 out += "++";
             } else if (increment == -1) {
@@ -20475,8 +20555,12 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         } else {
             this->visit_expr(*c);
             std::string increment_ = std::move(src);
+            loop_setup += drain_tmp_buffer();
+            loop_setup += extract_stmt_setup_from_expr(increment_);
             self().visit_expr(*b);
             std::string do_loop_end = std::move(src);
+            loop_setup += drain_tmp_buffer();
+            loop_setup += extract_stmt_setup_from_expr(do_loop_end);
             std::string do_loop_end_name = get_unique_local_name(
                 "loop_end___" + std::to_string(loop_end_count));
             loop_end_count += 1;
@@ -20484,7 +20568,10 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                             " " + do_loop_end_name + " = " + do_loop_end + ";\n";
             out += lvname + " = ";
             self().visit_expr(*a);
-            out += src + "; ";
+            std::string start = std::move(src);
+            loop_setup += drain_tmp_buffer();
+            loop_setup += extract_stmt_setup_from_expr(start);
+            out += start + "; ";
             out += "((" + increment_ + " >= 0) && (" +
                     lvname + " <= " + do_loop_end_name + ")) || (("
                     + increment_ + " < 0) && (" + lvname + " >= "
@@ -20501,7 +20588,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         out += current_body;
         out += indent + "}\n";
         indentation_level -= 1;
-        src = loop_end_decl + out;
+        src = loop_setup + loop_end_decl + out;
         current_body = current_body_copy;
         current_function_pow_cache = pow_cache_copy;
     }

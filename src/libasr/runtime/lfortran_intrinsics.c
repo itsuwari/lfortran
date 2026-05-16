@@ -337,6 +337,26 @@ LFORTRAN_API lfortran_c_tbp_func_ptr _lfortran_get_c_tbp_impl_by_hash_or_die(
     exit(1);
 }
 
+LFORTRAN_API lfortran_c_tbp_func_ptr _lfortran_get_c_tbp_impl_by_hash_cached_or_die(
+        const char* method_name, uint64_t method_hash, int64_t type_id,
+        int64_t *cached_type_id, lfortran_c_tbp_func_ptr *cached_func) {
+    if (cached_type_id != NULL && cached_func != NULL
+            && *cached_type_id == type_id && *cached_func != NULL) {
+        return *cached_func;
+    }
+    lfortran_c_tbp_func_ptr func = _lfortran_get_c_tbp_impl_by_hash(
+        method_name, method_hash, type_id);
+    if (func != NULL) {
+        if (cached_type_id != NULL && cached_func != NULL) {
+            *cached_func = func;
+            *cached_type_id = type_id;
+        }
+        return func;
+    }
+    fprintf(stderr, "Deferred type-bound dispatch failed for %s\n", method_name);
+    exit(1);
+}
+
 LFORTRAN_API void _lfortran_register_c_struct_cleanup(int64_t type_id,
         lfortran_c_struct_cleanup_func_ptr func) {
     if (type_id == 0 || func == NULL) {
