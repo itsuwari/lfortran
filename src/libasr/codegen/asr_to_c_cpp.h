@@ -5603,6 +5603,9 @@ R"(#include <stdio.h>
                 if (is_c_inline_rounding_helper_function(s)) {
                     continue;
                 }
+                if (is_c_inline_integer_remainder_helper_function(s)) {
+                    continue;
+                }
                 t = declare_all_functions(*s->m_symtab);
                 bool has_typevar = false;
                 std::string decl = get_function_declaration(*s, has_typevar, false, false);
@@ -5745,6 +5748,11 @@ R"(#include <stdio.h>
             return;
         }
         if (is_c_inline_rounding_helper_function(&x)) {
+            src = "";
+            current_scope = current_scope_copy;
+            return;
+        }
+        if (is_c_inline_integer_remainder_helper_function(&x)) {
             src = "";
             current_scope = current_scope_copy;
             return;
@@ -14644,6 +14652,127 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         return true;
     }
 
+    enum class CInlineIntegerRemainderKind {
+        None,
+        Mod,
+        Modulo
+    };
+
+    CInlineIntegerRemainderKind get_c_inline_integer_remainder_kind(
+            const std::string &name) const {
+        if (name.find("_lcompilers_optimization_modulo_") != std::string::npos) {
+            return CInlineIntegerRemainderKind::Modulo;
+        }
+        if (name.find("_lcompilers_optimization_mod_") != std::string::npos) {
+            return CInlineIntegerRemainderKind::Mod;
+        }
+        return CInlineIntegerRemainderKind::None;
+    }
+
+    bool is_c_inline_integer_remainder_type(ASR::ttype_t *type) const {
+        type = ASRUtils::type_get_past_allocatable_pointer(type);
+        return type != nullptr
+            && !ASRUtils::is_array(type)
+            && ASRUtils::is_integer(*type);
+    }
+
+    bool is_c_inline_integer_remainder_helper_function(
+            const ASR::Function_t *f) const {
+        if (!is_c || f == nullptr || f->n_args != 2
+                || get_c_inline_integer_remainder_kind(std::string(f->m_name))
+                    == CInlineIntegerRemainderKind::None) {
+            return false;
+        }
+        ASR::FunctionType_t *f_type = ASRUtils::get_FunctionType(f);
+        if (f_type == nullptr || f_type->m_return_var_type == nullptr
+                || f->m_args[0] == nullptr || f->m_args[1] == nullptr) {
+            return false;
+        }
+        ASR::ttype_t *return_type = ASRUtils::type_get_past_allocatable_pointer(
+            f_type->m_return_var_type);
+        ASR::ttype_t *arg0_type = ASRUtils::type_get_past_allocatable_pointer(
+            ASRUtils::expr_type(f->m_args[0]));
+        ASR::ttype_t *arg1_type = ASRUtils::type_get_past_allocatable_pointer(
+            ASRUtils::expr_type(f->m_args[1]));
+        if (!is_c_inline_integer_remainder_type(return_type)
+                || !is_c_inline_integer_remainder_type(arg0_type)
+                || !is_c_inline_integer_remainder_type(arg1_type)) {
+            return false;
+        }
+        std::string return_c_type = CUtils::get_c_type_from_ttype_t(return_type);
+        return !return_c_type.empty()
+            && return_c_type == CUtils::get_c_type_from_ttype_t(arg0_type)
+            && return_c_type == CUtils::get_c_type_from_ttype_t(arg1_type);
+    }
+
+    bool try_emit_c_inline_integer_remainder_function_call(
+            const ASR::FunctionCall_t &x, ASR::Function_t *f,
+            const std::string &fn_name, std::string &out) {
+        if (!is_c || f == nullptr || x.n_args != 2
+                || x.m_args[0].m_value == nullptr
+                || x.m_args[1].m_value == nullptr
+                || !is_c_inline_integer_remainder_helper_function(f)) {
+            return false;
+        }
+        CInlineIntegerRemainderKind kind =
+            get_c_inline_integer_remainder_kind(fn_name);
+        if (kind == CInlineIntegerRemainderKind::None) {
+            return false;
+        }
+        ASR::ttype_t *result_type = ASRUtils::type_get_past_allocatable_pointer(
+            x.m_type);
+        ASR::ttype_t *arg0_type = ASRUtils::type_get_past_allocatable_pointer(
+            ASRUtils::expr_type(x.m_args[0].m_value));
+        ASR::ttype_t *arg1_type = ASRUtils::type_get_past_allocatable_pointer(
+            ASRUtils::expr_type(x.m_args[1].m_value));
+        if (!is_c_inline_integer_remainder_type(result_type)
+                || !is_c_inline_integer_remainder_type(arg0_type)
+                || !is_c_inline_integer_remainder_type(arg1_type)) {
+            return false;
+        }
+        std::string result_c_type = CUtils::get_c_type_from_ttype_t(result_type);
+        if (result_c_type.empty()
+                || result_c_type != CUtils::get_c_type_from_ttype_t(arg0_type)
+                || result_c_type != CUtils::get_c_type_from_ttype_t(arg1_type)) {
+            return false;
+        }
+
+        std::string setup;
+        auto emit_arg = [&](ASR::expr_t *expr) -> std::string {
+            self().visit_expr(*expr);
+            std::string value = src;
+            setup += drain_tmp_buffer();
+            setup += extract_stmt_setup_from_expr(value);
+            return value;
+        };
+
+        std::string lhs = emit_arg(x.m_args[0].m_value);
+        std::string rhs = emit_arg(x.m_args[1].m_value);
+        if (kind == CInlineIntegerRemainderKind::Mod) {
+            if (!setup.empty()) {
+                tmp_buffer_src.push_back(setup);
+            }
+            out = "((" + lhs + ") % (" + rhs + "))";
+            return true;
+        }
+
+        std::string indent = get_current_indent();
+        std::string divisor = get_unique_local_name("__lfortran_modulo_divisor");
+        std::string remainder = get_unique_local_name("__lfortran_modulo_remainder");
+        std::string result = get_unique_local_name("__lfortran_modulo_result");
+        setup += indent + result_c_type + " " + divisor + " = " + rhs + ";\n";
+        setup += indent + result_c_type + " " + remainder
+            + " = (" + lhs + ") % " + divisor + ";\n";
+        setup += indent + result_c_type + " " + result + " = ("
+            + remainder + " != 0 && ((" + remainder + " < 0 && "
+            + divisor + " > 0) || (" + remainder + " > 0 && "
+            + divisor + " < 0))) ? " + remainder + " + " + divisor
+            + " : " + remainder + ";\n";
+        tmp_buffer_src.push_back(setup);
+        out = result;
+        return true;
+    }
+
     bool can_emit_c_inline_spread_subroutine_call(const ASR::SubroutineCall_t &x,
             ASR::Function_t *f, const std::string &sym_name) {
         if (!is_c_spread_callee(f, sym_name)
@@ -15213,6 +15342,12 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 return;
             }
             if (try_emit_c_inline_rounding_function_call(
+                    x, fn, fn_name, inline_call)) {
+                src = check_tmp_buffer() + inline_call;
+                last_expr_precedence = 2;
+                return;
+            }
+            if (try_emit_c_inline_integer_remainder_function_call(
                     x, fn, fn_name, inline_call)) {
                 src = check_tmp_buffer() + inline_call;
                 last_expr_precedence = 2;

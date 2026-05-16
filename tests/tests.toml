@@ -5467,6 +5467,13 @@ c_split_forbid_pattern = true
 c_split_forbid_pattern_value = "_lfortran_strcpy_alloc"
 
 [[test]]
+filename = "../integration_tests/c_backend_inline_integer_modulo_01.f90"
+run = true
+options = "--backend=c --separate-compilation"
+c_split_forbid_pattern = true
+c_split_forbid_pattern_value = "_lcompilers_optimization_mod"
+
+[[test]]
 filename = "c_backend_tbp_lazy_constructor_01.f90"
 run = true
 options = "--backend=c --separate-compilation"

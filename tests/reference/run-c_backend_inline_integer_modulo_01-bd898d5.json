@@ -1,0 +1,13 @@
+{
+    "basename": "run-c_backend_inline_integer_modulo_01-bd898d5",
+    "cmd": "lfortran --no-color {infile}",
+    "infile": "tests/../integration_tests/c_backend_inline_integer_modulo_01.f90",
+    "infile_hash": "fa4c8d1fdaeac8cf02934485c5876ce911bdce2660b4fb4360987d3b",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

@@ -1,0 +1,13 @@
+{
+    "basename": "c_split_forbid_pattern-c_backend_inline_integer_modulo_01-449fd8e",
+    "cmd": "tmpdir=$(mktemp -d /tmp/lfortran-c-split-forbid.XXXXXX); trap 'rm -rf \"$tmpdir\"' EXIT; lfortran --backend=c --separate-compilation -c {infile} -o \"$tmpdir/main.o\" > \"$tmpdir/compile.out\" 2> \"$tmpdir/compile.err\" && (! grep -R -F -q \"_lcompilers_optimization_mod\" \"$tmpdir\"/*.o.tmp.split/*.c \"$tmpdir\"/*.o.tmp.split/*.h) #",
+    "infile": "tests/../integration_tests/c_backend_inline_integer_modulo_01.f90",
+    "infile_hash": "fa4c8d1fdaeac8cf02934485c5876ce911bdce2660b4fb4360987d3b",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}
