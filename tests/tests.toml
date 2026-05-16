@@ -5453,6 +5453,27 @@ c_split_require_pattern = true
 c_split_require_pattern_value = "_lfortran_register_c_tbp_impl_once"
 
 [[test]]
+filename = "c_backend_private_hidden_visibility_01.f90"
+run = true
+options = "--backend=c --separate-compilation -O2"
+c_split_require_pattern = true
+c_split_require_pattern_value = "LFORTRAN_C_BACKEND_HIDDEN void __lfortran_private_hidden_visibility_mod__helper"
+
+[[test]]
+filename = "c_backend_private_hidden_visibility_02.f90"
+run = true
+options = "--backend=c --separate-compilation -O2"
+c_split_forbid_pattern = true
+c_split_forbid_pattern_value = "LFORTRAN_C_BACKEND_HIDDEN void __lfortran_c_backend_private_hidden_visibility_02_mod__helper"
+
+[[test]]
+filename = "c_backend_public_generic_specific_01.f90"
+run = true
+options = "--backend=c --separate-compilation -O2"
+c_split_forbid_pattern = true
+c_split_forbid_pattern_value = "LFORTRAN_C_BACKEND_HIDDEN void __lfortran_c_backend_public_generic_specific_01_mod__apply_r8"
+
+[[test]]
 filename = "c_backend_header_only_module_01.f90"
 c_split_no_empty_source = true
 

@@ -253,6 +253,7 @@ public:
     std::map<SymbolTable*, std::set<std::string>> emitted_local_names;
     std::string array_types_decls;
     std::string forward_decl_functions;
+    bool c_backend_hidden_macro_needed = false;
     std::vector<ASR::Function_t*> pending_function_definitions;
     std::set<uint64_t> pending_function_definition_hashes;
     std::set<uint64_t> c_required_spread_helper_hashes;
@@ -1778,8 +1779,9 @@ public:
                 "{\n    int32_t lower_bound, length, stride;\n};\n" + array_types_decls;
         }
 
-        return to_include + head + array_types_decls + forward_decl_functions + unit_src +
-              ds_funcs_defined + util_funcs_defined;
+        return to_include + head + get_c_backend_hidden_macro_decl()
+            + array_types_decls + forward_decl_functions + unit_src
+            + ds_funcs_defined + util_funcs_defined;
     }
 
     std::string get_runtime_type_tag_member_name() const {
@@ -3570,6 +3572,25 @@ R"(#include <stdio.h>
         }
     }
 
+    std::string get_c_backend_hidden_macro_decl() const {
+        if (!is_c || !c_backend_hidden_macro_needed) {
+            return "";
+        }
+        return "#ifndef LFORTRAN_C_BACKEND_HIDDEN\n"
+            "#if defined(__GNUC__) || defined(__clang__)\n"
+            "#define LFORTRAN_C_BACKEND_HIDDEN __attribute__((visibility(\"hidden\")))\n"
+            "#else\n"
+            "#define LFORTRAN_C_BACKEND_HIDDEN\n"
+            "#endif\n"
+            "#endif\n\n";
+    }
+
+    void ensure_c_backend_hidden_macro_decl() {
+        if (is_c) {
+            c_backend_hidden_macro_needed = true;
+        }
+    }
+
     std::string get_pass_array_by_data_method_suffix(const ASR::Function_t &x) {
         if (x.n_args == 0) {
             return "";
@@ -3678,24 +3699,118 @@ R"(#include <stdio.h>
         return is_c_raw_array_helper_scalar_type(arg->m_type);
     }
 
+    bool c_symbol_resolves_to_function(const ASR::symbol_t *candidate,
+            const ASR::Function_t &target) {
+        if (candidate == nullptr) {
+            return false;
+        }
+        ASR::symbol_t *candidate_unwrapped = ASRUtils::symbol_get_past_external(
+            const_cast<ASR::symbol_t*>(candidate));
+        if (candidate_unwrapped != nullptr
+                && ASR::is_a<ASR::StructMethodDeclaration_t>(*candidate_unwrapped)) {
+            candidate_unwrapped = ASRUtils::symbol_get_past_external(
+                ASR::down_cast<ASR::StructMethodDeclaration_t>(
+                    candidate_unwrapped)->m_proc);
+        }
+        ASR::symbol_t *target_sym = reinterpret_cast<ASR::symbol_t*>(
+            const_cast<ASR::Function_t*>(&target));
+        return candidate_unwrapped == target_sym;
+    }
+
+    bool c_function_is_public_generic_specific(const ASR::Function_t &x,
+            SymbolTable *parent) {
+        if (parent == nullptr) {
+            return false;
+        }
+        for (const auto &item : parent->get_scope()) {
+            ASR::symbol_t *sym = item.second;
+            if (sym == nullptr) {
+                continue;
+            }
+            if (ASR::is_a<ASR::GenericProcedure_t>(*sym)) {
+                ASR::GenericProcedure_t *gp =
+                    ASR::down_cast<ASR::GenericProcedure_t>(sym);
+                if (gp->m_access != ASR::accessType::Public) {
+                    continue;
+                }
+                for (size_t i = 0; i < gp->n_procs; i++) {
+                    if (c_symbol_resolves_to_function(gp->m_procs[i], x)) {
+                        return true;
+                    }
+                }
+                continue;
+            }
+            if (ASR::is_a<ASR::CustomOperator_t>(*sym)) {
+                ASR::CustomOperator_t *op =
+                    ASR::down_cast<ASR::CustomOperator_t>(sym);
+                if (op->m_access != ASR::accessType::Public) {
+                    continue;
+                }
+                for (size_t i = 0; i < op->n_procs; i++) {
+                    if (c_symbol_resolves_to_function(op->m_procs[i], x)) {
+                        return true;
+                    }
+                }
+                continue;
+            }
+            if (ASR::is_a<ASR::Struct_t>(*sym)) {
+                ASR::Struct_t *struct_t = ASR::down_cast<ASR::Struct_t>(sym);
+                if (struct_t->m_access != ASR::accessType::Public
+                        || struct_t->m_symtab == nullptr) {
+                    continue;
+                }
+                for (const auto &struct_item : struct_t->m_symtab->get_scope()) {
+                    if (struct_item.second != nullptr
+                            && ASR::is_a<ASR::StructMethodDeclaration_t>(
+                                *struct_item.second)
+                            && c_symbol_resolves_to_function(
+                                struct_item.second, x)) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    bool is_c_specialized_pass_array_by_data_function(
+            const ASR::Function_t &x) {
+        std::vector<size_t> public_arg_positions;
+        std::vector<size_t> public_indices_with_hidden_dims;
+        std::string pass_suffix;
+        return get_specialized_pass_array_by_data_args(
+            x, public_arg_positions, public_indices_with_hidden_dims,
+            pass_suffix);
+    }
+
     bool is_c_private_or_internal_source_function(const ASR::Function_t &x) {
         ASR::FunctionType_t *f_type = ASRUtils::get_FunctionType(x);
         if (f_type->m_abi != ASR::abiType::Source
                 || f_type->m_deftype != ASR::deftypeType::Implementation
                 || x.m_return_var != nullptr
-                || std::string(x.m_name) == "main") {
+                || std::string(x.m_name) == "main"
+                || is_c_specialized_pass_array_by_data_function(x)) {
             return false;
-        }
-        if (x.m_access == ASR::accessType::Private) {
-            return true;
         }
         SymbolTable *parent = ASRUtils::symbol_parent_symtab(
             reinterpret_cast<ASR::symbol_t*>(
                 const_cast<ASR::Function_t*>(&x)));
         ASR::asr_t *owner = parent ? parent->asr_owner : nullptr;
+        if (x.m_access == ASR::accessType::Private
+                && !c_function_is_public_generic_specific(x, parent)) {
+            return true;
+        }
         return owner != nullptr
             && (CUtils::is_symbol_owner<ASR::Function_t>(owner)
                 || CUtils::is_symbol_owner<ASR::Program_t>(owner));
+    }
+
+    std::string get_c_function_visibility_prefix(const ASR::Function_t &x) {
+        if (is_c && is_c_private_or_internal_source_function(x)) {
+            ensure_c_backend_hidden_macro_decl();
+            return "LFORTRAN_C_BACKEND_HIDDEN ";
+        }
+        return "";
     }
 
     ASR::Variable_t *get_c_raw_helper_arg_var(const ASR::Function_t &x,
@@ -3919,7 +4034,8 @@ R"(#include <stdio.h>
             const std::string &target_name,
             const std::vector<size_t> &raw_positions) {
         bool has_typevar = false;
-        std::string decl = "void " + target_name + "(";
+        std::string decl = get_c_function_visibility_prefix(x)
+            + "void " + target_name + "(";
         for (size_t i = 0; i < x.n_args; i++) {
             if (i > 0) {
                 decl += ", ";
@@ -4422,6 +4538,7 @@ R"(#include <stdio.h>
         bool has_typevar = false;
         std::string wrapper_src;
         std::string wrapper_decl;
+        wrapper_decl += get_c_function_visibility_prefix(x);
         if (x.m_return_var) {
             wrapper_decl += get_return_var_type(ASRUtils::EXPR2VAR(x.m_return_var));
         } else {
@@ -4918,6 +5035,9 @@ R"(#include <stdio.h>
         if( f_type->m_static && !is_pointer) {
             static_attr = "static ";
         }
+        if (is_c && !is_pointer) {
+            static_attr += get_c_function_visibility_prefix(x);
+        }
         if (x.m_return_var) {
             ASR::Variable_t *return_var = ASRUtils::EXPR2VAR(x.m_return_var);
             has_typevar = ASR::is_a<ASR::TypeParameter_t>(*return_var->m_type);
@@ -5322,6 +5442,7 @@ R"(#include <stdio.h>
         }
         bool has_typevar = false;
         std::string decl;
+        decl += get_c_function_visibility_prefix(x);
         if (x.m_return_var) {
             decl += get_return_var_type(ASRUtils::EXPR2VAR(x.m_return_var));
         } else {

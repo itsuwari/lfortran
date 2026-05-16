@@ -5104,7 +5104,8 @@ R"(
 
         std::string header_src = "#ifndef " + header_guard + "\n#define "
             + header_guard + "\n\n"
-            + get_include_block() + get_default_head() + "\n"
+            + get_include_block() + get_default_head()
+            + get_c_backend_hidden_macro_decl() + "\n"
             + header_array_type_decls + module_aggregate_decls
             + "\n#endif\n";
         write_text_file(fs::path(output_dir) / header_name, header_src);

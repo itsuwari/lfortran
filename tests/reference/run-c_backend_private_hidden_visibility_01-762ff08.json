@@ -1,0 +1,13 @@
+{
+    "basename": "run-c_backend_private_hidden_visibility_01-762ff08",
+    "cmd": "lfortran --no-color {infile}",
+    "infile": "tests/c_backend_private_hidden_visibility_01.f90",
+    "infile_hash": "7d388554660df288dfa61a9c6c9665dd12d2ab492a35982a448b52a0",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

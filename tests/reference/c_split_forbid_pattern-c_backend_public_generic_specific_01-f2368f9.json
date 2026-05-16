@@ -1,0 +1,13 @@
+{
+    "basename": "c_split_forbid_pattern-c_backend_public_generic_specific_01-f2368f9",
+    "cmd": "tmpdir=$(mktemp -d /tmp/lfortran-c-split-forbid.XXXXXX); trap 'rm -rf \"$tmpdir\"' EXIT; lfortran --backend=c --separate-compilation -c {infile} -o \"$tmpdir/main.o\" > \"$tmpdir/compile.out\" 2> \"$tmpdir/compile.err\" && (! grep -R -F -q \"LFORTRAN_C_BACKEND_HIDDEN void __lfortran_c_backend_public_generic_specific_01_mod__apply_r8\" \"$tmpdir\"/*.o.tmp.split/*.c \"$tmpdir\"/*.o.tmp.split/*.h) #",
+    "infile": "tests/c_backend_public_generic_specific_01.f90",
+    "infile_hash": "81e006824c5beced94374efb0258304e4372fa9279a7a3cb8a749070",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}
