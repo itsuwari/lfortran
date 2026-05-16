@@ -29,6 +29,7 @@
 #include <libasr/string_utils.h>
 #include <libasr/pass/unused_functions.h>
 #include <libasr/pass/intrinsic_function_registry.h>
+#include <libasr/pass/intrinsic_array_function_registry.h>
 #include <libasr/pass/intrinsic_subroutine_registry.h>
 
 
@@ -6818,6 +6819,38 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             || is_c_rank1_vector_subscript_array_item_expr(expr);
     }
 
+    bool get_c_rank2_spread_dim(const ASR::IntrinsicArrayFunction_t &x,
+            int64_t &dim) {
+        if (x.m_arr_intrinsic_id != static_cast<int64_t>(
+                    ASRUtils::IntrinsicArrayFunctions::Spread)
+                || x.n_args != 3
+                || x.m_args[0] == nullptr
+                || x.m_args[1] == nullptr
+                || x.m_args[2] == nullptr
+                || !get_c_constant_int_expr_value(x.m_args[1], dim)) {
+            return false;
+        }
+        return dim == 1 || dim == 2;
+    }
+
+    bool is_c_rank2_spread_scalarizable_expr(
+            const ASR::IntrinsicArrayFunction_t &x) {
+        int64_t dim = -1;
+        if (!get_c_rank2_spread_dim(x, dim)) {
+            return false;
+        }
+        ASR::ttype_t *source_type = ASRUtils::type_get_past_allocatable_pointer(
+            ASRUtils::expr_type(x.m_args[0]));
+        ASR::ttype_t *result_type = ASRUtils::type_get_past_allocatable_pointer(
+            x.m_type);
+        return source_type != nullptr
+            && result_type != nullptr
+            && ASRUtils::extract_n_dims_from_ttype(source_type) == 1
+            && ASRUtils::extract_n_dims_from_ttype(result_type) == 2
+            && is_c_scalarizable_element_type(result_type)
+            && is_c_scalarizable_array_expr(x.m_args[0]);
+    }
+
     bool is_c_scalarizable_array_constructor(const ASR::ArrayConstructor_t &x) {
         if (!is_c_scalarizable_element_type(x.m_type)) {
             return false;
@@ -8318,6 +8351,16 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 }
                 return false;
             }
+            case ASR::exprType::IntrinsicArrayFunction: {
+                ASR::IntrinsicArrayFunction_t *iaf =
+                    ASR::down_cast<ASR::IntrinsicArrayFunction_t>(expr);
+                for (size_t i = 0; i < iaf->n_args; i++) {
+                    if (c_expr_references_root_symbol(iaf->m_args[i], root_sym)) {
+                        return true;
+                    }
+                }
+                return false;
+            }
             case ASR::exprType::ArrayBroadcast: {
                 return c_expr_references_root_symbol(
                     ASR::down_cast<ASR::ArrayBroadcast_t>(expr)->m_array, root_sym);
@@ -8766,6 +8809,10 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 return is_c_rank2_scalarizable_reshape(
                     *ASR::down_cast<ASR::ArrayReshape_t>(expr));
             }
+            case ASR::exprType::IntrinsicArrayFunction: {
+                return is_c_rank2_spread_scalarizable_expr(
+                    *ASR::down_cast<ASR::IntrinsicArrayFunction_t>(expr));
+            }
             default: {
                 return false;
             }
@@ -8817,6 +8864,10 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             case ASR::exprType::IntegerUnaryMinus: {
                 return is_c_rank2_nonself_update_expr(
                     ASR::down_cast<ASR::IntegerUnaryMinus_t>(expr)->m_arg);
+            }
+            case ASR::exprType::IntrinsicArrayFunction: {
+                return is_c_rank2_spread_scalarizable_expr(
+                    *ASR::down_cast<ASR::IntrinsicArrayFunction_t>(expr));
             }
             default: {
                 return false;
@@ -9081,6 +9132,17 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 }
                 return get_c_scalarized_array_expr(
                     reshape->m_array, flat_index, setup, out, false);
+            }
+            case ASR::exprType::IntrinsicArrayFunction: {
+                ASR::IntrinsicArrayFunction_t *iaf =
+                    ASR::down_cast<ASR::IntrinsicArrayFunction_t>(expr);
+                int64_t dim = -1;
+                if (!is_c_rank2_spread_scalarizable_expr(*iaf)
+                        || !get_c_rank2_spread_dim(*iaf, dim)) {
+                    return false;
+                }
+                return get_c_scalarized_array_expr(iaf->m_args[0],
+                    dim == 1 ? index2_name : index1_name, setup, out, false);
             }
             case ASR::exprType::RealBinOp: {
                 ASR::RealBinOp_t *binop = ASR::down_cast<ASR::RealBinOp_t>(expr);
@@ -13737,6 +13799,110 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             + result_lvalue + ", NULL, true, true, " + input + ", "
             + trim_len + ");\n"
             + cleanup;
+        return true;
+    }
+
+    bool is_c_spread_callee(const ASR::Function_t *f,
+            const std::string &sym_name) const {
+        if (!is_c || f == nullptr) {
+            return false;
+        }
+        std::string fn_name = std::string(f->m_name);
+        return fn_name.find("_lcompilers_spread") != std::string::npos
+            || sym_name.find("_lcompilers_spread") != std::string::npos;
+    }
+
+    bool try_emit_c_inline_spread_subroutine_call(const ASR::SubroutineCall_t &x,
+            ASR::Function_t *f, const std::string &sym_name, std::string &out) {
+        if (!is_c_spread_callee(f, sym_name)
+                || (x.n_args != 4 && x.n_args != 7)) {
+            return false;
+        }
+        size_t dim_arg_index = x.n_args == 4 ? 1 : 2;
+        size_t result_arg_index = x.n_args == 4 ? 3 : 4;
+        ASR::expr_t *source_expr = x.m_args[0].m_value;
+        ASR::expr_t *dim_expr = x.m_args[dim_arg_index].m_value;
+        ASR::expr_t *result_expr = x.m_args[result_arg_index].m_value;
+        int64_t dim = -1;
+        if (source_expr == nullptr || dim_expr == nullptr || result_expr == nullptr
+                || !get_c_constant_int_expr_value(dim_expr, dim)
+                || (dim != 1 && dim != 2)) {
+            return false;
+        }
+        ASR::ttype_t *source_type = ASRUtils::type_get_past_allocatable_pointer(
+            ASRUtils::expr_type(source_expr));
+        ASR::ttype_t *result_type = ASRUtils::type_get_past_allocatable_pointer(
+            ASRUtils::expr_type(result_expr));
+        ASR::ttype_t *source_element_type = source_type
+            ? ASRUtils::type_get_past_array(source_type) : nullptr;
+        ASR::ttype_t *result_element_type = result_type
+            ? ASRUtils::type_get_past_array(result_type) : nullptr;
+        if (source_type == nullptr || result_type == nullptr
+                || source_element_type == nullptr || result_element_type == nullptr
+                || ASRUtils::extract_n_dims_from_ttype(source_type) != 1
+                || ASRUtils::extract_n_dims_from_ttype(result_type) != 2
+                || !is_c_scalarizable_element_type(source_type)
+                || !is_c_scalarizable_element_type(result_type)
+                || CUtils::get_c_type_from_ttype_t(source_element_type)
+                    != CUtils::get_c_type_from_ttype_t(result_element_type)) {
+            return false;
+        }
+        ASR::symbol_t *result_root = get_c_array_assignment_root_symbol(result_expr);
+        if (result_root != nullptr
+                && c_expr_references_root_symbol(source_expr, result_root)) {
+            return false;
+        }
+
+        std::string setup = drain_tmp_buffer();
+        std::string result_data, result_offset, result_stride1, result_stride2;
+        std::string result_length1, result_length2;
+        if (!get_c_rank2_full_array_access(result_expr, "__lfortran_spread_result",
+                setup, result_data, result_offset, result_stride1,
+                result_stride2, result_length1, result_length2)) {
+            return false;
+        }
+        std::string index1_name = get_unique_local_name("__lfortran_i");
+        std::string index2_name = get_unique_local_name("__lfortran_j");
+        std::string source_value;
+        std::string source_length;
+        if (!get_c_rank1_array_element_expr(source_expr, "__lfortran_spread_source",
+                dim == 1 ? index2_name : index1_name, setup, source_value,
+                source_length, false)) {
+            return false;
+        }
+
+        std::string indent(indentation_level * indentation_spaces, ' ');
+        out = setup;
+        out += indent + "{\n";
+        indentation_level++;
+        std::string inner_indent(indentation_level * indentation_spaces, ' ');
+        std::string result_row_index =
+            get_unique_local_name("__lfortran_spread_result_row_index");
+        out += inner_indent + "for (int64_t " + index2_name + " = 0, "
+            + result_row_index + " = " + result_offset + "; "
+            + index2_name + " < " + result_length2 + "; "
+            + index2_name + "++, " + result_row_index + " += "
+            + result_stride2 + ") {\n";
+        indentation_level++;
+        std::string row_indent(indentation_level * indentation_spaces, ' ');
+        std::string result_index =
+            get_unique_local_name("__lfortran_spread_result_index");
+        out += row_indent + "int64_t " + result_index + " = "
+            + result_row_index + ";\n";
+        out += row_indent + "for (int64_t " + index1_name + " = 0; "
+            + index1_name + " < " + result_length1 + "; "
+            + index1_name + "++) {\n";
+        indentation_level++;
+        std::string item_indent(indentation_level * indentation_spaces, ' ');
+        out += item_indent + result_data + "[" + result_index + "] = "
+            + source_value + ";\n";
+        out += item_indent + result_index + " += " + result_stride1 + ";\n";
+        indentation_level--;
+        out += row_indent + "}\n";
+        indentation_level--;
+        out += inner_indent + "}\n";
+        indentation_level--;
+        out += indent + "}\n";
         return true;
     }
 
@@ -19776,6 +19942,12 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             if (try_emit_c_string_trim_subroutine_call(
                     x, s, sym_name, string_trim_call)) {
                 src = string_trim_call;
+                return;
+            }
+            std::string spread_call;
+            if (try_emit_c_inline_spread_subroutine_call(
+                    x, s, sym_name, spread_call)) {
+                src = spread_call;
                 return;
             }
         }
