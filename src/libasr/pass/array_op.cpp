@@ -833,6 +833,12 @@ class ArrayOpVisitor: public ASR::CallReplacerOnExpressionsVisitor<ArrayOpVisito
         return left_is_default && right_is_default;
     }
 
+    bool is_scalar_array_index(const ASR::array_index_t &idx) const {
+        return idx.m_left == nullptr && idx.m_step == nullptr
+            && idx.m_right != nullptr
+            && !ASRUtils::is_array(ASRUtils::expr_type(idx.m_right));
+    }
+
     bool is_simple_integer_section_bound_expr(ASR::expr_t *expr) const {
         if (expr == nullptr) {
             return true;
@@ -861,6 +867,11 @@ class ArrayOpVisitor: public ASR::CallReplacerOnExpressionsVisitor<ArrayOpVisito
                 return false;
             }
         }
+    }
+
+    bool is_simple_scalar_array_index(const ASR::array_index_t &idx) const {
+        return is_scalar_array_index(idx)
+            && is_simple_integer_section_bound_expr(idx.m_right);
     }
 
     bool is_c_rank1_unit_section(ASR::expr_t *expr) const {
@@ -1010,12 +1021,29 @@ class ArrayOpVisitor: public ASR::CallReplacerOnExpressionsVisitor<ArrayOpVisito
             return false;
         }
         ASR::ArraySection_t *section = ASR::down_cast<ASR::ArraySection_t>(expr);
+        ASR::expr_t *base_expr = ASRUtils::get_past_array_physical_cast(section->m_v);
+        ASR::ttype_t *base_type = base_expr != nullptr
+            ? ASRUtils::type_get_past_allocatable_pointer(
+                ASRUtils::expr_type(base_expr)) : nullptr;
+        int base_rank = base_type != nullptr
+            ? ASRUtils::extract_n_dims_from_ttype(base_type) : 0;
+        if (base_rank < 2 || section->n_args != static_cast<size_t>(base_rank)) {
+            return false;
+        }
+        int slice_dims = 0;
         for (size_t i = 0; i < section->n_args; i++) {
-            if (!is_default_unit_array_slice(section->m_args[i])) {
+            const ASR::array_index_t &idx = section->m_args[i];
+            bool is_slice = idx.m_left || idx.m_step || idx.m_right == nullptr;
+            if (is_slice) {
+                slice_dims++;
+                if (!is_default_unit_array_slice(idx)) {
+                    return false;
+                }
+            } else if (!is_simple_scalar_array_index(idx)) {
                 return false;
             }
         }
-        return true;
+        return slice_dims == 2;
     }
 
     bool is_c_rank2_unit_slice_array_expr(ASR::expr_t *expr) const {
@@ -1041,26 +1069,31 @@ class ArrayOpVisitor: public ASR::CallReplacerOnExpressionsVisitor<ArrayOpVisito
         }
         ASR::ArraySection_t *section = ASR::down_cast<ASR::ArraySection_t>(expr);
         ASR::expr_t *base_expr = ASRUtils::get_past_array_physical_cast(section->m_v);
-        if (base_expr == nullptr || section->n_args != 2) {
+        ASR::ttype_t *base_type = base_expr != nullptr
+            ? ASRUtils::type_get_past_allocatable_pointer(
+                ASRUtils::expr_type(base_expr)) : nullptr;
+        int base_rank = base_type != nullptr
+            ? ASRUtils::extract_n_dims_from_ttype(base_type) : 0;
+        if (base_rank < 2 || section->n_args != static_cast<size_t>(base_rank)) {
             return false;
         }
-        ASR::ttype_t *base_type = ASRUtils::type_get_past_allocatable_pointer(
-            ASRUtils::expr_type(base_expr));
-        if (base_type == nullptr
-                || ASRUtils::extract_n_dims_from_ttype(base_type) != 2) {
-            return false;
-        }
+        int slice_dims = 0;
         for (size_t i = 0; i < section->n_args; i++) {
             const ASR::array_index_t &idx = section->m_args[i];
             bool is_slice = idx.m_left || idx.m_step || idx.m_right == nullptr;
-            if (!is_slice || !is_unit_step_expr(idx.m_step)
-                    || !is_simple_integer_section_bound_expr(idx.m_left)
-                    || !is_simple_integer_section_bound_expr(idx.m_right)
-                    || !is_simple_integer_section_bound_expr(idx.m_step)) {
+            if (is_slice) {
+                slice_dims++;
+                if (!is_unit_step_expr(idx.m_step)
+                        || !is_simple_integer_section_bound_expr(idx.m_left)
+                        || !is_simple_integer_section_bound_expr(idx.m_right)
+                        || !is_simple_integer_section_bound_expr(idx.m_step)) {
+                    return false;
+                }
+            } else if (!is_simple_scalar_array_index(idx)) {
                 return false;
             }
         }
-        return true;
+        return slice_dims == 2;
     }
 
     bool is_c_rank2_plain_data_copy_expr(ASR::expr_t *expr) const {

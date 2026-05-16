@@ -8426,6 +8426,14 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         return left_is_default && right_is_default;
     }
 
+    bool is_c_simple_scalar_array_index(const ASR::array_index_t &idx) {
+        ASR::expr_t *idx_expr = get_array_index_expr(idx);
+        return idx.m_left == nullptr && idx.m_step == nullptr
+            && idx_expr != nullptr
+            && !ASRUtils::is_array(ASRUtils::expr_type(idx_expr))
+            && is_c_simple_integer_section_bound_expr(idx_expr);
+    }
+
     bool is_c_rank2_full_array_expr(ASR::expr_t *expr) {
         expr = unwrap_c_array_expr(expr);
         if (expr == nullptr || (!ASRUtils::is_array(ASRUtils::expr_type(expr))
@@ -8447,12 +8455,29 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             return false;
         }
         ASR::ArraySection_t *section = ASR::down_cast<ASR::ArraySection_t>(expr);
+        ASR::expr_t *base_expr = unwrap_c_array_expr(section->m_v);
+        ASR::ttype_t *base_type = base_expr != nullptr
+            ? ASRUtils::type_get_past_allocatable_pointer(
+                ASRUtils::expr_type(base_expr)) : nullptr;
+        int base_rank = base_type != nullptr
+            ? ASRUtils::extract_n_dims_from_ttype(base_type) : 0;
+        if (base_rank < 2 || section->n_args != static_cast<size_t>(base_rank)) {
+            return false;
+        }
+        int slice_dims = 0;
         for (size_t i = 0; i < section->n_args; i++) {
-            if (!is_c_default_unit_array_slice(section->m_args[i])) {
+            ASR::array_index_t idx = section->m_args[i];
+            bool is_slice = idx.m_left || idx.m_step || idx.m_right == nullptr;
+            if (is_slice) {
+                slice_dims++;
+                if (!is_c_default_unit_array_slice(idx)) {
+                    return false;
+                }
+            } else if (!is_c_simple_scalar_array_index(idx)) {
                 return false;
             }
         }
-        return true;
+        return slice_dims == 2;
     }
 
     bool is_c_simple_integer_section_bound_expr(ASR::expr_t *expr) {
@@ -8509,26 +8534,30 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         }
         ASR::ArraySection_t *section = ASR::down_cast<ASR::ArraySection_t>(expr);
         ASR::expr_t *base_expr = unwrap_c_array_expr(section->m_v);
-        if (base_expr == nullptr || static_cast<int>(section->n_args) != 2) {
-            return false;
-        }
         ASR::ttype_t *base_type = ASRUtils::type_get_past_allocatable_pointer(
             ASRUtils::expr_type(base_expr));
-        if (base_type == nullptr
-                || ASRUtils::extract_n_dims_from_ttype(base_type) != 2) {
+        int base_rank = base_type != nullptr
+            ? ASRUtils::extract_n_dims_from_ttype(base_type) : 0;
+        if (base_rank < 2 || section->n_args != static_cast<size_t>(base_rank)) {
             return false;
         }
+        int slice_dims = 0;
         for (size_t i = 0; i < section->n_args; i++) {
             ASR::array_index_t idx = section->m_args[i];
             bool is_slice = idx.m_left || idx.m_step || idx.m_right == nullptr;
-            if (!is_slice || !is_c_unit_step_expr(idx.m_step)
-                    || !is_c_simple_integer_section_bound_expr(idx.m_left)
-                    || !is_c_simple_integer_section_bound_expr(idx.m_right)
-                    || !is_c_simple_integer_section_bound_expr(idx.m_step)) {
+            if (is_slice) {
+                slice_dims++;
+                if (!is_c_unit_step_expr(idx.m_step)
+                        || !is_c_simple_integer_section_bound_expr(idx.m_left)
+                        || !is_c_simple_integer_section_bound_expr(idx.m_right)
+                        || !is_c_simple_integer_section_bound_expr(idx.m_step)) {
+                    return false;
+                }
+            } else if (!is_c_simple_scalar_array_index(idx)) {
                 return false;
             }
         }
-        return true;
+        return slice_dims == 2;
     }
 
     bool is_c_rank2_plain_data_copy_expr(ASR::expr_t *expr) {
@@ -8978,7 +9007,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             ASRUtils::expr_type(base_expr));
         ASR::dimension_t *base_dims = nullptr;
         int base_rank = ASRUtils::extract_dimensions_from_ttype(base_type, base_dims);
-        if (base_rank != 2) {
+        if (base_rank < 2) {
             return false;
         }
         bool use_static_base_dims = is_c_fixed_size_descriptor_storage_expr(base_expr)
@@ -9028,49 +9057,71 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         }
         std::string base_data = use_static_base_dims ? base + "_data" :
             (cache && !cache->data.empty() ? cache->data : base + "->data");
-        std::vector<std::string> base_lbs = {
-            use_static_base_dims ? std::to_string(static_lbs[0])
-                : (cache ? cache->lower_bounds[0] : base + "->dims[0].lower_bound"),
-            use_static_base_dims ? std::to_string(static_lbs[1])
-                : (cache ? cache->lower_bounds[1] : base + "->dims[1].lower_bound")
-        };
-        std::vector<std::string> base_strides = {
-            use_static_base_dims ? std::to_string(static_strides[0])
-                : (cache ? cache->strides[0] : base + "->dims[0].stride"),
-            use_static_base_dims ? std::to_string(static_strides[1])
-                : (cache ? cache->strides[1] : base + "->dims[1].stride")
-        };
-        std::vector<std::string> base_lengths = {
-            use_static_base_dims ? std::to_string(static_lengths[0])
-                : base + "->dims[0].length",
-            use_static_base_dims ? std::to_string(static_lengths[1])
-                : base + "->dims[1].length"
-        };
+        std::vector<std::string> base_lbs;
+        std::vector<std::string> base_strides;
+        std::vector<std::string> base_lengths;
+        base_lbs.reserve(base_rank);
+        base_strides.reserve(base_rank);
+        base_lengths.reserve(base_rank);
+        for (int i = 0; i < base_rank; i++) {
+            base_lbs.push_back(use_static_base_dims ? std::to_string(static_lbs[i])
+                : (cache ? cache->lower_bounds[i] : base + "->dims[" + std::to_string(i) + "].lower_bound"));
+            base_strides.push_back(use_static_base_dims ? std::to_string(static_strides[i])
+                : (cache ? cache->strides[i] : base + "->dims[" + std::to_string(i) + "].stride"));
+            base_lengths.push_back(use_static_base_dims ? std::to_string(static_lengths[i])
+                : base + "->dims[" + std::to_string(i) + "].length");
+        }
         std::string computed_offset = use_static_base_dims ? "0" :
             (cache ? cache->offset : base + "->offset");
-        std::vector<std::string> computed_strides = base_strides;
-        std::vector<std::string> computed_lengths = base_lengths;
+        std::vector<std::string> computed_strides;
+        std::vector<std::string> computed_lengths;
         if (section != nullptr) {
+            if (section->n_args != static_cast<size_t>(base_rank)) {
+                return false;
+            }
             for (size_t i = 0; i < section->n_args; i++) {
                 ASR::array_index_t idx = section->m_args[i];
                 std::string base_lb = base_lbs[i];
                 std::string base_len = base_lengths[i];
-                std::string dim_ub = "(" + base_lb + " + " + base_len + " - 1)";
-                std::string left = get_c_array_section_bound_expr(idx.m_left, base_lb);
-                setup += drain_tmp_buffer();
-                setup += extract_stmt_setup_from_expr(left);
-                std::string right = get_c_array_section_bound_expr(idx.m_right, dim_ub);
-                setup += drain_tmp_buffer();
-                setup += extract_stmt_setup_from_expr(right);
-                std::string step = get_c_array_section_bound_expr(idx.m_step, "1");
-                setup += drain_tmp_buffer();
-                setup += extract_stmt_setup_from_expr(step);
-                computed_offset = "(" + computed_offset + " + "
-                    + base_strides[i] + " * ((" + left + ") - " + base_lb + "))";
-                computed_strides[i] = "(" + base_strides[i] + " * (" + step + "))";
-                computed_lengths[i] = "((((" + right + ") - (" + left + ")) / ("
-                    + step + ")) + 1)";
+                bool is_slice = idx.m_left || idx.m_step || idx.m_right == nullptr;
+                if (is_slice) {
+                    std::string dim_ub = "(" + base_lb + " + " + base_len + " - 1)";
+                    std::string left = get_c_array_section_bound_expr(idx.m_left, base_lb);
+                    setup += drain_tmp_buffer();
+                    setup += extract_stmt_setup_from_expr(left);
+                    std::string right = get_c_array_section_bound_expr(idx.m_right, dim_ub);
+                    setup += drain_tmp_buffer();
+                    setup += extract_stmt_setup_from_expr(right);
+                    std::string step = get_c_array_section_bound_expr(idx.m_step, "1");
+                    setup += drain_tmp_buffer();
+                    setup += extract_stmt_setup_from_expr(step);
+                    computed_offset = "(" + computed_offset + " + "
+                        + base_strides[i] + " * ((" + left + ") - " + base_lb + "))";
+                    computed_strides.push_back("(" + base_strides[i] + " * (" + step + "))");
+                    computed_lengths.push_back("((((" + right + ") - (" + left + ")) / ("
+                        + step + ")) + 1)");
+                } else {
+                    ASR::expr_t *idx_expr = get_array_index_expr(idx);
+                    if (idx_expr == nullptr) {
+                        return false;
+                    }
+                    self().visit_expr(*idx_expr);
+                    std::string idx_value = src;
+                    setup += drain_tmp_buffer();
+                    setup += extract_stmt_setup_from_expr(idx_value);
+                    computed_offset = "(" + computed_offset + " + "
+                        + base_strides[i] + " * ((" + idx_value + ") - " + base_lb + "))";
+                }
             }
+        } else {
+            if (base_rank != 2) {
+                return false;
+            }
+            computed_strides = base_strides;
+            computed_lengths = base_lengths;
+        }
+        if (computed_strides.size() != 2 || computed_lengths.size() != 2) {
+            return false;
         }
         setup += indent + elem_type + " *" + data_name + " = "
             + base_data + ";\n";

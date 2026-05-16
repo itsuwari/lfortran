@@ -131,6 +131,14 @@ static bool is_default_unit_array_slice(const ASR::array_index_t &idx) {
     return left_is_default && right_is_default;
 }
 
+static bool is_c_simple_integer_bound_expr(ASR::expr_t *expr);
+static bool is_scalar_array_index(const ASR::array_index_t& idx);
+
+static bool is_c_simple_scalar_array_index(const ASR::array_index_t &idx) {
+    return is_scalar_array_index(idx)
+        && is_c_simple_integer_bound_expr(idx.m_right);
+}
+
 static bool is_plain_full_array_section(ASR::expr_t* x, ASR::expr_t*& base) {
     x = ASRUtils::get_past_array_physical_cast(x);
     if (x == nullptr || !ASR::is_a<ASR::ArraySection_t>(*x)) {
@@ -2012,8 +2020,6 @@ static bool rhs_refs_are_c_projected_same_base(Allocator &al,
     return saw_common_ref;
 }
 
-static bool is_c_simple_integer_bound_expr(ASR::expr_t *expr);
-
 static bool is_c_rank2_full_array_expr(ASR::expr_t *expr) {
     expr = ASRUtils::get_past_array_physical_cast(expr);
     if (expr == nullptr || !ASRUtils::is_array(ASRUtils::expr_type(expr))
@@ -2029,12 +2035,29 @@ static bool is_c_rank2_full_array_expr(ASR::expr_t *expr) {
         return false;
     }
     ASR::ArraySection_t *section = ASR::down_cast<ASR::ArraySection_t>(expr);
+    ASR::expr_t *base_expr = ASRUtils::get_past_array_physical_cast(section->m_v);
+    ASR::ttype_t *base_type = base_expr != nullptr
+        ? ASRUtils::type_get_past_allocatable_pointer(
+            ASRUtils::expr_type(base_expr)) : nullptr;
+    int base_rank = base_type != nullptr
+        ? ASRUtils::extract_n_dims_from_ttype(base_type) : 0;
+    if (base_rank < 2 || section->n_args != static_cast<size_t>(base_rank)) {
+        return false;
+    }
+    int slice_dims = 0;
     for (size_t i = 0; i < section->n_args; i++) {
-        if (!is_default_unit_array_slice(section->m_args[i])) {
+        const ASR::array_index_t &idx = section->m_args[i];
+        bool is_slice = idx.m_left || idx.m_step || idx.m_right == nullptr;
+        if (is_slice) {
+            slice_dims++;
+            if (!is_default_unit_array_slice(idx)) {
+                return false;
+            }
+        } else if (!is_c_simple_scalar_array_index(idx)) {
             return false;
         }
     }
-    return true;
+    return slice_dims == 2;
 }
 
 static bool is_c_rank2_unit_slice_array_expr(ASR::expr_t *expr) {
@@ -2052,25 +2075,31 @@ static bool is_c_rank2_unit_slice_array_expr(ASR::expr_t *expr) {
         return false;
     }
     ASR::ArraySection_t *section = ASR::down_cast<ASR::ArraySection_t>(expr);
-    if (section->n_args != 2) {
-        return false;
-    }
     ASR::expr_t *base_expr = ASRUtils::get_past_array_physical_cast(section->m_v);
     if (base_expr == nullptr || !ASRUtils::is_array(ASRUtils::expr_type(base_expr))
             || ASRUtils::extract_n_dims_from_ttype(
-                ASRUtils::expr_type(base_expr)) != 2) {
+                ASRUtils::expr_type(base_expr)) < 2
+            || section->n_args != static_cast<size_t>(
+                ASRUtils::extract_n_dims_from_ttype(
+                    ASRUtils::expr_type(base_expr)))) {
         return false;
     }
+    int slice_dims = 0;
     for (size_t i = 0; i < section->n_args; i++) {
         const ASR::array_index_t &idx = section->m_args[i];
         bool is_slice = idx.m_left || idx.m_step || idx.m_right == nullptr;
-        if (!is_slice || !is_unit_step_expr(idx.m_step)
-                || !is_c_simple_integer_bound_expr(idx.m_left)
-                || !is_c_simple_integer_bound_expr(idx.m_right)) {
+        if (is_slice) {
+            slice_dims++;
+            if (!is_unit_step_expr(idx.m_step)
+                    || !is_c_simple_integer_bound_expr(idx.m_left)
+                    || !is_c_simple_integer_bound_expr(idx.m_right)) {
+                return false;
+            }
+        } else if (!is_c_simple_scalar_array_index(idx)) {
             return false;
         }
     }
-    return true;
+    return slice_dims == 2;
 }
 
 static bool is_c_rank1_unit_slice_array_expr(ASR::expr_t *expr) {

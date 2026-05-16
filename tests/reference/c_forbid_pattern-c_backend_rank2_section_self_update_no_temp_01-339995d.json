@@ -1,0 +1,13 @@
+{
+    "basename": "c_forbid_pattern-c_backend_rank2_section_self_update_no_temp_01-339995d",
+    "cmd": "lfortran --no-color --show-c {infile} | (! grep -F -q \"__libasr_created_real_binop_left_\") #",
+    "infile": "tests/../integration_tests/c_backend_rank2_section_self_update_no_temp_01.f90",
+    "infile_hash": "b5fc1d6587b520030803dd8aadf7c631859b119d8dcfd12e34a0051a",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}
