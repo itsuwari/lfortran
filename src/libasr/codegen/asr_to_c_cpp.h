@@ -14887,6 +14887,12 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             + emit_c_tbp_parent_owner_anchor_def(x);
     }
 
+    bool should_eagerly_register_c_tbp_wrapper(const ASR::Struct_t &owner_struct) {
+        // Public extensible types can be dispatched from modules that do not
+        // see every concrete descendant, so registry population must stay eager.
+        return owner_struct.m_access == ASR::accessType::Public;
+    }
+
     std::string emit_c_tbp_registration_wrapper(const ASR::Function_t &x) {
         if (!is_c || x.n_args == 0) {
             return "";
@@ -14957,10 +14963,12 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             + "    _lfortran_register_c_tbp_impl_once(" + registration_args
             + ", &" + registered_name + ");\n"
             + "}\n\n";
-        wrapper_src += "LFORTRAN_C_BACKEND_CONSTRUCTOR static void " + registrar_name
-            + "(void)\n{\n"
-            + "    " + anchor_name + "();\n"
-            + "}\n";
+        if (should_eagerly_register_c_tbp_wrapper(*owner_struct)) {
+            wrapper_src += "LFORTRAN_C_BACKEND_CONSTRUCTOR static void " + registrar_name
+                + "(void)\n{\n"
+                + "    " + anchor_name + "();\n"
+                + "}\n";
+        }
         return wrapper_src;
     }
 

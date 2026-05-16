@@ -1,0 +1,13 @@
+{
+    "basename": "run-c_backend_tbp_public_constructor_01-4f35ca4",
+    "cmd": "lfortran --no-color {infile}",
+    "infile": "tests/c_backend_tbp_public_constructor_01.f90",
+    "infile_hash": "b3c1a351af3bedb328fa5b1ff00e0ec025147b1ae28d3c8473dd1669",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

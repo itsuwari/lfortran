@@ -1,0 +1,13 @@
+{
+    "basename": "run-c_backend_tbp_lazy_constructor_01-e7afacf",
+    "cmd": "lfortran --no-color {infile}",
+    "infile": "tests/c_backend_tbp_lazy_constructor_01.f90",
+    "infile_hash": "9c5dac9d91dd7205711e7dbe7374c69a353115ed1460ed8117e98352",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}
