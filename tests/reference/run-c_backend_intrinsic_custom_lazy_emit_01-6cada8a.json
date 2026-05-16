@@ -1,0 +1,13 @@
+{
+    "basename": "run-c_backend_intrinsic_custom_lazy_emit_01-6cada8a",
+    "cmd": "lfortran --no-color {infile}",
+    "infile": "tests/c_backend_intrinsic_custom_lazy_emit_01.f90",
+    "infile_hash": "d2b114cb76e07ab1d2156b1f294b7100850e03aa17b629eba9de4492",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

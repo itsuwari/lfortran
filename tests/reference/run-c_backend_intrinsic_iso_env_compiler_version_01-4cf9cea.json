@@ -1,0 +1,13 @@
+{
+    "basename": "run-c_backend_intrinsic_iso_env_compiler_version_01-4cf9cea",
+    "cmd": "lfortran --no-color {infile}",
+    "infile": "tests/c_backend_intrinsic_iso_env_compiler_version_01.f90",
+    "infile_hash": "eda979682a5e2eb7d235f41bd8e2a982315c96e87b7fba0a8fd3f45c",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

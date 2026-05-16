@@ -4974,7 +4974,8 @@ R"(#include <stdio.h>
         if (forward_decl_functions.find(decl_line) == std::string::npos) {
             forward_decl_functions += decl_line;
         }
-        if (f_type->m_abi == ASR::abiType::Intrinsic) {
+        if (f_type->m_abi == ASR::abiType::Intrinsic
+                && !is_body_backed_intrinsic_module_function(x)) {
             return;
         }
         if (f_type->m_abi == ASR::abiType::BindC && x.m_module_file) {
@@ -4986,6 +4987,13 @@ R"(#include <stdio.h>
             pending_function_definitions.push_back(
                 const_cast<ASR::Function_t*>(&x));
         }
+    }
+
+    bool is_body_backed_intrinsic_module_function(const ASR::Function_t &x) const {
+        ASR::Module_t *module = ASRUtils::get_sym_module(&x.base);
+        return module != nullptr && module->m_intrinsic
+            && startswith(module->m_name, "lfortran_intrinsic")
+            && x.n_body > 0;
     }
 
     bool get_pass_array_by_data_direct_call_target(const ASR::Function_t &x,

@@ -1035,6 +1035,15 @@ R"(
         return false;
     }
 
+    bool is_intrinsic_module_function(ASR::Function_t *fn) const {
+        if (fn == nullptr) {
+            return false;
+        }
+        ASR::Module_t *module = ASRUtils::get_sym_module(&fn->base);
+        return module != nullptr && module->m_intrinsic
+            && startswith(module->m_name, "lfortran_intrinsic");
+    }
+
     std::vector<ASR::Function_t*> consume_pending_function_definitions(
             SymbolTable *scope, std::set<uint64_t> &emitted,
             bool helpers_only=false) {
@@ -1058,6 +1067,33 @@ R"(
                     && scope_contains(scope, parent_scope);
             }
             if (ready_for_emission) {
+                emitted.insert(key);
+                ready.push_back(fn);
+                continue;
+            }
+            if (remaining_hashes.insert(key).second) {
+                remaining.push_back(fn);
+            }
+        }
+        pending_function_definitions = std::move(remaining);
+        pending_function_definition_hashes = std::move(remaining_hashes);
+        return ready;
+    }
+
+    std::vector<ASR::Function_t*> consume_pending_intrinsic_module_functions(
+            std::set<uint64_t> &emitted) {
+        std::vector<ASR::Function_t*> ready;
+        std::vector<ASR::Function_t*> remaining;
+        std::set<uint64_t> remaining_hashes;
+        for (ASR::Function_t *fn : pending_function_definitions) {
+            if (fn == nullptr) {
+                continue;
+            }
+            uint64_t key = get_hash(reinterpret_cast<ASR::asr_t*>(fn));
+            if (emitted.find(key) != emitted.end()) {
+                continue;
+            }
+            if (is_intrinsic_module_function(fn)) {
                 emitted.insert(key);
                 ready.push_back(fn);
                 continue;
@@ -4861,23 +4897,6 @@ R"(
         std::vector<std::string> build_order =
             ASRUtils::determine_module_dependencies(x);
 
-        for (auto &item : build_order) {
-            LCOMPILERS_ASSERT(x.m_symtab->get_scope().find(item)
-                != x.m_symtab->get_scope().end());
-            if (startswith(item, "lfortran_intrinsic")) {
-                ASR::symbol_t *mod = x.m_symtab->get_symbol(item);
-                if( ASRUtils::get_body_size(mod) != 0 ) {
-                    ASR::Module_t *module_t = ASR::down_cast<ASR::Module_t>(mod);
-                    auto module_units = emit_module_split_units(*module_t);
-                    for (auto &unit : module_units) {
-                        if (!unit.second.empty()) {
-                            unit_bodies.push_back(std::move(unit));
-                        }
-                    }
-                }
-            }
-        }
-
         std::string global_functions_body;
         std::set<uint64_t> emitted_global_functions;
         for (ASR::Function_t *function : global_functions) {
@@ -4898,19 +4917,15 @@ R"(
         for (auto &item : build_order) {
             LCOMPILERS_ASSERT(x.m_symtab->get_scope().find(item)
                 != x.m_symtab->get_scope().end());
-            if (!startswith(item, "lfortran_intrinsic")) {
-                ASR::symbol_t *mod = x.m_symtab->get_symbol(item);
-                if (ASR::is_a<ASR::Module_t>(*mod)
-                        && ASR::down_cast<ASR::Module_t>(mod)->m_loaded_from_mod
-                        && !ASR::down_cast<ASR::Module_t>(mod)->m_intrinsic) {
-                    continue;
-                }
-                ASR::Module_t *module_t = ASR::down_cast<ASR::Module_t>(mod);
-                auto module_units = emit_module_split_units(*module_t);
-                for (auto &unit : module_units) {
-                    if (!unit.second.empty()) {
-                        unit_bodies.push_back(std::move(unit));
-                    }
+            ASR::symbol_t *mod = x.m_symtab->get_symbol(item);
+            ASR::Module_t *module_t = ASR::down_cast<ASR::Module_t>(mod);
+            if (module_t->m_intrinsic || module_t->m_loaded_from_mod) {
+                continue;
+            }
+            auto module_units = emit_module_split_units(*module_t);
+            for (auto &unit : module_units) {
+                if (!unit.second.empty()) {
+                    unit_bodies.push_back(std::move(unit));
                 }
             }
         }
@@ -4955,6 +4970,34 @@ R"(
                 if (!src.empty()) {
                     global_functions_body += src;
                 }
+            }
+        }
+        while (true) {
+            bool emitted_any = false;
+            std::vector<ASR::Function_t*> pending_intrinsics =
+                consume_pending_intrinsic_module_functions(
+                    emitted_global_functions);
+            for (ASR::Function_t *function : pending_intrinsics) {
+                visit_Function(*function);
+                if (!src.empty()) {
+                    global_functions_body += src;
+                }
+                emitted_any = true;
+            }
+
+            std::vector<ASR::Function_t*> pending_helpers =
+                consume_pending_function_definitions(
+                    x.m_symtab, emitted_global_functions, true);
+            for (ASR::Function_t *function : pending_helpers) {
+                visit_Function(*function);
+                if (!src.empty()) {
+                    global_functions_body += src;
+                }
+                emitted_any = true;
+            }
+
+            if (!emitted_any) {
+                break;
             }
         }
         if (!global_functions_body.empty()) {

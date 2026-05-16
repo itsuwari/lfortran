@@ -5486,6 +5486,36 @@ filename = "c_backend_string_parameter_compare_01.f90"
 c_split_compile_werror = true
 
 [[test]]
+filename = "c_backend_intrinsic_iso_env_lazy_emit_01.f90"
+c_split_forbid_pattern = true
+c_split_forbid_pattern_value = "compiler_version"
+
+[[test]]
+filename = "c_backend_intrinsic_iso_env_compiler_version_01.f90"
+run = true
+options = "--backend=c --separate-compilation"
+c_split_require_pattern = true
+c_split_require_pattern_value = "compiler_version"
+
+[[test]]
+filename = "c_backend_intrinsic_ieee_lazy_emit_01.f90"
+run = true
+options = "--backend=c --separate-compilation"
+c_split_require_pattern = true
+c_split_require_pattern_value = "dpieee_is_nan"
+c_split_forbid_pattern = true
+c_split_forbid_pattern_value = "compiler_version"
+
+[[test]]
+filename = "c_backend_intrinsic_custom_lazy_emit_01.f90"
+run = true
+options = "--backend=c --separate-compilation"
+c_split_require_pattern = true
+c_split_require_pattern_value = "newunit_int_4"
+c_split_forbid_pattern = true
+c_split_forbid_pattern_value = "newunit_int_1"
+
+[[test]]
 filename = "c_backend_raw_array_helper_call_01.f90"
 run = true
 options = "--backend=c --separate-compilation -O2"

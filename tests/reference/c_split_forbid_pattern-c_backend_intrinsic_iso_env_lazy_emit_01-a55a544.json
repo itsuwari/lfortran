@@ -1,0 +1,13 @@
+{
+    "basename": "c_split_forbid_pattern-c_backend_intrinsic_iso_env_lazy_emit_01-a55a544",
+    "cmd": "tmpdir=$(mktemp -d /tmp/lfortran-c-split-forbid.XXXXXX); trap 'rm -rf \"$tmpdir\"' EXIT; lfortran --backend=c --separate-compilation -c {infile} -o \"$tmpdir/main.o\" > \"$tmpdir/compile.out\" 2> \"$tmpdir/compile.err\" && (! grep -R -F -q \"compiler_version\" \"$tmpdir\"/*.o.tmp.split/*.c \"$tmpdir\"/*.o.tmp.split/*.h) #",
+    "infile": "tests/c_backend_intrinsic_iso_env_lazy_emit_01.f90",
+    "infile_hash": "12a8a6f8d3c2918cbcfc6dc08ce2dadb532299392b3cc3f5d4108ed9",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}
