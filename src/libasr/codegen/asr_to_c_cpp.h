@@ -5303,6 +5303,9 @@ R"(#include <stdio.h>
                 if (is_c_trivial_numeric_cast_helper_function(s)) {
                     continue;
                 }
+                if (is_c_inline_scalar_merge_helper_function(s)) {
+                    continue;
+                }
                 t = declare_all_functions(*s->m_symtab);
                 bool has_typevar = false;
                 std::string decl = get_function_declaration(*s, has_typevar, false, false);
@@ -5435,6 +5438,11 @@ R"(#include <stdio.h>
             return;
         }
         if (is_c_trivial_numeric_cast_helper_function(&x)) {
+            src = "";
+            current_scope = current_scope_copy;
+            return;
+        }
+        if (is_c_inline_scalar_merge_helper_function(&x)) {
             src = "";
             current_scope = current_scope_copy;
             return;
@@ -14015,6 +14023,91 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         return true;
     }
 
+    bool is_c_inline_scalar_merge_helper_name(const std::string &name) const {
+        return name.find("_lcompilers_merge_") != std::string::npos;
+    }
+
+    bool is_c_inline_scalar_merge_type(ASR::ttype_t *type) const {
+        type = ASRUtils::type_get_past_allocatable_pointer(type);
+        return type != nullptr
+            && !ASRUtils::is_array(type)
+            && (ASRUtils::is_integer(*type)
+                || ASRUtils::is_unsigned_integer(*type)
+                || ASRUtils::is_real(*type)
+                || ASRUtils::is_logical(*type));
+    }
+
+    bool is_c_inline_scalar_merge_helper_function(
+            const ASR::Function_t *f) const {
+        if (!is_c || f == nullptr || f->n_args != 3
+                || !is_c_inline_scalar_merge_helper_name(std::string(f->m_name))) {
+            return false;
+        }
+        ASR::FunctionType_t *f_type = ASRUtils::get_FunctionType(f);
+        return f_type != nullptr
+            && is_c_inline_scalar_merge_type(f_type->m_return_var_type);
+    }
+
+    bool try_emit_c_inline_scalar_merge_function_call(
+            const ASR::FunctionCall_t &x, ASR::Function_t *f,
+            const std::string &fn_name, std::string &out) {
+        if (!is_c || f == nullptr || x.n_args != 3
+                || x.m_args[0].m_value == nullptr
+                || x.m_args[1].m_value == nullptr
+                || x.m_args[2].m_value == nullptr
+                || (!is_c_inline_scalar_merge_helper_function(f)
+                    && !is_c_inline_scalar_merge_helper_name(fn_name))) {
+            return false;
+        }
+
+        ASR::ttype_t *result_type = ASRUtils::type_get_past_allocatable_pointer(
+            x.m_type);
+        ASR::ttype_t *tsource_type = ASRUtils::type_get_past_allocatable_pointer(
+            ASRUtils::expr_type(x.m_args[0].m_value));
+        ASR::ttype_t *fsource_type = ASRUtils::type_get_past_allocatable_pointer(
+            ASRUtils::expr_type(x.m_args[1].m_value));
+        ASR::ttype_t *mask_type = ASRUtils::type_get_past_allocatable_pointer(
+            ASRUtils::expr_type(x.m_args[2].m_value));
+        if (!is_c_inline_scalar_merge_type(result_type)
+                || !is_c_inline_scalar_merge_type(tsource_type)
+                || !is_c_inline_scalar_merge_type(fsource_type)
+                || mask_type == nullptr
+                || ASRUtils::is_array(mask_type)
+                || !ASRUtils::is_logical(*mask_type)) {
+            return false;
+        }
+
+        std::string result_c_type = CUtils::get_c_type_from_ttype_t(result_type);
+        if (result_c_type != CUtils::get_c_type_from_ttype_t(tsource_type)
+                || result_c_type != CUtils::get_c_type_from_ttype_t(fsource_type)) {
+            return false;
+        }
+
+        std::string setup;
+        std::string indent(indentation_level * indentation_spaces, ' ');
+        auto materialize_arg = [&](ASR::expr_t *expr, ASR::ttype_t *type,
+                const std::string &prefix) -> std::string {
+            self().visit_expr(*expr);
+            std::string value = src;
+            setup += drain_tmp_buffer();
+            setup += extract_stmt_setup_from_expr(value);
+            std::string tmp_name = get_unique_local_name(prefix);
+            setup += indent + CUtils::get_c_type_from_ttype_t(type) + " "
+                + tmp_name + " = " + value + ";\n";
+            return tmp_name;
+        };
+
+        std::string tsource = materialize_arg(
+            x.m_args[0].m_value, result_type, "__lfortran_merge_tsource");
+        std::string fsource = materialize_arg(
+            x.m_args[1].m_value, result_type, "__lfortran_merge_fsource");
+        std::string mask = materialize_arg(
+            x.m_args[2].m_value, mask_type, "__lfortran_merge_mask");
+        tmp_buffer_src.push_back(setup);
+        out = "(" + mask + " ? " + tsource + " : " + fsource + ")";
+        return true;
+    }
+
     bool can_emit_c_inline_spread_subroutine_call(const ASR::SubroutineCall_t &x,
             ASR::Function_t *f, const std::string &sym_name) {
         if (!is_c_spread_callee(f, sym_name)
@@ -14515,6 +14608,12 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         if (is_c && fn != nullptr) {
             std::string inline_call;
             if (try_emit_c_inline_numeric_cast_function_call(
+                    x, fn, fn_name, inline_call)) {
+                src = check_tmp_buffer() + inline_call;
+                last_expr_precedence = 2;
+                return;
+            }
+            if (try_emit_c_inline_scalar_merge_function_call(
                     x, fn, fn_name, inline_call)) {
                 src = check_tmp_buffer() + inline_call;
                 last_expr_precedence = 2;

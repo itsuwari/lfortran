@@ -1,0 +1,13 @@
+{
+    "basename": "c-c_backend_scalar_merge_inline_01-eeb02bb",
+    "cmd": "lfortran --no-color --show-c {infile}",
+    "infile": "tests/c_backend_scalar_merge_inline_01.f90",
+    "infile_hash": "6a3f3dfa685220df0d7a083d45051e2ada3a38810fa4ff785fb7812a",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": "c-c_backend_scalar_merge_inline_01-eeb02bb.stdout",
+    "stdout_hash": "13683ba975ac4b32ace389b16a036854b5bf487f3163b52fec926e83",
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

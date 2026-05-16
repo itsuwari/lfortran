@@ -1,0 +1,13 @@
+{
+    "basename": "c_forbid_pattern-c_backend_scalar_merge_inline_01-2b8a611",
+    "cmd": "lfortran --no-color --show-c {infile} | (! grep -F -q \"__lfortran__lcompilers_merge_\") #",
+    "infile": "tests/c_backend_scalar_merge_inline_01.f90",
+    "infile_hash": "6a3f3dfa685220df0d7a083d45051e2ada3a38810fa4ff785fb7812a",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

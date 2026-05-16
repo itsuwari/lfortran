@@ -5834,6 +5834,12 @@ c_forbid_pattern = true
 c_forbid_pattern_value = "__lfortran__lcompilers_real_i32"
 
 [[test]]
+filename = "c_backend_scalar_merge_inline_01.f90"
+c = true
+c_forbid_pattern = true
+c_forbid_pattern_value = "__lfortran__lcompilers_merge_"
+
+[[test]]
 filename = "c_backend_local_allocatable_cleanup_01.f90"
 c = true
 
