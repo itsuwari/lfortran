@@ -5164,6 +5164,13 @@ c_forbid_pattern = true
 c_forbid_pattern_value = "a->dims[0].lower_bound = 1"
 
 [[test]]
+filename = "c_backend_intent_out_struct_registered_cleanup_01.f90"
+c_require_pattern = true
+c_require_pattern_value = "_lfortran_cleanup_c_struct("
+c_forbid_pattern = true
+c_forbid_pattern_value = "((*self).values) != NULL && ((*self).values)->data != NULL"
+
+[[test]]
 filename = "../integration_tests/c_backend_rank2_self_section_realloc_01.f90"
 options = "--realloc-lhs-arrays"
 c_forbid_pattern = true

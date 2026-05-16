@@ -260,6 +260,7 @@ public:
 class IntentOutDeallocateVisitor : public ASR::BaseWalkVisitor<IntentOutDeallocateVisitor>
 {
     Allocator &al;
+    bool c_backend;
 
     // Helper: Wrap statement in optional presence check if needed
     ASR::stmt_t* wrap_optional_check(Location loc, ASR::expr_t* var_expr,
@@ -289,7 +290,8 @@ class IntentOutDeallocateVisitor : public ASR::BaseWalkVisitor<IntentOutDealloca
     }
 
 public:
-    IntentOutDeallocateVisitor(Allocator& al_) : al(al_) {}
+    IntentOutDeallocateVisitor(Allocator& al_, bool c_backend_) :
+        al(al_), c_backend(c_backend_) {}
 
     void visit_Function(const ASR::Function_t &x) {
         ASR::FunctionType_t* func_type = ASRUtils::get_FunctionType(&x);
@@ -453,6 +455,10 @@ public:
                     }
                 }
 
+                if (c_backend) {
+                    continue;
+                }
+
                 SymbolTable* sym_table_of_struct = struct_type->m_symtab;
                 while (sym_table_of_struct != nullptr) {
                     for (auto& struct_member : sym_table_of_struct->get_scope()) {
@@ -529,9 +535,9 @@ public:
 
 
 void pass_insert_deallocate(Allocator &al, ASR::TranslationUnit_t &unit,
-                                const PassOptions &/*pass_options*/) {
+                                const PassOptions &pass_options) {
     // Deallocate intent(out) allocatable arguments at function entry
-    IntentOutDeallocateVisitor iod(al);
+    IntentOutDeallocateVisitor iod(al, pass_options.c_backend);
     iod.visit_TranslationUnit(unit);
 
     // Finalize LHS of intrinsic assignment (Fortran 2018 §7.5.6.3 ¶1)

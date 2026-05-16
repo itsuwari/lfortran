@@ -143,35 +143,13 @@ void __lfortran_c_backend_intent_out_struct_reinit_cleanup_ref_01_m__init__Struc
     static const int32_t __libasr_created__array_constant__data[2] = {1, 2};
     static struct i32___ __libasr_created__array_constant__value = { .data = (int32_t*) __libasr_created__array_constant__data, .n_dims = 1, .offset = 0, .is_allocated = true, .dims = {{1, 2, 1}} };
     struct i32___* __libasr_created__array_constant_ = &__libasr_created__array_constant__value;
-    bool __lfortran_cleanup_desc_owned_x_x2D__x3E_values = (x->values) != NULL && (x->values)->is_allocated;
-    if ((x->values) != NULL && (x->values)->is_allocated && (x->values)->data != NULL) {
-        _lfortran_free_alloc_plain(__lfortran_default_allocator, (char*) (x->values)->data);
-        (x->values)->data = NULL;
-    }
-    if ((x->values) != NULL) {
-        (x->values)->offset = 0;
-        (x->values)->is_allocated = false;
-        if (__lfortran_cleanup_desc_owned_x_x2D__x3E_values) {
-            _lfortran_free_alloc_plain(__lfortran_default_allocator, (char*) x->values);
-            x->values = NULL;
-        }
-    }
+    _lfortran_cleanup_c_struct(5075935388180227024, (void*) x);
     memset(x, 0, sizeof(*x));
     x->__lfortran_type_tag = 5075935388180227024;
     struct i32___* struct_member_values_0;
     struct_member_values_0 = _lfortran_malloc_alloc(__lfortran_default_allocator, sizeof(*struct_member_values_0));
     memset(struct_member_values_0, 0, sizeof(*struct_member_values_0));
     x->values = struct_member_values_0;
-    if ((((*x).values) != NULL && ((*x).values)->data != NULL)) {
-        if (((*x).values) != NULL && ((*x).values)->is_allocated && ((*x).values)->data != NULL) {
-            _lfortran_free_alloc_plain(__lfortran_default_allocator, (char*) ((*x).values)->data);
-            ((*x).values)->data = NULL;
-        }
-        if (((*x).values) != NULL) {
-            ((*x).values)->offset = 0;
-            ((*x).values)->is_allocated = false;
-        }
-    }
     if ((*x).values == NULL) {
         (*x).values = _lfortran_malloc_alloc(__lfortran_default_allocator, sizeof(*(*x).values));
         memset((*x).values, 0, sizeof(*(*x).values));
@@ -261,35 +239,13 @@ void __lfortran_c_backend_intent_out_struct_reinit_cleanup_ref_01_m__init__Struc
 void __lfortran_c_backend_intent_out_struct_reinit_cleanup_ref_01_m__wrap__StructType(struct c_backend_intent_out_struct_reinit_cleanup_ref_01_m__payload* restrict x)
 {
     lfortran_allocator_t* __lfortran_default_allocator = _lfortran_get_default_allocator();
-    bool __lfortran_cleanup_desc_owned_x_x2D__x3E_values = (x->values) != NULL && (x->values)->is_allocated;
-    if ((x->values) != NULL && (x->values)->is_allocated && (x->values)->data != NULL) {
-        _lfortran_free_alloc_plain(__lfortran_default_allocator, (char*) (x->values)->data);
-        (x->values)->data = NULL;
-    }
-    if ((x->values) != NULL) {
-        (x->values)->offset = 0;
-        (x->values)->is_allocated = false;
-        if (__lfortran_cleanup_desc_owned_x_x2D__x3E_values) {
-            _lfortran_free_alloc_plain(__lfortran_default_allocator, (char*) x->values);
-            x->values = NULL;
-        }
-    }
+    _lfortran_cleanup_c_struct(5075935388180227024, (void*) x);
     memset(x, 0, sizeof(*x));
     x->__lfortran_type_tag = 5075935388180227024;
     struct i32___* struct_member_values_1;
     struct_member_values_1 = _lfortran_malloc_alloc(__lfortran_default_allocator, sizeof(*struct_member_values_1));
     memset(struct_member_values_1, 0, sizeof(*struct_member_values_1));
     x->values = struct_member_values_1;
-    if ((((*x).values) != NULL && ((*x).values)->data != NULL)) {
-        if (((*x).values) != NULL && ((*x).values)->is_allocated && ((*x).values)->data != NULL) {
-            _lfortran_free_alloc_plain(__lfortran_default_allocator, (char*) ((*x).values)->data);
-            ((*x).values)->data = NULL;
-        }
-        if (((*x).values) != NULL) {
-            ((*x).values)->offset = 0;
-            ((*x).values)->is_allocated = false;
-        }
-    }
     __lfortran_c_backend_intent_out_struct_reinit_cleanup_ref_01_m__init__StructType(((struct c_backend_intent_out_struct_reinit_cleanup_ref_01_m__payload*)(x)));
 }
 
@@ -300,13 +256,7 @@ int main(int argc, char* argv[])
     struct l32___ __libasr_created__intrinsic_array_function_Any_value;
     struct l32___* __libasr_created__intrinsic_array_function_Any = &__libasr_created__intrinsic_array_function_Any_value;
     bool __libasr_created__intrinsic_array_function_Any_data[2];
-    __libasr_created__intrinsic_array_function_Any->data = __libasr_created__intrinsic_array_function_Any_data;
-    __libasr_created__intrinsic_array_function_Any->n_dims = 1;
-    __libasr_created__intrinsic_array_function_Any->offset = 0;
-    __libasr_created__intrinsic_array_function_Any->is_allocated = true;
-    __libasr_created__intrinsic_array_function_Any->dims[0].lower_bound = 1;
-    __libasr_created__intrinsic_array_function_Any->dims[0].length = 2;
-    __libasr_created__intrinsic_array_function_Any->dims[0].stride = 1;
+    *__libasr_created__intrinsic_array_function_Any = (struct l32___){ .data = __libasr_created__intrinsic_array_function_Any_data, .dims = {{1, 2, 1}}, .n_dims = 1, .offset = 0, .is_allocated = true };
     bool __libasr_created__intrinsic_array_function_Any1;
     struct i32___ __libasr_created_integer_compare_left__value;
     struct i32___* __libasr_created_integer_compare_left_ = &__libasr_created_integer_compare_left__value;
@@ -364,11 +314,11 @@ int main(int argc, char* argv[])
     __libasr_index_0_1 = ((int32_t)__libasr_created_integer_compare_left_->dims[1-1].lower_bound);
     __libasr_index_0_2 = ((int32_t)__libasr_created_integer_compare_right_->dims[1-1].lower_bound);
     for (__libasr_index_0_=((int32_t)__libasr_created__intrinsic_array_function_Any->dims[1-1].lower_bound); __libasr_index_0_<=((int32_t) __libasr_created__intrinsic_array_function_Any->dims[1-1].length + __libasr_created__intrinsic_array_function_Any->dims[1-1].lower_bound - 1); __libasr_index_0_++) {
-        __libasr_created__intrinsic_array_function_Any_data[(0 + (1 * (__libasr_index_0_ - 1)))] = __libasr_created_integer_compare_left_->data[((0 + (__libasr_created_integer_compare_left_->dims[0].stride * (__libasr_index_0_1 - __libasr_created_integer_compare_left_->dims[0].lower_bound))) + __libasr_created_integer_compare_left_->offset)] != __libasr_created_integer_compare_right_->data[((0 + (__libasr_created_integer_compare_right_->dims[0].stride * (__libasr_index_0_2 - __libasr_created_integer_compare_right_->dims[0].lower_bound))) + __libasr_created_integer_compare_right_->offset)];
+        __libasr_created__intrinsic_array_function_Any_data[((__libasr_index_0_) - (1))] = __libasr_created_integer_compare_left_->data[((0 + (__libasr_created_integer_compare_left_->dims[0].stride * (__libasr_index_0_1 - __libasr_created_integer_compare_left_->dims[0].lower_bound))) + __libasr_created_integer_compare_left_->offset)] != __libasr_created_integer_compare_right_->data[((__libasr_index_0_2) - (1))];
         __libasr_index_0_1 = __libasr_index_0_1 + 1;
         __libasr_index_0_2 = __libasr_index_0_2 + 1;
     }
-    __libasr_created__intrinsic_array_function_Any1 = __lfortran__lcompilers_Any_4_1_0_logical____0((&(struct l32___){ .data = __libasr_created__intrinsic_array_function_Any->data, .dims = {{1, __libasr_created__intrinsic_array_function_Any->dims[0].length, __libasr_created__intrinsic_array_function_Any->dims[0].stride}}, .n_dims = 1, .offset = __libasr_created__intrinsic_array_function_Any->offset, .is_allocated = __libasr_created__intrinsic_array_function_Any->is_allocated }), ((int32_t) (&(struct l32___){ .data = __libasr_created__intrinsic_array_function_Any->data, .dims = {{1, __libasr_created__intrinsic_array_function_Any->dims[0].length, __libasr_created__intrinsic_array_function_Any->dims[0].stride}}, .n_dims = 1, .offset = __libasr_created__intrinsic_array_function_Any->offset, .is_allocated = __libasr_created__intrinsic_array_function_Any->is_allocated })->dims[0].length));
+    __libasr_created__intrinsic_array_function_Any1 = __lfortran__lcompilers_Any_4_1_0_logical____0((&(struct l32___){ .data = ((bool*)__libasr_created__intrinsic_array_function_Any->data), .dims = {{1, __libasr_created__intrinsic_array_function_Any->dims[0].length, __libasr_created__intrinsic_array_function_Any->dims[0].stride}}, .n_dims = 1, .offset = __libasr_created__intrinsic_array_function_Any->offset, .is_allocated = __libasr_created__intrinsic_array_function_Any->is_allocated }), ((int32_t) __libasr_created__intrinsic_array_function_Any->dims[0].length));
     if (__libasr_created__intrinsic_array_function_Any1) {
         fprintf(stderr, "ERROR STOP");
         exit(1);

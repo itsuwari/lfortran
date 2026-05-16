@@ -1,0 +1,13 @@
+{
+    "basename": "c_require_pattern-c_backend_intent_out_struct_registered_cleanup_01-ba1cdfe",
+    "cmd": "lfortran --no-color --show-c {infile} | grep -F -q \"_lfortran_cleanup_c_struct(\" #",
+    "infile": "tests/c_backend_intent_out_struct_registered_cleanup_01.f90",
+    "infile_hash": "daf74d92e7e6d67eeb43ddf8a4002cc997bb08c1be4fd28254b5d982",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

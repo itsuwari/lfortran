@@ -2354,11 +2354,11 @@ R"(
         if (registration.empty()) {
             return;
         }
+        deferred_c_struct_cleanup_type_ids.insert(type_id);
         if (!defer_c_struct_cleanup_defs) {
             src_dest += registration;
             return;
         }
-        deferred_c_struct_cleanup_type_ids.insert(type_id);
         deferred_c_struct_cleanup_defs += registration;
     }
 
@@ -3436,8 +3436,12 @@ R"(
             if (!is_return_var_arg
                     && c_struct_has_member_cleanup(
                         ASR::down_cast<ASR::Struct_t>(derived_type))) {
-                sub += emit_c_struct_member_cleanup(
-                    ASR::down_cast<ASR::Struct_t>(derived_type), indent, arg_name);
+                ASR::Struct_t *derived_struct =
+                    ASR::down_cast<ASR::Struct_t>(derived_type);
+                append_c_struct_cleanup_registration(
+                    *derived_struct, array_types_decls);
+                sub += emit_c_registered_struct_cleanup(
+                    derived_struct, indent, arg_name);
             }
             // A Fortran `intent(out)` derived dummy becomes undefined on entry
             // except for default-initialized components. Zero the pointee first

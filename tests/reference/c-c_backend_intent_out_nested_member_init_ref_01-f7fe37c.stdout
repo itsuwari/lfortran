@@ -22,6 +22,13 @@
 #define LFORTRAN_C_BACKEND_WEAK static
 #endif
 #endif
+#ifndef LFORTRAN_C_BACKEND_COMMON
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_COMMON __attribute__((common))
+#else
+#define LFORTRAN_C_BACKEND_COMMON
+#endif
+#endif
 
 
 struct dimension_descriptor
@@ -40,6 +47,13 @@ struct dimension_descriptor
 #define LFORTRAN_C_BACKEND_WEAK __attribute__((weak))
 #else
 #define LFORTRAN_C_BACKEND_WEAK static
+#endif
+#endif
+#ifndef LFORTRAN_C_BACKEND_COMMON
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_COMMON __attribute__((common))
+#else
+#define LFORTRAN_C_BACKEND_COMMON
 #endif
 #endif
 
@@ -64,15 +78,18 @@ static void __lfortran_cleanup_struct_c_backend_intent_out_nested_member_init_re
     if (__lfortran_self == NULL) {
         return;
     }
+    bool __lfortran_cleanup_desc_owned___lfortran_self_x2D__x3E_values = (__lfortran_self->values) != NULL && (__lfortran_self->values)->is_allocated;
     if ((__lfortran_self->values) != NULL && (__lfortran_self->values)->is_allocated && (__lfortran_self->values)->data != NULL) {
-        _lfortran_free_alloc(_lfortran_get_default_allocator(), (char*) (__lfortran_self->values)->data);
+        _lfortran_free_alloc_plain(_lfortran_get_default_allocator(), (char*) (__lfortran_self->values)->data);
         (__lfortran_self->values)->data = NULL;
     }
     if ((__lfortran_self->values) != NULL) {
         (__lfortran_self->values)->offset = 0;
         (__lfortran_self->values)->is_allocated = false;
-        _lfortran_free_alloc(_lfortran_get_default_allocator(), (char*) __lfortran_self->values);
-        __lfortran_self->values = NULL;
+        if (__lfortran_cleanup_desc_owned___lfortran_self_x2D__x3E_values) {
+            _lfortran_free_alloc_plain(_lfortran_get_default_allocator(), (char*) __lfortran_self->values);
+            __lfortran_self->values = NULL;
+        }
     }
 }
 
@@ -93,25 +110,31 @@ static void __lfortran_cleanup_struct_c_backend_intent_out_nested_member_init_re
     if (__lfortran_self == NULL) {
         return;
     }
+    bool __lfortran_cleanup_desc_owned__x28__x26__x28___lfortran_self_x2D__x3E_left_x29__x29__x2D__x3E_values = ((&(__lfortran_self->left))->values) != NULL && ((&(__lfortran_self->left))->values)->is_allocated;
     if (((&(__lfortran_self->left))->values) != NULL && ((&(__lfortran_self->left))->values)->is_allocated && ((&(__lfortran_self->left))->values)->data != NULL) {
-        _lfortran_free_alloc(_lfortran_get_default_allocator(), (char*) ((&(__lfortran_self->left))->values)->data);
+        _lfortran_free_alloc_plain(_lfortran_get_default_allocator(), (char*) ((&(__lfortran_self->left))->values)->data);
         ((&(__lfortran_self->left))->values)->data = NULL;
     }
     if (((&(__lfortran_self->left))->values) != NULL) {
         ((&(__lfortran_self->left))->values)->offset = 0;
         ((&(__lfortran_self->left))->values)->is_allocated = false;
-        _lfortran_free_alloc(_lfortran_get_default_allocator(), (char*) (&(__lfortran_self->left))->values);
-        (&(__lfortran_self->left))->values = NULL;
+        if (__lfortran_cleanup_desc_owned__x28__x26__x28___lfortran_self_x2D__x3E_left_x29__x29__x2D__x3E_values) {
+            _lfortran_free_alloc_plain(_lfortran_get_default_allocator(), (char*) (&(__lfortran_self->left))->values);
+            (&(__lfortran_self->left))->values = NULL;
+        }
     }
+    bool __lfortran_cleanup_desc_owned__x28__x26__x28___lfortran_self_x2D__x3E_right_x29__x29__x2D__x3E_values = ((&(__lfortran_self->right))->values) != NULL && ((&(__lfortran_self->right))->values)->is_allocated;
     if (((&(__lfortran_self->right))->values) != NULL && ((&(__lfortran_self->right))->values)->is_allocated && ((&(__lfortran_self->right))->values)->data != NULL) {
-        _lfortran_free_alloc(_lfortran_get_default_allocator(), (char*) ((&(__lfortran_self->right))->values)->data);
+        _lfortran_free_alloc_plain(_lfortran_get_default_allocator(), (char*) ((&(__lfortran_self->right))->values)->data);
         ((&(__lfortran_self->right))->values)->data = NULL;
     }
     if (((&(__lfortran_self->right))->values) != NULL) {
         ((&(__lfortran_self->right))->values)->offset = 0;
         ((&(__lfortran_self->right))->values)->is_allocated = false;
-        _lfortran_free_alloc(_lfortran_get_default_allocator(), (char*) (&(__lfortran_self->right))->values);
-        (&(__lfortran_self->right))->values = NULL;
+        if (__lfortran_cleanup_desc_owned__x28__x26__x28___lfortran_self_x2D__x3E_right_x29__x29__x2D__x3E_values) {
+            _lfortran_free_alloc_plain(_lfortran_get_default_allocator(), (char*) (&(__lfortran_self->right))->values);
+            (&(__lfortran_self->right))->values = NULL;
+        }
     }
 }
 
@@ -129,26 +152,7 @@ void __lfortran_c_backend_intent_out_nested_member_init_ref_01_m__init__StructTy
 void __lfortran_c_backend_intent_out_nested_member_init_ref_01_m__init__StructType(struct c_backend_intent_out_nested_member_init_ref_01_m__outer* restrict value)
 {
     lfortran_allocator_t* __lfortran_default_allocator = _lfortran_get_default_allocator();
-    if (((&(value->left))->values) != NULL && ((&(value->left))->values)->is_allocated && ((&(value->left))->values)->data != NULL) {
-        _lfortran_free_alloc(__lfortran_default_allocator, (char*) ((&(value->left))->values)->data);
-        ((&(value->left))->values)->data = NULL;
-    }
-    if (((&(value->left))->values) != NULL) {
-        ((&(value->left))->values)->offset = 0;
-        ((&(value->left))->values)->is_allocated = false;
-        _lfortran_free_alloc(__lfortran_default_allocator, (char*) (&(value->left))->values);
-        (&(value->left))->values = NULL;
-    }
-    if (((&(value->right))->values) != NULL && ((&(value->right))->values)->is_allocated && ((&(value->right))->values)->data != NULL) {
-        _lfortran_free_alloc(__lfortran_default_allocator, (char*) ((&(value->right))->values)->data);
-        ((&(value->right))->values)->data = NULL;
-    }
-    if (((&(value->right))->values) != NULL) {
-        ((&(value->right))->values)->offset = 0;
-        ((&(value->right))->values)->is_allocated = false;
-        _lfortran_free_alloc(__lfortran_default_allocator, (char*) (&(value->right))->values);
-        (&(value->right))->values = NULL;
-    }
+    _lfortran_cleanup_c_struct(5895492698243736574, (void*) value);
     memset(value, 0, sizeof(*value));
     value->__lfortran_type_tag = 5895492698243736574;
     value->left.__lfortran_type_tag = 8048563252114387205;
@@ -166,20 +170,32 @@ void __lfortran_c_backend_intent_out_nested_member_init_ref_01_m__init__StructTy
 int main(int argc, char* argv[])
 {
     _lpython_set_argv(argc, argv);
+    lfortran_allocator_t* __lfortran_default_allocator = _lfortran_get_default_allocator();
     struct c_backend_intent_out_nested_member_init_ref_01_m__outer value_value;
     memset(&value_value, 0, sizeof(value_value));
     value_value.__lfortran_type_tag = 5895492698243736574;
     (&(value_value))->left.__lfortran_type_tag = 8048563252114387205;
     struct i32___* struct_member_values_2;
-    struct_member_values_2 = _lfortran_malloc_alloc(_lfortran_get_default_allocator(), sizeof(*struct_member_values_2));
+    struct_member_values_2 = _lfortran_malloc_alloc(__lfortran_default_allocator, sizeof(*struct_member_values_2));
     memset(struct_member_values_2, 0, sizeof(*struct_member_values_2));
     (&((&(value_value))->left))->values = struct_member_values_2;
     (&(value_value))->right.__lfortran_type_tag = 8048563252114387205;
     struct i32___* struct_member_values_3;
-    struct_member_values_3 = _lfortran_malloc_alloc(_lfortran_get_default_allocator(), sizeof(*struct_member_values_3));
+    struct_member_values_3 = _lfortran_malloc_alloc(__lfortran_default_allocator, sizeof(*struct_member_values_3));
     memset(struct_member_values_3, 0, sizeof(*struct_member_values_3));
     (&((&(value_value))->right))->values = struct_member_values_3;
     struct c_backend_intent_out_nested_member_init_ref_01_m__outer* value = &value_value;
     __lfortran_c_backend_intent_out_nested_member_init_ref_01_m__init__StructType(((struct c_backend_intent_out_nested_member_init_ref_01_m__outer*)(value)));
+    _lfortran_cleanup_c_struct(5895492698243736574, (void*) (&(value_value)));
+    if (((&((&(value_value))->right))->values) == struct_member_values_3) {
+        _lfortran_free_alloc_plain(__lfortran_default_allocator, (char*) struct_member_values_3);
+        (&((&(value_value))->right))->values = NULL;
+        struct_member_values_3 = NULL;
+    }
+    if (((&((&(value_value))->left))->values) == struct_member_values_2) {
+        _lfortran_free_alloc_plain(__lfortran_default_allocator, (char*) struct_member_values_2);
+        (&((&(value_value))->left))->values = NULL;
+        struct_member_values_2 = NULL;
+    }
     return 0;
 }
