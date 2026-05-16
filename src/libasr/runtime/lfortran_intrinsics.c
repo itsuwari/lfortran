@@ -1922,11 +1922,22 @@ void handle_decimal(char* format, double val, int scale, char** result, char* c,
         }
         strncat(formatted_value, val_str, digits);
     } else {
-        char* temp = substring(val_str, 0, scale);
-        strcat(formatted_value, temp);
+        strncat(formatted_value, val_str, (size_t)scale);
         strcat(formatted_value, ".");
         // formatted_value = "  1."
-        char* new_str = substring(val_str, scale, strlen(val_str));
+        char new_str_stack[MAX_SIZE];
+        char *new_str = new_str_stack;
+        size_t new_str_capacity = sizeof(new_str_stack);
+        size_t val_str_total_len = strlen(val_str);
+        size_t scale_offset = (size_t)scale < val_str_total_len
+            ? (size_t)scale : val_str_total_len;
+        size_t new_str_len = val_str_total_len - scale_offset;
+        if (new_str_len + 1 > new_str_capacity) {
+            new_str = (char*)internal_malloc(new_str_len + 1);
+            new_str_capacity = new_str_len + 1;
+        }
+        memcpy(new_str, val_str + scale_offset, new_str_len);
+        new_str[new_str_len] = '\0';
         // new_str = "1230000128" case:  1.123e+10
         int zeros = 0;
         if (digits < strlen(new_str)) {
@@ -1943,7 +1954,16 @@ void handle_decimal(char* format, double val, int scale, char** result, char* c,
                 size_t rounded_len = strlen(rounded_str);
                 size_t needed_len = zeros + rounded_len;
                 if (needed_len < (size_t)digits) needed_len = digits;
-                new_str = internal_realloc(new_str, needed_len + 1);
+                if (needed_len + 1 > new_str_capacity) {
+                    char *new_heap_str = (char*)internal_malloc(needed_len + 1);
+                    size_t old_len = strlen(new_str);
+                    memcpy(new_heap_str, new_str, old_len + 1);
+                    if (new_str != new_str_stack) {
+                        internal_free(new_str);
+                    }
+                    new_str = new_heap_str;
+                    new_str_capacity = needed_len + 1;
+                }
                 memmove(new_str + zeros, rounded_str, rounded_len + 1);
                 memset(new_str, '0', zeros);
             } else {
@@ -1957,11 +1977,22 @@ void handle_decimal(char* format, double val, int scale, char** result, char* c,
                 }
             }
         }
+        if ((size_t)digits + 1 > new_str_capacity) {
+            char *new_heap_str = (char*)internal_malloc((size_t)digits + 1);
+            size_t old_len = strlen(new_str);
+            memcpy(new_heap_str, new_str, old_len + 1);
+            if (new_str != new_str_stack) {
+                internal_free(new_str);
+            }
+            new_str = new_heap_str;
+            new_str_capacity = (size_t)digits + 1;
+        }
         new_str[digits] = '\0';
         strcat(formatted_value, new_str);
         // formatted_value = "  1.12"
-        internal_free(new_str);
-        internal_free(temp);
+        if (new_str != new_str_stack) {
+            internal_free(new_str);
+        }
     }
 
     // Adjust exponent when rounding caused a carry in the mantissa
