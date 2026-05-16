@@ -5840,10 +5840,22 @@ c_forbid_pattern = true
 c_forbid_pattern_value = "__lfortran__lcompilers_merge_"
 
 [[test]]
+filename = "c_backend_merge_loop_bound_inline_01.f90"
+c = true
+c_forbid_pattern = true
+c_forbid_pattern_value = "__lfortran__lcompilers_merge_"
+
+[[test]]
 filename = "c_backend_rounding_intrinsics_inline_01.f90"
 c = true
 c_forbid_pattern = true
 c_forbid_pattern_value = "__lfortran__lcompilers_"
+
+[[test]]
+filename = "c_backend_rounding_write_inline_01.f90"
+c = true
+c_forbid_pattern = true
+c_forbid_pattern_value = "__lfortran_round_arg"
 
 [[test]]
 filename = "c_backend_local_allocatable_cleanup_01.f90"

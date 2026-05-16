@@ -1,0 +1,13 @@
+{
+    "basename": "c-c_backend_rounding_write_inline_01-9791c4a",
+    "cmd": "lfortran --no-color --show-c {infile}",
+    "infile": "tests/c_backend_rounding_write_inline_01.f90",
+    "infile_hash": "c19307eb9902646773a52c65c329e1467dbce61279f792a854a2739f",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": "c-c_backend_rounding_write_inline_01-9791c4a.stdout",
+    "stdout_hash": "ac5e95159d5de4bf6b08cc699011e05beb2cfbd7bb2484fa1b149b5b",
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

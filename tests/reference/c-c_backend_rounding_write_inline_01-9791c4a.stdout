@@ -1,0 +1,54 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include <stdlib.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <string.h>
+#include <lfortran_intrinsics.h>
+
+
+#ifndef LFORTRAN_C_BACKEND_CONSTRUCTOR
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_CONSTRUCTOR __attribute__((constructor))
+#else
+#define LFORTRAN_C_BACKEND_CONSTRUCTOR
+#endif
+#endif
+#ifndef LFORTRAN_C_BACKEND_WEAK
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_WEAK __attribute__((weak))
+#else
+#define LFORTRAN_C_BACKEND_WEAK static
+#endif
+#endif
+#ifndef LFORTRAN_C_BACKEND_COMMON
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_COMMON __attribute__((common))
+#else
+#define LFORTRAN_C_BACKEND_COMMON
+#endif
+#endif
+
+
+
+
+// Implementations
+int main(int argc, char* argv[])
+{
+    _lpython_set_argv(argc, argv);
+    lfortran_allocator_t* __lfortran_default_allocator = _lfortran_get_default_allocator();
+    char __lfortran_fixed_char_lfortran_iomsg[1] = {0}; char *lfortran_iomsg = __lfortran_fixed_char_lfortran_iomsg;
+    double x;
+    x = 0x1.4cccccccccccdp+1;
+    int64_t __lfortran_write_size_0 = 0;
+    char __lfortran_write_stack_buffer_0[4096];
+    char *__lfortran_write_buffer_0 = _lcompilers_string_format_fortran_stack(__lfortran_default_allocator, __lfortran_write_stack_buffer_0, sizeof(__lfortran_write_stack_buffer_0), (char*)"(i0,1x,i0)", (int64_t)(10), "I4,I4", &__lfortran_write_size_0, 0, 0, 0, 0, 0, &((int32_t){(int32_t)(x > ((double)0.0) ? (int64_t)(x + ((double)0.5)) : (int64_t)(x - ((double)0.5)))}), &((int32_t){(int32_t)(-x > ((double)0.0) ? (int64_t)(-x + ((double)0.5)) : (int64_t)(-x - ((double)0.5)))}));
+    _lfortran_file_write(6, NULL, "%s%s", 4, __lfortran_write_buffer_0, __lfortran_write_size_0, "\n", 1);
+    if (__lfortran_write_buffer_0 != __lfortran_write_stack_buffer_0) {
+        _lfortran_free_alloc(__lfortran_default_allocator, __lfortran_write_buffer_0);
+    }
+    _lfortran_string_len_unregister(lfortran_iomsg);
+    return 0;
+}

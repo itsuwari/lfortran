@@ -14092,26 +14092,20 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         }
 
         std::string setup;
-        std::string indent(indentation_level * indentation_spaces, ' ');
-        auto materialize_arg = [&](ASR::expr_t *expr, ASR::ttype_t *type,
-                const std::string &prefix) -> std::string {
+        auto emit_arg = [&](ASR::expr_t *expr) -> std::string {
             self().visit_expr(*expr);
             std::string value = src;
             setup += drain_tmp_buffer();
             setup += extract_stmt_setup_from_expr(value);
-            std::string tmp_name = get_unique_local_name(prefix);
-            setup += indent + CUtils::get_c_type_from_ttype_t(type) + " "
-                + tmp_name + " = " + value + ";\n";
-            return tmp_name;
+            return value;
         };
 
-        std::string tsource = materialize_arg(
-            x.m_args[0].m_value, result_type, "__lfortran_merge_tsource");
-        std::string fsource = materialize_arg(
-            x.m_args[1].m_value, result_type, "__lfortran_merge_fsource");
-        std::string mask = materialize_arg(
-            x.m_args[2].m_value, mask_type, "__lfortran_merge_mask");
-        tmp_buffer_src.push_back(setup);
+        std::string mask = emit_arg(x.m_args[2].m_value);
+        std::string tsource = emit_arg(x.m_args[0].m_value);
+        std::string fsource = emit_arg(x.m_args[1].m_value);
+        if (!setup.empty()) {
+            tmp_buffer_src.push_back(setup);
+        }
         out = "(" + mask + " ? " + tsource + " : " + fsource + ")";
         return true;
     }
@@ -14206,21 +14200,20 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         std::string value = src;
         std::string setup = drain_tmp_buffer();
         setup += extract_stmt_setup_from_expr(value);
-        std::string value_name = get_unique_local_name("__lfortran_round_arg");
         std::string arg_c_type = CUtils::get_c_type_from_ttype_t(arg_type);
-        setup += std::string(indentation_level * indentation_spaces, ' ')
-            + arg_c_type + " " + value_name + " = " + value + ";\n";
-        tmp_buffer_src.push_back(setup);
+        if (!setup.empty()) {
+            tmp_buffer_src.push_back(setup);
+        }
 
         std::string result_c_type = CUtils::get_c_type_from_ttype_t(result_type);
         if (kind == CInlineRoundingKind::Aint) {
-            out = get_c_aint_expr(result_c_type, value_name);
+            out = get_c_aint_expr(result_c_type, value);
         } else if (kind == CInlineRoundingKind::Anint) {
             out = "(" + result_c_type + ")"
-                + get_c_anint_int_expr(arg_c_type, value_name);
+                + get_c_anint_int_expr(arg_c_type, value);
         } else {
             out = "(" + result_c_type + ")"
-                + get_c_anint_int_expr(arg_c_type, value_name);
+                + get_c_anint_int_expr(arg_c_type, value);
         }
         return true;
     }

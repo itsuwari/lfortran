@@ -41,34 +41,28 @@ int main(int argc, char* argv[])
     double r8;
     r4 = -0x1.300000p+2f;
     r8 = 0x1.c000000000000p+1;
-    float __lfortran_round_arg = r4;
-    if ((float)((int64_t)(__lfortran_round_arg)) != -0x1.000000p+2f) {
+    if ((float)((int64_t)(r4)) != -0x1.000000p+2f) {
         fprintf(stderr, "ERROR STOP");
         exit(1);
     }
-    double __lfortran_round_arg1 = r8;
-    if ((double)((int64_t)(__lfortran_round_arg1)) != 0x1.8000000000000p+1) {
+    if ((double)((int64_t)(r8)) != 0x1.8000000000000p+1) {
         fprintf(stderr, "ERROR STOP");
         exit(1);
     }
-    float __lfortran_round_arg2 = r4;
-    if ((float)(__lfortran_round_arg2 > ((float)0.0) ? (int64_t)(__lfortran_round_arg2 + ((float)0.5)) : (int64_t)(__lfortran_round_arg2 - ((float)0.5))) != -0x1.400000p+2f) {
+    if ((float)(r4 > ((float)0.0) ? (int64_t)(r4 + ((float)0.5)) : (int64_t)(r4 - ((float)0.5))) != -0x1.400000p+2f) {
         fprintf(stderr, "ERROR STOP");
         exit(1);
     }
-    double __lfortran_round_arg3 = r8;
-    if ((double)(__lfortran_round_arg3 > ((double)0.0) ? (int64_t)(__lfortran_round_arg3 + ((double)0.5)) : (int64_t)(__lfortran_round_arg3 - ((double)0.5))) != 0x1.0000000000000p+2) {
+    if ((double)(r8 > ((double)0.0) ? (int64_t)(r8 + ((double)0.5)) : (int64_t)(r8 - ((double)0.5))) != 0x1.0000000000000p+2) {
         fprintf(stderr, "ERROR STOP");
         exit(1);
     }
-    float __lfortran_round_arg4 = r4;
-    i = (int32_t)(__lfortran_round_arg4 > ((float)0.0) ? (int64_t)(__lfortran_round_arg4 + ((float)0.5)) : (int64_t)(__lfortran_round_arg4 - ((float)0.5)));
+    i = (int32_t)(r4 > ((float)0.0) ? (int64_t)(r4 + ((float)0.5)) : (int64_t)(r4 - ((float)0.5)));
     if (i != -5) {
         fprintf(stderr, "ERROR STOP");
         exit(1);
     }
-    double __lfortran_round_arg5 = r8;
-    i = (int32_t)(__lfortran_round_arg5 > ((double)0.0) ? (int64_t)(__lfortran_round_arg5 + ((double)0.5)) : (int64_t)(__lfortran_round_arg5 - ((double)0.5)));
+    i = (int32_t)(r8 > ((double)0.0) ? (int64_t)(r8 + ((double)0.5)) : (int64_t)(r8 - ((double)0.5)));
     if (i != 4) {
         fprintf(stderr, "ERROR STOP");
         exit(1);

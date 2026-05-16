@@ -1,0 +1,13 @@
+{
+    "basename": "c_forbid_pattern-c_backend_rounding_write_inline_01-4312c90",
+    "cmd": "lfortran --no-color --show-c {infile} | (! grep -F -q \"__lfortran_round_arg\") #",
+    "infile": "tests/c_backend_rounding_write_inline_01.f90",
+    "infile_hash": "c19307eb9902646773a52c65c329e1467dbce61279f792a854a2739f",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

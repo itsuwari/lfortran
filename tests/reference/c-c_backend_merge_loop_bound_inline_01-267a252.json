@@ -1,0 +1,13 @@
+{
+    "basename": "c-c_backend_merge_loop_bound_inline_01-267a252",
+    "cmd": "lfortran --no-color --show-c {infile}",
+    "infile": "tests/c_backend_merge_loop_bound_inline_01.f90",
+    "infile_hash": "7d9cc61c78a491df6e576d2a747a5f32c17735815b6d9bef3948eaaa",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": "c-c_backend_merge_loop_bound_inline_01-267a252.stdout",
+    "stdout_hash": "458a842f73cb836c8e4e0f1d4b42d9d58f42c35cfb9183e225cc21de",
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}
