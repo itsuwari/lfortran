@@ -1,0 +1,13 @@
+{
+    "basename": "c_forbid_pattern-c_backend_module_parameter_array_no_temp_01-516db27",
+    "cmd": "lfortran --no-color --show-c --backend=c --separate-compilation {infile} | (! grep -F -q \"__libasr_created__array_constant_\") #",
+    "infile": "tests/c_backend_module_parameter_array_no_temp_01.f90",
+    "infile_hash": "835ecf68ca41d6e98fe738e981a9bb36ecfba11d70b919b6b4f13efb",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

@@ -5449,6 +5449,20 @@ filename = "c_backend_local_parameter_array_static_01.f90"
 c = true
 
 [[test]]
+filename = "c_backend_module_parameter_array_no_temp_01.f90"
+run = true
+options = "--backend=c --separate-compilation"
+c_forbid_pattern = true
+c_forbid_pattern_value = "__libasr_created__array_constant_"
+
+[[test]]
+filename = "c_backend_module_parameter_char_array_01.f90"
+run = true
+options = "--backend=c --separate-compilation"
+c_split_require_pattern = true
+c_split_require_pattern_value = "static char __libasr_created__array_constant"
+
+[[test]]
 filename = "c_backend_large_parameter_array_data_unit_01.f90"
 run = true
 options = "--backend=c --separate-compilation"

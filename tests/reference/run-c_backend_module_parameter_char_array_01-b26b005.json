@@ -1,0 +1,13 @@
+{
+    "basename": "run-c_backend_module_parameter_char_array_01-b26b005",
+    "cmd": "lfortran --no-color {infile}",
+    "infile": "tests/c_backend_module_parameter_char_array_01.f90",
+    "infile_hash": "8ff75a8c236fdf3fb508753990fa1f4822fefda55afb1b8a4b4a7b7d",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

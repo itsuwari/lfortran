@@ -5443,10 +5443,12 @@ class ReplaceModuleVarWithValue:
     private:
 
     Allocator& al;
+    bool c_backend;
 
     public:
 
-    ReplaceModuleVarWithValue(Allocator& al_): al(al_) {}
+    ReplaceModuleVarWithValue(Allocator& al_, bool c_backend_):
+        al(al_), c_backend(c_backend_) {}
 
     void replace_Var(ASR::Var_t* x) {
         if( !ASR::is_a<ASR::Variable_t>(
@@ -5461,6 +5463,10 @@ class ReplaceModuleVarWithValue:
             y->m_symbolic_value == nullptr ||
             (y->m_value && ASR::is_a<ASR::StructConstant_t>(*y->m_value))) {
             return ;
+        }
+        if (c_backend && ASRUtils::is_array(y->m_type)
+                && !ASRUtils::is_character(*y->m_type)) {
+            return;
         }
 
         ASRUtils::ExprStmtDuplicator expr_duplicator(al);
@@ -5499,8 +5505,9 @@ class TransformVariableInitialiser:
 
     public:
 
-    TransformVariableInitialiser(Allocator& al_, ExprsWithTargetType& exprs_with_target_): al(al_),
-        exprs_with_target(exprs_with_target_), replacer(al_) {}
+    TransformVariableInitialiser(Allocator& al_, ExprsWithTargetType& exprs_with_target_,
+            bool c_backend_): al(al_),
+        exprs_with_target(exprs_with_target_), replacer(al_, c_backend_) {}
 
     void call_replacer() {
         replacer.current_expr = current_expr;
@@ -6033,7 +6040,8 @@ void pass_array_struct_temporary(Allocator &al, ASR::TranslationUnit_t &unit,
     ExprsWithTargetType exprs_with_target;
     InitialiseExprWithTarget init_expr_with_target(exprs_with_target);
     init_expr_with_target.visit_TranslationUnit(unit);
-    TransformVariableInitialiser a(al, exprs_with_target);
+    TransformVariableInitialiser a(al, exprs_with_target,
+        pass_options.c_backend);
     a.visit_TranslationUnit(unit);
     ArgSimplifier b(al, exprs_with_target, pass_options.realloc_lhs_arrays,
         pass_options.c_backend);
