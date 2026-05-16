@@ -12402,6 +12402,12 @@ bool is_write_and_open_format_match(bool unit_file_bin, const char* format_data)
     return is_openFile_formatted == is_fileWrite_formatted;
 }
 
+static inline void lfortran_file_write_bytes(FILE *filep, const char *str, int64_t str_len) {
+    if (str_len > 0) {
+        fwrite(str, 1, (size_t)str_len, filep);
+    }
+}
+
 LFORTRAN_API void _lfortran_file_write(int32_t unit_num, int32_t* iostat, const char* format_data, int64_t format_len, ...)
 {
     bool unit_file_bin;
@@ -12613,23 +12619,21 @@ LFORTRAN_API void _lfortran_file_write(int32_t unit_num, int32_t* iostat, const 
                 lf_child_io_mode[STATE_INDEX(unit_num)];
             if (end != NULL && !is_child) {
                 if(open_delim != '\0') {
-                    fprintf(filep, "%c%.*s%c%.*s",
-                        open_delim, (int)str_len, str, close_delim,
-                        (int)end_len, end
-                    );
+                    fputc(open_delim, filep);
+                    lfortran_file_write_bytes(filep, str, str_len);
+                    fputc(close_delim, filep);
+                    lfortran_file_write_bytes(filep, end, end_len);
                 } else {
-                    fprintf(filep, "%.*s%.*s",
-                        (int)str_len, str,
-                        (int)end_len, end
-                    );
+                    lfortran_file_write_bytes(filep, str, str_len);
+                    lfortran_file_write_bytes(filep, end, end_len);
                 }
             } else {
                 if(open_delim != '\0') {
-                    fprintf(filep, "%c%.*s%c",
-                        open_delim, (int)str_len, str, close_delim
-                    );
+                    fputc(open_delim, filep);
+                    lfortran_file_write_bytes(filep, str, str_len);
+                    fputc(close_delim, filep);
                 } else {
-                    fprintf(filep, "%.*s", (int)str_len, str);
+                    lfortran_file_write_bytes(filep, str, str_len);
                 }
             }
         }
@@ -12653,14 +12657,12 @@ LFORTRAN_API void _lfortran_string_write(lfortran_allocator_t* al, char **str_ho
     va_start(args, format_len);
     char* str = "";
     int64_t str_len = 0;
-    char* end_data = "";
-    int64_t end_len = 0;
 
     if(strcmp(format, "%s%s") == 0){
         str = va_arg(args, char*);
         str_len = va_arg(args, int64_t);
-        end_data = va_arg(args, char*);
-        end_len = va_arg(args, int64_t); 
+        (void) va_arg(args, char*);
+        (void) va_arg(args, int64_t);
     } else if(strcmp(format, "%s") == 0){
         str = va_arg(args, char*);
         str_len = va_arg(args, int64_t);
@@ -12680,14 +12682,6 @@ LFORTRAN_API void _lfortran_string_write(lfortran_allocator_t* al, char **str_ho
             return;
         }
     }
-
-    char *s = (char *) internal_malloc(str_len * sizeof(char) + end_len * sizeof(char) + 1);
-
-    // If format changed, we need to change the hardcoded format passed to sprintf
-    if (strcmp(format, "%s"))
-        sprintf(s, "%.*s", (int)str_len, str);
-    else
-        sprintf(s, "%.*s%.*s", (int)str_len, str, (int)end_len, end_data);
 
     // Internal WRITE must not reallocate an already-allocated target string.
     // For character array internal files, each '\n' in formatted text denotes
@@ -12728,8 +12722,6 @@ LFORTRAN_API void _lfortran_string_write(lfortran_allocator_t* al, char **str_ho
     } else {
         _lfortran_strcpy_alloc(al, str_holder, len, is_allocatable, is_deferred, str, str_len);
     }
-
-    internal_free(s);
 
     va_end(args);
     if(iostat != NULL) *iostat = 0;
