@@ -1,0 +1,13 @@
+{
+    "basename": "run-c_backend_tbp_force_link_guard_01-2f7770d",
+    "cmd": "lfortran --no-color {infile}",
+    "infile": "tests/../integration_tests/c_backend_tbp_force_link_guard_01.f90",
+    "infile_hash": "782939d5817dbde46c242c3f3e641a68f779f8053e478be9ed73015a",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

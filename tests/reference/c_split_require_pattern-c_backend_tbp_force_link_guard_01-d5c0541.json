@@ -1,0 +1,13 @@
+{
+    "basename": "c_split_require_pattern-c_backend_tbp_force_link_guard_01-d5c0541",
+    "cmd": "tmpdir=$(mktemp -d /tmp/lfortran-c-split-require.XXXXXX); trap 'rm -rf \"$tmpdir\"' EXIT; lfortran --backend=c --separate-compilation -c {infile} -o \"$tmpdir/main.o\"; grep -R -F -q \"__lfortran_tbp_force_linked\" \"$tmpdir\"/*.o.tmp.split/*.c #",
+    "infile": "tests/../integration_tests/c_backend_tbp_force_link_guard_01.f90",
+    "infile_hash": "782939d5817dbde46c242c3f3e641a68f779f8053e478be9ed73015a",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

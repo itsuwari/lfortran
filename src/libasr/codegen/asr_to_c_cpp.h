@@ -2500,6 +2500,7 @@ public:
         if (owner_struct == nullptr || base_method == nullptr) {
             return "";
         }
+        ensure_c_backend_constructor_macro_decl();
         std::vector<ASR::Struct_t*> candidate_structs;
         candidate_structs.push_back(owner_struct);
         std::set<uint64_t> seen_descendants;
@@ -2507,7 +2508,10 @@ public:
             reinterpret_cast<ASR::symbol_t*>(owner_struct),
             candidate_structs, seen_descendants);
         std::set<std::string> seen_anchors;
-        std::string force_link_src;
+        std::string force_link_decls;
+        std::string force_link_body;
+        std::string indent = get_current_indent();
+        std::string inner_indent = indent + std::string(indentation_spaces, ' ');
         for (ASR::Struct_t *candidate_struct: candidate_structs) {
             ASR::StructMethodDeclaration_t *concrete_method =
                 find_concrete_struct_method(candidate_struct, base_method->m_name);
@@ -2536,11 +2540,20 @@ public:
             if (!seen_anchors.insert(anchor_name).second) {
                 continue;
             }
-            force_link_src += get_current_indent() + "extern void "
-                + anchor_name + "(void);\n"
-                + get_current_indent() + anchor_name + "();\n";
+            force_link_decls += indent + "extern void " + anchor_name + "(void);\n";
+            force_link_body += inner_indent + anchor_name + "();\n";
         }
-        return force_link_src;
+        if (force_link_body.empty()) {
+            return "";
+        }
+        std::string linked_name = get_unique_local_name("__lfortran_tbp_force_linked");
+        return force_link_decls
+            + indent + "LFORTRAN_C_BACKEND_TBP_CACHE_STORAGE int "
+            + linked_name + " = 0;\n"
+            + indent + "if (!" + linked_name + ") {\n"
+            + force_link_body
+            + inner_indent + linked_name + " = 1;\n"
+            + indent + "}\n";
     }
 
     void visit_TranslationUnit(const ASR::TranslationUnit_t &x) {

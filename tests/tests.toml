@@ -5453,6 +5453,13 @@ c_split_require_pattern = true
 c_split_require_pattern_value = "_lfortran_register_c_tbp_impl_once"
 
 [[test]]
+filename = "../integration_tests/c_backend_tbp_force_link_guard_01.f90"
+run = true
+options = "--backend=c --separate-compilation"
+c_split_require_pattern = true
+c_split_require_pattern_value = "__lfortran_tbp_force_linked"
+
+[[test]]
 filename = "c_backend_tbp_lazy_constructor_01.f90"
 run = true
 options = "--backend=c --separate-compilation"
