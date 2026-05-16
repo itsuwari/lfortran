@@ -5606,6 +5606,9 @@ R"(#include <stdio.h>
                 if (is_c_inline_integer_remainder_helper_function(s)) {
                     continue;
                 }
+                if (is_c_inline_real_mod_helper_function(s)) {
+                    continue;
+                }
                 t = declare_all_functions(*s->m_symtab);
                 bool has_typevar = false;
                 std::string decl = get_function_declaration(*s, has_typevar, false, false);
@@ -5753,6 +5756,11 @@ R"(#include <stdio.h>
             return;
         }
         if (is_c_inline_integer_remainder_helper_function(&x)) {
+            src = "";
+            current_scope = current_scope_copy;
+            return;
+        }
+        if (is_c_inline_real_mod_helper_function(&x)) {
             src = "";
             current_scope = current_scope_copy;
             return;
@@ -14773,6 +14781,101 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         return true;
     }
 
+    bool is_c_inline_real_mod_helper_name(const std::string &name) const {
+        return name.find("_lcompilers_optimization_mod_f") != std::string::npos;
+    }
+
+    bool is_c_inline_real_mod_type(ASR::ttype_t *type) const {
+        type = ASRUtils::type_get_past_allocatable_pointer(type);
+        if (type == nullptr || ASRUtils::is_array(type)
+                || !ASRUtils::is_real(*type)) {
+            return false;
+        }
+        int kind = ASRUtils::extract_kind_from_ttype_t(type);
+        return kind == 4 || kind == 8;
+    }
+
+    bool is_c_inline_real_mod_helper_function(
+            const ASR::Function_t *f) const {
+        if (!is_c || f == nullptr || f->n_args != 2
+                || !is_c_inline_real_mod_helper_name(std::string(f->m_name))) {
+            return false;
+        }
+        ASR::FunctionType_t *f_type = ASRUtils::get_FunctionType(f);
+        if (f_type == nullptr || f_type->m_return_var_type == nullptr
+                || f->m_args[0] == nullptr || f->m_args[1] == nullptr) {
+            return false;
+        }
+        ASR::ttype_t *return_type = ASRUtils::type_get_past_allocatable_pointer(
+            f_type->m_return_var_type);
+        ASR::ttype_t *arg0_type = ASRUtils::type_get_past_allocatable_pointer(
+            ASRUtils::expr_type(f->m_args[0]));
+        ASR::ttype_t *arg1_type = ASRUtils::type_get_past_allocatable_pointer(
+            ASRUtils::expr_type(f->m_args[1]));
+        if (!is_c_inline_real_mod_type(return_type)
+                || !is_c_inline_real_mod_type(arg0_type)
+                || !is_c_inline_real_mod_type(arg1_type)) {
+            return false;
+        }
+        std::string return_c_type = CUtils::get_c_type_from_ttype_t(return_type);
+        return !return_c_type.empty()
+            && return_c_type == CUtils::get_c_type_from_ttype_t(arg0_type)
+            && return_c_type == CUtils::get_c_type_from_ttype_t(arg1_type);
+    }
+
+    bool try_emit_c_inline_real_mod_function_call(
+            const ASR::FunctionCall_t &x, ASR::Function_t *f,
+            const std::string &fn_name, std::string &out) {
+        if (!is_c || f == nullptr || x.n_args != 2
+                || x.m_args[0].m_value == nullptr
+                || x.m_args[1].m_value == nullptr
+                || !is_c_inline_real_mod_helper_name(fn_name)
+                || !is_c_inline_real_mod_helper_function(f)) {
+            return false;
+        }
+        ASR::ttype_t *result_type = ASRUtils::type_get_past_allocatable_pointer(
+            x.m_type);
+        ASR::ttype_t *arg0_type = ASRUtils::type_get_past_allocatable_pointer(
+            ASRUtils::expr_type(x.m_args[0].m_value));
+        ASR::ttype_t *arg1_type = ASRUtils::type_get_past_allocatable_pointer(
+            ASRUtils::expr_type(x.m_args[1].m_value));
+        if (!is_c_inline_real_mod_type(result_type)
+                || !is_c_inline_real_mod_type(arg0_type)
+                || !is_c_inline_real_mod_type(arg1_type)) {
+            return false;
+        }
+        std::string result_c_type = CUtils::get_c_type_from_ttype_t(result_type);
+        if (result_c_type.empty()
+                || result_c_type != CUtils::get_c_type_from_ttype_t(arg0_type)
+                || result_c_type != CUtils::get_c_type_from_ttype_t(arg1_type)) {
+            return false;
+        }
+
+        std::string setup;
+        auto emit_arg = [&](ASR::expr_t *expr) -> std::string {
+            self().visit_expr(*expr);
+            std::string value = src;
+            setup += drain_tmp_buffer();
+            setup += extract_stmt_setup_from_expr(value);
+            return value;
+        };
+
+        std::string lhs = emit_arg(x.m_args[0].m_value);
+        std::string rhs = emit_arg(x.m_args[1].m_value);
+        std::string indent = get_current_indent();
+        std::string lhs_tmp = get_unique_local_name("__lfortran_mod_lhs");
+        std::string rhs_tmp = get_unique_local_name("__lfortran_mod_rhs");
+        setup += indent + result_c_type + " " + lhs_tmp + " = " + lhs + ";\n";
+        setup += indent + result_c_type + " " + rhs_tmp + " = " + rhs + ";\n";
+        tmp_buffer_src.push_back(setup);
+
+        int kind = ASRUtils::extract_kind_from_ttype_t(result_type);
+        std::string int_c_type = kind == 4 ? "int32_t" : "int64_t";
+        out = "(" + lhs_tmp + " - " + rhs_tmp + " * (" + result_c_type
+            + ")((" + int_c_type + ")(" + lhs_tmp + " / " + rhs_tmp + ")))";
+        return true;
+    }
+
     bool can_emit_c_inline_spread_subroutine_call(const ASR::SubroutineCall_t &x,
             ASR::Function_t *f, const std::string &sym_name) {
         if (!is_c_spread_callee(f, sym_name)
@@ -15348,6 +15451,12 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 return;
             }
             if (try_emit_c_inline_integer_remainder_function_call(
+                    x, fn, fn_name, inline_call)) {
+                src = check_tmp_buffer() + inline_call;
+                last_expr_precedence = 2;
+                return;
+            }
+            if (try_emit_c_inline_real_mod_function_call(
                     x, fn, fn_name, inline_call)) {
                 src = check_tmp_buffer() + inline_call;
                 last_expr_precedence = 2;
