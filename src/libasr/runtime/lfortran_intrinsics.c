@@ -93,6 +93,75 @@ static LFortranCStructCleanupEntry *lfortran_c_struct_cleanup_registry[LFORTRAN_
 static LFortranCStructSizeEntry *lfortran_c_struct_size_registry[LFORTRAN_C_STRUCT_SIZE_BUCKET_COUNT] = {NULL};
 static LFortranCStructDeepcopyEntry *lfortran_c_struct_deepcopy_registry[LFORTRAN_C_STRUCT_DEEPCOPY_BUCKET_COUNT] = {NULL};
 
+enum {
+    LFORTRAN_C_TBP_ENTRY_POOL_CAPACITY = 8192,
+    LFORTRAN_C_TYPE_PARENT_ENTRY_POOL_CAPACITY = 2048,
+    LFORTRAN_C_STRUCT_CLEANUP_ENTRY_POOL_CAPACITY = 4096,
+    LFORTRAN_C_STRUCT_SIZE_ENTRY_POOL_CAPACITY = 4096,
+    LFORTRAN_C_STRUCT_DEEPCOPY_ENTRY_POOL_CAPACITY = 4096
+};
+
+static LFortranCTbpEntry
+    lfortran_c_tbp_entry_pool[LFORTRAN_C_TBP_ENTRY_POOL_CAPACITY];
+static size_t lfortran_c_tbp_entry_pool_used = 0;
+static LFortranCTypeParentEntry
+    lfortran_c_type_parent_entry_pool[LFORTRAN_C_TYPE_PARENT_ENTRY_POOL_CAPACITY];
+static size_t lfortran_c_type_parent_entry_pool_used = 0;
+static LFortranCStructCleanupEntry
+    lfortran_c_struct_cleanup_entry_pool[LFORTRAN_C_STRUCT_CLEANUP_ENTRY_POOL_CAPACITY];
+static size_t lfortran_c_struct_cleanup_entry_pool_used = 0;
+static LFortranCStructSizeEntry
+    lfortran_c_struct_size_entry_pool[LFORTRAN_C_STRUCT_SIZE_ENTRY_POOL_CAPACITY];
+static size_t lfortran_c_struct_size_entry_pool_used = 0;
+static LFortranCStructDeepcopyEntry
+    lfortran_c_struct_deepcopy_entry_pool[LFORTRAN_C_STRUCT_DEEPCOPY_ENTRY_POOL_CAPACITY];
+static size_t lfortran_c_struct_deepcopy_entry_pool_used = 0;
+
+static LFortranCTypeParentEntry *lfortran_alloc_c_type_parent_entry(void) {
+    if (lfortran_c_type_parent_entry_pool_used
+            < LFORTRAN_C_TYPE_PARENT_ENTRY_POOL_CAPACITY) {
+        return &lfortran_c_type_parent_entry_pool[
+            lfortran_c_type_parent_entry_pool_used++];
+    }
+    return (LFortranCTypeParentEntry*) malloc(sizeof(LFortranCTypeParentEntry));
+}
+
+static LFortranCTbpEntry *lfortran_alloc_c_tbp_entry(void) {
+    if (lfortran_c_tbp_entry_pool_used < LFORTRAN_C_TBP_ENTRY_POOL_CAPACITY) {
+        return &lfortran_c_tbp_entry_pool[lfortran_c_tbp_entry_pool_used++];
+    }
+    return (LFortranCTbpEntry*) malloc(sizeof(LFortranCTbpEntry));
+}
+
+static LFortranCStructCleanupEntry *lfortran_alloc_c_struct_cleanup_entry(void) {
+    if (lfortran_c_struct_cleanup_entry_pool_used
+            < LFORTRAN_C_STRUCT_CLEANUP_ENTRY_POOL_CAPACITY) {
+        return &lfortran_c_struct_cleanup_entry_pool[
+            lfortran_c_struct_cleanup_entry_pool_used++];
+    }
+    return (LFortranCStructCleanupEntry*) malloc(
+        sizeof(LFortranCStructCleanupEntry));
+}
+
+static LFortranCStructSizeEntry *lfortran_alloc_c_struct_size_entry(void) {
+    if (lfortran_c_struct_size_entry_pool_used
+            < LFORTRAN_C_STRUCT_SIZE_ENTRY_POOL_CAPACITY) {
+        return &lfortran_c_struct_size_entry_pool[
+            lfortran_c_struct_size_entry_pool_used++];
+    }
+    return (LFortranCStructSizeEntry*) malloc(sizeof(LFortranCStructSizeEntry));
+}
+
+static LFortranCStructDeepcopyEntry *lfortran_alloc_c_struct_deepcopy_entry(void) {
+    if (lfortran_c_struct_deepcopy_entry_pool_used
+            < LFORTRAN_C_STRUCT_DEEPCOPY_ENTRY_POOL_CAPACITY) {
+        return &lfortran_c_struct_deepcopy_entry_pool[
+            lfortran_c_struct_deepcopy_entry_pool_used++];
+    }
+    return (LFortranCStructDeepcopyEntry*) malloc(
+        sizeof(LFortranCStructDeepcopyEntry));
+}
+
 static uint64_t lfortran_hash_c_string(const char *str) {
     uint64_t hash = UINT64_C(1469598103934665603);
     while (*str != '\0') {
@@ -195,7 +264,7 @@ LFORTRAN_API void _lfortran_register_c_type_parent(int64_t type_id, int64_t pare
         entry->parent_type_id = parent_type_id;
         return;
     }
-    entry = (LFortranCTypeParentEntry*) malloc(sizeof(LFortranCTypeParentEntry));
+    entry = lfortran_alloc_c_type_parent_entry();
     if (entry == NULL) {
         fprintf(stderr, "ERROR: unable to register C type parent\n");
         exit(1);
@@ -219,7 +288,7 @@ LFORTRAN_API void _lfortran_register_c_tbp_impl(const char* method_name, int64_t
         entry->func = func;
         return;
     }
-    entry = (LFortranCTbpEntry*) malloc(sizeof(LFortranCTbpEntry));
+    entry = lfortran_alloc_c_tbp_entry();
     if (entry == NULL) {
         fprintf(stderr, "ERROR: unable to register C type-bound procedure\n");
         exit(1);
@@ -278,7 +347,7 @@ LFORTRAN_API void _lfortran_register_c_struct_cleanup(int64_t type_id,
         entry->func = func;
         return;
     }
-    entry = (LFortranCStructCleanupEntry*) malloc(sizeof(LFortranCStructCleanupEntry));
+    entry = lfortran_alloc_c_struct_cleanup_entry();
     if (entry == NULL) {
         fprintf(stderr, "ERROR: unable to register C struct cleanup\n");
         exit(1);
@@ -326,7 +395,7 @@ LFORTRAN_API void _lfortran_register_c_struct_size(int64_t type_id,
         entry->size = size;
         return;
     }
-    entry = (LFortranCStructSizeEntry*) malloc(sizeof(LFortranCStructSizeEntry));
+    entry = lfortran_alloc_c_struct_size_entry();
     if (entry == NULL) {
         fprintf(stderr, "ERROR: unable to register C struct size\n");
         exit(1);
@@ -387,8 +456,7 @@ LFORTRAN_API void _lfortran_register_c_struct_deepcopy(int64_t type_id,
         entry->func = func;
         return;
     }
-    entry = (LFortranCStructDeepcopyEntry*) malloc(
-        sizeof(LFortranCStructDeepcopyEntry));
+    entry = lfortran_alloc_c_struct_deepcopy_entry();
     if (entry == NULL) {
         fprintf(stderr, "ERROR: unable to register C struct deepcopy\n");
         exit(1);
@@ -860,6 +928,52 @@ typedef struct LFortranStringLenEntry {
 
 static LFortranStringLenEntry *lfortran_string_len_entries = NULL;
 
+enum {
+    LFORTRAN_STRING_LEN_ENTRY_POOL_CAPACITY = 16384
+};
+
+static LFortranStringLenEntry
+    lfortran_string_len_entry_pool[LFORTRAN_STRING_LEN_ENTRY_POOL_CAPACITY];
+static size_t lfortran_string_len_entry_pool_used = 0;
+static LFortranStringLenEntry *lfortran_string_len_entry_free_list = NULL;
+
+static bool _lfortran_string_len_entry_is_pooled(
+        LFortranStringLenEntry *entry) {
+    uintptr_t begin = (uintptr_t)&lfortran_string_len_entry_pool[0];
+    uintptr_t end = (uintptr_t)&lfortran_string_len_entry_pool[
+        LFORTRAN_STRING_LEN_ENTRY_POOL_CAPACITY];
+    uintptr_t current = (uintptr_t)entry;
+    return current >= begin && current < end;
+}
+
+static LFortranStringLenEntry *_lfortran_alloc_string_len_entry(void) {
+    if (lfortran_string_len_entry_free_list != NULL) {
+        LFortranStringLenEntry *entry = lfortran_string_len_entry_free_list;
+        lfortran_string_len_entry_free_list = entry->next;
+        return entry;
+    }
+    if (lfortran_string_len_entry_pool_used
+            < LFORTRAN_STRING_LEN_ENTRY_POOL_CAPACITY) {
+        return &lfortran_string_len_entry_pool[
+            lfortran_string_len_entry_pool_used++];
+    }
+    return (LFortranStringLenEntry*) internal_malloc(
+        sizeof(LFortranStringLenEntry));
+}
+
+static void _lfortran_free_string_len_entry(
+        LFortranStringLenEntry *entry) {
+    if (entry == NULL) return;
+    if (_lfortran_string_len_entry_is_pooled(entry)) {
+        entry->ptr = NULL;
+        entry->len = 0;
+        entry->next = lfortran_string_len_entry_free_list;
+        lfortran_string_len_entry_free_list = entry;
+        return;
+    }
+    internal_free(entry);
+}
+
 static void _lfortran_unregister_string_len(char *ptr)
 {
     if (ptr == NULL) return;
@@ -868,7 +982,7 @@ static void _lfortran_unregister_string_len(char *ptr)
         if ((*entry)->ptr == ptr) {
             LFortranStringLenEntry *old = *entry;
             *entry = old->next;
-            internal_free(old);
+            _lfortran_free_string_len_entry(old);
             return;
         }
         entry = &((*entry)->next);
@@ -886,8 +1000,7 @@ static void _lfortran_register_string_len(char *ptr, int64_t len)
             return;
         }
     }
-    LFortranStringLenEntry *entry =
-        (LFortranStringLenEntry*) internal_malloc(sizeof(LFortranStringLenEntry));
+    LFortranStringLenEntry *entry = _lfortran_alloc_string_len_entry();
     entry->ptr = ptr;
     entry->len = len;
     entry->next = lfortran_string_len_entries;
@@ -918,7 +1031,7 @@ LFORTRAN_API void _lfortran_internal_alloc_finalize(void)
     while (lfortran_string_len_entries != NULL) {
         LFortranStringLenEntry *entry = lfortran_string_len_entries;
         lfortran_string_len_entries = entry->next;
-        internal_free(entry);
+        _lfortran_free_string_len_entry(entry);
     }
 #ifdef LFORTRAN_INTERNAL_ALLOC_CHECK
     int has_leaks = (_internal_alloc_count > 0);
@@ -3449,6 +3562,63 @@ static inline char* write_to_result_at_pos(lfortran_allocator_t* al,
 
 FILE* get_file_pointer_from_unit(int32_t unit_num, bool *unit_file_bin, int *access_id, bool *read_access, bool *write_access, int *delim, bool *blank_zero, int32_t *recl, int *sign_mode, int *decimal_mode, int *encoding_mode, int *round_mode, int *pad_mode);
 
+static bool try_simple_stack_format_values(const char *format, int64_t format_len,
+        char *storage, int64_t storage_len, char **format_values,
+        int64_t *format_values_count, int64_t *item_start_idx) {
+    if (format == NULL || format_len <= 0 || storage_len <= 0) {
+        return false;
+    }
+    int64_t cleaned_len = 0;
+    for (int64_t i = 0; i < format_len; i++) {
+        unsigned char ch = (unsigned char)format[i];
+        if (isspace(ch)) {
+            continue;
+        }
+        if (ch == '\'' || ch == '"' || ch == ',' || ch == '/' || ch == ':') {
+            return false;
+        }
+        if (cleaned_len + 1 >= storage_len) {
+            return false;
+        }
+        storage[cleaned_len++] = (char)ch;
+    }
+    storage[cleaned_len] = '\0';
+    if (cleaned_len < 3 || storage[0] != '(' ||
+            storage[cleaned_len - 1] != ')') {
+        return false;
+    }
+    for (int64_t i = 1; i < cleaned_len - 1; i++) {
+        if (storage[i] == '(' || storage[i] == ')') {
+            return false;
+        }
+    }
+    int64_t inner_len = cleaned_len - 2;
+    memmove(storage, storage + 1, (size_t)inner_len);
+    storage[inner_len] = '\0';
+    if (isdigit((unsigned char)storage[0])) {
+        return false;
+    }
+    char descriptor = (char)tolower((unsigned char)storage[0]);
+    if (strchr("aifedglboz", descriptor) == NULL) {
+        return false;
+    }
+    if (descriptor == 'b' && inner_len == 2) {
+        char blank_control = (char)tolower((unsigned char)storage[1]);
+        if (blank_control == 'n' || blank_control == 'z') {
+            return false;
+        }
+    }
+    for (int64_t i = 1; i < inner_len; i++) {
+        if (tolower((unsigned char)storage[i]) == 'p') {
+            return false;
+        }
+    }
+    format_values[0] = storage;
+    *format_values_count = 1;
+    *item_start_idx = 0;
+    return true;
+}
+
 static char* string_format_fortran_impl(lfortran_allocator_t* al,
     char* result, int64_t result_capacity, bool result_allocator_owned,
     const char* format, int64_t format_len, const char* serialization_string,
@@ -3513,20 +3683,35 @@ static char* string_format_fortran_impl(lfortran_allocator_t* al,
     }
 
     int64_t format_values_count = 0,item_start_idx=0;
-    char** format_values;
-    char* modified_input_string;
+    char** format_values = NULL;
+    char* modified_input_string = NULL;
+    bool format_values_heap_owned = true;
+    bool modified_input_heap_owned = true;
+    char simple_format_storage[128];
+    char *simple_format_values[1];
     int len = 0;
-    char* cleaned_format = remove_spaces_except_quotes((const fchar*)format, format_len, &len);
-    if (!cleaned_format) {
-        free_serialization_info(&s_info);
-        return NULL;
+    if (try_simple_stack_format_values(format, format_len, simple_format_storage,
+            sizeof(simple_format_storage), simple_format_values,
+            &format_values_count, &item_start_idx)) {
+        modified_input_string = simple_format_storage;
+        format_values = simple_format_values;
+        format_values_heap_owned = false;
+        modified_input_heap_owned = false;
+    } else {
+        char* cleaned_format = remove_spaces_except_quotes((const fchar*)format,
+            format_len, &len);
+        if (!cleaned_format) {
+            free_serialization_info(&s_info);
+            return NULL;
+        }
+        modified_input_string = (char*)internal_malloc((len+1) * sizeof(char));
+        strncpy(modified_input_string, cleaned_format, len);
+        modified_input_string[len] = '\0';
+        strip_outer_parenthesis(cleaned_format, len, modified_input_string);
+        internal_free(cleaned_format);
+        format_values = parse_fortran_format((const fchar*)modified_input_string,
+            strlen(modified_input_string), &format_values_count, &item_start_idx);
     }
-    modified_input_string = (char*)internal_malloc((len+1) * sizeof(char));
-    strncpy(modified_input_string, cleaned_format, len);
-    modified_input_string[len] = '\0';
-    strip_outer_parenthesis(cleaned_format, len, modified_input_string);
-    internal_free(cleaned_format);
-    format_values = parse_fortran_format((const fchar*)modified_input_string, strlen(modified_input_string), &format_values_count, &item_start_idx);
     /*
     is_SP_specifier = false  --> 'S' OR 'SS'
     is_SP_specifier = true  --> 'SP'
@@ -4255,11 +4440,15 @@ static char* string_format_fortran_impl(lfortran_allocator_t* al,
             break;
         }
     }
-    internal_free(modified_input_string);
-    for (int i = 0;(i<format_values_count);i++) {
-            internal_free(format_values[i]);
+    if (modified_input_heap_owned) {
+        internal_free(modified_input_string);
     }
-    internal_free(format_values);
+    if (format_values_heap_owned) {
+        for (int i = 0;(i<format_values_count);i++) {
+            internal_free(format_values[i]);
+        }
+        internal_free(format_values);
+    }
     free_serialization_info(&s_info);
 
     // Trim trailing blanks from X/T positioning in the final record.
