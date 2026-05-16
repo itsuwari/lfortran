@@ -1,5 +1,6 @@
 #include <fstream>
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <sstream>
 
@@ -197,6 +198,122 @@ public:
         return true;
     }
     std ::string kernel_func_code;
+
+    static bool try_fold_const_no_arg_fortran_format(const std::string &fmt,
+            std::string &folded) {
+        auto is_space = [](char c) -> bool {
+            return c == ' ' || c == '\t' || c == '\n' || c == '\r';
+        };
+        auto is_digit = [](char c) -> bool {
+            return c >= '0' && c <= '9';
+        };
+        auto lower = [](char c) -> char {
+            return c >= 'A' && c <= 'Z' ? char(c - 'A' + 'a') : c;
+        };
+        auto skip_spaces = [&](size_t &pos) {
+            while (pos < fmt.size() && is_space(fmt[pos])) {
+                pos++;
+            }
+        };
+        std::function<bool(size_t&, char, std::string&)> parse_items;
+        parse_items = [&](size_t &pos, char terminator,
+                std::string &out) -> bool {
+            while (pos < fmt.size()) {
+                skip_spaces(pos);
+                if (pos >= fmt.size()) {
+                    return terminator == '\0';
+                }
+                if (terminator != '\0' && fmt[pos] == terminator) {
+                    pos++;
+                    return true;
+                }
+                if (fmt[pos] == ',' || fmt[pos] == ':') {
+                    pos++;
+                    continue;
+                }
+
+                int64_t repeat = 0;
+                bool has_repeat = false;
+                while (pos < fmt.size() && is_digit(fmt[pos])) {
+                    has_repeat = true;
+                    repeat = repeat * 10 + (fmt[pos] - '0');
+                    if (repeat > 4096) {
+                        return false;
+                    }
+                    pos++;
+                }
+                if (!has_repeat) {
+                    repeat = 1;
+                } else if (repeat <= 0) {
+                    return false;
+                }
+                skip_spaces(pos);
+                if (pos >= fmt.size()) {
+                    return false;
+                }
+
+                std::string item;
+                if (fmt[pos] == '(') {
+                    pos++;
+                    if (!parse_items(pos, ')', item)) {
+                        return false;
+                    }
+                } else if (fmt[pos] == '"' || fmt[pos] == '\'') {
+                    char quote = fmt[pos++];
+                    bool closed = false;
+                    while (pos < fmt.size()) {
+                        char c = fmt[pos++];
+                        if (c == quote) {
+                            if (pos < fmt.size() && fmt[pos] == quote) {
+                                item += quote;
+                                pos++;
+                                continue;
+                            }
+                            closed = true;
+                            break;
+                        }
+                        item += c;
+                    }
+                    if (!closed) {
+                        return false;
+                    }
+                } else if (fmt[pos] == '/') {
+                    item = "\n";
+                    pos++;
+                } else if (lower(fmt[pos]) == 'x') {
+                    item = " ";
+                    pos++;
+                } else {
+                    return false;
+                }
+
+                for (int64_t i = 0; i < repeat; i++) {
+                    out += item;
+                    if (out.size() > 4096) {
+                        return false;
+                    }
+                }
+            }
+            return terminator == '\0';
+        };
+
+        size_t pos = 0;
+        skip_spaces(pos);
+        if (pos >= fmt.size() || fmt[pos] != '(') {
+            return false;
+        }
+        pos++;
+        std::string out;
+        if (!parse_items(pos, ')', out)) {
+            return false;
+        }
+        skip_spaces(pos);
+        if (pos != fmt.size()) {
+            return false;
+        }
+        folded = out;
+        return true;
+    }
 
     std::string serialize_fortran_format_type(ASR::expr_t *expr, ASR::ttype_t *type) {
         type = ASRUtils::type_get_past_allocatable(ASRUtils::type_get_past_pointer(type));
@@ -7648,6 +7765,34 @@ R"(    // Initialise Numpy
                         fmt_value)->m_s;
                     has_literal_format_descriptor = fmt_text.find('"') != std::string::npos
                         || fmt_text.find('\'') != std::string::npos;
+                }
+            }
+            if (str_fmt->m_kind == ASR::string_format_kindType::FormatFortran
+                    && str_fmt->n_args == 0 && str_fmt->m_fmt) {
+                ASR::expr_t *fmt_value = ASRUtils::expr_value(str_fmt->m_fmt);
+                if (fmt_value && ASR::is_a<ASR::StringConstant_t>(*fmt_value)) {
+                    std::string fmt_text = ASR::down_cast<ASR::StringConstant_t>(
+                        fmt_value)->m_s;
+                    std::string folded;
+                    if (try_fold_const_no_arg_fortran_format(fmt_text, folded)) {
+                        std::string folded_literal = "\""
+                            + CUtils::escape_c_string_literal(folded) + "\"";
+                        std::string folded_len = std::to_string(folded.size());
+                        src = unit_setup;
+                        if (is_string_unit) {
+                            src += indent + "_lfortran_string_write(_lfortran_get_default_allocator(), &(" + unit + "), "
+                                + (is_unit_allocatable ? "true" : "false") + ", "
+                                + (is_unit_deferred ? "true" : "false") + ", false, 1, &"
+                                + unit_len_name + ", " + iostat_ptr + ", \"%s\", 2, "
+                                + folded_literal + ", " + folded_len + ");\n";
+                        } else {
+                            src += indent + "_lfortran_file_write(" + unit + ", " + iostat_ptr
+                                + ", \"%s%s\", 4, " + folded_literal + ", "
+                                + folded_len + ", " + end_arg.first + ", "
+                                + end_arg.second + ");\n";
+                        }
+                        return;
+                    }
                 }
             }
             if (str_fmt->m_kind == ASR::string_format_kindType::FormatFortran

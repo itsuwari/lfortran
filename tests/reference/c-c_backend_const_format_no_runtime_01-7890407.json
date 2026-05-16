@@ -1,0 +1,13 @@
+{
+    "basename": "c-c_backend_const_format_no_runtime_01-7890407",
+    "cmd": "lfortran --no-color --show-c {infile}",
+    "infile": "tests/../integration_tests/c_backend_const_format_no_runtime_01.f90",
+    "infile_hash": "bc4da64d31fa1d2a8509a8b79e4e3e54fb64a5223342d36bcc5841bf",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": "c-c_backend_const_format_no_runtime_01-7890407.stdout",
+    "stdout_hash": "8ebdd8d9740c98cfe2c7e75be863f45716ddabf0b863f6cde23ab84b",
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}
