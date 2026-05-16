@@ -1,0 +1,13 @@
+{
+    "basename": "run-c_backend_compact_array_constant_copy_01-c63c765",
+    "cmd": "lfortran --no-color {infile}",
+    "infile": "tests/c_backend_compact_array_constant_copy_01.f90",
+    "infile_hash": "082cee403ad4f152a211d56c737835a95216e1481110d4fb06bf3426",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

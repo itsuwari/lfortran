@@ -5154,6 +5154,12 @@ c_forbid_pattern = true
 c_forbid_pattern_value = "__libasr_created__array_constant_->dims"
 
 [[test]]
+filename = "c_backend_compact_array_constant_copy_01.f90"
+run = true
+c_forbid_pattern = true
+c_forbid_pattern_value = "__libasr_created__array_constant_->dims"
+
+[[test]]
 filename = "c_backend_descriptor_cache_array_item_01.f90"
 c_forbid_pattern = true
 c_forbid_pattern_value = "x->data[(x->offset"

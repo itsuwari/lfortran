@@ -9764,6 +9764,8 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             && is_c_pointer_array_base_expr(value_expr);
         bool target_is_rank1_unit =
             target_expr != nullptr && is_c_rank1_unit_slice_array_expr(target_expr);
+        bool value_is_array_constant = value_expr != nullptr
+            && get_c_array_constant_expr(value_expr) != nullptr;
         bool value_is_plain_copy =
             value_expr != nullptr && is_c_rank1_plain_data_copy_expr(value_expr);
         if (!is_c || target_expr == nullptr || value_expr == nullptr
@@ -9787,17 +9789,35 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         std::string target_data, target_offset, target_stride, target_length;
         bool direct_memcpy_only =
             is_c_rank1_proven_unit_stride_array_expr(target_expr)
-            && is_c_rank1_proven_unit_stride_array_expr(value_expr);
+            && (value_is_array_constant
+                || is_c_rank1_proven_unit_stride_array_expr(value_expr));
         if (!get_c_rank1_array_access(target_expr, "__lfortran_lhs1copy",
                 setup, target_data, target_offset, target_stride, target_length,
                 true, !direct_memcpy_only)) {
             return false;
         }
         std::string source_data, source_offset, source_stride, source_length;
-        if (!get_c_rank1_array_access(value_expr, "__lfortran_rhs1copy",
-                setup, source_data, source_offset, source_stride, source_length,
-                true, !direct_memcpy_only)) {
-            return false;
+        if (value_is_array_constant) {
+            ASR::ArrayConstant_t *arr = get_c_array_constant_expr(value_expr);
+            ASR::ttype_t *array_type = ASRUtils::type_get_past_allocatable_pointer(
+                arr->m_type);
+            if (array_type == nullptr || !ASRUtils::is_fixed_size_array(array_type)) {
+                return false;
+            }
+            self().visit_expr(*value_expr);
+            std::string source_base = src;
+            setup += drain_tmp_buffer();
+            setup += extract_stmt_setup_from_expr(source_base);
+            source_data = source_base + "->data";
+            source_offset = "0";
+            source_stride = "1";
+            source_length = std::to_string(ASRUtils::get_fixed_size_of_array(array_type));
+        } else {
+            if (!get_c_rank1_array_access(value_expr, "__lfortran_rhs1copy",
+                    setup, source_data, source_offset, source_stride, source_length,
+                    true, !direct_memcpy_only)) {
+                return false;
+            }
         }
 
         std::string indent(indentation_level * indentation_spaces, ' ');
