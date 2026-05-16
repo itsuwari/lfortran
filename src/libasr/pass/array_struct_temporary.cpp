@@ -299,6 +299,118 @@ static bool conservative_expr_equal(ASR::expr_t* x, ASR::expr_t* y) {
     }
 }
 
+static bool is_c_elementwise_array_expr(ASR::expr_t* x);
+
+static bool is_c_rank1_matmul_expr(ASR::expr_t *x) {
+    x = ASRUtils::get_past_array_physical_cast(x);
+    if (x == nullptr || !ASR::is_a<ASR::IntrinsicArrayFunction_t>(*x)) {
+        return false;
+    }
+    ASR::IntrinsicArrayFunction_t *matmul =
+        ASR::down_cast<ASR::IntrinsicArrayFunction_t>(x);
+    if (static_cast<ASRUtils::IntrinsicArrayFunctions>(
+            matmul->m_arr_intrinsic_id) != ASRUtils::IntrinsicArrayFunctions::MatMul
+            || matmul->n_args != 2
+            || matmul->m_args[0] == nullptr
+            || matmul->m_args[1] == nullptr) {
+        return false;
+    }
+    ASR::ttype_t *result_type = ASRUtils::type_get_past_allocatable_pointer(
+        matmul->m_type);
+    ASR::ttype_t *result_element_type = result_type != nullptr
+        ? ASRUtils::type_get_past_array(result_type) : nullptr;
+    if (result_type == nullptr || result_element_type == nullptr
+            || !ASRUtils::is_array(result_type)
+            || ASRUtils::extract_n_dims_from_ttype(result_type) != 1
+            || !(ASRUtils::is_real(*result_element_type)
+                || ASRUtils::is_integer(*result_element_type)
+                || ASRUtils::is_unsigned_integer(*result_element_type))) {
+        return false;
+    }
+    ASR::ttype_t *left_type = ASRUtils::type_get_past_allocatable_pointer(
+        ASRUtils::expr_type(matmul->m_args[0]));
+    ASR::ttype_t *right_type = ASRUtils::type_get_past_allocatable_pointer(
+        ASRUtils::expr_type(matmul->m_args[1]));
+    if (left_type == nullptr || right_type == nullptr
+            || !ASRUtils::is_array(left_type)
+            || !ASRUtils::is_array(right_type)) {
+        return false;
+    }
+    int left_rank = ASRUtils::extract_n_dims_from_ttype(left_type);
+    int right_rank = ASRUtils::extract_n_dims_from_ttype(right_type);
+    return (left_rank == 2 && right_rank == 1)
+        || (left_rank == 1 && right_rank == 2);
+}
+
+static bool c_expr_contains_rank1_matmul_expr(ASR::expr_t *x) {
+    x = ASRUtils::get_past_array_physical_cast(x);
+    if (x == nullptr) {
+        return false;
+    }
+    switch (x->type) {
+        case ASR::exprType::IntrinsicArrayFunction: {
+            if (is_c_rank1_matmul_expr(x)) {
+                return true;
+            }
+            ASR::IntrinsicArrayFunction_t *f =
+                ASR::down_cast<ASR::IntrinsicArrayFunction_t>(x);
+            for (size_t i = 0; i < f->n_args; i++) {
+                if (c_expr_contains_rank1_matmul_expr(f->m_args[i])) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        case ASR::exprType::ArrayBroadcast: {
+            return c_expr_contains_rank1_matmul_expr(
+                ASR::down_cast<ASR::ArrayBroadcast_t>(x)->m_array);
+        }
+        case ASR::exprType::RealBinOp: {
+            ASR::RealBinOp_t *b = ASR::down_cast<ASR::RealBinOp_t>(x);
+            return c_expr_contains_rank1_matmul_expr(b->m_left)
+                || c_expr_contains_rank1_matmul_expr(b->m_right);
+        }
+        case ASR::exprType::IntegerBinOp: {
+            ASR::IntegerBinOp_t *b = ASR::down_cast<ASR::IntegerBinOp_t>(x);
+            return c_expr_contains_rank1_matmul_expr(b->m_left)
+                || c_expr_contains_rank1_matmul_expr(b->m_right);
+        }
+        case ASR::exprType::UnsignedIntegerBinOp: {
+            ASR::UnsignedIntegerBinOp_t *b =
+                ASR::down_cast<ASR::UnsignedIntegerBinOp_t>(x);
+            return c_expr_contains_rank1_matmul_expr(b->m_left)
+                || c_expr_contains_rank1_matmul_expr(b->m_right);
+        }
+        case ASR::exprType::RealUnaryMinus: {
+            return c_expr_contains_rank1_matmul_expr(
+                ASR::down_cast<ASR::RealUnaryMinus_t>(x)->m_arg);
+        }
+        case ASR::exprType::IntegerUnaryMinus: {
+            return c_expr_contains_rank1_matmul_expr(
+                ASR::down_cast<ASR::IntegerUnaryMinus_t>(x)->m_arg);
+        }
+        case ASR::exprType::IntrinsicElementalFunction: {
+            ASR::IntrinsicElementalFunction_t *f =
+                ASR::down_cast<ASR::IntrinsicElementalFunction_t>(x);
+            for (size_t i = 0; i < f->n_args; i++) {
+                if (c_expr_contains_rank1_matmul_expr(f->m_args[i])) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        default: {
+            return false;
+        }
+    }
+}
+
+static bool is_c_rank1_matmul_elementwise_expr(ASR::expr_t *x) {
+    x = ASRUtils::get_past_array_physical_cast(x);
+    return x != nullptr && is_c_elementwise_array_expr(x)
+        && c_expr_contains_rank1_matmul_expr(x);
+}
+
 static bool is_c_elementwise_array_expr(ASR::expr_t* x) {
     x = ASRUtils::get_past_array_physical_cast(x);
     if (!ASRUtils::is_array(ASRUtils::expr_type(x))) {
@@ -338,6 +450,9 @@ static bool is_c_elementwise_array_expr(ASR::expr_t* x) {
                 }
             }
             return true;
+        }
+        case ASR::exprType::IntrinsicArrayFunction: {
+            return is_c_rank1_matmul_expr(x);
         }
         default: {
             return false;
@@ -3375,6 +3490,7 @@ class ArgSimplifier: public ASR::CallReplacerOnExpressionsVisitor<ArgSimplifier>
     bool c_backend;
     bool inside_where;
     bool c_elementwise_nonalias_vector_assignment;
+    bool c_elementwise_self_assignment;
     bool c_elementwise_projected_self_assignment;
     Vec<ASR::expr_t*> statement_cleanup_temps;
 
@@ -3386,6 +3502,7 @@ class ArgSimplifier: public ASR::CallReplacerOnExpressionsVisitor<ArgSimplifier>
             exprs_with_target(exprs_with_target_), lhs_var(nullptr), realloc_lhs(realloc_lhs_),
             c_backend(c_backend_), inside_where(false),
             c_elementwise_nonalias_vector_assignment(false),
+            c_elementwise_self_assignment(false),
             c_elementwise_projected_self_assignment(false) {
         (void)realloc_lhs; /*Silence-Warning*/
     }
@@ -3785,6 +3902,8 @@ class ArgSimplifier: public ASR::CallReplacerOnExpressionsVisitor<ArgSimplifier>
         }
         bool saved_c_elementwise_nonalias_vector_assignment =
             c_elementwise_nonalias_vector_assignment;
+        bool saved_c_elementwise_self_assignment =
+            c_elementwise_self_assignment;
         bool saved_c_elementwise_projected_self_assignment =
             c_elementwise_projected_self_assignment;
         c_elementwise_nonalias_vector_assignment = c_backend
@@ -3793,6 +3912,19 @@ class ArgSimplifier: public ASR::CallReplacerOnExpressionsVisitor<ArgSimplifier>
             && ASRUtils::is_array(ASRUtils::expr_type(x.m_value))
             && is_c_elementwise_array_expr(x.m_value)
             && !is_common_symbol_present_in_lhs_and_rhs(al, lhs_array_var, x.m_value);
+        bool c_rank1_matmul_scalarized_assignment = c_backend
+            && lhs_array_var != nullptr
+            && ASRUtils::is_array(ASRUtils::expr_type(x.m_value))
+            && is_c_rank1_matmul_elementwise_expr(x.m_value)
+            && (!is_common_symbol_present_in_lhs_and_rhs(al, lhs_array_var, x.m_value)
+                || rhs_common_refs_match_lhs_ref(al, x.m_target, x.m_value)
+                || rhs_refs_are_c_projected_same_base(al, x.m_target, x.m_value));
+        c_elementwise_self_assignment = (c_backend
+            && lhs_array_var != nullptr
+            && ASRUtils::is_array(ASRUtils::expr_type(x.m_value))
+            && is_c_elementwise_array_expr(x.m_value)
+            && rhs_common_refs_match_lhs_ref(al, x.m_target, x.m_value))
+            || c_rank1_matmul_scalarized_assignment;
         c_elementwise_projected_self_assignment = c_backend
             && lhs_array_var != nullptr
             && ASRUtils::is_array(ASRUtils::expr_type(x.m_value))
@@ -3808,6 +3940,8 @@ class ArgSimplifier: public ASR::CallReplacerOnExpressionsVisitor<ArgSimplifier>
         lhs_var = nullptr;
         c_elementwise_nonalias_vector_assignment =
             saved_c_elementwise_nonalias_vector_assignment;
+        c_elementwise_self_assignment =
+            saved_c_elementwise_self_assignment;
         c_elementwise_projected_self_assignment =
             saved_c_elementwise_projected_self_assignment;
     }
@@ -3920,6 +4054,21 @@ class ArgSimplifier: public ASR::CallReplacerOnExpressionsVisitor<ArgSimplifier>
         if (c_backend
                 && c_elementwise_projected_self_assignment
                 && is_c_projected_array_section_expr(expr)) {
+            return expr;
+        }
+        if (c_backend
+                && (lhs_var != nullptr
+                    || c_elementwise_self_assignment
+                    || c_elementwise_nonalias_vector_assignment
+                    || c_elementwise_projected_self_assignment)
+                && is_c_rank1_matmul_expr(expr)) {
+            return expr;
+        }
+        if (c_backend
+                && (c_elementwise_self_assignment
+                    || c_elementwise_nonalias_vector_assignment
+                    || c_elementwise_projected_self_assignment)
+                && is_c_rank1_matmul_elementwise_expr(expr)) {
             return expr;
         }
         if (c_backend
@@ -4449,6 +4598,7 @@ class ReplaceExprWithTemporary: public ASR::BaseExprReplacer<ReplaceExprWithTemp
     ASR::expr_t* parent_expr;
     ASR::expr_t* lhs_var;
     ASR::expr_t* lhs_expr;
+    bool c_elementwise_self_assignment;
     bool c_elementwise_projected_self_assignment;
 
     ReplaceExprWithTemporary(Allocator& al_, ExprsWithTargetType& exprs_with_target_,
@@ -4458,6 +4608,7 @@ class ReplaceExprWithTemporary: public ASR::BaseExprReplacer<ReplaceExprWithTemp
         statement_cleanup_temps(nullptr),
         is_assignment_target_array_section_item(false), is_simd_expression(false), simd_type(nullptr),
         parent_expr(nullptr), lhs_var(nullptr), lhs_expr(nullptr),
+        c_elementwise_self_assignment(false),
         c_elementwise_projected_self_assignment(false) {}
 
     void replace_ttype(ASR::ttype_t* /*x*/) {
@@ -4565,6 +4716,19 @@ class ReplaceExprWithTemporary: public ASR::BaseExprReplacer<ReplaceExprWithTemp
 
     void replace_IntrinsicArrayFunction(ASR::IntrinsicArrayFunction_t* x) {
         std::string name_hint = std::string("_intrinsic_array_function_") + ASRUtils::get_array_intrinsic_name(x->m_arr_intrinsic_id);
+        ASR::expr_t *lhs_expr_unwrapped = lhs_expr != nullptr
+            ? ASRUtils::get_past_array_physical_cast(lhs_expr) : nullptr;
+        bool lhs_is_whole_allocatable =
+            lhs_expr_unwrapped != nullptr
+            && !ASR::is_a<ASR::ArraySection_t>(*lhs_expr_unwrapped)
+            && !ASR::is_a<ASR::ArrayItem_t>(*lhs_expr_unwrapped)
+            && ASRUtils::is_allocatable(lhs_expr);
+        if (c_backend
+                && lhs_expr != nullptr
+                && !lhs_is_whole_allocatable
+                && is_c_rank1_matmul_expr(*current_expr)) {
+            return;
+        }
         bool current_expr_linked_to_target =
             is_current_expr_linked_to_target(exprs_with_target, current_expr);
         targetType current_target_type = targetType::OriginalTarget;
@@ -5293,10 +5457,18 @@ class ReplaceExprWithTemporaryVisitor:
         replacer.simd_type = ASRUtils::expr_type(x.m_value);
         replacer.lhs_var = lhs_array_var;
         replacer.lhs_expr = original_lhs_expr;
-        bool c_elementwise_self_assignment = c_backend
+        bool c_rank1_matmul_scalarized_assignment = c_backend
+            && lhs_array_var != nullptr
+            && ASRUtils::is_array(ASRUtils::expr_type(x.m_value))
+            && is_c_rank1_matmul_elementwise_expr(x.m_value)
+            && (!is_common_symbol_present_in_lhs_and_rhs(al, lhs_array_var, x.m_value)
+                || rhs_common_refs_match_lhs_ref(al, original_lhs_expr, x.m_value)
+                || rhs_refs_are_c_projected_same_base(al, original_lhs_expr, x.m_value));
+        bool c_elementwise_self_assignment = (c_backend
             && lhs_array_var != nullptr
             && is_c_elementwise_array_expr(x.m_value)
-            && rhs_common_refs_match_lhs_ref(al, original_lhs_expr, x.m_value);
+            && rhs_common_refs_match_lhs_ref(al, original_lhs_expr, x.m_value))
+            || c_rank1_matmul_scalarized_assignment;
         bool c_elementwise_projected_self_assignment = c_backend
             && lhs_array_var != nullptr
             && ASRUtils::is_array(ASRUtils::expr_type(x.m_value))
@@ -5347,8 +5519,12 @@ class ReplaceExprWithTemporaryVisitor:
         current_expr = const_cast<ASR::expr_t**>(&(x.m_value));
         bool rhs_is_assignment_target_array_section_item =
             replacer.is_assignment_target_array_section_item;
+        bool saved_c_elementwise_self_assignment =
+            replacer.c_elementwise_self_assignment;
         bool saved_c_elementwise_projected_self_assignment =
             replacer.c_elementwise_projected_self_assignment;
+        replacer.c_elementwise_self_assignment =
+            c_elementwise_self_assignment;
         replacer.c_elementwise_projected_self_assignment =
             c_elementwise_projected_self_assignment;
         if (c_elementwise_nonalias_vector_target) {
@@ -5363,14 +5539,10 @@ class ReplaceExprWithTemporaryVisitor:
                 && !c_rank2_section_scalar_assignment) {
             call_replacer();
         }
+        replacer.c_elementwise_self_assignment =
+            saved_c_elementwise_self_assignment;
         replacer.c_elementwise_projected_self_assignment =
             saved_c_elementwise_projected_self_assignment;
-        if (!c_elementwise_nonalias_vector_target) {
-            replacer.is_assignment_target_array_section_item =
-                rhs_is_assignment_target_array_section_item;
-            replacer.lhs_var = nullptr;
-            replacer.lhs_expr = nullptr;
-        }
         bool is_assignment_target_array_section_item = target_has_array_indices &&
                     ASRUtils::is_array(ASRUtils::expr_type(x.m_value)) && !is_directly_addressable_array_expr(x.m_value);
         if(  (!c_rank2_scalarized_reshape_assignment &&
@@ -5396,12 +5568,10 @@ class ReplaceExprWithTemporaryVisitor:
                 && !ASRUtils::is_simd_array(x.m_value)) {
             visit_expr(*x.m_value);
         }
-        if (c_elementwise_nonalias_vector_target) {
-            replacer.is_assignment_target_array_section_item =
-                rhs_is_assignment_target_array_section_item;
-            replacer.lhs_var = nullptr;
-            replacer.lhs_expr = nullptr;
-        }
+        replacer.is_assignment_target_array_section_item =
+            rhs_is_assignment_target_array_section_item;
+        replacer.lhs_var = nullptr;
+        replacer.lhs_expr = nullptr;
         if (x.m_overloaded) {
             visit_stmt(*x.m_overloaded);
         }

@@ -1192,6 +1192,99 @@ class ArrayOpVisitor: public ASR::CallReplacerOnExpressionsVisitor<ArrayOpVisito
             || is_c_rank1_vector_subscript_array_item_expr(expr);
     }
 
+    bool is_c_rank1_matmul_expr(ASR::expr_t *expr) const {
+        expr = ASRUtils::get_past_array_physical_cast(expr);
+        if (expr == nullptr || !ASR::is_a<ASR::IntrinsicArrayFunction_t>(*expr)) {
+            return false;
+        }
+        ASR::IntrinsicArrayFunction_t *matmul =
+            ASR::down_cast<ASR::IntrinsicArrayFunction_t>(expr);
+        if (static_cast<ASRUtils::IntrinsicArrayFunctions>(
+                matmul->m_arr_intrinsic_id) != ASRUtils::IntrinsicArrayFunctions::MatMul
+                || matmul->n_args != 2
+                || matmul->m_args[0] == nullptr
+                || matmul->m_args[1] == nullptr) {
+            return false;
+        }
+        ASR::ttype_t *result_type = ASRUtils::type_get_past_allocatable_pointer(
+            matmul->m_type);
+        if (result_type == nullptr
+                || !ASRUtils::is_array(result_type)
+                || ASRUtils::extract_n_dims_from_ttype(result_type) != 1
+                || !is_c_scalarizable_element_type(result_type)) {
+            return false;
+        }
+        ASR::ttype_t *left_type = ASRUtils::type_get_past_allocatable_pointer(
+            ASRUtils::expr_type(matmul->m_args[0]));
+        ASR::ttype_t *right_type = ASRUtils::type_get_past_allocatable_pointer(
+            ASRUtils::expr_type(matmul->m_args[1]));
+        if (left_type == nullptr || right_type == nullptr
+                || !ASRUtils::is_array(left_type)
+                || !ASRUtils::is_array(right_type)
+                || !is_c_scalarizable_element_type(left_type)
+                || !is_c_scalarizable_element_type(right_type)) {
+            return false;
+        }
+        int left_rank = ASRUtils::extract_n_dims_from_ttype(left_type);
+        int right_rank = ASRUtils::extract_n_dims_from_ttype(right_type);
+        return (left_rank == 2 && right_rank == 1)
+            || (left_rank == 1 && right_rank == 2);
+    }
+
+    bool c_expr_contains_rank1_matmul_expr(ASR::expr_t *expr) const {
+        expr = ASRUtils::get_past_array_physical_cast(expr);
+        if (expr == nullptr) {
+            return false;
+        }
+        switch (expr->type) {
+            case ASR::exprType::IntrinsicArrayFunction: {
+                if (is_c_rank1_matmul_expr(expr)) {
+                    return true;
+                }
+                ASR::IntrinsicArrayFunction_t *iaf =
+                    ASR::down_cast<ASR::IntrinsicArrayFunction_t>(expr);
+                for (size_t i = 0; i < iaf->n_args; i++) {
+                    if (c_expr_contains_rank1_matmul_expr(iaf->m_args[i])) {
+                        return true;
+                    }
+                }
+                return false;
+            }
+            case ASR::exprType::ArrayBroadcast: {
+                return c_expr_contains_rank1_matmul_expr(
+                    ASR::down_cast<ASR::ArrayBroadcast_t>(expr)->m_array);
+            }
+            case ASR::exprType::RealBinOp: {
+                ASR::RealBinOp_t *binop = ASR::down_cast<ASR::RealBinOp_t>(expr);
+                return c_expr_contains_rank1_matmul_expr(binop->m_left)
+                    || c_expr_contains_rank1_matmul_expr(binop->m_right);
+            }
+            case ASR::exprType::IntegerBinOp: {
+                ASR::IntegerBinOp_t *binop =
+                    ASR::down_cast<ASR::IntegerBinOp_t>(expr);
+                return c_expr_contains_rank1_matmul_expr(binop->m_left)
+                    || c_expr_contains_rank1_matmul_expr(binop->m_right);
+            }
+            case ASR::exprType::UnsignedIntegerBinOp: {
+                ASR::UnsignedIntegerBinOp_t *binop =
+                    ASR::down_cast<ASR::UnsignedIntegerBinOp_t>(expr);
+                return c_expr_contains_rank1_matmul_expr(binop->m_left)
+                    || c_expr_contains_rank1_matmul_expr(binop->m_right);
+            }
+            case ASR::exprType::RealUnaryMinus: {
+                return c_expr_contains_rank1_matmul_expr(
+                    ASR::down_cast<ASR::RealUnaryMinus_t>(expr)->m_arg);
+            }
+            case ASR::exprType::IntegerUnaryMinus: {
+                return c_expr_contains_rank1_matmul_expr(
+                    ASR::down_cast<ASR::IntegerUnaryMinus_t>(expr)->m_arg);
+            }
+            default: {
+                return false;
+            }
+        }
+    }
+
     bool is_c_scalarizable_array_expr(ASR::expr_t *expr) const {
         expr = ASRUtils::get_past_array_physical_cast(expr);
         if (expr == nullptr) {
@@ -1243,6 +1336,9 @@ class ArrayOpVisitor: public ASR::CallReplacerOnExpressionsVisitor<ArrayOpVisito
             case ASR::exprType::IntegerUnaryMinus: {
                 return is_c_scalarizable_array_expr(
                     ASR::down_cast<ASR::IntegerUnaryMinus_t>(expr)->m_arg);
+            }
+            case ASR::exprType::IntrinsicArrayFunction: {
+                return is_c_rank1_matmul_expr(expr);
             }
             case ASR::exprType::IntrinsicElementalFunction: {
                 ASR::IntrinsicElementalFunction_t *ief =
@@ -1554,6 +1650,104 @@ class ArrayOpVisitor: public ASR::CallReplacerOnExpressionsVisitor<ArrayOpVisito
         return nullptr;
     }
 
+    bool c_same_simple_index_expr(ASR::expr_t *lhs, ASR::expr_t *rhs) const {
+        if (lhs == nullptr || rhs == nullptr) {
+            return lhs == rhs;
+        }
+        lhs = ASRUtils::get_past_array_physical_cast(lhs);
+        rhs = ASRUtils::get_past_array_physical_cast(rhs);
+        if (lhs == nullptr || rhs == nullptr || lhs->type != rhs->type) {
+            return false;
+        }
+        switch (lhs->type) {
+            case ASR::exprType::Var: {
+                return ASR::down_cast<ASR::Var_t>(lhs)->m_v
+                    == ASR::down_cast<ASR::Var_t>(rhs)->m_v;
+            }
+            case ASR::exprType::IntegerConstant: {
+                return ASR::down_cast<ASR::IntegerConstant_t>(lhs)->m_n
+                    == ASR::down_cast<ASR::IntegerConstant_t>(rhs)->m_n;
+            }
+            case ASR::exprType::ArrayBound: {
+                ASR::ArrayBound_t *l = ASR::down_cast<ASR::ArrayBound_t>(lhs);
+                ASR::ArrayBound_t *r = ASR::down_cast<ASR::ArrayBound_t>(rhs);
+                return l->m_bound == r->m_bound
+                    && c_same_simple_index_expr(l->m_dim, r->m_dim)
+                    && c_same_array_reference(l->m_v, r->m_v);
+            }
+            case ASR::exprType::IntegerBinOp: {
+                ASR::IntegerBinOp_t *l = ASR::down_cast<ASR::IntegerBinOp_t>(lhs);
+                ASR::IntegerBinOp_t *r = ASR::down_cast<ASR::IntegerBinOp_t>(rhs);
+                return l->m_op == r->m_op
+                    && c_same_simple_index_expr(l->m_left, r->m_left)
+                    && c_same_simple_index_expr(l->m_right, r->m_right);
+            }
+            default: {
+                return lhs == rhs;
+            }
+        }
+    }
+
+    bool c_same_array_index(const ASR::array_index_t &lhs,
+            const ASR::array_index_t &rhs) const {
+        return c_same_simple_index_expr(lhs.m_left, rhs.m_left)
+            && c_same_simple_index_expr(lhs.m_right, rhs.m_right)
+            && c_same_simple_index_expr(lhs.m_step, rhs.m_step);
+    }
+
+    bool c_same_array_reference(ASR::expr_t *lhs, ASR::expr_t *rhs) const {
+        lhs = ASRUtils::get_past_array_physical_cast(lhs);
+        rhs = ASRUtils::get_past_array_physical_cast(rhs);
+        if (lhs == nullptr || rhs == nullptr || lhs->type != rhs->type) {
+            return false;
+        }
+        switch (lhs->type) {
+            case ASR::exprType::Var: {
+                return ASR::down_cast<ASR::Var_t>(lhs)->m_v
+                    == ASR::down_cast<ASR::Var_t>(rhs)->m_v;
+            }
+            case ASR::exprType::StructInstanceMember: {
+                ASR::StructInstanceMember_t *l =
+                    ASR::down_cast<ASR::StructInstanceMember_t>(lhs);
+                ASR::StructInstanceMember_t *r =
+                    ASR::down_cast<ASR::StructInstanceMember_t>(rhs);
+                return l->m_m == r->m_m
+                    && c_same_array_reference(l->m_v, r->m_v);
+            }
+            case ASR::exprType::ArraySection: {
+                ASR::ArraySection_t *l = ASR::down_cast<ASR::ArraySection_t>(lhs);
+                ASR::ArraySection_t *r = ASR::down_cast<ASR::ArraySection_t>(rhs);
+                if (l->n_args != r->n_args
+                        || !c_same_array_reference(l->m_v, r->m_v)) {
+                    return false;
+                }
+                for (size_t i = 0; i < l->n_args; i++) {
+                    if (!c_same_array_index(l->m_args[i], r->m_args[i])) {
+                        return false;
+                    }
+                }
+                return true;
+            }
+            case ASR::exprType::ArrayItem: {
+                ASR::ArrayItem_t *l = ASR::down_cast<ASR::ArrayItem_t>(lhs);
+                ASR::ArrayItem_t *r = ASR::down_cast<ASR::ArrayItem_t>(rhs);
+                if (l->n_args != r->n_args
+                        || !c_same_array_reference(l->m_v, r->m_v)) {
+                    return false;
+                }
+                for (size_t i = 0; i < l->n_args; i++) {
+                    if (!c_same_array_index(l->m_args[i], r->m_args[i])) {
+                        return false;
+                    }
+                }
+                return true;
+            }
+            default: {
+                return lhs == rhs;
+            }
+        }
+    }
+
     bool c_expr_references_root_symbol(ASR::expr_t *expr, ASR::symbol_t *root_sym) const {
         if (expr == nullptr || root_sym == nullptr) {
             return false;
@@ -1633,6 +1827,79 @@ class ArrayOpVisitor: public ASR::CallReplacerOnExpressionsVisitor<ArrayOpVisito
                     }
                 }
                 return false;
+            }
+            case ASR::exprType::IntrinsicArrayFunction: {
+                ASR::IntrinsicArrayFunction_t *iaf =
+                    ASR::down_cast<ASR::IntrinsicArrayFunction_t>(expr);
+                for (size_t i = 0; i < iaf->n_args; i++) {
+                    if (c_expr_references_root_symbol(iaf->m_args[i], root_sym)) {
+                        return true;
+                    }
+                }
+                return false;
+            }
+            default: {
+                return false;
+            }
+        }
+    }
+
+    bool c_rank1_ref_same_target(ASR::expr_t *target, ASR::expr_t *expr) const {
+        target = ASRUtils::get_past_array_physical_cast(target);
+        expr = ASRUtils::get_past_array_physical_cast(expr);
+        return is_c_rank1_scalarizable_array_expr(target)
+            && is_c_rank1_scalarizable_array_expr(expr)
+            && c_same_array_reference(target, expr);
+    }
+
+    bool is_c_rank1_matmul_nonself_expr(ASR::expr_t *expr,
+            ASR::symbol_t *target_root) const {
+        return is_c_scalarizable_array_expr(expr)
+            && c_expr_contains_rank1_matmul_expr(expr)
+            && !c_expr_references_root_symbol(expr, target_root);
+    }
+
+    template <typename BinOp>
+    bool c_rank1_matmul_binop_has_one_self_ref(
+            const BinOp *binop, ASR::expr_t *target,
+            ASR::symbol_t *target_root) const {
+        bool left_is_self = c_rank1_ref_same_target(target, binop->m_left);
+        bool right_is_self = c_rank1_ref_same_target(target, binop->m_right);
+        if (left_is_self == right_is_self) {
+            return false;
+        }
+        ASR::expr_t *other = left_is_self ? binop->m_right : binop->m_left;
+        return is_c_rank1_matmul_nonself_expr(other, target_root);
+    }
+
+    bool should_leave_rank1_matmul_self_update_for_c(
+            ASR::expr_t *target, ASR::expr_t *value) const {
+        if (!pass_options.c_backend || target == nullptr || value == nullptr
+                || !is_c_rank1_scalarizable_array_expr(target)
+                || !is_c_scalarizable_array_expr(value)
+                || !c_expr_contains_rank1_matmul_expr(value)) {
+            return false;
+        }
+        ASR::symbol_t *target_root = get_c_array_assignment_root_symbol(target);
+        if (target_root == nullptr) {
+            return false;
+        }
+        value = ASRUtils::get_past_array_physical_cast(value);
+        switch (value->type) {
+            case ASR::exprType::RealBinOp: {
+                return c_rank1_matmul_binop_has_one_self_ref(
+                    ASR::down_cast<ASR::RealBinOp_t>(value),
+                    target, target_root);
+            }
+            case ASR::exprType::IntegerBinOp: {
+                return c_rank1_matmul_binop_has_one_self_ref(
+                    ASR::down_cast<ASR::IntegerBinOp_t>(value),
+                    target, target_root);
+            }
+            case ASR::exprType::UnsignedIntegerBinOp: {
+                return c_rank1_matmul_binop_has_one_self_ref(
+                    ASR::down_cast<ASR::UnsignedIntegerBinOp_t>(value),
+                    target, target_root);
             }
             default: {
                 return false;
@@ -3150,6 +3417,14 @@ class ArrayOpVisitor: public ASR::CallReplacerOnExpressionsVisitor<ArrayOpVisito
             return;
         }
         if (should_leave_rank2_section_scalar_assignment_for_c(
+                xx.m_target, xx.m_value)) {
+            pass_result.push_back(al, ASRUtils::STMT(
+                ASRUtils::make_Assignment_t_util(al, loc, xx.m_target,
+                    xx.m_value, xx.m_overloaded, xx.m_realloc_lhs,
+                    xx.m_move_allocation)));
+            return;
+        }
+        if (should_leave_rank1_matmul_self_update_for_c(
                 xx.m_target, xx.m_value)) {
             pass_result.push_back(al, ASRUtils::STMT(
                 ASRUtils::make_Assignment_t_util(al, loc, xx.m_target,

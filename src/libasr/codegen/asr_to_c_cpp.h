@@ -120,6 +120,7 @@ enum class CArrayExprLoweringKind {
     FallbackRuntime,
     NoCopyDescriptorView,
     ScalarizedLoop,
+    Rank1MatmulScalarizedLoop,
     Rank2ScalarizedLoop,
     Rank2FullSelfUpdateLoop,
     FusedLoop,
@@ -7241,6 +7242,115 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             && is_c_scalarizable_array_expr(x.m_args[0]);
     }
 
+    bool is_c_rank1_matmul_scalarizable_expr(
+            const ASR::IntrinsicArrayFunction_t &x) {
+        if (x.m_arr_intrinsic_id != static_cast<int64_t>(
+                    ASRUtils::IntrinsicArrayFunctions::MatMul)
+                || x.n_args != 2
+                || x.m_args[0] == nullptr
+                || x.m_args[1] == nullptr) {
+            return false;
+        }
+        ASR::ttype_t *result_type = ASRUtils::type_get_past_allocatable_pointer(
+            x.m_type);
+        ASR::ttype_t *result_element_type = result_type != nullptr
+            ? ASRUtils::type_get_past_array(result_type) : nullptr;
+        if (result_type == nullptr || result_element_type == nullptr
+                || !ASRUtils::is_array(result_type)
+                || ASRUtils::extract_n_dims_from_ttype(result_type) != 1
+                || !is_c_scalarizable_element_type(result_type)) {
+            return false;
+        }
+        if (!(ASRUtils::is_real(*result_element_type)
+                || ASRUtils::is_integer(*result_element_type)
+                || ASRUtils::is_unsigned_integer(*result_element_type))) {
+            return false;
+        }
+        ASR::ttype_t *left_type = ASRUtils::type_get_past_allocatable_pointer(
+            ASRUtils::expr_type(x.m_args[0]));
+        ASR::ttype_t *right_type = ASRUtils::type_get_past_allocatable_pointer(
+            ASRUtils::expr_type(x.m_args[1]));
+        if (left_type == nullptr || right_type == nullptr
+                || !ASRUtils::is_array(left_type)
+                || !ASRUtils::is_array(right_type)
+                || !is_c_scalarizable_element_type(left_type)
+                || !is_c_scalarizable_element_type(right_type)) {
+            return false;
+        }
+        int left_rank = ASRUtils::extract_n_dims_from_ttype(left_type);
+        int right_rank = ASRUtils::extract_n_dims_from_ttype(right_type);
+        return (left_rank == 2 && right_rank == 1)
+            || (left_rank == 1 && right_rank == 2);
+    }
+
+    bool c_expr_contains_rank1_matmul_scalarizable(ASR::expr_t *expr) {
+        expr = unwrap_c_array_expr(expr);
+        if (expr == nullptr) {
+            return false;
+        }
+        switch (expr->type) {
+            case ASR::exprType::IntrinsicArrayFunction: {
+                if (is_c_rank1_matmul_scalarizable_expr(
+                        *ASR::down_cast<ASR::IntrinsicArrayFunction_t>(expr))) {
+                    return true;
+                }
+                ASR::IntrinsicArrayFunction_t *iaf =
+                    ASR::down_cast<ASR::IntrinsicArrayFunction_t>(expr);
+                for (size_t i = 0; i < iaf->n_args; i++) {
+                    if (c_expr_contains_rank1_matmul_scalarizable(iaf->m_args[i])) {
+                        return true;
+                    }
+                }
+                return false;
+            }
+            case ASR::exprType::ArrayBroadcast: {
+                return c_expr_contains_rank1_matmul_scalarizable(
+                    ASR::down_cast<ASR::ArrayBroadcast_t>(expr)->m_array);
+            }
+            case ASR::exprType::RealBinOp: {
+                ASR::RealBinOp_t *binop = ASR::down_cast<ASR::RealBinOp_t>(expr);
+                return c_expr_contains_rank1_matmul_scalarizable(binop->m_left)
+                    || c_expr_contains_rank1_matmul_scalarizable(binop->m_right);
+            }
+            case ASR::exprType::IntegerBinOp: {
+                ASR::IntegerBinOp_t *binop = ASR::down_cast<ASR::IntegerBinOp_t>(expr);
+                return c_expr_contains_rank1_matmul_scalarizable(binop->m_left)
+                    || c_expr_contains_rank1_matmul_scalarizable(binop->m_right);
+            }
+            case ASR::exprType::UnsignedIntegerBinOp: {
+                ASR::UnsignedIntegerBinOp_t *binop =
+                    ASR::down_cast<ASR::UnsignedIntegerBinOp_t>(expr);
+                return c_expr_contains_rank1_matmul_scalarizable(binop->m_left)
+                    || c_expr_contains_rank1_matmul_scalarizable(binop->m_right);
+            }
+            case ASR::exprType::RealUnaryMinus: {
+                return c_expr_contains_rank1_matmul_scalarizable(
+                    ASR::down_cast<ASR::RealUnaryMinus_t>(expr)->m_arg);
+            }
+            case ASR::exprType::IntegerUnaryMinus: {
+                return c_expr_contains_rank1_matmul_scalarizable(
+                    ASR::down_cast<ASR::IntegerUnaryMinus_t>(expr)->m_arg);
+            }
+            case ASR::exprType::RealSqrt: {
+                return c_expr_contains_rank1_matmul_scalarizable(
+                    ASR::down_cast<ASR::RealSqrt_t>(expr)->m_arg);
+            }
+            case ASR::exprType::IntrinsicElementalFunction: {
+                ASR::IntrinsicElementalFunction_t *ief =
+                    ASR::down_cast<ASR::IntrinsicElementalFunction_t>(expr);
+                for (size_t i = 0; i < ief->n_args; i++) {
+                    if (c_expr_contains_rank1_matmul_scalarizable(ief->m_args[i])) {
+                        return true;
+                    }
+                }
+                return false;
+            }
+            default: {
+                return false;
+            }
+        }
+    }
+
     bool is_c_scalarizable_array_constructor(const ASR::ArrayConstructor_t &x) {
         if (!is_c_scalarizable_element_type(x.m_type)) {
             return false;
@@ -7374,6 +7484,10 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             case ASR::exprType::ArrayReshape: {
                 return is_c_rank2_scalarizable_reshape(
                     *ASR::down_cast<ASR::ArrayReshape_t>(expr));
+            }
+            case ASR::exprType::IntrinsicArrayFunction: {
+                return is_c_rank1_matmul_scalarizable_expr(
+                    *ASR::down_cast<ASR::IntrinsicArrayFunction_t>(expr));
             }
             case ASR::exprType::RealSqrt: {
                 return is_c_scalarizable_array_expr(
@@ -8668,6 +8782,198 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         }
     }
 
+    bool get_c_rank1_matmul_scalar_value_expr(
+            const ASR::IntrinsicArrayFunction_t &x,
+            const std::string &index_name, std::string &setup,
+            std::string &loop_setup, std::string &out) {
+        if (!is_c_rank1_matmul_scalarizable_expr(x)) {
+            return false;
+        }
+        ASR::expr_t *left = x.m_args[0];
+        ASR::expr_t *right = x.m_args[1];
+        ASR::ttype_t *left_type = ASRUtils::type_get_past_allocatable_pointer(
+            ASRUtils::expr_type(left));
+        ASR::ttype_t *right_type = ASRUtils::type_get_past_allocatable_pointer(
+            ASRUtils::expr_type(right));
+        int left_rank = ASRUtils::extract_n_dims_from_ttype(left_type);
+        int right_rank = ASRUtils::extract_n_dims_from_ttype(right_type);
+
+        ASR::ttype_t *result_type = ASRUtils::type_get_past_allocatable_pointer(
+            x.m_type);
+        ASR::ttype_t *result_element_type = result_type != nullptr
+            ? ASRUtils::type_get_past_array(result_type) : nullptr;
+        if (result_element_type == nullptr) {
+            return false;
+        }
+        std::string result_c_type =
+            CUtils::get_c_type_from_ttype_t(result_element_type);
+        if (result_c_type.empty()) {
+            return false;
+        }
+
+        std::string acc_name = get_unique_local_name("__lfortran_matmul_acc");
+        std::string inner_index = get_unique_local_name("__lfortran_matmul_k");
+        std::string indent(indentation_level * indentation_spaces, ' ');
+        std::string inner_indent((indentation_level + 1) * indentation_spaces, ' ');
+        loop_setup += indent + result_c_type + " " + acc_name + " = ("
+            + result_c_type + ")0;\n";
+
+        if (left_rank == 2 && right_rank == 1) {
+            std::string matrix_data, matrix_offset, matrix_stride1, matrix_stride2;
+            std::string matrix_length1, matrix_length2;
+            std::string vector_data, vector_offset, vector_stride, vector_length;
+            if (!get_c_rank2_full_array_access(left, "__lfortran_matmul_matrix",
+                    setup, matrix_data, matrix_offset, matrix_stride1,
+                    matrix_stride2, matrix_length1, matrix_length2)
+                    || !get_c_rank1_array_access(right, "__lfortran_matmul_vector",
+                        setup, vector_data, vector_offset, vector_stride,
+                        vector_length)) {
+                return false;
+            }
+            loop_setup += indent + "for (int64_t " + inner_index + " = 0; "
+                + inner_index + " < " + vector_length + "; " + inner_index
+                + "++) {\n";
+            loop_setup += inner_indent + acc_name + " += "
+                + matrix_data + "[" + matrix_offset + " + " + index_name
+                + " * " + matrix_stride1 + " + " + inner_index + " * "
+                + matrix_stride2 + "] * " + vector_data + "[" + vector_offset
+                + " + " + inner_index + " * " + vector_stride + "];\n";
+            loop_setup += indent + "}\n";
+            out = acc_name;
+            return true;
+        }
+
+        if (left_rank == 1 && right_rank == 2) {
+            std::string vector_data, vector_offset, vector_stride, vector_length;
+            std::string matrix_data, matrix_offset, matrix_stride1, matrix_stride2;
+            std::string matrix_length1, matrix_length2;
+            if (!get_c_rank1_array_access(left, "__lfortran_matmul_vector",
+                    setup, vector_data, vector_offset, vector_stride,
+                    vector_length)
+                    || !get_c_rank2_full_array_access(right,
+                        "__lfortran_matmul_matrix", setup, matrix_data,
+                        matrix_offset, matrix_stride1, matrix_stride2,
+                        matrix_length1, matrix_length2)) {
+                return false;
+            }
+            loop_setup += indent + "for (int64_t " + inner_index + " = 0; "
+                + inner_index + " < " + vector_length + "; " + inner_index
+                + "++) {\n";
+            loop_setup += inner_indent + acc_name + " += "
+                + vector_data + "[" + vector_offset + " + " + inner_index
+                + " * " + vector_stride + "] * " + matrix_data + "["
+                + matrix_offset + " + " + inner_index + " * "
+                + matrix_stride1 + " + " + index_name + " * "
+                + matrix_stride2 + "];\n";
+            loop_setup += indent + "}\n";
+            out = acc_name;
+            return true;
+        }
+
+        return false;
+    }
+
+    bool get_c_scalarized_array_expr_with_rank1_matmul(
+            ASR::expr_t *expr, const std::string &index_name,
+            std::string &setup, std::string &loop_setup, std::string &out,
+            bool need_length=true) {
+        expr = unwrap_c_array_expr(expr);
+        if (expr == nullptr) {
+            return false;
+        }
+        if (!c_expr_contains_rank1_matmul_scalarizable(expr)) {
+            return get_c_scalarized_array_expr(
+                expr, index_name, setup, out, need_length);
+        }
+        switch (expr->type) {
+            case ASR::exprType::IntrinsicArrayFunction: {
+                return get_c_rank1_matmul_scalar_value_expr(
+                    *ASR::down_cast<ASR::IntrinsicArrayFunction_t>(expr),
+                    index_name, setup, loop_setup, out);
+            }
+            case ASR::exprType::ArrayBroadcast: {
+                return get_c_scalarized_array_expr_with_rank1_matmul(
+                    ASR::down_cast<ASR::ArrayBroadcast_t>(expr)->m_array,
+                    index_name, setup, loop_setup, out, need_length);
+            }
+            case ASR::exprType::RealBinOp: {
+                ASR::RealBinOp_t *binop = ASR::down_cast<ASR::RealBinOp_t>(expr);
+                if (binop->m_op == ASR::binopType::Pow) {
+                    return false;
+                }
+                std::string left, right;
+                if (!get_c_scalarized_array_expr_with_rank1_matmul(
+                        binop->m_left, index_name, setup, loop_setup, left,
+                        need_length)
+                        || !get_c_scalarized_array_expr_with_rank1_matmul(
+                            binop->m_right, index_name, setup, loop_setup,
+                            right, need_length)) {
+                    return false;
+                }
+                out = "(" + left + c_binop_to_str(binop->m_op) + right + ")";
+                return true;
+            }
+            case ASR::exprType::IntegerBinOp: {
+                ASR::IntegerBinOp_t *binop = ASR::down_cast<ASR::IntegerBinOp_t>(expr);
+                if (binop->m_op == ASR::binopType::Pow) {
+                    return false;
+                }
+                std::string left, right;
+                if (!get_c_scalarized_array_expr_with_rank1_matmul(
+                        binop->m_left, index_name, setup, loop_setup, left,
+                        need_length)
+                        || !get_c_scalarized_array_expr_with_rank1_matmul(
+                            binop->m_right, index_name, setup, loop_setup,
+                            right, need_length)) {
+                    return false;
+                }
+                out = "(" + left + c_binop_to_str(binop->m_op) + right + ")";
+                return true;
+            }
+            case ASR::exprType::UnsignedIntegerBinOp: {
+                ASR::UnsignedIntegerBinOp_t *binop =
+                    ASR::down_cast<ASR::UnsignedIntegerBinOp_t>(expr);
+                if (binop->m_op == ASR::binopType::Pow) {
+                    return false;
+                }
+                std::string left, right;
+                if (!get_c_scalarized_array_expr_with_rank1_matmul(
+                        binop->m_left, index_name, setup, loop_setup, left,
+                        need_length)
+                        || !get_c_scalarized_array_expr_with_rank1_matmul(
+                            binop->m_right, index_name, setup, loop_setup,
+                            right, need_length)) {
+                    return false;
+                }
+                out = "(" + left + c_binop_to_str(binop->m_op) + right + ")";
+                return true;
+            }
+            case ASR::exprType::RealUnaryMinus: {
+                std::string arg;
+                if (!get_c_scalarized_array_expr_with_rank1_matmul(
+                        ASR::down_cast<ASR::RealUnaryMinus_t>(expr)->m_arg,
+                        index_name, setup, loop_setup, arg, need_length)) {
+                    return false;
+                }
+                out = "-(" + arg + ")";
+                return true;
+            }
+            case ASR::exprType::IntegerUnaryMinus: {
+                std::string arg;
+                if (!get_c_scalarized_array_expr_with_rank1_matmul(
+                        ASR::down_cast<ASR::IntegerUnaryMinus_t>(expr)->m_arg,
+                        index_name, setup, loop_setup, arg, need_length)) {
+                    return false;
+                }
+                out = "-(" + arg + ")";
+                return true;
+            }
+            default: {
+                return false;
+            }
+        }
+    }
+
     ASR::symbol_t *get_c_array_assignment_root_symbol(ASR::expr_t *expr) {
         expr = unwrap_c_lvalue_expr(expr);
         while (expr != nullptr) {
@@ -9372,6 +9678,124 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         }
     }
 
+    bool c_rank1_ref_same_target(ASR::expr_t *target, ASR::expr_t *expr) {
+        target = unwrap_c_array_expr(target);
+        expr = unwrap_c_array_expr(expr);
+        if (target == nullptr || expr == nullptr
+                || !is_c_rank1_unit_array_expr(target)
+                || !is_c_rank1_unit_array_expr(expr)) {
+            return false;
+        }
+        ASR::symbol_t *target_root = get_c_array_assignment_root_symbol(target);
+        ASR::symbol_t *expr_root = get_c_array_assignment_root_symbol(expr);
+        return target_root != nullptr && target_root == expr_root;
+    }
+
+    bool is_c_rank1_nonself_update_expr(ASR::expr_t *expr) {
+        expr = unwrap_c_array_expr(expr);
+        if (expr == nullptr) {
+            return false;
+        }
+        ASR::ttype_t *type = ASRUtils::expr_type(expr);
+        if (!ASRUtils::is_array(type) && !ASRUtils::is_array_t(type)) {
+            return true;
+        }
+        switch (expr->type) {
+            case ASR::exprType::Var:
+            case ASR::exprType::StructInstanceMember:
+            case ASR::exprType::ArraySection:
+            case ASR::exprType::ArrayItem: {
+                return is_c_rank1_scalarizable_array_expr(expr);
+            }
+            case ASR::exprType::IntrinsicArrayFunction: {
+                return is_c_rank1_matmul_scalarizable_expr(
+                    *ASR::down_cast<ASR::IntrinsicArrayFunction_t>(expr));
+            }
+            case ASR::exprType::ArrayBroadcast: {
+                return is_c_rank1_nonself_update_expr(
+                    ASR::down_cast<ASR::ArrayBroadcast_t>(expr)->m_array);
+            }
+            case ASR::exprType::RealBinOp: {
+                ASR::RealBinOp_t *binop = ASR::down_cast<ASR::RealBinOp_t>(expr);
+                return binop->m_op != ASR::binopType::Pow
+                    && is_c_rank1_nonself_update_expr(binop->m_left)
+                    && is_c_rank1_nonself_update_expr(binop->m_right);
+            }
+            case ASR::exprType::IntegerBinOp: {
+                ASR::IntegerBinOp_t *binop = ASR::down_cast<ASR::IntegerBinOp_t>(expr);
+                return binop->m_op != ASR::binopType::Pow
+                    && is_c_rank1_nonself_update_expr(binop->m_left)
+                    && is_c_rank1_nonself_update_expr(binop->m_right);
+            }
+            case ASR::exprType::UnsignedIntegerBinOp: {
+                ASR::UnsignedIntegerBinOp_t *binop =
+                    ASR::down_cast<ASR::UnsignedIntegerBinOp_t>(expr);
+                return binop->m_op != ASR::binopType::Pow
+                    && is_c_rank1_nonself_update_expr(binop->m_left)
+                    && is_c_rank1_nonself_update_expr(binop->m_right);
+            }
+            case ASR::exprType::RealUnaryMinus: {
+                return is_c_rank1_nonself_update_expr(
+                    ASR::down_cast<ASR::RealUnaryMinus_t>(expr)->m_arg);
+            }
+            case ASR::exprType::IntegerUnaryMinus: {
+                return is_c_rank1_nonself_update_expr(
+                    ASR::down_cast<ASR::IntegerUnaryMinus_t>(expr)->m_arg);
+            }
+            default: {
+                return false;
+            }
+        }
+    }
+
+    template <typename BinOp>
+    bool c_rank1_binop_has_one_self_ref(const BinOp *binop,
+            ASR::expr_t *target_expr, ASR::symbol_t *target_root) {
+        bool left_is_self = c_rank1_ref_same_target(target_expr, binop->m_left);
+        bool right_is_self = c_rank1_ref_same_target(target_expr, binop->m_right);
+        if (left_is_self == right_is_self) {
+            return false;
+        }
+        ASR::expr_t *other = left_is_self ? binop->m_right : binop->m_left;
+        return is_c_rank1_nonself_update_expr(other)
+            && !c_expr_references_root_symbol(other, target_root);
+    }
+
+    bool is_c_rank1_self_update_expr(ASR::expr_t *target_expr,
+            ASR::expr_t *value_expr) {
+        target_expr = unwrap_c_array_expr(target_expr);
+        value_expr = unwrap_c_array_expr(value_expr);
+        if (target_expr == nullptr || value_expr == nullptr
+                || !is_c_rank1_scalarizable_array_expr(target_expr)
+                || !is_c_scalarizable_array_expr(value_expr)) {
+            return false;
+        }
+        ASR::symbol_t *target_root = get_c_array_assignment_root_symbol(target_expr);
+        if (target_root == nullptr) {
+            return false;
+        }
+        switch (value_expr->type) {
+            case ASR::exprType::RealBinOp: {
+                return c_rank1_binop_has_one_self_ref(
+                    ASR::down_cast<ASR::RealBinOp_t>(value_expr),
+                    target_expr, target_root);
+            }
+            case ASR::exprType::IntegerBinOp: {
+                return c_rank1_binop_has_one_self_ref(
+                    ASR::down_cast<ASR::IntegerBinOp_t>(value_expr),
+                    target_expr, target_root);
+            }
+            case ASR::exprType::UnsignedIntegerBinOp: {
+                return c_rank1_binop_has_one_self_ref(
+                    ASR::down_cast<ASR::UnsignedIntegerBinOp_t>(value_expr),
+                    target_expr, target_root);
+            }
+            default: {
+                return false;
+            }
+        }
+    }
+
     bool get_c_rank2_full_array_access(ASR::expr_t *expr, const std::string &prefix,
             std::string &setup, std::string &data_name, std::string &offset_name,
             std::string &stride1_name, std::string &stride2_name,
@@ -9724,13 +10148,18 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             base_expr = plan.target_section->m_v;
         }
         plan.target_base_expr = base_expr;
+        bool value_references_target_root = c_expr_references_root_symbol(
+            x.m_value, get_c_array_assignment_root_symbol(unwrapped_target_expr));
         if (is_c_scalarizable_array_expr(x.m_value)
                 && !is_c_compiler_created_array_temp_expr(unwrapped_target_expr)
                 && !is_c_whole_allocatable_or_pointer_array_expr(unwrapped_target_expr)
                 && is_c_rank1_scalarizable_array_expr(unwrapped_target_expr)
-                && !c_expr_references_root_symbol(x.m_value,
-                    get_c_array_assignment_root_symbol(unwrapped_target_expr))) {
-            plan.kind = CArrayExprLoweringKind::ScalarizedLoop;
+                && (!value_references_target_root
+                    || is_c_rank1_self_update_expr(
+                        unwrapped_target_expr, x.m_value))) {
+            plan.kind = c_expr_contains_rank1_matmul_scalarizable(x.m_value)
+                ? CArrayExprLoweringKind::Rank1MatmulScalarizedLoop
+                : CArrayExprLoweringKind::ScalarizedLoop;
             plan.value_expr = x.m_value;
             return plan;
         }
@@ -9913,6 +10342,57 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         indentation_level++;
         std::string loop_indent(indentation_level * indentation_spaces, ' ');
         src += loop_indent + target_expr + " = " + value_expr + ";\n";
+        indentation_level--;
+        src += inner_indent + "}\n";
+        indentation_level--;
+        src += indent + "}\n";
+        return true;
+    }
+
+    bool try_emit_c_rank1_matmul_scalarized_assignment(
+            const CArrayExprLoweringPlan &plan) {
+        if (plan.kind != CArrayExprLoweringKind::Rank1MatmulScalarizedLoop
+                || plan.target_expr == nullptr
+                || plan.value_expr == nullptr) {
+            return false;
+        }
+        std::string setup;
+        std::string target_data, target_offset, target_stride, target_length;
+        if (!get_c_rank1_array_access(plan.target_expr, "__lfortran_lhs",
+                setup, target_data, target_offset, target_stride,
+                target_length)) {
+            return false;
+        }
+        std::string index_name = get_unique_local_name("__lfortran_i");
+        std::string loop_setup;
+        std::string value_expr;
+        int saved_indentation_level = indentation_level;
+        indentation_level += 2;
+        bool value_ok = get_c_scalarized_array_expr_with_rank1_matmul(
+            plan.value_expr, index_name, setup, loop_setup, value_expr);
+        indentation_level = saved_indentation_level;
+        if (!value_ok) {
+            return false;
+        }
+
+        std::string indent(indentation_level * indentation_spaces, ' ');
+        src = check_tmp_buffer();
+        src += indent + "{\n";
+        indentation_level++;
+        std::string inner_indent(indentation_level * indentation_spaces, ' ');
+        src += setup;
+        std::string target_index =
+            get_unique_local_name("__lfortran_lhs_index");
+        src += inner_indent + "for (int64_t " + index_name + " = 0, "
+            + target_index + " = " + target_offset + "; "
+            + index_name + " < " + target_length + "; "
+            + index_name + "++, " + target_index + " += "
+            + target_stride + ") {\n";
+        indentation_level++;
+        std::string loop_indent(indentation_level * indentation_spaces, ' ');
+        src += loop_setup;
+        src += loop_indent + target_data + "[" + target_index + "] = "
+            + value_expr + ";\n";
         indentation_level--;
         src += inner_indent + "}\n";
         indentation_level--;
@@ -11051,6 +11531,9 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             return true;
         }
         if (try_emit_c_rank2_full_self_update_assignment(plan)) {
+            return true;
+        }
+        if (try_emit_c_rank1_matmul_scalarized_assignment(plan)) {
             return true;
         }
         if (try_emit_c_scalarized_array_expr_assignment(plan)) {

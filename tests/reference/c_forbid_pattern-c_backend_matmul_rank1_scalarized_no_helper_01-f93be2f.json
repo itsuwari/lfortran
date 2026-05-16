@@ -1,0 +1,13 @@
+{
+    "basename": "c_forbid_pattern-c_backend_matmul_rank1_scalarized_no_helper_01-f93be2f",
+    "cmd": "lfortran --no-color --show-c {infile} | (! grep -F -q \"lcompilers_matmul\") #",
+    "infile": "tests/../integration_tests/c_backend_matmul_rank1_scalarized_no_helper_01.f90",
+    "infile_hash": "41cfadaed8aa6001c2a38e5fdbf40350eb33962cbcdab2c83a4ab629",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}
