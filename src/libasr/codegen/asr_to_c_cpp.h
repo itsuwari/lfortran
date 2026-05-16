@@ -5306,6 +5306,9 @@ R"(#include <stdio.h>
                 if (is_c_inline_scalar_merge_helper_function(s)) {
                     continue;
                 }
+                if (is_c_inline_rounding_helper_function(s)) {
+                    continue;
+                }
                 t = declare_all_functions(*s->m_symtab);
                 bool has_typevar = false;
                 std::string decl = get_function_declaration(*s, has_typevar, false, false);
@@ -5443,6 +5446,11 @@ R"(#include <stdio.h>
             return;
         }
         if (is_c_inline_scalar_merge_helper_function(&x)) {
+            src = "";
+            current_scope = current_scope_copy;
+            return;
+        }
+        if (is_c_inline_rounding_helper_function(&x)) {
             src = "";
             current_scope = current_scope_copy;
             return;
@@ -14108,6 +14116,115 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         return true;
     }
 
+    enum class CInlineRoundingKind {
+        None,
+        Aint,
+        Anint,
+        Nint
+    };
+
+    CInlineRoundingKind get_c_inline_rounding_kind(
+            const std::string &name) const {
+        if (name.find("_lcompilers_aint_") != std::string::npos) {
+            return CInlineRoundingKind::Aint;
+        }
+        if (name.find("_lcompilers_anint_") != std::string::npos) {
+            return CInlineRoundingKind::Anint;
+        }
+        if (name.find("_lcompilers_nint_") != std::string::npos) {
+            return CInlineRoundingKind::Nint;
+        }
+        return CInlineRoundingKind::None;
+    }
+
+    bool is_c_inline_rounding_helper_function(const ASR::Function_t *f) const {
+        if (!is_c || f == nullptr || f->n_args != 1
+                || get_c_inline_rounding_kind(std::string(f->m_name))
+                    == CInlineRoundingKind::None) {
+            return false;
+        }
+        ASR::FunctionType_t *f_type = ASRUtils::get_FunctionType(f);
+        if (f_type == nullptr || f_type->m_return_var_type == nullptr) {
+            return false;
+        }
+        ASR::ttype_t *return_type = ASRUtils::type_get_past_allocatable_pointer(
+            f_type->m_return_var_type);
+        CInlineRoundingKind kind = get_c_inline_rounding_kind(
+            std::string(f->m_name));
+        return return_type != nullptr
+            && !ASRUtils::is_array(return_type)
+            && ((kind == CInlineRoundingKind::Nint
+                    && ASRUtils::is_integer(*return_type))
+                || ((kind == CInlineRoundingKind::Aint
+                        || kind == CInlineRoundingKind::Anint)
+                    && ASRUtils::is_real(*return_type)));
+    }
+
+    std::string get_c_aint_expr(const std::string &result_c_type,
+            const std::string &value) const {
+        return "(" + result_c_type + ")((int64_t)(" + value + "))";
+    }
+
+    std::string get_c_anint_int_expr(const std::string &arg_c_type,
+            const std::string &value) const {
+        std::string zero = "((" + arg_c_type + ")0.0)";
+        std::string half = "((" + arg_c_type + ")0.5)";
+        return "(" + value + " > " + zero
+            + " ? (int64_t)(" + value + " + " + half + ")"
+            + " : (int64_t)(" + value + " - " + half + "))";
+    }
+
+    bool try_emit_c_inline_rounding_function_call(
+            const ASR::FunctionCall_t &x, ASR::Function_t *f,
+            const std::string &fn_name, std::string &out) {
+        if (!is_c || f == nullptr || x.n_args != 1
+                || x.m_args[0].m_value == nullptr) {
+            return false;
+        }
+        CInlineRoundingKind kind = get_c_inline_rounding_kind(fn_name);
+        if (kind == CInlineRoundingKind::None
+                || !is_c_inline_rounding_helper_function(f)) {
+            return false;
+        }
+
+        ASR::ttype_t *result_type = ASRUtils::type_get_past_allocatable_pointer(
+            x.m_type);
+        ASR::ttype_t *arg_type = ASRUtils::type_get_past_allocatable_pointer(
+            ASRUtils::expr_type(x.m_args[0].m_value));
+        if (result_type == nullptr || arg_type == nullptr
+                || ASRUtils::is_array(result_type)
+                || ASRUtils::is_array(arg_type)
+                || !ASRUtils::is_real(*arg_type)
+                || (kind == CInlineRoundingKind::Nint
+                    && !ASRUtils::is_integer(*result_type))
+                || (kind != CInlineRoundingKind::Nint
+                    && !ASRUtils::is_real(*result_type))) {
+            return false;
+        }
+
+        self().visit_expr(*x.m_args[0].m_value);
+        std::string value = src;
+        std::string setup = drain_tmp_buffer();
+        setup += extract_stmt_setup_from_expr(value);
+        std::string value_name = get_unique_local_name("__lfortran_round_arg");
+        std::string arg_c_type = CUtils::get_c_type_from_ttype_t(arg_type);
+        setup += std::string(indentation_level * indentation_spaces, ' ')
+            + arg_c_type + " " + value_name + " = " + value + ";\n";
+        tmp_buffer_src.push_back(setup);
+
+        std::string result_c_type = CUtils::get_c_type_from_ttype_t(result_type);
+        if (kind == CInlineRoundingKind::Aint) {
+            out = get_c_aint_expr(result_c_type, value_name);
+        } else if (kind == CInlineRoundingKind::Anint) {
+            out = "(" + result_c_type + ")"
+                + get_c_anint_int_expr(arg_c_type, value_name);
+        } else {
+            out = "(" + result_c_type + ")"
+                + get_c_anint_int_expr(arg_c_type, value_name);
+        }
+        return true;
+    }
+
     bool can_emit_c_inline_spread_subroutine_call(const ASR::SubroutineCall_t &x,
             ASR::Function_t *f, const std::string &sym_name) {
         if (!is_c_spread_callee(f, sym_name)
@@ -14614,6 +14731,12 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 return;
             }
             if (try_emit_c_inline_scalar_merge_function_call(
+                    x, fn, fn_name, inline_call)) {
+                src = check_tmp_buffer() + inline_call;
+                last_expr_precedence = 2;
+                return;
+            }
+            if (try_emit_c_inline_rounding_function_call(
                     x, fn, fn_name, inline_call)) {
                 src = check_tmp_buffer() + inline_call;
                 last_expr_precedence = 2;
