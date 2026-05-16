@@ -1,0 +1,13 @@
+{
+    "basename": "c_forbid_pattern-c_backend_short_subroutine_temp_name_01-d34df61",
+    "cmd": "lfortran --no-color --show-c --backend=c --separate-compilation -O2 {infile} | (! grep -F -q \"__libasr_created__subroutine_call_\") #",
+    "infile": "tests/c_backend_short_subroutine_temp_name_01.f90",
+    "infile_hash": "505789d6f1ee2434ee8fcf9b788c1fe61ecb2d7821527e68fac1f81c",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

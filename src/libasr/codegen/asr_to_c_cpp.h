@@ -1531,6 +1531,7 @@ public:
     bool is_c_compiler_generated_temporary_name(const std::string &name) const {
         return name.rfind("__libasr_created", 0) == 0
             || name.rfind("__libasr__created", 0) == 0
+            || name.rfind("__lfsc_", 0) == 0
             || name.find("__libasr_created") != std::string::npos
             || name.find("__libasr__created") != std::string::npos;
     }
@@ -6108,7 +6109,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             || CUtils::is_symbol_owner<ASR::Union_t>(owner)
             || CUtils::is_symbol_owner<ASR::Enum_t>(owner);
         if (use_local_name) {
-            return CUtils::sanitize_c_identifier(sv->m_name);
+            return CUtils::get_c_variable_name(*sv);
         }
         return CUtils::get_c_symbol_name(reinterpret_cast<ASR::symbol_t*>(sv));
     }

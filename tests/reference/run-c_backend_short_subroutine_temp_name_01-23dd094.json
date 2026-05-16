@@ -1,0 +1,13 @@
+{
+    "basename": "run-c_backend_short_subroutine_temp_name_01-23dd094",
+    "cmd": "lfortran --no-color {infile}",
+    "infile": "tests/c_backend_short_subroutine_temp_name_01.f90",
+    "infile_hash": "505789d6f1ee2434ee8fcf9b788c1fe61ecb2d7821527e68fac1f81c",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

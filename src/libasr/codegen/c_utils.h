@@ -316,7 +316,12 @@ namespace LCompilers {
                 || is_symbol_owner<ASR::Struct_t>(owner)
                 || is_symbol_owner<ASR::Union_t>(owner)
                 || is_symbol_owner<ASR::Enum_t>(owner)) {
-            return sanitize_c_identifier(v.m_name);
+            std::string name = sanitize_c_identifier(v.m_name);
+            const std::string subroutine_temp = "__libasr_created__subroutine_call_";
+            if (startswith(name, subroutine_temp)) {
+                return "__lfsc_" + name.substr(subroutine_temp.size());
+            }
+            return name;
         }
         return get_c_symbol_name(v.m_parent_symtab->get_symbol(v.m_name));
     }

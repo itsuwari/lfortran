@@ -138,10 +138,10 @@ int main(int argc, char* argv[])
     __libasr_created__function_call__lcompilers_Sum_8_2_0_idx4_real_______0_value.is_allocated = false;
     struct r64_____* __libasr_created__function_call__lcompilers_Sum_8_2_0_idx4_real_______0 = &__libasr_created__function_call__lcompilers_Sum_8_2_0_idx4_real_______0_value;
     double __libasr_created__intrinsic_array_function_Sum;
-    struct r64_____ __libasr_created__subroutine_call__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3_value;
-    __libasr_created__subroutine_call__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3_value.data = NULL;
-    __libasr_created__subroutine_call__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3_value.is_allocated = false;
-    struct r64_____* __libasr_created__subroutine_call__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3 = &__libasr_created__subroutine_call__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3_value;
+    struct r64_____ __lfsc__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3_value;
+    __lfsc__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3_value.data = NULL;
+    __lfsc__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3_value.is_allocated = false;
+    struct r64_____* __lfsc__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3 = &__lfsc__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3_value;
     struct r64_____ a_value;
     struct r64_____* a = &a_value;
     double *a_data = NULL;
@@ -217,14 +217,14 @@ int main(int argc, char* argv[])
     }
     a->is_allocated = true;
     {
-        __libasr_created__subroutine_call__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3 = ((struct r64_____*)(a));
+        __lfsc__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3 = ((struct r64_____*)(a));
     }
-    double *__lfortran_spread_result_data = __libasr_created__subroutine_call__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3->data;
-    int64_t __lfortran_spread_result_offset = __libasr_created__subroutine_call__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3->offset;
-    int64_t __lfortran_spread_result_stride1 = __libasr_created__subroutine_call__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3->dims[0].stride;
-    int64_t __lfortran_spread_result_stride2 = __libasr_created__subroutine_call__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3->dims[1].stride;
-    int64_t __lfortran_spread_result_length1 = __libasr_created__subroutine_call__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3->dims[0].length;
-    int64_t __lfortran_spread_result_length2 = __libasr_created__subroutine_call__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3->dims[1].length;
+    double *__lfortran_spread_result_data = __lfsc__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3->data;
+    int64_t __lfortran_spread_result_offset = __lfsc__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3->offset;
+    int64_t __lfortran_spread_result_stride1 = __lfsc__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3->dims[0].stride;
+    int64_t __lfortran_spread_result_stride2 = __lfsc__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3->dims[1].stride;
+    int64_t __lfortran_spread_result_length1 = __lfsc__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3->dims[0].length;
+    int64_t __lfortran_spread_result_length2 = __lfsc__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3->dims[1].length;
     {
         for (int64_t __lfortran_j = 0, __lfortran_spread_result_row_index = __lfortran_spread_result_offset; __lfortran_j < __lfortran_spread_result_length2; __lfortran_j++, __lfortran_spread_result_row_index += __lfortran_spread_result_stride2) {
             int64_t __lfortran_spread_result_index = __lfortran_spread_result_row_index;
@@ -235,11 +235,11 @@ int main(int argc, char* argv[])
         }
     }
     {
-        __libasr_created__subroutine_call__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3 = &__libasr_created__subroutine_call__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3_value;
-        if ((__libasr_created__subroutine_call__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3) != NULL) {
-            (__libasr_created__subroutine_call__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3)->data = NULL;
-            (__libasr_created__subroutine_call__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3)->offset = 0;
-            (__libasr_created__subroutine_call__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3)->is_allocated = false;
+        __lfsc__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3 = &__lfsc__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3_value;
+        if ((__lfsc__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3) != NULL) {
+            (__lfsc__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3)->data = NULL;
+            (__lfsc__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3)->offset = 0;
+            (__lfsc__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3)->is_allocated = false;
         }
     }
     if (((int32_t)a->dims[1-1].length) != 1) {
