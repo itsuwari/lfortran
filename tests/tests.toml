@@ -5576,6 +5576,8 @@ options = "--backend=c --separate-compilation"
 [[test]]
 filename = "../integration_tests/formatted_read_08.f90"
 c = true
+c_forbid_pattern = true
+c_forbid_pattern_value = "__lfortran__lcompilers_int_i32"
 
 [[test]]
 filename = "c_backend_array_section_temp_copy_01.f90"
@@ -5828,6 +5830,8 @@ c_forbid_pattern_value = "lfortran_intrinsic_iso_fortran_env__integer_kinds"
 [[test]]
 filename = "c_backend_automatic_array_cleanup_01.f90"
 c = true
+c_forbid_pattern = true
+c_forbid_pattern_value = "__lfortran__lcompilers_real_i32"
 
 [[test]]
 filename = "c_backend_local_allocatable_cleanup_01.f90"

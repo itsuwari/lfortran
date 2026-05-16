@@ -60,10 +60,6 @@ struct dimension_descriptor
 #endif
 
 int32_t __lfortran_lfortran_intrinsic_custom__get_valid_newunit();
-int8_t __lfortran__lcompilers_int_i32(int32_t a);
-int16_t __lfortran__lcompilers_int_i321(int32_t a);
-int32_t __lfortran__lcompilers_int_i322(int32_t a);
-int64_t __lfortran__lcompilers_int_i323(int32_t a);
 void __lfortran_lfortran_intrinsic_custom__newunit_int_4(int32_t *unit);
 
 
@@ -99,50 +95,22 @@ void __lfortran_lfortran_intrinsic_custom__newunit_int_1(int8_t *unit)
         fprintf(stderr, "ERROR STOP");
         exit(1);
     }
-    (*unit) = __lfortran__lcompilers_int_i32(valid_unit);
+    (*unit) = (int8_t)(valid_unit);
 }
 
 void __lfortran_lfortran_intrinsic_custom__newunit_int_2(int16_t *unit)
 {
-    (*unit) = __lfortran__lcompilers_int_i321(__lfortran_lfortran_intrinsic_custom__get_valid_newunit());
+    (*unit) = (int16_t)(__lfortran_lfortran_intrinsic_custom__get_valid_newunit());
 }
 
 void __lfortran_lfortran_intrinsic_custom__newunit_int_4(int32_t *unit)
 {
-    (*unit) = __lfortran__lcompilers_int_i322(__lfortran_lfortran_intrinsic_custom__get_valid_newunit());
+    (*unit) = (int32_t)(__lfortran_lfortran_intrinsic_custom__get_valid_newunit());
 }
 
 void __lfortran_lfortran_intrinsic_custom__newunit_int_8(int64_t *unit)
 {
-    (*unit) = __lfortran__lcompilers_int_i323(__lfortran_lfortran_intrinsic_custom__get_valid_newunit());
-}
-
-int8_t __lfortran__lcompilers_int_i32(int32_t a)
-{
-    int8_t _lcompilers_int_i32;
-    _lcompilers_int_i32 = a;
-    return _lcompilers_int_i32;
-}
-
-int16_t __lfortran__lcompilers_int_i321(int32_t a)
-{
-    int16_t _lcompilers_int_i321;
-    _lcompilers_int_i321 = a;
-    return _lcompilers_int_i321;
-}
-
-int32_t __lfortran__lcompilers_int_i322(int32_t a)
-{
-    int32_t _lcompilers_int_i322;
-    _lcompilers_int_i322 = a;
-    return _lcompilers_int_i322;
-}
-
-int64_t __lfortran__lcompilers_int_i323(int32_t a)
-{
-    int64_t _lcompilers_int_i323;
-    _lcompilers_int_i323 = a;
-    return _lcompilers_int_i323;
+    (*unit) = (int64_t)(__lfortran_lfortran_intrinsic_custom__get_valid_newunit());
 }
 
 int main(int argc, char* argv[])

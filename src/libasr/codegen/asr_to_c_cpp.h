@@ -5300,6 +5300,9 @@ R"(#include <stdio.h>
                 if (is_procedure_dummy_function_argument(*s)) {
                     continue;
                 }
+                if (is_c_trivial_numeric_cast_helper_function(s)) {
+                    continue;
+                }
                 t = declare_all_functions(*s->m_symtab);
                 bool has_typevar = false;
                 std::string decl = get_function_declaration(*s, has_typevar, false, false);
@@ -5427,6 +5430,11 @@ R"(#include <stdio.h>
         bool has_typevar = false;
         ASR::FunctionType_t *f_type = ASRUtils::get_FunctionType(x);
         if (is_c && std::string(x.m_name).find("_lcompilers_stringconcat") != std::string::npos) {
+            src = "";
+            current_scope = current_scope_copy;
+            return;
+        }
+        if (is_c_trivial_numeric_cast_helper_function(&x)) {
             src = "";
             current_scope = current_scope_copy;
             return;
@@ -13930,6 +13938,83 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             && !is_required_c_spread_helper_function(x);
     }
 
+    bool is_c_trivial_numeric_cast_helper_name(const std::string &name) const {
+        return name.find("_lcompilers_int_") != std::string::npos
+            || name.find("_lcompilers_real_") != std::string::npos;
+    }
+
+    bool is_c_trivial_numeric_cast_result_type(ASR::ttype_t *type) const {
+        type = ASRUtils::type_get_past_allocatable_pointer(type);
+        return type != nullptr
+            && (ASRUtils::is_integer(*type)
+                || ASRUtils::is_unsigned_integer(*type)
+                || ASRUtils::is_real(*type));
+    }
+
+    bool is_c_trivial_numeric_cast_arg_type(ASR::ttype_t *type) const {
+        type = ASRUtils::type_get_past_allocatable_pointer(type);
+        return type != nullptr
+            && (ASRUtils::is_integer(*type)
+                || ASRUtils::is_unsigned_integer(*type)
+                || ASRUtils::is_real(*type)
+                || ASRUtils::is_complex(*type));
+    }
+
+    bool is_c_trivial_numeric_cast_helper_function(
+            const ASR::Function_t *f) const {
+        if (!is_c || f == nullptr || f->n_args != 1
+                || !is_c_trivial_numeric_cast_helper_name(std::string(f->m_name))) {
+            return false;
+        }
+        ASR::FunctionType_t *f_type = ASRUtils::get_FunctionType(f);
+        return f_type != nullptr
+            && is_c_trivial_numeric_cast_result_type(f_type->m_return_var_type);
+    }
+
+    std::string get_c_numeric_cast_expr(ASR::ttype_t *result_type,
+            ASR::ttype_t *arg_type, const std::string &arg) {
+        result_type = ASRUtils::type_get_past_allocatable_pointer(result_type);
+        arg_type = ASRUtils::type_get_past_allocatable_pointer(arg_type);
+        LCOMPILERS_ASSERT(result_type != nullptr);
+        LCOMPILERS_ASSERT(arg_type != nullptr);
+        std::string value = arg;
+        if (ASRUtils::is_complex(*arg_type)) {
+            headers.insert("complex.h");
+            value = "creal(" + value + ")";
+        }
+        return "(" + CUtils::get_c_type_from_ttype_t(result_type)
+            + ")(" + value + ")";
+    }
+
+    bool try_emit_c_inline_numeric_cast_function_call(
+            const ASR::FunctionCall_t &x, ASR::Function_t *f,
+            const std::string &fn_name, std::string &out) {
+        if (!is_c || f == nullptr || x.n_args != 1
+                || x.m_args[0].m_value == nullptr
+                || (!is_c_trivial_numeric_cast_helper_function(f)
+                    && !is_c_trivial_numeric_cast_helper_name(fn_name))) {
+            return false;
+        }
+        ASR::ttype_t *result_type = ASRUtils::type_get_past_allocatable_pointer(
+            x.m_type);
+        ASR::ttype_t *arg_type = ASRUtils::type_get_past_allocatable_pointer(
+            ASRUtils::expr_type(x.m_args[0].m_value));
+        if (!is_c_trivial_numeric_cast_result_type(result_type)
+                || !is_c_trivial_numeric_cast_arg_type(arg_type)) {
+            return false;
+        }
+
+        self().visit_expr(*x.m_args[0].m_value);
+        std::string arg = src;
+        std::string setup = drain_tmp_buffer();
+        setup += extract_stmt_setup_from_expr(arg);
+        if (!setup.empty()) {
+            tmp_buffer_src.push_back(setup);
+        }
+        out = get_c_numeric_cast_expr(result_type, arg_type, arg);
+        return true;
+    }
+
     bool can_emit_c_inline_spread_subroutine_call(const ASR::SubroutineCall_t &x,
             ASR::Function_t *f, const std::string &sym_name) {
         if (!is_c_spread_callee(f, sym_name)
@@ -14423,12 +14508,23 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                     *ASR::down_cast<ASR::Variable_t>(callee_sym));
             }
         } else if (fn) {
-            record_forward_decl_for_function(*fn);
             fn_name = get_c_function_target_name(*fn);
         } else {
             throw CodeGenError("Unsupported function call target", x.base.base.loc);
         }
-        if (sym_info[get_hash((ASR::asr_t*)fn)].intrinsic_function) {
+        if (is_c && fn != nullptr) {
+            std::string inline_call;
+            if (try_emit_c_inline_numeric_cast_function_call(
+                    x, fn, fn_name, inline_call)) {
+                src = check_tmp_buffer() + inline_call;
+                last_expr_precedence = 2;
+                return;
+            }
+        }
+        if (fn != nullptr && !ASR::is_a<ASR::Variable_t>(*callee_sym)) {
+            record_forward_decl_for_function(*fn);
+        }
+        if (fn != nullptr && sym_info[get_hash((ASR::asr_t*)fn)].intrinsic_function) {
             if (fn_name == "size") {
                 LCOMPILERS_ASSERT(x.n_args > 0);
                 self().visit_expr(*x.m_args[0].m_value);

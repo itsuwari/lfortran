@@ -22,6 +22,13 @@
 #define LFORTRAN_C_BACKEND_WEAK static
 #endif
 #endif
+#ifndef LFORTRAN_C_BACKEND_COMMON
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_COMMON __attribute__((common))
+#else
+#define LFORTRAN_C_BACKEND_COMMON
+#endif
+#endif
 
 
 struct dimension_descriptor
@@ -42,6 +49,13 @@ struct dimension_descriptor
 #define LFORTRAN_C_BACKEND_WEAK static
 #endif
 #endif
+#ifndef LFORTRAN_C_BACKEND_COMMON
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_COMMON __attribute__((common))
+#else
+#define LFORTRAN_C_BACKEND_COMMON
+#endif
+#endif
 
 
 struct r64_____
@@ -55,7 +69,6 @@ struct r64_____
 
 double __lfortran__lcompilers_Sum_8_2_0_idx4_real_______0(struct r64_____* restrict array, int32_t __1array, int32_t __2array);
 double __lfortran__lcompilers_Sum_8_2_0_idx4(struct r64_____* restrict array);
-double __lfortran__lcompilers_real_i32(int32_t x);
 void __lfortran_c_backend_automatic_array_cleanup_01__accumulate(int32_t n, double *total);
 
 
@@ -73,10 +86,12 @@ double __lfortran__lcompilers_Sum_8_2_0_idx4_real_______0(struct r64_____* restr
     const int32_t __lfortran_array_dim1_stride = array->dims[0].stride;
     const int32_t __lfortran_array_dim2_lower_bound = array->dims[1].lower_bound;
     const int32_t __lfortran_array_dim2_stride = array->dims[1].stride;
-    result =   0.00000000000000000e+00;
+    result = 0x0.0000000000000p+0;
     for (__2_i=1; __2_i<=__2array + 1 - 1; __2_i++) {
+        double * __lfortran_sum_ptr = __lfortran_array_data + __lfortran_array_offset + (__lfortran_array_dim2_stride * (__2_i - __lfortran_array_dim2_lower_bound)) + (__lfortran_array_dim1_stride * (1 - __lfortran_array_dim1_lower_bound));
         for (__1_i=1; __1_i<=__1array + 1 - 1; __1_i++) {
-            result = result + __lfortran_array_data[(((0 + (__lfortran_array_dim1_stride * (__1_i - __lfortran_array_dim1_lower_bound))) + (__lfortran_array_dim2_stride * (__2_i - __lfortran_array_dim2_lower_bound))) + __lfortran_array_offset)];
+            result = result + *__lfortran_sum_ptr;
+            __lfortran_sum_ptr += __lfortran_array_dim1_stride;
         }
     }
     return result;
@@ -85,13 +100,6 @@ double __lfortran__lcompilers_Sum_8_2_0_idx4_real_______0(struct r64_____* restr
 double __lfortran__lcompilers_Sum_8_2_0_idx4(struct r64_____* restrict array)
 {
     return __lfortran__lcompilers_Sum_8_2_0_idx4_real_______0(array, ((int32_t)array->dims[0].length + array->dims[0].lower_bound - 1), ((int32_t)array->dims[1].length + array->dims[1].lower_bound - 1));
-}
-
-double __lfortran__lcompilers_real_i32(int32_t x)
-{
-    double _lcompilers_real_i32;
-    _lcompilers_real_i32 = (double)(x);
-    return _lcompilers_real_i32;
 }
 
 void __lfortran_c_backend_automatic_array_cleanup_01__accumulate(int32_t n, double *total)
@@ -105,31 +113,24 @@ void __lfortran_c_backend_automatic_array_cleanup_01__accumulate(int32_t n, doub
     if (work_data_size > 4096) {
         work_data = (double*) malloc(sizeof(double)*work_data_size);
     }
-    work->data = work_data;
-    work->n_dims = 2;
-    work->offset = 0;
-    work->is_allocated = true;
-    work->dims[0].lower_bound = 1;
-    work->dims[0].length = n;
-    work->dims[0].stride = 1;
-    work->dims[1].lower_bound = 1;
-    work->dims[1].length = 3;
-    work->dims[1].stride = (1*n);
-    (*total) = -  1.00000000000000000e+00;
+    work->data = work_data; work->n_dims = 2; work->offset = 0; work->is_allocated = true;
+    work->dims[0].lower_bound = 1; work->dims[0].length = n; work->dims[0].stride = 1;
+    work->dims[1].lower_bound = 1; work->dims[1].length = 3; work->dims[1].stride = (1*n);
+    (*total) = -0x1.0000000000000p+0;
     if (n <= 0) {
-        if (work_data_size > 4096) {
-            free(work_data);
-        }
+            if (work_data_size > 4096) {
+        free(work_data);
+    }
         return;
     }
     for (i=1; i<=n; i++) {
         {
-            work->data[(work->offset + work->dims[0].stride * ((i) - 1)) + 0 * (work->dims[1].stride * (1))] = __lfortran__lcompilers_real_i32(i);
-            work->data[(work->offset + work->dims[0].stride * ((i) - 1)) + 1 * (work->dims[1].stride * (1))] = __lfortran__lcompilers_real_i32(i);
-            work->data[(work->offset + work->dims[0].stride * ((i) - 1)) + 2 * (work->dims[1].stride * (1))] = __lfortran__lcompilers_real_i32(i);
+            for (int64_t __lfortran_i = 0; __lfortran_i < 3; __lfortran_i++) {
+                work->data[(work->offset + work->dims[0].stride * ((i) - 1)) + __lfortran_i * (work->dims[1].stride * (1))] = ((double)(i));
+            }
         }
     }
-    (*total) = __lfortran__lcompilers_Sum_8_2_0_idx4_real_______0((&(struct r64_____){ .data = work->data, .dims = {{1, work->dims[0].length, work->dims[0].stride}, {1, work->dims[1].length, work->dims[1].stride}}, .n_dims = 2, .offset = work->offset, .is_allocated = work->is_allocated }), ((int32_t) (&(struct r64_____){ .data = work->data, .dims = {{1, work->dims[0].length, work->dims[0].stride}, {1, work->dims[1].length, work->dims[1].stride}}, .n_dims = 2, .offset = work->offset, .is_allocated = work->is_allocated })->dims[0].length), ((int32_t) (&(struct r64_____){ .data = work->data, .dims = {{1, work->dims[0].length, work->dims[0].stride}, {1, work->dims[1].length, work->dims[1].stride}}, .n_dims = 2, .offset = work->offset, .is_allocated = work->is_allocated })->dims[1].length));
+    (*total) = __lfortran__lcompilers_Sum_8_2_0_idx4_real_______0((&(struct r64_____){ .data = ((double*)work->data), .dims = {{1, work->dims[0].length, work->dims[0].stride}, {1, work->dims[1].length, work->dims[1].stride}}, .n_dims = 2, .offset = work->offset, .is_allocated = work->is_allocated }), ((int32_t) work->dims[0].length), ((int32_t) work->dims[1].length));
     if (work_data_size > 4096) {
         free(work_data);
     }
@@ -140,17 +141,17 @@ int main(int argc, char* argv[])
     _lpython_set_argv(argc, argv);
     double value;
     __lfortran_c_backend_automatic_array_cleanup_01__accumulate(6, &value);
-    if (fabs(value -   6.30000000000000000e+01) >   9.99999999999999980e-13) {
+    if (fabs(value - 0x1.f800000000000p+5) > 0x1.19799812dea11p-40) {
         fprintf(stderr, "ERROR STOP");
         exit(1);
     }
     __lfortran_c_backend_automatic_array_cleanup_01__accumulate(2000, &value);
-    if (fabs(value -   6.00300000000000000e+06) >   1.00000000000000002e-08) {
+    if (fabs(value - 0x1.6e64e00000000p+22) > 0x1.5798ee2308c3ap-27) {
         fprintf(stderr, "ERROR STOP");
         exit(1);
     }
     __lfortran_c_backend_automatic_array_cleanup_01__accumulate(0, &value);
-    if (value != -  1.00000000000000000e+00) {
+    if (value != -0x1.0000000000000p+0) {
         fprintf(stderr, "ERROR STOP");
         exit(1);
     }

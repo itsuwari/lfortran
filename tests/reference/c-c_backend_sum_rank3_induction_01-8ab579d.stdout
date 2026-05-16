@@ -69,7 +69,6 @@ struct r64_______
 
 double __lfortran__lcompilers_Sum_8_3_0_idx4_real__________0(struct r64_______* restrict array, int32_t __1array, int32_t __2array, int32_t __3array);
 double __lfortran__lcompilers_Sum_8_3_0_idx4(struct r64_______* restrict array);
-double __lfortran__lcompilers_real_i32(int32_t x);
 
 
 
@@ -107,13 +106,6 @@ double __lfortran__lcompilers_Sum_8_3_0_idx4(struct r64_______* restrict array)
     return __lfortran__lcompilers_Sum_8_3_0_idx4_real__________0(array, ((int32_t)array->dims[0].length + array->dims[0].lower_bound - 1), ((int32_t)array->dims[1].length + array->dims[1].lower_bound - 1), ((int32_t)array->dims[2].length + array->dims[2].lower_bound - 1));
 }
 
-double __lfortran__lcompilers_real_i32(int32_t x)
-{
-    double _lcompilers_real_i32;
-    _lcompilers_real_i32 = (double)(x);
-    return _lcompilers_real_i32;
-}
-
 int main(int argc, char* argv[])
 {
     _lpython_set_argv(argc, argv);
@@ -121,30 +113,18 @@ int main(int argc, char* argv[])
     struct r64_______ a_value;
     struct r64_______* a = &a_value;
     double a_data[24];
-    a->data = a_data;
-    a->n_dims = 3;
-    a->offset = 0;
-    a->is_allocated = true;
-    a->dims[0].lower_bound = 1;
-    a->dims[0].length = 2;
-    a->dims[0].stride = 1;
-    a->dims[1].lower_bound = 1;
-    a->dims[1].length = 3;
-    a->dims[1].stride = (1*2);
-    a->dims[2].lower_bound = 1;
-    a->dims[2].length = 4;
-    a->dims[2].stride = ((1*2)*3);
+    *a = (struct r64_______){ .data = a_data, .dims = {{1, 2, 1}, {1, 3, (1*2)}, {1, 4, ((1*2)*3)}}, .n_dims = 3, .offset = 0, .is_allocated = true };
     int32_t i;
     int32_t j;
     int32_t k;
     for (k=1; k<=4; k++) {
         for (j=1; j<=3; j++) {
             for (i=1; i<=2; i++) {
-                a_data[(((0 + (1 * (i - 1))) + ((1 * 2) * (j - 1))) + (((1 * 2) * 3) * (k - 1)))] = __lfortran__lcompilers_real_i32(i + 10*j + 100*k);
+                a_data[((((i) - (1)) + (2 * ((j) - (1)))) + ((2 * 3) * ((k) - (1))))] = (double)(i + 10*j + 100*k);
             }
         }
     }
-    __libasr_created__intrinsic_array_function_Sum = __lfortran__lcompilers_Sum_8_3_0_idx4_real__________0((&(struct r64_______){ .data = a->data, .dims = {{1, a->dims[0].length, a->dims[0].stride}, {1, a->dims[1].length, a->dims[1].stride}, {1, a->dims[2].length, a->dims[2].stride}}, .n_dims = 3, .offset = a->offset, .is_allocated = a->is_allocated }), ((int32_t) a->dims[0].length), ((int32_t) a->dims[1].length), ((int32_t) a->dims[2].length));
+    __libasr_created__intrinsic_array_function_Sum = __lfortran__lcompilers_Sum_8_3_0_idx4_real__________0((&(struct r64_______){ .data = ((double*)a->data), .dims = {{1, a->dims[0].length, a->dims[0].stride}, {1, a->dims[1].length, a->dims[1].stride}, {1, a->dims[2].length, a->dims[2].stride}}, .n_dims = 3, .offset = a->offset, .is_allocated = a->is_allocated }), ((int32_t) a->dims[0].length), ((int32_t) a->dims[1].length), ((int32_t) a->dims[2].length));
     if (fabs(__libasr_created__intrinsic_array_function_Sum - 0x1.9740000000000p+12) > 0x1.19799812dea11p-40) {
         fprintf(stderr, "ERROR STOP");
         exit(1);
