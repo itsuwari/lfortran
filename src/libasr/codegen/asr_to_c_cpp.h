@@ -14990,15 +14990,28 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             std::string &setup) {
         ensure_c_backend_constructor_macro_decl();
         std::string indent = get_current_indent();
+        std::string inner_indent = indent + std::string(indentation_spaces, ' ');
         std::string cached_type = get_unique_local_name("__lfortran_tbp_cached_type");
         std::string cached_func = get_unique_local_name("__lfortran_tbp_cached_func");
+        std::string runtime_type = get_unique_local_name("__lfortran_tbp_runtime_type");
+        std::string lookup_func = get_unique_local_name("__lfortran_tbp_lookup_func");
         setup = indent + "LFORTRAN_C_BACKEND_TBP_CACHE_STORAGE int64_t "
             + cached_type + " = 0;\n"
             + indent + "LFORTRAN_C_BACKEND_TBP_CACHE_STORAGE lfortran_c_tbp_func_ptr "
-            + cached_func + " = NULL;\n";
-        return "_lfortran_get_c_tbp_impl_by_hash_cached_or_die(\"" + method_name
-            + "\", " + method_hash + ", " + runtime_tag_expr + ", &"
-            + cached_type + ", &" + cached_func + ")";
+            + cached_func + " = NULL;\n"
+            + indent + "int64_t " + runtime_type + " = " + runtime_tag_expr + ";\n"
+            + indent + "lfortran_c_tbp_func_ptr " + lookup_func + " = NULL;\n"
+            + indent + "if (" + cached_type + " == " + runtime_type
+            + " && " + cached_func + " != NULL) {\n"
+            + inner_indent + lookup_func + " = " + cached_func + ";\n"
+            + indent + "} else {\n"
+            + inner_indent + lookup_func
+            + " = _lfortran_get_c_tbp_impl_by_hash_or_die(\"" + method_name
+            + "\", " + method_hash + ", " + runtime_type + ");\n"
+            + inner_indent + cached_func + " = " + lookup_func + ";\n"
+            + inner_indent + cached_type + " = " + runtime_type + ";\n"
+            + indent + "}\n";
+        return lookup_func;
     }
 
     bool build_deferred_struct_method_dispatch(ASR::symbol_t *callee_sym, size_t n_args,
