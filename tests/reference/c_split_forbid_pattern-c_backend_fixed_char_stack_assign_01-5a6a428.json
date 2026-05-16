@@ -1,0 +1,13 @@
+{
+    "basename": "c_split_forbid_pattern-c_backend_fixed_char_stack_assign_01-5a6a428",
+    "cmd": "tmpdir=$(mktemp -d /tmp/lfortran-c-split-forbid.XXXXXX); trap 'rm -rf \"$tmpdir\"' EXIT; lfortran --backend=c --separate-compilation -c {infile} -o \"$tmpdir/main.o\" > \"$tmpdir/compile.out\" 2> \"$tmpdir/compile.err\" && (! grep -R -F -q \"_lfortran_strcpy_alloc\" \"$tmpdir\"/*.o.tmp.split/*.c \"$tmpdir\"/*.o.tmp.split/*.h) #",
+    "infile": "tests/../integration_tests/c_backend_fixed_char_stack_assign_01.f90",
+    "infile_hash": "6801481c669147357a47c1cd81d23ebba3ecced0fa908e6269ca891b",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

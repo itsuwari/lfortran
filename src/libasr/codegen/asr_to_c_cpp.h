@@ -16349,6 +16349,48 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                     ASRUtils::type_get_past_allocatable_pointer(m_target_type);
                 ASR::ttype_t *m_value_type_unwrapped =
                     ASRUtils::type_get_past_allocatable_pointer(m_value_type);
+                auto try_emit_c_fixed_len_one_stack_character_assignment =
+                        [&]() -> bool {
+                    if (alloc_return_var
+                            || !ASR::is_a<ASR::Var_t>(*x.m_target)
+                            || (!ASR::is_a<ASR::Var_t>(*x.m_value)
+                                && !ASR::is_a<ASR::StringConstant_t>(*x.m_value))
+                            || m_target_type_unwrapped == nullptr
+                            || m_value_type_unwrapped == nullptr
+                            || ASRUtils::is_array(m_target_type_unwrapped)
+                            || !ASRUtils::is_character(*m_target_type_unwrapped)
+                            || ASRUtils::is_allocatable(m_value_type)
+                            || ASRUtils::is_pointer(m_value_type)
+                            || ASRUtils::is_array(m_value_type_unwrapped)
+                            || !ASRUtils::is_character(*m_value_type_unwrapped)
+                            || is_allocating_string_expr(x.m_value)) {
+                        return false;
+                    }
+                    ASR::symbol_t *target_sym = ASRUtils::symbol_get_past_external(
+                        ASR::down_cast<ASR::Var_t>(x.m_target)->m_v);
+                    if (target_sym == nullptr
+                            || !ASR::is_a<ASR::Variable_t>(*target_sym)) {
+                        return false;
+                    }
+                    ASR::Variable_t *target_var = ASR::down_cast<ASR::Variable_t>(target_sym);
+                    if (!CUtils::use_stack_storage_for_fixed_character_scalar(*target_var)) {
+                        return false;
+                    }
+                    int64_t target_len = 0, value_len = 0;
+                    if (!CUtils::get_fixed_character_length_value(m_target_type, target_len)
+                            || target_len != 1
+                            || !CUtils::get_fixed_character_length_value(m_value_type, value_len)
+                            || value_len < 1) {
+                        return false;
+                    }
+                    src += alloc + indent + target + "[0] = (" + value + ")[0];\n";
+                    return true;
+                };
+                if (!value_is_string_view
+                        && try_emit_c_fixed_len_one_stack_character_assignment()) {
+                    from_std_vector_helper.clear();
+                    return;
+                }
                 if (value_is_string_view) {
                     std::string target_len =
                         CUtils::get_fixed_character_length_arg(m_target_type);
