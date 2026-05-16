@@ -1,10 +1,13 @@
 #include "libasr/utils.h"
 #include <chrono>
+#include <atomic>
 #include <iostream>
+#include <mutex>
 #include <regex>
 #include <stdlib.h>
 #include <filesystem>
 #include <random>
+#include <thread>
 #ifndef CLI11_HAS_FILESYSTEM
 #define CLI11_HAS_FILESYSTEM 0
 #endif // CLI11_HAS_FILESYSTEM
@@ -65,6 +68,10 @@
 #include <bin/lfortran_command_line_parser.h>
 #include <bin/lsp_cli.h>
 
+#ifndef _WIN32
+#include <spawn.h>
+#include <sys/wait.h>
+#endif
 
 #ifdef WITH_LSP
 #include <server/lsp_specification.h>
@@ -73,6 +80,10 @@
 
 #ifdef HAVE_BUILD_TO_WASM
     #include <emscripten/emscripten.h>
+#endif
+
+#ifndef _WIN32
+extern char **environ;
 #endif
 
 // ANSI color codes
@@ -117,6 +128,44 @@ std::string get_system_temp_dir()
 }
 
 std::string LFORTRAN_TEMP_DIR = get_system_temp_dir();
+
+size_t get_split_c_compile_jobs(size_t source_count)
+{
+    if (source_count <= 1) {
+        return 1;
+    }
+    const char *jobs_env = std::getenv("LFORTRAN_C_COMPILE_JOBS");
+    if (jobs_env == nullptr || jobs_env[0] == '\0') {
+        return 1;
+    }
+    char *end = nullptr;
+    long requested = std::strtol(jobs_env, &end, 10);
+    if (end == jobs_env || requested <= 1) {
+        return 1;
+    }
+    return std::min(source_count, static_cast<size_t>(requested));
+}
+
+int run_shell_command_spawn(const std::string &cmd)
+{
+#ifdef _WIN32
+    return system(cmd.c_str());
+#else
+    pid_t pid;
+    char shell[] = "/bin/sh";
+    char shell_arg[] = "-c";
+    char *argv[] = {shell, shell_arg, const_cast<char*>(cmd.c_str()), nullptr};
+    int spawn_err = posix_spawn(&pid, shell, nullptr, nullptr, argv, environ);
+    if (spawn_err != 0) {
+        return spawn_err;
+    }
+    int status = 0;
+    if (waitpid(pid, &status, 0) < 0) {
+        return -1;
+    }
+    return status;
+#endif
+}
 
 std::string shell_quote(const std::string &value)
 {
@@ -2083,7 +2132,9 @@ int compile_to_object_file_c(const std::string &infile,
             optimization_flags += c_compiler_lto_flags(compiler_options, CC);
         }
         std::vector<std::string> object_files;
+        std::vector<std::string> compile_commands;
         object_files.reserve(split_result.result.source_files.size());
+        compile_commands.reserve(split_result.result.source_files.size());
         for (const auto &src_file : split_result.result.source_files) {
             fs::path src_path = split_dir / src_file;
             fs::path obj_path = split_dir / fs::path(src_file).replace_extension(".o");
@@ -2095,15 +2146,55 @@ int compile_to_object_file_c(const std::string &infile,
                 + " -I" + split_dir.string()
                 + " -o " + obj_path.string()
                 + " -c " + src_path.string();
-            if (verbose) {
-                std::cout << cmd << std::endl;
-            }
-            int err = system(cmd.c_str());
-            if (err) {
-                std::cout << "The command '" + cmd + "' failed." << std::endl;
-                return 11;
-            }
+            compile_commands.push_back(std::move(cmd));
             object_files.push_back(obj_path.string());
+        }
+
+        size_t compile_jobs = get_split_c_compile_jobs(compile_commands.size());
+        if (compile_jobs <= 1) {
+            for (const std::string &cmd : compile_commands) {
+                if (verbose) {
+                    std::cout << cmd << std::endl;
+                }
+                int err = system(cmd.c_str());
+                if (err) {
+                    std::cout << "The command '" + cmd + "' failed." << std::endl;
+                    return 11;
+                }
+            }
+        } else {
+            std::vector<int> compile_errors(compile_commands.size(), 0);
+            std::atomic<size_t> next_index{0};
+            std::mutex output_mutex;
+            auto worker = [&]() {
+                while (true) {
+                    size_t index = next_index.fetch_add(1);
+                    if (index >= compile_commands.size()) {
+                        break;
+                    }
+                    const std::string &cmd = compile_commands[index];
+                    if (verbose) {
+                        std::lock_guard<std::mutex> lock(output_mutex);
+                        std::cout << cmd << std::endl;
+                    }
+                    compile_errors[index] = run_shell_command_spawn(cmd);
+                }
+            };
+            std::vector<std::thread> workers;
+            workers.reserve(compile_jobs);
+            for (size_t i = 0; i < compile_jobs; i++) {
+                workers.emplace_back(worker);
+            }
+            for (std::thread &worker_thread : workers) {
+                worker_thread.join();
+            }
+            for (size_t i = 0; i < compile_errors.size(); i++) {
+                if (compile_errors[i]) {
+                    std::cout << "The command '" + compile_commands[i]
+                              << "' failed." << std::endl;
+                    return 11;
+                }
+            }
         }
 
         if (object_files.empty()) {
