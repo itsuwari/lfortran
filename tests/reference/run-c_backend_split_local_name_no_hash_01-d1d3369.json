@@ -1,0 +1,13 @@
+{
+    "basename": "run-c_backend_split_local_name_no_hash_01-d1d3369",
+    "cmd": "lfortran --no-color {infile}",
+    "infile": "tests/c_backend_split_local_name_no_hash_01.f90",
+    "infile_hash": "15748e9833e75cf742c0e1881f785e8e7504f6b74fc962236561e059",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

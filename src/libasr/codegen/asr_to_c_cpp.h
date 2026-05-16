@@ -1834,20 +1834,40 @@ public:
         return "(" + expr + ")." + get_runtime_type_tag_member_name();
     }
 
+    bool is_function_local_c_scope(SymbolTable *scope) const {
+        while (scope != nullptr) {
+            if (scope->asr_owner != nullptr
+                    && ASR::is_a<ASR::symbol_t>(*scope->asr_owner)) {
+                ASR::symbol_t *owner = ASRUtils::symbol_get_past_external(
+                    ASR::down_cast<ASR::symbol_t>(scope->asr_owner));
+                if (owner != nullptr
+                        && (ASR::is_a<ASR::Function_t>(*owner)
+                            || ASR::is_a<ASR::Program_t>(*owner))) {
+                    return true;
+                }
+            }
+            scope = scope->parent;
+        }
+        return false;
+    }
+
     std::string get_unique_local_name(const std::string &name,
             bool use_unique_id=true) {
         SymbolTable *scope = current_scope ? current_scope : global_scope;
         LCOMPILERS_ASSERT(scope != nullptr);
         std::set<std::string> &used_names = emitted_local_names[scope];
+        bool append_unique_id = use_unique_id
+            && !lcompilers_unique_ID_separate_compilation.empty()
+            && !is_function_local_c_scope(scope);
         std::string unique_name = name;
-        if (use_unique_id && !lcompilers_unique_ID_separate_compilation.empty()) {
+        if (append_unique_id) {
             unique_name += "_" + lcompilers_unique_ID_separate_compilation;
         }
         int counter = 1;
         while (scope->get_symbol(unique_name) != nullptr
                 || used_names.find(unique_name) != used_names.end()) {
             unique_name = name + std::to_string(counter);
-            if (use_unique_id && !lcompilers_unique_ID_separate_compilation.empty()) {
+            if (append_unique_id) {
                 unique_name += "_" + lcompilers_unique_ID_separate_compilation;
             }
             counter++;

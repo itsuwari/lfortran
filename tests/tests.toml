@@ -5469,6 +5469,13 @@ c_split_forbid_pattern = true
 c_split_forbid_pattern_value = "__libasr_created__subroutine_call_gen"
 
 [[test]]
+filename = "c_backend_split_local_name_no_hash_01.f90"
+run = true
+options = "--backend=c --separate-compilation -O2"
+c_split_forbid_pattern = true
+c_split_forbid_pattern_value = "__lfortran_array_view_"
+
+[[test]]
 filename = "c_backend_small_vector_assignment_setup_01.f90"
 c = true
 
