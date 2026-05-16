@@ -1,0 +1,13 @@
+{
+    "basename": "run-c_backend_tbp_once_registration_01-bb26151",
+    "cmd": "lfortran --no-color {infile}",
+    "infile": "tests/c_backend_tbp_once_registration_01.f90",
+    "infile_hash": "cd6e7f93bfe22ad2115530415ee6b6c79cd64107ffedbfa22724c4fe",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

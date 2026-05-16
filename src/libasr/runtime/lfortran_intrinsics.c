@@ -303,6 +303,17 @@ LFORTRAN_API void _lfortran_register_c_tbp_impl(const char* method_name, int64_t
     lfortran_c_tbp_registry[bucket] = entry;
 }
 
+LFORTRAN_API void _lfortran_register_c_tbp_impl_once(const char* method_name, int64_t type_id,
+        lfortran_c_tbp_func_ptr func, int *registered) {
+    if (registered != NULL && *registered) {
+        return;
+    }
+    _lfortran_register_c_tbp_impl(method_name, type_id, func);
+    if (registered != NULL) {
+        *registered = 1;
+    }
+}
+
 LFORTRAN_API lfortran_c_tbp_func_ptr _lfortran_get_c_tbp_impl_by_hash(
         const char* method_name, uint64_t method_hash, int64_t type_id) {
     while (type_id != 0) {
