@@ -5482,6 +5482,10 @@ c_split_forbid_pattern = true
 c_split_forbid_pattern_value = "inline __attribute__((always_inline))"
 
 [[test]]
+filename = "c_backend_string_parameter_compare_01.f90"
+c_split_compile_werror = true
+
+[[test]]
 filename = "c_backend_raw_array_helper_call_01.f90"
 run = true
 options = "--backend=c --separate-compilation -O2"

@@ -1,0 +1,13 @@
+{
+    "basename": "c_split_compile_werror-c_backend_string_parameter_compare_01-a20c9db",
+    "cmd": "tmpdir=$(mktemp -d /tmp/lfortran-c-split-werror.XXXXXX); trap 'rm -rf \"$tmpdir\"' EXIT; CC=\"${{CC:-cc}} -Werror\" lfortran --backend=c --separate-compilation --no-style-suggestions --no-warnings -c {infile} -o \"$tmpdir/main.o\" #",
+    "infile": "tests/c_backend_string_parameter_compare_01.f90",
+    "infile_hash": "fde61d4684aca85ee721b9df42466b51d385993025d002c120d1a0c6",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

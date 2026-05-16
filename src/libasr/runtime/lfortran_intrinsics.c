@@ -5630,13 +5630,13 @@ LFORTRAN_API void _lfortran_strcpy_alloc(
 
 
 
-int strlen_without_trailing_space(char *str, int64_t len) {
+int strlen_without_trailing_space(const char *str, int64_t len) {
     int end = len - 1;
     while(end >= 0 && str[end] == ' ') end--;
     return end + 1;
 }
 
-int str_compare(char *s1, int64_t s1_len, char *s2, int64_t s2_len){
+int str_compare(const char *s1, int64_t s1_len, const char *s2, int64_t s2_len){
     int s1_len_ = strlen_without_trailing_space(s1, s1_len);
     int s2_len_ = strlen_without_trailing_space(s2, s2_len);
     int lim = MIN(s1_len_, s2_len_);

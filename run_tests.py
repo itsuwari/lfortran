@@ -87,6 +87,7 @@ def single_test(test: Dict, verbose: bool, no_llvm: bool, skip_run_with_dbg: boo
     c_split_no_empty_source = is_included("c_split_no_empty_source")
     c_split_require_pattern = is_included("c_split_require_pattern")
     c_split_forbid_pattern = is_included("c_split_forbid_pattern")
+    c_split_compile_werror = is_included("c_split_compile_werror")
     c_split_budget = is_included("c_split_budget")
     c_split_consumer_forbid_pattern = is_included("c_split_consumer_forbid_pattern")
     c_split_consumer_require_pattern = is_included("c_split_consumer_require_pattern")
@@ -802,6 +803,21 @@ def single_test(test: Dict, verbose: bool, no_llvm: bool, skip_run_with_dbg: boo
             "\"$tmpdir\"/*.o.tmp.split/*.c \"$tmpdir\"/*.o.tmp.split/*.h) #"
         )
         run_test(filename, "c_split_forbid_pattern", cmd,
+                filename,
+                update_reference,
+                verify_hash,
+                extra_args)
+
+    if c_split_compile_werror:
+        cmd = (
+            "tmpdir=$(mktemp -d /tmp/lfortran-c-split-werror.XXXXXX); "
+            "trap 'rm -rf \"$tmpdir\"' EXIT; "
+            "CC=\"${{CC:-cc}} -Werror\" "
+            "lfortran --backend=c --separate-compilation "
+            "--no-style-suggestions --no-warnings "
+            "-c {infile} -o \"$tmpdir/main.o\" #"
+        )
+        run_test(filename, "c_split_compile_werror", cmd,
                 filename,
                 update_reference,
                 verify_hash,
