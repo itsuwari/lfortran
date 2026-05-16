@@ -1,0 +1,13 @@
+{
+    "basename": "c_forbid_pattern-c_backend_descriptor_cache_array_item_01-0fd061c",
+    "cmd": "lfortran --no-color --show-c {infile} | (! grep -F -q \"x->data[(x->offset\") #",
+    "infile": "tests/c_backend_descriptor_cache_array_item_01.f90",
+    "infile_hash": "a68040392fc8b98930afd4464c1888863c5cc2ba570de723231f95a6",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

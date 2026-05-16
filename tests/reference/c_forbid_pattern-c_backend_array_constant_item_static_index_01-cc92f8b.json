@@ -1,0 +1,13 @@
+{
+    "basename": "c_forbid_pattern-c_backend_array_constant_item_static_index_01-cc92f8b",
+    "cmd": "lfortran --no-color --show-c {infile} | (! grep -F -q \"__libasr_created__array_constant_->dims\") #",
+    "infile": "tests/c_backend_array_constant_item_static_index_01.f90",
+    "infile_hash": "c03359352a267b285d6fa5713a8595138a51d985ec3399c630a50675",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

@@ -880,8 +880,9 @@ def single_test(test: Dict, verbose: bool, no_llvm: bool, skip_run_with_dbg: boo
     if c_require_pattern:
         if not c_require_pattern_value:
             raise Exception("c_require_pattern requires c_require_pattern_value")
+        show_c_options = f" {options}" if options else ""
         cmd = (
-            f"lfortran --no-color --show-c {{infile}} | "
+            f"lfortran --no-color --show-c{show_c_options} {{infile}} | "
             f"grep -F -q \"{c_require_pattern_value}\" #"
         )
         run_test(filename, "c_require_pattern", cmd,
@@ -893,8 +894,9 @@ def single_test(test: Dict, verbose: bool, no_llvm: bool, skip_run_with_dbg: boo
     if c_forbid_pattern:
         if not c_forbid_pattern_value:
             raise Exception("c_forbid_pattern requires c_forbid_pattern_value")
+        show_c_options = f" {options}" if options else ""
         cmd = (
-            f"lfortran --no-color --show-c {{infile}} | "
+            f"lfortran --no-color --show-c{show_c_options} {{infile}} | "
             f"(! grep -F -q \"{c_forbid_pattern_value}\") #"
         )
         run_test(filename, "c_forbid_pattern", cmd,

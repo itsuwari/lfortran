@@ -5254,7 +5254,9 @@ class ReplaceExprWithTemporaryVisitor:
             !ASRUtils::is_allocatable(x.m_target) &&
             is_common_symbol_present_in_lhs_and_rhs(al, lhs_array_var, x.m_value) &&
             !c_elementwise_self_assignment) ||
-            is_self_ref_allocatable_array ) {
+            (is_self_ref_allocatable_array &&
+             !c_rank2_allocatable_self_section_assignment &&
+             !c_rank1_allocatable_self_section_assignment) ) {
             replacer.force_replace_current_expr_for_array(current_expr, "_assignment_value_", al, current_body, current_scope,
                                                 exprs_with_target, is_assignment_target_array_section_item);
         }

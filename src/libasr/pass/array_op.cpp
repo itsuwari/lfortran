@@ -1708,6 +1708,38 @@ class ArrayOpVisitor: public ASR::CallReplacerOnExpressionsVisitor<ArrayOpVisito
                 get_c_array_assignment_root_symbol(target));
     }
 
+    bool should_leave_allocatable_self_section_assignment_for_c(
+            ASR::expr_t *target, ASR::expr_t *value) const {
+        if (!pass_options.c_backend || target == nullptr || value == nullptr) {
+            return false;
+        }
+        target = unwrap_array_op_lvalue(target);
+        value = unwrap_array_op_lvalue(value);
+        if (target == nullptr || value == nullptr
+                || !is_whole_allocatable_or_pointer_array_target(target)
+                || !ASRUtils::is_allocatable(ASRUtils::expr_type(target))
+                || !ASR::is_a<ASR::ArraySection_t>(*value)
+                || !c_plain_array_copy_element_types_match(target, value)) {
+            return false;
+        }
+        ASR::ArraySection_t *section = ASR::down_cast<ASR::ArraySection_t>(value);
+        ASR::symbol_t *target_root = get_c_array_assignment_root_symbol(target);
+        ASR::symbol_t *value_root = get_c_array_assignment_root_symbol(section->m_v);
+        if (target_root == nullptr || target_root != value_root) {
+            return false;
+        }
+        ASR::ttype_t *target_type = ASRUtils::type_get_past_allocatable_pointer(
+            ASRUtils::expr_type(target));
+        int target_rank = ASRUtils::extract_n_dims_from_ttype(target_type);
+        if (target_rank == 1) {
+            return is_c_rank1_unit_array_expr(value);
+        }
+        if (target_rank == 2) {
+            return is_c_rank2_unit_slice_array_expr(value);
+        }
+        return false;
+    }
+
     bool is_c_rank2_nonself_update_expr(ASR::expr_t *expr) const {
         expr = ASRUtils::get_past_array_physical_cast(expr);
         if (expr == nullptr) {
@@ -3030,6 +3062,14 @@ class ArrayOpVisitor: public ASR::CallReplacerOnExpressionsVisitor<ArrayOpVisito
             return;
         }
         if (should_leave_rank2_full_self_update_for_c(
+                xx.m_target, xx.m_value)) {
+            pass_result.push_back(al, ASRUtils::STMT(
+                ASRUtils::make_Assignment_t_util(al, loc, xx.m_target,
+                    xx.m_value, xx.m_overloaded, xx.m_realloc_lhs,
+                    xx.m_move_allocation)));
+            return;
+        }
+        if (should_leave_allocatable_self_section_assignment_for_c(
                 xx.m_target, xx.m_value)) {
             pass_result.push_back(al, ASRUtils::STMT(
                 ASRUtils::make_Assignment_t_util(al, loc, xx.m_target,

@@ -2918,37 +2918,72 @@ R"(
                         sub += indent + "}\n";
                     }
                 }
-                sub += indent + std::string(v_m_name) + "->data = "
-                    + (lazy_dynamic_stack_storage ? "NULL"
-                                                  : std::string(v_m_name) + "_data")
-                    + ";\n";
-                sub += indent + std::string(v_m_name) + "->n_dims = " + std::to_string(n_dims) + ";\n";
-                sub += indent + std::string(v_m_name) + "->offset = " + std::to_string(0) + ";\n";
-                sub += indent + std::string(v_m_name) + "->is_allocated = ";
-                if (lazy_dynamic_stack_storage) {
-                    sub += "false";
+                auto build_descriptor_dims_init = [&]() {
+                    std::string dims_init;
+                    std::string stride = "1";
+                    for (int i = 0; i < n_dims; i++) {
+                        std::string start = "1", length = "0";
+                        if( m_dims[i].m_start ) {
+                            this->visit_expr(*m_dims[i].m_start);
+                            start = src;
+                        }
+                        if( m_dims[i].m_length ) {
+                            this->visit_expr(*m_dims[i].m_length);
+                            length = src;
+                        }
+                        if (i > 0) {
+                            dims_init += ", ";
+                        }
+                        dims_init += "{" + start + ", " + length + ", " + stride + "}";
+                        stride = "(" + stride + "*" + length + ")";
+                    }
+                    return dims_init;
+                };
+                std::string descriptor_data =
+                    lazy_dynamic_stack_storage ? "NULL" : std::string(v_m_name) + "_data";
+                bool use_compound_descriptor_init = is_c
+                    && indentation_level > 0
+                    && !is_pointer
+                    && is_fixed_size
+                    && !lazy_dynamic_stack_storage;
+                if (use_compound_descriptor_init) {
+                    sub += indent + "*" + std::string(v_m_name) + " = ("
+                        + type_name_without_ptr + "){ .data = "
+                        + descriptor_data + ", .dims = {"
+                        + build_descriptor_dims_init() + "}, .n_dims = "
+                        + std::to_string(n_dims)
+                        + ", .offset = 0, .is_allocated = true };\n";
                 } else {
-                    sub += std::string((is_fixed_size || !dims.empty()) ? "true" : "false");
-                }
-                sub += ";\n";
-                std::string stride = "1";
-                for (int i = 0; i < n_dims; i++) {
-                    std::string start = "1", length = "0";
-                    if( m_dims[i].m_start ) {
-                        this->visit_expr(*m_dims[i].m_start);
-                        start = src;
+                    sub += indent + std::string(v_m_name) + "->data = "
+                        + descriptor_data + ";\n";
+                    sub += indent + std::string(v_m_name) + "->n_dims = " + std::to_string(n_dims) + ";\n";
+                    sub += indent + std::string(v_m_name) + "->offset = " + std::to_string(0) + ";\n";
+                    sub += indent + std::string(v_m_name) + "->is_allocated = ";
+                    if (lazy_dynamic_stack_storage) {
+                        sub += "false";
+                    } else {
+                        sub += std::string((is_fixed_size || !dims.empty()) ? "true" : "false");
                     }
-                    if( m_dims[i].m_length ) {
-                        this->visit_expr(*m_dims[i].m_length);
-                        length = src;
+                    sub += ";\n";
+                    std::string stride = "1";
+                    for (int i = 0; i < n_dims; i++) {
+                        std::string start = "1", length = "0";
+                        if( m_dims[i].m_start ) {
+                            this->visit_expr(*m_dims[i].m_start);
+                            start = src;
+                        }
+                        if( m_dims[i].m_length ) {
+                            this->visit_expr(*m_dims[i].m_length);
+                            length = src;
+                        }
+                        sub += indent + std::string(v_m_name) +
+                            "->dims[" + std::to_string(i) + "].lower_bound = " + start + ";\n";
+                        sub += indent + std::string(v_m_name) +
+                            "->dims[" + std::to_string(i) + "].length = " + length + ";\n";
+                        sub += indent + std::string(v_m_name) +
+                            "->dims[" + std::to_string(i) + "].stride = " + stride + ";\n";
+                        stride = "(" + stride + "*" + length + ")";
                     }
-                    sub += indent + std::string(v_m_name) +
-                        "->dims[" + std::to_string(i) + "].lower_bound = " + start + ";\n";
-                    sub += indent + std::string(v_m_name) +
-                        "->dims[" + std::to_string(i) + "].length = " + length + ";\n";
-                    sub += indent + std::string(v_m_name) +
-                        "->dims[" + std::to_string(i) + "].stride = " + stride + ";\n";
-                    stride = "(" + stride + "*" + length + ")";
                 }
                 if (needs_runtime_init && init_expr != nullptr) {
                     this->visit_expr(*init_expr);
@@ -8653,7 +8688,7 @@ R"(    // Initialise Numpy
         ASR::dimension_t* m_dims;
         int n_dims = ASRUtils::extract_dimensions_from_ttype(x_mv_type, m_dims);
         ASR::symbol_t *array_owner = ASRUtils::get_asr_owner(array_expr);
-        bool is_raw_array_constant = ASR::is_a<ASR::ArrayConstant_t>(*array_expr);
+        bool is_raw_array_constant = get_c_array_constant_expr(array_expr) != nullptr;
         bool is_data_only_array = ASRUtils::is_fixed_size_array(m_dims, n_dims) &&
                                   array_owner != nullptr &&
                                   ASR::is_a<ASR::Struct_t>(*array_owner);
@@ -8678,9 +8713,7 @@ R"(    // Initialise Numpy
                     std::string current_index = "";
                     if (is_data_only_array || is_raw_array_constant) {
                         std::string index_src = src;
-                        std::string dim_start = is_raw_array_constant
-                            ? array + "->dims[" + std::to_string(i) + "].lower_bound"
-                            : get_dim_start_src(m_dims[i]);
+                        std::string dim_start = get_dim_start_src(m_dims[i]);
                         current_index += "((" + index_src + ") - (" + dim_start + "))";
                     } else {
                         current_index += src;

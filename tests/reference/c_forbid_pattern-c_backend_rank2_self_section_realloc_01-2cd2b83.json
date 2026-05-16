@@ -1,0 +1,13 @@
+{
+    "basename": "c_forbid_pattern-c_backend_rank2_self_section_realloc_01-2cd2b83",
+    "cmd": "lfortran --no-color --show-c --realloc-lhs-arrays {infile} | (! grep -F -q \"__libasr_created__assignment_value_\") #",
+    "infile": "tests/../integration_tests/c_backend_rank2_self_section_realloc_01.f90",
+    "infile_hash": "8f9400a79bd772edbd879761be75d4cdae5f55583e219fcab15c6b13",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}
