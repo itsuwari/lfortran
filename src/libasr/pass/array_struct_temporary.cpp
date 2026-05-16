@@ -501,7 +501,25 @@ static inline bool is_c_automatic_temp_size_expr(ASR::expr_t* expr) {
             return true;
         case ASR::exprType::ArraySize: {
             ASR::ArraySize_t* size = ASR::down_cast<ASR::ArraySize_t>(expr);
-            return is_c_automatic_temp_size_source(size->m_v);
+            ASR::expr_t *size_source = ASRUtils::get_past_array_physical_cast(size->m_v);
+            if (ASR::is_a<ASR::ArraySection_t>(*size_source)) {
+                ASR::ArraySection_t *section =
+                    ASR::down_cast<ASR::ArraySection_t>(size_source);
+                size_t slice_dims = 0;
+                for (size_t i = 0; i < section->n_args; i++) {
+                    ASR::array_index_t idx = section->m_args[i];
+                    bool is_slice = idx.m_left || idx.m_step || idx.m_right == nullptr;
+                    if (!is_slice) {
+                        continue;
+                    }
+                    slice_dims++;
+                    if (!is_unit_step_expr(idx.m_step)) {
+                        return false;
+                    }
+                }
+                return slice_dims > 0;
+            }
+            return is_c_automatic_temp_size_source(size_source);
         }
         default:
             return false;

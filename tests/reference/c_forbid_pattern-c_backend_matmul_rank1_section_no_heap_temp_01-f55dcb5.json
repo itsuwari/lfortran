@@ -1,0 +1,13 @@
+{
+    "basename": "c_forbid_pattern-c_backend_matmul_rank1_section_no_heap_temp_01-f55dcb5",
+    "cmd": "lfortran --no-color --show-c {infile} | (! grep -F -q \"data = (double*) _lfortran_malloc_alloc(__lfortran_default_allocator, 1*__libasr_created_real_binop_right\") #",
+    "infile": "tests/../integration_tests/c_backend_matmul_rank1_section_no_heap_temp_01.f90",
+    "infile_hash": "4074fa52512cc4f3270d4c46d0df6818b3c456ad12c39af894dd1eee",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

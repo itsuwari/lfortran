@@ -366,6 +366,22 @@ public:
             + indent + "}\n";
     }
 
+    std::string emit_c_lazy_automatic_array_cleanup(
+            const std::string &target, const std::string &indent,
+            const CLazyAutomaticArrayStorage &storage) {
+        return indent + "if (" + storage.heap_flag + " && (" + target
+            + ") != NULL && (" + target + ")->data != NULL) {\n"
+            + indent + "    free((" + target + ")->data);\n"
+            + indent + "    (" + target + ")->data = NULL;\n"
+            + indent + "    " + storage.heap_flag + " = false;\n"
+            + indent + "}\n"
+            + indent + "if ((" + target + ") != NULL) {\n"
+            + indent + "    (" + target + ")->data = NULL;\n"
+            + indent + "    (" + target + ")->offset = 0;\n"
+            + indent + "    (" + target + ")->is_allocated = false;\n"
+            + indent + "}\n";
+    }
+
     std::string emit_current_function_heap_array_cleanup(const std::string &indent,
             const std::set<std::string> *skip_allocatable_arrays=nullptr) {
         std::string cleanup;
@@ -406,6 +422,13 @@ public:
             if (skip_allocatable_arrays != nullptr
                     && skip_allocatable_arrays->find(*it)
                         != skip_allocatable_arrays->end()) {
+                continue;
+            }
+            auto lazy_storage_it =
+                current_function_lazy_automatic_array_storage.find(*it);
+            if (lazy_storage_it != current_function_lazy_automatic_array_storage.end()) {
+                cleanup += emit_c_lazy_automatic_array_cleanup(
+                    *it, indent, lazy_storage_it->second);
                 continue;
             }
             std::string array_cleanup;
@@ -18121,6 +18144,48 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                         get_unique_local_name("__lfortran_realloc_did_allocate");
                     out += indent + "bool " + did_allocate_name + " = false;\n";
                 }
+                if (is_c && target_var != nullptr
+                        && !element_is_character && !needs_array_zero_init) {
+                    auto storage_it =
+                        current_function_lazy_automatic_array_storage.find(sym);
+                    if (storage_it !=
+                            current_function_lazy_automatic_array_storage.end()) {
+                        const CLazyAutomaticArrayStorage &storage = storage_it->second;
+                        std::string new_size_name =
+                            get_unique_local_name("__lfortran_realloc_new_size");
+                        std::string stack_data_name =
+                            get_unique_local_name(sym + "_data_stack");
+                        std::string data_name =
+                            get_unique_local_name(sym + "_data");
+                        headers.insert("stdlib.h");
+                        out += indent + "if (" + storage.heap_flag + " && "
+                            + sym + "->data != NULL) {\n";
+                        out += indent + "    free(" + sym + "->data);\n";
+                        out += indent + "    " + sym + "->data = NULL;\n";
+                        out += indent + "    " + storage.heap_flag
+                            + " = false;\n";
+                        out += indent + "}\n";
+                        out += indent + "int64_t " + new_size_name + " = "
+                            + elem_count + ";\n";
+                        out += indent + ty + " " + stack_data_name + "[("
+                            + new_size_name + " > 0 && " + new_size_name
+                            + " <= 4096 ? " + new_size_name + " : 1)];\n";
+                        out += indent + ty + " *" + data_name + " = "
+                            + stack_data_name + ";\n";
+                        out += indent + "if (" + new_size_name + " > 4096) {\n";
+                        out += indent + "    " + data_name + " = (" + ty
+                            + "*) malloc(sizeof(" + ty + ")*" + new_size_name
+                            + ");\n";
+                        out += indent + "    " + storage.heap_flag
+                            + " = true;\n";
+                        out += indent + "}\n";
+                        out += indent + sym + "->data = " + data_name + ";\n";
+                        out += indent + sym + "->is_allocated = true;\n";
+                        emit_allocate_stat_failure_check(out, indent, stat_tmp,
+                            new_size_name + " == 0 || " + sym + "->data != NULL");
+                        continue;
+                    }
+                }
                 if (element_is_len_one_character) {
                     headers.insert("string.h");
                     std::string new_size_name =
@@ -18456,6 +18521,13 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 continue;
             }
             std::string target = CUtils::get_c_variable_name(*var);
+            auto lazy_storage_it =
+                current_function_lazy_automatic_array_storage.find(target);
+            if (lazy_storage_it != current_function_lazy_automatic_array_storage.end()) {
+                cleanup += emit_c_lazy_automatic_array_cleanup(
+                    target, indent, lazy_storage_it->second);
+                continue;
+            }
             ASR::ttype_t *target_value_type =
                 ASRUtils::type_get_past_allocatable_pointer(var->m_type);
             ASR::ttype_t *element_type =
@@ -18507,11 +18579,26 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 && c_array_expr_uses_descriptor(expr)) {
             std::string target = get_c_deallocation_target_expr(expr);
             std::string cleanup;
+            ASR::expr_t *unwrapped_expr = unwrap_c_lvalue_expr(expr);
+            if (is_c && unwrapped_expr && ASR::is_a<ASR::Var_t>(*unwrapped_expr)) {
+                ASR::symbol_t *sym = ASRUtils::symbol_get_past_external(
+                    ASR::down_cast<ASR::Var_t>(unwrapped_expr)->m_v);
+                if (ASR::is_a<ASR::Variable_t>(*sym)) {
+                    std::string target_name =
+                        CUtils::get_c_variable_name(*ASR::down_cast<ASR::Variable_t>(sym));
+                    auto storage_it =
+                        current_function_lazy_automatic_array_storage.find(target_name);
+                    if (storage_it !=
+                            current_function_lazy_automatic_array_storage.end()) {
+                        return emit_c_lazy_automatic_array_cleanup(
+                            target, indent, storage_it->second);
+                    }
+                }
+            }
             ASR::ttype_t *target_value_type = ASRUtils::type_get_past_allocatable_pointer(
                 ASRUtils::expr_type(expr));
             ASR::ttype_t *element_type = ASRUtils::extract_type(target_value_type);
             ASR::symbol_t *struct_sym = nullptr;
-            ASR::expr_t *unwrapped_expr = unwrap_c_lvalue_expr(expr);
             if (unwrapped_expr && ASR::is_a<ASR::Var_t>(*unwrapped_expr)) {
                 ASR::symbol_t *sym = ASRUtils::symbol_get_past_external(
                     ASR::down_cast<ASR::Var_t>(unwrapped_expr)->m_v);

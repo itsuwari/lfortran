@@ -2778,11 +2778,19 @@ R"(
             if (!is_pointer
                     && var != nullptr
                     && is_c_compiler_generated_temporary_name(std::string(var->m_name))
+                    && !element_needs_null_init
+                    && !len_one_char_array
+                    && original_type_name.rfind("struct ", 0) != 0
                     && !is_fixed_size
                     && dims.empty()
                     && dynamic_stack_size_expr.empty()
                     && get_variable_init_expr_raw(*var) == nullptr) {
                 sub += ";\n";
+                std::string heap_flag_name = get_unique_local_name(
+                    std::string(v_m_name) + "_data_heap_allocated");
+                sub += indent + "bool " + heap_flag_name + " = false;\n";
+                current_function_lazy_automatic_array_storage[v_m_name] = {
+                    var, type_name_copy, heap_flag_name, ""};
                 sub += indent + format_type_c("", type_name, v_m_name, use_ref, dummy);
                 sub += " = &" + variable_name + ";\n";
                 sub += indent + std::string(v_m_name) + "->data = NULL;\n";
@@ -3112,6 +3120,9 @@ R"(
             return "";
         }
         const CLazyAutomaticArrayStorage &storage = storage_it->second;
+        if (storage.size_expr.empty()) {
+            return "";
+        }
         std::string indent(indentation_level * indentation_spaces, ' ');
         std::string out;
         headers.insert("stdlib.h");
