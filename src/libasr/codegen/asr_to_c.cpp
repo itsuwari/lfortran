@@ -8246,6 +8246,10 @@ R"(    // Initialise Numpy
 
     void visit_ArrayBound(const ASR::ArrayBound_t& x) {
         CHECK_FAST_C(compiler_options, x)
+        if (x.m_value != nullptr) {
+            visit_expr(*x.m_value);
+            return;
+        }
         visit_expr(*x.m_v);
         std::string var_name = src;
         std::string setup = drain_tmp_buffer();

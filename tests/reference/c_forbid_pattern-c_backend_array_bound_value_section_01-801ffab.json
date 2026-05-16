@@ -1,0 +1,13 @@
+{
+    "basename": "c_forbid_pattern-c_backend_array_bound_value_section_01-801ffab",
+    "cmd": "lfortran --no-color --show-c {infile} | (! grep -F -q \"x->dims[1-1].lower_bound\") #",
+    "infile": "tests/c_backend_array_bound_value_section_01.f90",
+    "infile_hash": "2647b1c6993e502237ca80fb9ddaace01588f3aacc11c69d3d803104",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}
