@@ -2346,9 +2346,12 @@ static bool is_c_packed_contiguous_array_section_view(
 
 static bool should_preserve_c_no_copy_section_actual(bool c_backend,
         ASR::expr_t *dummy, ASR::expr_t *actual) {
+    ASR::expr_t *actual_unwrapped = actual
+        ? ASRUtils::get_past_array_physical_cast(actual) : nullptr;
     if (!c_backend || dummy == nullptr || actual == nullptr
             || !ASRUtils::is_array(ASRUtils::expr_type(dummy))
-            || !ASRUtils::is_array(ASRUtils::expr_type(actual))) {
+            || actual_unwrapped == nullptr
+            || !ASRUtils::is_array(ASRUtils::expr_type(actual_unwrapped))) {
         return false;
     }
     ASR::Variable_t *dummy_var = ASRUtils::expr_to_variable_or_null(dummy);
@@ -2358,12 +2361,12 @@ static bool should_preserve_c_no_copy_section_actual(bool c_backend,
         return false;
     }
     bool dummy_requires_contiguous = dummy_var->m_contiguous_attr;
-    if (ASRUtils::extract_physical_type(dummy_var->m_type)
-            != ASR::array_physical_typeType::DescriptorArray) {
+    ASR::array_physical_typeType dummy_physical_type =
+        ASRUtils::extract_physical_type(dummy_var->m_type);
+    if (dummy_physical_type != ASR::array_physical_typeType::DescriptorArray
+            && dummy_physical_type != ASR::array_physical_typeType::PointerArray) {
         return false;
     }
-    ASR::expr_t *actual_unwrapped =
-        ASRUtils::get_past_array_physical_cast(actual);
     if (actual_unwrapped == nullptr
             || !ASR::is_a<ASR::ArraySection_t>(*actual_unwrapped)) {
         return false;

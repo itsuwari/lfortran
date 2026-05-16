@@ -5149,6 +5149,13 @@ c_forbid_pattern = true
 c_forbid_pattern_value = "}})->dims[0].length"
 
 [[test]]
+filename = "c_backend_array_section_assumed_shape_no_copy_01.f90"
+run = true
+options = "--backend=c --separate-compilation"
+c_forbid_pattern = true
+c_forbid_pattern_value = "__lfsc_consume_real"
+
+[[test]]
 filename = "c_backend_array_constant_item_static_index_01.f90"
 c_forbid_pattern = true
 c_forbid_pattern_value = "__libasr_created__array_constant_->dims"

@@ -122,6 +122,7 @@ public:
     // - FixedSizeArray: sequence association requires the callee to index the
     //   original contiguous memory with its own leading dimension
     std::set<ASR::symbol_t*> vars_from_assumed_size_sections;
+    std::set<ASR::symbol_t*> vars_from_c_no_copy_section_views;
     std::set<ASR::symbol_t*> one_based_contiguous_allocs;
 
     CallVisitor(Allocator &al_, const LCompilers::PassOptions& pass_options_) : al(al_), pass_options(pass_options_) {}
@@ -275,6 +276,141 @@ public:
             var->m_intent == ASR::intentType::Out ||
             var->m_intent == ASR::intentType::InOut ||
             var->m_intent == ASR::intentType::Unspecified;
+    }
+
+    bool is_c_plain_scalar_array_element_type(ASR::ttype_t *type) {
+        if (type == nullptr) {
+            return false;
+        }
+        return ASRUtils::is_integer(*type)
+            || ASRUtils::is_unsigned_integer(*type)
+            || ASRUtils::is_real(*type)
+            || ASRUtils::is_logical(*type);
+    }
+
+    bool is_c_simple_integer_bound_expr(ASR::expr_t *expr) {
+        if (expr == nullptr) {
+            return true;
+        }
+        expr = ASRUtils::get_past_array_physical_cast(expr);
+        if (expr == nullptr || ASRUtils::is_array(ASRUtils::expr_type(expr))) {
+            return false;
+        }
+        switch (expr->type) {
+            case ASR::exprType::IntegerConstant:
+            case ASR::exprType::Var:
+            case ASR::exprType::ArrayBound: {
+                return true;
+            }
+            case ASR::exprType::IntegerBinOp: {
+                ASR::IntegerBinOp_t *binop =
+                    ASR::down_cast<ASR::IntegerBinOp_t>(expr);
+                return is_c_simple_integer_bound_expr(binop->m_left)
+                    && is_c_simple_integer_bound_expr(binop->m_right);
+            }
+            case ASR::exprType::IntegerUnaryMinus: {
+                return is_c_simple_integer_bound_expr(
+                    ASR::down_cast<ASR::IntegerUnaryMinus_t>(expr)->m_arg);
+            }
+            default: {
+                return false;
+            }
+        }
+    }
+
+    bool is_c_simple_array_section_view(ASR::ArraySection_t *section) {
+        if (section == nullptr) {
+            return false;
+        }
+        ASR::expr_t *base =
+            ASRUtils::get_past_array_physical_cast(section->m_v);
+        ASR::ttype_t *base_type = base != nullptr
+            ? ASRUtils::type_get_past_allocatable_pointer(
+                ASRUtils::expr_type(base))
+            : nullptr;
+        int base_rank = ASRUtils::extract_n_dims_from_ttype(base_type);
+        if (base_rank <= 0 || section->n_args != static_cast<size_t>(base_rank)) {
+            return false;
+        }
+        bool found_slice = false;
+        for (int i = 0; i < base_rank; i++) {
+            const ASR::array_index_t &idx = section->m_args[i];
+            bool is_slice = idx.m_left || idx.m_step || idx.m_right == nullptr;
+            if (!is_slice) {
+                if (!is_scalar_section_index(idx)
+                        || !is_c_simple_integer_bound_expr(idx.m_right)) {
+                    return false;
+                }
+                continue;
+            }
+            if (!is_c_simple_integer_bound_expr(idx.m_left)
+                    || !is_c_simple_integer_bound_expr(idx.m_right)
+                    || !is_c_simple_integer_bound_expr(idx.m_step)) {
+                return false;
+            }
+            found_slice = true;
+        }
+        return found_slice;
+    }
+
+    bool should_preserve_c_no_copy_section_actual(
+            ASR::expr_t *dummy, ASR::expr_t *actual) {
+        ASR::expr_t *actual_unwrapped = actual
+            ? ASRUtils::get_past_array_physical_cast(actual) : nullptr;
+        if (!pass_options.c_backend || dummy == nullptr || actual == nullptr
+                || !ASRUtils::is_array(ASRUtils::expr_type(dummy))
+                || actual_unwrapped == nullptr
+                || !ASRUtils::is_array(ASRUtils::expr_type(actual_unwrapped))) {
+            return false;
+        }
+        ASR::Variable_t *dummy_var = ASRUtils::expr_to_variable_or_null(dummy);
+        if (dummy_var == nullptr
+                || dummy_var->m_contiguous_attr
+                || ASRUtils::is_allocatable(dummy_var->m_type)
+                || ASRUtils::is_pointer(dummy_var->m_type)) {
+            return false;
+        }
+        ASR::array_physical_typeType dummy_physical_type =
+            ASRUtils::extract_physical_type(dummy_var->m_type);
+        if (dummy_physical_type != ASR::array_physical_typeType::DescriptorArray
+                && dummy_physical_type != ASR::array_physical_typeType::PointerArray) {
+            return false;
+        }
+        if (actual_unwrapped == nullptr
+                || !ASR::is_a<ASR::ArraySection_t>(*actual_unwrapped)) {
+            return false;
+        }
+        ASR::ArraySection_t *section =
+            ASR::down_cast<ASR::ArraySection_t>(actual_unwrapped);
+        if (ASRUtils::is_array_indexed_with_array_indices(section)
+                || !is_c_simple_array_section_view(section)) {
+            return false;
+        }
+        ASR::expr_t *base =
+            ASRUtils::get_past_array_physical_cast(section->m_v);
+        if (base == nullptr
+                || (!ASR::is_a<ASR::Var_t>(*base)
+                    && !ASR::is_a<ASR::StructInstanceMember_t>(*base))) {
+            return false;
+        }
+        ASR::ttype_t *dummy_type =
+            ASRUtils::type_get_past_allocatable_pointer(
+                ASRUtils::expr_type(dummy));
+        ASR::ttype_t *actual_type =
+            ASRUtils::type_get_past_allocatable_pointer(
+                ASRUtils::expr_type(actual_unwrapped));
+        if (dummy_type == nullptr || actual_type == nullptr
+                || ASRUtils::extract_n_dims_from_ttype(dummy_type)
+                    != ASRUtils::extract_n_dims_from_ttype(actual_type)
+                || !is_c_plain_scalar_array_element_type(
+                    ASRUtils::type_get_past_array(dummy_type))
+                || !is_c_plain_scalar_array_element_type(
+                    ASRUtils::type_get_past_array(actual_type))) {
+            return false;
+        }
+        return ASRUtils::types_equal(
+            ASRUtils::type_get_past_array(dummy_type),
+            ASRUtils::type_get_past_array(actual_type), nullptr, nullptr);
     }
 
     bool is_c_raw_helper_scalar_type(ASR::ttype_t *type) {
@@ -724,7 +860,7 @@ public:
             }
             // Skip copy-in/copy-out when the inner expression must use Fortran
             // sequence association into the original storage.
-            ASR::expr_t* inner = cast->m_arg;
+            ASR::expr_t* inner = ASRUtils::get_past_array_physical_cast(cast->m_arg);
             if ( ASR::is_a<ASR::ArraySection_t>(*inner) ) {
                 ASR::ArraySection_t* section = ASR::down_cast<ASR::ArraySection_t>(inner);
                 if ( is_sequence_association_array_section(section) ) {
@@ -734,8 +870,10 @@ public:
             // Also skip when the inner Var was created by an earlier pass
             // (pass_array_by_data) from an ArraySection of an assumed-size array.
             if ( ASR::is_a<ASR::Var_t>(*inner) ) {
-                ASR::symbol_t* sym = ASR::down_cast<ASR::Var_t>(inner)->m_v;
-                if ( vars_from_assumed_size_sections.count(sym) ) {
+                ASR::symbol_t* sym = ASRUtils::symbol_get_past_external(
+                    ASR::down_cast<ASR::Var_t>(inner)->m_v);
+                if ( vars_from_assumed_size_sections.count(sym)
+                        || vars_from_c_no_copy_section_views.count(sym) ) {
                     return false;
                 }
             }
@@ -1462,13 +1600,20 @@ public:
         std::vector<bool> is_arg_intent_in = {},
         std::vector<bool> is_arg_intent_out_only = {},
         bool is_func_bind_c = false,
-        std::vector<bool> bypass_raw_helper_array_temps = {}) {
+        std::vector<bool> bypass_raw_helper_array_temps = {},
+        ASR::Function_t *func = nullptr) {
         /* For other frontends, we might need to traverse the arguments
            in reverse order. */
         for( size_t i = 0; i < x_n_args; i++ ) {
             ASR::expr_t* arg_expr = x_m_args[i].m_value;
             if (bypass_raw_helper_array_temps.size() > i
                     && bypass_raw_helper_array_temps[i]) {
+                x_m_args_vec.push_back(al, x_m_args[i]);
+                continue;
+            }
+            if (func != nullptr && i < func->n_args
+                    && should_preserve_c_no_copy_section_actual(
+                        func->m_args[i], x_m_args[i].m_value)) {
                 x_m_args_vec.push_back(al, x_m_args[i]);
                 continue;
             }
@@ -1815,7 +1960,7 @@ public:
             traverse_call_args(x_m_args, x.m_args, x.n_args,
                 name_hint + ASRUtils::symbol_name(x.m_name), is_arg_intent_out,
                 is_arg_intent_in, is_arg_intent_out_only, is_func_bind_c,
-                bypass_raw_helper_array_temps);
+                bypass_raw_helper_array_temps, func);
         } else {
             traverse_call_args(x_m_args, x.m_args, x.n_args,
                 name_hint + ASRUtils::symbol_name(x.m_name));
@@ -1841,6 +1986,7 @@ public:
 
     void visit_Function(const ASR::Function_t& x) {
         vars_from_assumed_size_sections.clear();
+        vars_from_c_no_copy_section_views.clear();
         one_based_contiguous_allocs.clear();
         ASR::CallReplacerOnExpressionsVisitor<CallVisitor>::visit_Function(x);
     }
@@ -1881,10 +2027,29 @@ public:
              ASR::is_a<ASR::Var_t>(*x.m_target) ) {
             ASR::ArraySection_t* section = ASR::down_cast<ASR::ArraySection_t>(x.m_value);
             ASR::ttype_t* source_type = ASRUtils::expr_type(section->m_v);
+            ASR::Variable_t *target_var =
+                ASRUtils::expr_to_variable_or_null(x.m_target);
             if ( ASRUtils::is_array(source_type) ) {
                 if ( is_sequence_association_array_section(section) ) {
                     ASR::symbol_t* sym = ASR::down_cast<ASR::Var_t>(x.m_target)->m_v;
                     vars_from_assumed_size_sections.insert(sym);
+                }
+                ASR::ttype_t *target_type = target_var
+                    ? ASRUtils::type_get_past_pointer(target_var->m_type)
+                    : nullptr;
+                if (pass_options.c_backend
+                        && target_type != nullptr
+                        && ASRUtils::is_array(target_type)
+                        && ASRUtils::extract_physical_type(target_type)
+                            == ASR::array_physical_typeType::DescriptorArray
+                        && is_c_simple_array_section_view(section)
+                        && is_c_plain_scalar_array_element_type(
+                            ASRUtils::type_get_past_array(
+                                ASRUtils::type_get_past_allocatable_pointer(
+                                    target_type)))) {
+                    ASR::symbol_t* sym = ASRUtils::symbol_get_past_external(
+                        ASR::down_cast<ASR::Var_t>(x.m_target)->m_v);
+                    vars_from_c_no_copy_section_views.insert(sym);
                 }
             }
         }

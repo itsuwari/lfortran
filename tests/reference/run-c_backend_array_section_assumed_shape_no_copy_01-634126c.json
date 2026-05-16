@@ -1,0 +1,13 @@
+{
+    "basename": "run-c_backend_array_section_assumed_shape_no_copy_01-634126c",
+    "cmd": "lfortran --no-color {infile}",
+    "infile": "tests/c_backend_array_section_assumed_shape_no_copy_01.f90",
+    "infile_hash": "65494441a4b174208c9324146c8189a7848802b997e37fc2a014ab17",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

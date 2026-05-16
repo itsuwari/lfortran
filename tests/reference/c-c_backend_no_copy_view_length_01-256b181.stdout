@@ -111,7 +111,7 @@ void __lfortran_c_backend_no_copy_view_length_01_m__sum_assumed_real_______0(str
     const int32_t __lfortran_x_dim1_stride = x->dims[0].stride;
     const int32_t __lfortran_x_dim2_lower_bound = x->dims[1].lower_bound;
     const int32_t __lfortran_x_dim2_stride = x->dims[1].stride;
-    (*s) = __lfortran__lcompilers_Sum_8_2_0_idx4_real_______0((&(struct r64_____){ .data = x->data, .dims = {{1, x->dims[0].length, x->dims[0].stride}, {1, x->dims[1].length, x->dims[1].stride}}, .n_dims = 2, .offset = x->offset, .is_allocated = x->is_allocated }), ((int32_t) x->dims[0].length), ((int32_t) x->dims[1].length));
+    (*s) = __lfortran__lcompilers_Sum_8_2_0_idx4_real_______0((&(struct r64_____){ .data = ((double*)x->data), .dims = {{1, x->dims[0].length, x->dims[0].stride}, {1, x->dims[1].length, x->dims[1].stride}}, .n_dims = 2, .offset = x->offset, .is_allocated = x->is_allocated }), ((int32_t) x->dims[0].length), ((int32_t) x->dims[1].length));
 }
 
 void __lfortran_c_backend_no_copy_view_length_01_m__sum_assumed(struct r64_____* restrict x, double *s)
@@ -125,16 +125,7 @@ int main(int argc, char* argv[])
     struct r64_____ a_value;
     struct r64_____* a = &a_value;
     double a_data[20];
-    a->data = a_data;
-    a->n_dims = 2;
-    a->offset = 0;
-    a->is_allocated = true;
-    a->dims[0].lower_bound = 1;
-    a->dims[0].length = 4;
-    a->dims[0].stride = 1;
-    a->dims[1].lower_bound = 1;
-    a->dims[1].length = 5;
-    a->dims[1].stride = (1*4);
+    *a = (struct r64_____){ .data = a_data, .dims = {{1, 4, 1}, {1, 5, (1*4)}}, .n_dims = 2, .offset = 0, .is_allocated = true };
     double s;
     {
     double *__lfortran_lhs2_data = a_data;
@@ -151,8 +142,8 @@ int main(int argc, char* argv[])
             }
         }
     }
-    struct r64_____ __lfortran_array_view = { .data = a->data, .dims = {{1, ((((((int32_t) a->dims[1-1].length + a->dims[1-1].lower_bound - 1)) - (((int32_t)a->dims[1-1].lower_bound))) / (1)) + 1), (a->dims[0].stride * (1))}, {1, ((((4) - (2)) / (1)) + 1), (a->dims[1].stride * (1))}}, .n_dims = 2, .offset = (a->offset + a->dims[0].stride * ((((int32_t)a->dims[1-1].lower_bound)) - a->dims[0].lower_bound) + a->dims[1].stride * ((2) - a->dims[1].lower_bound)), .is_allocated = a->is_allocated };
-    __lfortran_c_backend_no_copy_view_length_01_m__sum_assumed_real_______0(&__lfortran_array_view, ((int32_t) ((((((int32_t) a->dims[1-1].length + a->dims[1-1].lower_bound - 1)) - (((int32_t)a->dims[1-1].lower_bound))) / (1)) + 1)), ((int32_t) ((((4) - (2)) / (1)) + 1)), &s);
+    struct r64_____ __lfortran_array_view = { .data = ((double*)a->data), .dims = {{1, ((((4) - (1)) / (1)) + 1), (a->dims[0].stride * (1))}, {1, ((((4) - (2)) / (1)) + 1), (a->dims[1].stride * (1))}}, .n_dims = 2, .offset = (a->offset + a->dims[0].stride * ((1) - a->dims[0].lower_bound) + a->dims[1].stride * ((2) - a->dims[1].lower_bound)), .is_allocated = a->is_allocated };
+    __lfortran_c_backend_no_copy_view_length_01_m__sum_assumed_real_______0(&__lfortran_array_view, ((int32_t) ((((4) - (1)) / (1)) + 1)), ((int32_t) ((((4) - (2)) / (1)) + 1)), &s);
     if (fabs(s - 0x1.8000000000000p+3) > 0x1.19799812dea11p-40) {
         fprintf(stderr, "ERROR STOP");
         exit(1);

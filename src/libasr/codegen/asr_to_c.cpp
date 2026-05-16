@@ -663,7 +663,15 @@ R"(
     bool is_iso_fortran_env_module(const ASR::Module_t &x) const {
         std::string module_name_lower = to_lower(x.m_name);
         return module_name_lower == "iso_fortran_env"
-            || module_name_lower == "lfortran_intrinsic_iso_fortran_env";
+            || startswith(module_name_lower, "lfortran_intrinsic_iso_fortran_env");
+    }
+
+    bool is_c_header_only_intrinsic_module(const ASR::Module_t &x) const {
+        std::string module_name_lower = to_lower(x.m_name);
+        return module_name_lower == "omp_lib"
+            || module_name_lower == "iso_c_binding"
+            || startswith(module_name_lower, "lfortran_intrinsic_iso_c_binding")
+            || is_iso_fortran_env_module(x);
     }
 
     void hoist_split_header_enum_name_defs(std::string &type_decls,
@@ -839,7 +847,7 @@ R"(
 
     std::string emit_module_variable_defs(const ASR::Module_t &x) {
         std::string unit_src;
-        if (is_iso_fortran_env_module(x)) {
+        if (is_c_header_only_intrinsic_module(x)) {
             return unit_src;
         }
         for (auto &item : x.m_symtab->get_scope()) {
@@ -854,6 +862,20 @@ R"(
             }
         }
         return unit_src;
+    }
+
+    void append_module_variable_split_unit(const ASR::Module_t &x,
+            std::vector<std::pair<std::string, std::string>> &units) {
+        bool intrinsic_module_copy = intrinsic_module;
+        intrinsic_module = x.m_intrinsic;
+        std::string variable_defs = emit_module_variable_defs(x);
+        intrinsic_module = intrinsic_module_copy;
+        if (!variable_defs.empty()) {
+            units.push_back({
+                make_scoped_unit_filename("module", x.m_name, "data"),
+                variable_defs
+            });
+        }
     }
 
     std::vector<ASR::Function_t*> get_complete_function_definitions(
@@ -1126,13 +1148,7 @@ R"(
             return units;
         }
 
-        std::string variable_defs = emit_module_variable_defs(x);
-        if (!variable_defs.empty()) {
-            units.push_back({
-                make_scoped_unit_filename("module", module_name, "data"),
-                variable_defs
-            });
-        }
+        append_module_variable_split_unit(x, units);
 
         std::vector<ASR::Function_t*> functions =
             get_complete_function_definitions(x.m_symtab);
@@ -4919,7 +4935,11 @@ R"(
                 != x.m_symtab->get_scope().end());
             ASR::symbol_t *mod = x.m_symtab->get_symbol(item);
             ASR::Module_t *module_t = ASR::down_cast<ASR::Module_t>(mod);
-            if (module_t->m_intrinsic || module_t->m_loaded_from_mod) {
+            if (module_t->m_intrinsic) {
+                append_module_variable_split_unit(*module_t, unit_bodies);
+                continue;
+            }
+            if (module_t->m_loaded_from_mod) {
                 continue;
             }
             auto module_units = emit_module_split_units(*module_t);
