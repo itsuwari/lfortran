@@ -14973,8 +14973,10 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         std::string registered_name = registrar_name + "_state";
         wrapper_src += "static int " + registered_name + " = 0;\n\n";
         wrapper_src += "void " + anchor_name + "(void)\n{\n"
-            + "    _lfortran_register_c_tbp_impl_once(" + registration_args
+            + "    if (!" + registered_name + ") {\n"
+            + "        _lfortran_register_c_tbp_impl_once(" + registration_args
             + ", &" + registered_name + ");\n"
+            + "    }\n"
             + "}\n\n";
         if (should_eagerly_register_c_tbp_wrapper(*owner_struct)) {
             wrapper_src += "LFORTRAN_C_BACKEND_CONSTRUCTOR static void " + registrar_name

@@ -5450,7 +5450,7 @@ filename = "c_backend_tbp_once_registration_01.f90"
 run = true
 options = "--backend=c --separate-compilation"
 c_split_require_pattern = true
-c_split_require_pattern_value = "_lfortran_register_c_tbp_impl_once"
+c_split_require_pattern_value = "if (!__lfortran_register_tbp_"
 
 [[test]]
 filename = "../integration_tests/c_backend_tbp_force_link_guard_01.f90"
