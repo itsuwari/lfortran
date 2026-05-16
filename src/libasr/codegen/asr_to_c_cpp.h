@@ -429,9 +429,9 @@ public:
                     + ")->is_allocated && (" + *it + ")->data != NULL) {\n"
                     + indent + "    for (int64_t " + idx + " = 0; " + idx
                     + " < (" + *it + ")->dims[0].length; " + idx + "++) {\n";
-                array_cleanup += emit_c_struct_member_cleanup(struct_it->struct_t,
-                    indent + "        ", "(&((" + *it + ")->data[" + idx + "]))",
-                    true, true, true, false);
+                array_cleanup += emit_c_registered_struct_cleanup(
+                    struct_it->struct_t, indent + "        ",
+                    "(&((" + *it + ")->data[" + idx + "]))");
                 array_cleanup += indent + "    }\n"
                     + indent + "}\n";
                 break;
@@ -706,11 +706,10 @@ public:
                             + indent + "    }\n"
                             + indent + "    for (int64_t " + idx + " = 0; "
                             + idx + " < " + size + "; " + idx + "++) {\n";
-                        cleanup += emit_c_struct_member_cleanup(
+                        cleanup += emit_c_registered_struct_cleanup(
                             ASR::down_cast<ASR::Struct_t>(member_struct_sym),
-                            indent + "        ", "(&((" + member + ")->data[" + idx + "]))",
-                            clean_polymorphic_scalars, clean_scalar_allocatable_structs,
-                            true, false);
+                            indent + "        ",
+                            "(&((" + member + ")->data[" + idx + "]))");
                         cleanup += indent + "    }\n"
                             + indent + "}\n";
                     }
@@ -17901,10 +17900,10 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                         + indent + "    for (int64_t " + idx + " = 0; "
                         + idx + " < (" + target + ")->dims[0].length; "
                         + idx + "++) {\n";
-                    cleanup += emit_c_struct_member_cleanup(
+                    cleanup += emit_c_registered_struct_cleanup(
                         ASR::down_cast<ASR::Struct_t>(struct_sym),
                         indent + "        ", "(&((" + target + ")->data["
-                        + idx + "]))", true, true, true, false);
+                        + idx + "]))");
                     cleanup += indent + "    }\n"
                         + indent + "}\n";
                 }
@@ -17966,9 +17965,10 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                         + ")->is_allocated && (" + target + ")->data != NULL) {\n"
                         + indent + "    for (int64_t " + idx + " = 0; " + idx
                         + " < (" + target + ")->dims[0].length; " + idx + "++) {\n";
-                    cleanup += emit_c_struct_member_cleanup(
+                    cleanup += emit_c_registered_struct_cleanup(
                         ASR::down_cast<ASR::Struct_t>(struct_sym),
-                        indent + "        ", "(&((" + target + ")->data[" + idx + "]))");
+                        indent + "        ",
+                        "(&((" + target + ")->data[" + idx + "]))");
                     cleanup += indent + "    }\n"
                         + indent + "}\n";
                 }
