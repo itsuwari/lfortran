@@ -296,6 +296,15 @@ R"(
         return to_include;
     }
 
+    std::string get_descriptor_dim_assignment(const std::string &descriptor,
+            size_t dim, const std::string &lower_bound,
+            const std::string &length, const std::string &stride) const {
+        std::string dim_ref = descriptor + "->dims[" + std::to_string(dim) + "]";
+        return dim_ref + ".lower_bound = " + lower_bound + "; "
+            + dim_ref + ".length = " + length + "; "
+            + dim_ref + ".stride = " + stride;
+    }
+
     void finalize_common_sections(std::string &helper_defs) {
         if( c_ds_api->get_func_decls().size() > 0 ) {
             array_types_decls += "\n" + c_ds_api->get_func_decls() + "\n";
@@ -3023,10 +3032,11 @@ R"(
                         + ", .offset = 0, .is_allocated = true };\n";
                 } else {
                     sub += indent + std::string(v_m_name) + "->data = "
-                        + descriptor_data + ";\n";
-                    sub += indent + std::string(v_m_name) + "->n_dims = " + std::to_string(n_dims) + ";\n";
-                    sub += indent + std::string(v_m_name) + "->offset = " + std::to_string(0) + ";\n";
-                    sub += indent + std::string(v_m_name) + "->is_allocated = ";
+                        + descriptor_data + "; "
+                        + std::string(v_m_name) + "->n_dims = "
+                        + std::to_string(n_dims) + "; "
+                        + std::string(v_m_name) + "->offset = 0; "
+                        + std::string(v_m_name) + "->is_allocated = ";
                     if (lazy_dynamic_stack_storage) {
                         sub += "false";
                     } else {
@@ -3044,12 +3054,8 @@ R"(
                             this->visit_expr(*m_dims[i].m_length);
                             length = src;
                         }
-                        sub += indent + std::string(v_m_name) +
-                            "->dims[" + std::to_string(i) + "].lower_bound = " + start + ";\n";
-                        sub += indent + std::string(v_m_name) +
-                            "->dims[" + std::to_string(i) + "].length = " + length + ";\n";
-                        sub += indent + std::string(v_m_name) +
-                            "->dims[" + std::to_string(i) + "].stride = " + stride + ";\n";
+                        sub += indent + get_descriptor_dim_assignment(
+                            std::string(v_m_name), i, start, length, stride) + ";\n";
                         stride = "(" + stride + "*" + length + ")";
                     }
                 }
@@ -3151,12 +3157,11 @@ R"(
             + ");\n";
         out += indent + "    " + storage.heap_flag + " = true;\n";
         out += indent + "}\n";
-        out += indent + target_src + "->data = " + data_name + ";\n";
-        out += indent + target_src + "->n_dims = "
+        out += indent + target_src + "->data = " + data_name + "; "
+            + target_src + "->n_dims = "
             + std::to_string(ASRUtils::extract_n_dims_from_ttype(storage.var->m_type))
-            + ";\n";
-        out += indent + target_src + "->offset = 0;\n";
-        out += indent + target_src + "->is_allocated = true;\n";
+            + "; " + target_src + "->offset = 0; "
+            + target_src + "->is_allocated = true;\n";
         ASR::dimension_t *m_dims = nullptr;
         size_t n_dims = ASRUtils::extract_dimensions_from_ttype(
             storage.var->m_type, m_dims);
@@ -3171,12 +3176,8 @@ R"(
                 this->visit_expr(*m_dims[i].m_length);
                 length = src;
             }
-            out += indent + target_src + "->dims[" + std::to_string(i)
-                + "].lower_bound = " + start + ";\n";
-            out += indent + target_src + "->dims[" + std::to_string(i)
-                + "].length = " + length + ";\n";
-            out += indent + target_src + "->dims[" + std::to_string(i)
-                + "].stride = " + stride + ";\n";
+            out += indent + get_descriptor_dim_assignment(
+                target_src, i, start, length, stride) + ";\n";
             stride = "(" + stride + "*" + length + ")";
         }
         return out;
@@ -7041,12 +7042,8 @@ R"(    // Initialise Numpy
                     this->visit_expr(*m_dims[i].m_length);
                     length = src;
                 }
-                dim_set_code += indent + dest_src +
-                    "->dims[" + std::to_string(i) + "].lower_bound = " + start + ";\n";
-                dim_set_code += indent + dest_src +
-                    "->dims[" + std::to_string(i) + "].length = " + length + ";\n";
-                dim_set_code += indent + dest_src +
-                    "->dims[" + std::to_string(i) + "].stride = " + stride + ";\n";
+                dim_set_code += indent + get_descriptor_dim_assignment(
+                    dest_src, i, start, length, stride) + ";\n";
                 stride = "(" + stride + "*" + length + ")";
             }
             src.clear();
@@ -8691,13 +8688,11 @@ R"(    // Initialise Numpy
             array_setup += base_indent + array_var_name + "->data = (" + array_type_name
                 + "*) _lfortran_malloc_alloc(_lfortran_get_default_allocator(), sizeof("
                 + array_type_name + ") * " + count_name + ");\n";
-            array_setup += base_indent + array_var_name + "->n_dims = 1;\n";
-            array_setup += base_indent + array_var_name + "->offset = 0;\n";
-            array_setup += base_indent + array_var_name + "->is_allocated = true;\n";
-            array_setup += base_indent + array_var_name + "->dims[0].lower_bound = "
-                + std::to_string(lower_bound) + ";\n";
-            array_setup += base_indent + array_var_name + "->dims[0].length = " + count_name + ";\n";
-            array_setup += base_indent + array_var_name + "->dims[0].stride = 1;\n";
+            array_setup += base_indent + array_var_name + "->n_dims = 1; "
+                + array_var_name + "->offset = 0; "
+                + array_var_name + "->is_allocated = true;\n";
+            array_setup += base_indent + get_descriptor_dim_assignment(
+                array_var_name, 0, std::to_string(lower_bound), count_name, "1") + ";\n";
             array_setup += base_indent + "int32_t " + index_name + " = 0;\n";
             emit_fill(x.m_args, x.n_args, base_level, array_setup);
 
