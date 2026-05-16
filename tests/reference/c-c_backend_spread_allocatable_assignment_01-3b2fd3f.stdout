@@ -90,8 +90,6 @@ struct Allocatable_r64______
 
 double __lfortran__lcompilers_Sum_8_2_0_idx4_real_______0(struct r64_____* restrict array, int32_t __1array, int32_t __2array);
 double __lfortran__lcompilers_Sum_8_2_0_idx4(struct r64_____* restrict array);
-void __lfortran__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3(struct r64___* restrict source, int32_t __1source, int32_t dim, int32_t ncopies, struct r64_____* restrict result, int32_t __1result, int32_t __2result);
-void __lfortran__lcompilers_spread_r64____ret_r64______idx4(struct r64___* restrict source, int32_t dim, int32_t ncopies, struct r64_____* restrict result);
 
 
 
@@ -122,76 +120,6 @@ double __lfortran__lcompilers_Sum_8_2_0_idx4_real_______0(struct r64_____* restr
 double __lfortran__lcompilers_Sum_8_2_0_idx4(struct r64_____* restrict array)
 {
     return __lfortran__lcompilers_Sum_8_2_0_idx4_real_______0(array, ((int32_t)array->dims[0].length + array->dims[0].lower_bound - 1), ((int32_t)array->dims[1].length + array->dims[1].lower_bound - 1));
-}
-
-void __lfortran__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3(struct r64___* restrict source, int32_t __1source, int32_t dim, int32_t ncopies, struct r64_____* restrict result, int32_t __1result, int32_t __2result)
-{
-    int32_t i;
-    double * restrict __lfortran_source_data = source->data;
-    const int32_t __lfortran_source_offset = source->offset;
-    const int32_t __lfortran_source_dim1_lower_bound = source->dims[0].lower_bound;
-    const int32_t __lfortran_source_dim1_stride = source->dims[0].stride;
-    double * restrict __lfortran_result_data = result->data;
-    const int32_t __lfortran_result_offset = result->offset;
-    const int32_t __lfortran_result_dim1_lower_bound = result->dims[0].lower_bound;
-    const int32_t __lfortran_result_dim1_stride = result->dims[0].stride;
-    const int32_t __lfortran_result_dim2_lower_bound = result->dims[1].lower_bound;
-    const int32_t __lfortran_result_dim2_stride = result->dims[1].stride;
-    if (dim == 1) {
-        for (i=1; i<=ncopies; i++) {
-            {
-            double *__lfortran_lhs1copy_data = __lfortran_result_data;
-            int64_t __lfortran_lhs1copy_stride = __lfortran_result_dim2_stride * (1);
-            int64_t __lfortran_lhs1copy_offset = (__lfortran_result_offset + __lfortran_result_dim1_stride * ((i) - __lfortran_result_dim1_lower_bound) + __lfortran_result_dim2_stride * ((1) - __lfortran_result_dim2_lower_bound));
-            int64_t __lfortran_lhs1copy_length = ((((__2result + 1 - 1) - (1)) / (1)) + 1);
-            double *__lfortran_rhs1copy_data = __lfortran_source_data;
-            int64_t __lfortran_rhs1copy_stride = __lfortran_source_dim1_stride * (1);
-            int64_t __lfortran_rhs1copy_offset = __lfortran_source_offset;
-            int64_t __lfortran_rhs1copy_length = (((((__lfortran_source_dim1_lower_bound + source->dims[0].length - 1)) - (__lfortran_source_dim1_lower_bound)) / (1)) + 1);
-                if (__lfortran_lhs1copy_stride == 1 && __lfortran_rhs1copy_stride == 1) {
-                    memcpy(__lfortran_lhs1copy_data + __lfortran_lhs1copy_offset, __lfortran_rhs1copy_data + __lfortran_rhs1copy_offset, (size_t)(__lfortran_lhs1copy_length) * sizeof(*__lfortran_lhs1copy_data));
-                } else {
-                    int64_t __lfortran_lhs1_index = __lfortran_lhs1copy_offset;
-                    int64_t __lfortran_rhs1_index = __lfortran_rhs1copy_offset;
-                    for (int64_t __lfortran_i = 0; __lfortran_i < __lfortran_lhs1copy_length; __lfortran_i++) {
-                        __lfortran_lhs1copy_data[__lfortran_lhs1_index] = __lfortran_rhs1copy_data[__lfortran_rhs1_index];
-                        __lfortran_lhs1_index += __lfortran_lhs1copy_stride;
-                        __lfortran_rhs1_index += __lfortran_rhs1copy_stride;
-                    }
-                }
-            }
-        }
-    } else {
-        for (i=1; i<=ncopies; i++) {
-            {
-            double *__lfortran_lhs1copy_data1 = __lfortran_result_data;
-            int64_t __lfortran_lhs1copy_stride1 = __lfortran_result_dim1_stride * (1);
-            int64_t __lfortran_lhs1copy_offset1 = (__lfortran_result_offset + __lfortran_result_dim1_stride * ((1) - __lfortran_result_dim1_lower_bound) + __lfortran_result_dim2_stride * ((i) - __lfortran_result_dim2_lower_bound));
-            int64_t __lfortran_lhs1copy_length1 = ((((__1result + 1 - 1) - (1)) / (1)) + 1);
-            double *__lfortran_rhs1copy_data1 = __lfortran_source_data;
-            int64_t __lfortran_rhs1copy_stride1 = __lfortran_source_dim1_stride * (1);
-            int64_t __lfortran_rhs1copy_offset1 = __lfortran_source_offset;
-            int64_t __lfortran_rhs1copy_length1 = (((((__lfortran_source_dim1_lower_bound + source->dims[0].length - 1)) - (__lfortran_source_dim1_lower_bound)) / (1)) + 1);
-                if (__lfortran_lhs1copy_stride1 == 1 && __lfortran_rhs1copy_stride1 == 1) {
-                    memcpy(__lfortran_lhs1copy_data1 + __lfortran_lhs1copy_offset1, __lfortran_rhs1copy_data1 + __lfortran_rhs1copy_offset1, (size_t)(__lfortran_lhs1copy_length1) * sizeof(*__lfortran_lhs1copy_data1));
-                } else {
-                    int64_t __lfortran_lhs1_index1 = __lfortran_lhs1copy_offset1;
-                    int64_t __lfortran_rhs1_index1 = __lfortran_rhs1copy_offset1;
-                    for (int64_t __lfortran_i1 = 0; __lfortran_i1 < __lfortran_lhs1copy_length1; __lfortran_i1++) {
-                        __lfortran_lhs1copy_data1[__lfortran_lhs1_index1] = __lfortran_rhs1copy_data1[__lfortran_rhs1_index1];
-                        __lfortran_lhs1_index1 += __lfortran_lhs1copy_stride1;
-                        __lfortran_rhs1_index1 += __lfortran_rhs1copy_stride1;
-                    }
-                }
-            }
-        }
-    }
-        return;
-}
-
-void __lfortran__lcompilers_spread_r64____ret_r64______idx4(struct r64___* restrict source, int32_t dim, int32_t ncopies, struct r64_____* restrict result)
-{
-    __lfortran__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3(source, ((int32_t)source->dims[0].length + source->dims[0].lower_bound - 1), dim, ncopies, result, ((int32_t)result->dims[0].length + result->dims[0].lower_bound - 1), ((int32_t)result->dims[1].length + result->dims[1].lower_bound - 1));
 }
 
 int main(int argc, char* argv[])

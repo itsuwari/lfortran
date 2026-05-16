@@ -5529,7 +5529,7 @@ c_forbid_pattern_value = "__lfortran_i + __lfortran_j * 3)) == 1"
 [[test]]
 filename = "../integration_tests/c_backend_rank2_scalarized_precedence_01.f90"
 c_forbid_pattern = true
-c_forbid_pattern_value = "__lfortran__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3(&"
+c_forbid_pattern_value = "__lfortran__lcompilers_spread"
 
 [[test]]
 filename = "../integration_tests/c_backend_sum_helper_dedup_01.f90"

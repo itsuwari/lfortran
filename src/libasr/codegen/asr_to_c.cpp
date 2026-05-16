@@ -956,6 +956,66 @@ R"(
         return fn != nullptr && startswith(fn->m_name, "_lcompilers_");
     }
 
+    class CRequiredSpreadHelperCollector :
+        public ASR::BaseWalkVisitor<CRequiredSpreadHelperCollector>
+    {
+    public:
+        ASRToCVisitor &codegen;
+        std::vector<ASR::Function_t*> &required_helpers;
+        bool skip_spread_helper_bodies;
+
+        CRequiredSpreadHelperCollector(ASRToCVisitor &codegen,
+                std::vector<ASR::Function_t*> &required_helpers,
+                bool skip_spread_helper_bodies)
+            : codegen{codegen}, required_helpers{required_helpers},
+            skip_spread_helper_bodies{skip_spread_helper_bodies} {}
+
+        void mark_required(ASR::Function_t *fn) {
+            if (!codegen.is_c_spread_helper_function(fn)) {
+                return;
+            }
+            uint64_t key = get_hash(reinterpret_cast<ASR::asr_t*>(fn));
+            if (codegen.c_required_spread_helper_hashes.insert(key).second) {
+                required_helpers.push_back(fn);
+            }
+        }
+
+        void visit_Function(const ASR::Function_t &x) {
+            if (skip_spread_helper_bodies
+                    && codegen.is_c_spread_helper_function(&x)) {
+                return;
+            }
+            ASR::BaseWalkVisitor<CRequiredSpreadHelperCollector>::visit_Function(x);
+        }
+
+        void visit_SubroutineCall(const ASR::SubroutineCall_t &x) {
+            ASR::symbol_t *sym = ASRUtils::symbol_get_past_external(x.m_name);
+            if (sym != nullptr && ASR::is_a<ASR::Function_t>(*sym)) {
+                ASR::Function_t *fn = ASR::down_cast<ASR::Function_t>(sym);
+                std::string sym_name = codegen.get_c_function_target_name(*fn);
+                if (codegen.is_c_spread_callee(fn, sym_name)
+                        && !codegen.can_emit_c_inline_spread_subroutine_call(
+                            x, fn, sym_name)) {
+                    mark_required(fn);
+                }
+            }
+            ASR::BaseWalkVisitor<CRequiredSpreadHelperCollector>::visit_SubroutineCall(x);
+        }
+    };
+
+    void collect_required_c_spread_helpers(const ASR::TranslationUnit_t &x) {
+        c_required_spread_helper_hashes.clear();
+        std::vector<ASR::Function_t*> required_helpers;
+        CRequiredSpreadHelperCollector initial_collector(
+            *this, required_helpers, true);
+        initial_collector.visit_TranslationUnit(x);
+        for (size_t i = 0; i < required_helpers.size(); i++) {
+            CRequiredSpreadHelperCollector dependency_collector(
+                *this, required_helpers, false);
+            dependency_collector.visit_Function(*required_helpers[i]);
+        }
+    }
+
     static bool scope_contains(SymbolTable *scope, SymbolTable *candidate) {
         while (candidate != nullptr) {
             if (candidate == scope) {
@@ -4531,6 +4591,7 @@ R"(
     void visit_TranslationUnit(const ASR::TranslationUnit_t &x) {
         is_string_concat_present = false;
         global_scope = x.m_symtab;
+        collect_required_c_spread_helpers(x);
         emitted_c_tbp_parent_force_link_type_ids.clear();
         deferred_c_tbp_parent_force_link_type_ids.clear();
         deferred_c_tbp_parent_owner_anchor_defs.clear();
@@ -4736,6 +4797,7 @@ R"(
         suppress_c_struct_cleanup_registration = false;
         suppress_c_struct_runtime_info_registration = false;
         global_scope = x.m_symtab;
+        collect_required_c_spread_helpers(x);
         LCOMPILERS_ASSERT(x.n_items == 0);
         indentation_level = 0;
         indentation_spaces = 4;

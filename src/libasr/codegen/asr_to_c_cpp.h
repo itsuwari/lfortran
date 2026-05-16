@@ -255,6 +255,7 @@ public:
     std::string forward_decl_functions;
     std::vector<ASR::Function_t*> pending_function_definitions;
     std::set<uint64_t> pending_function_definition_hashes;
+    std::set<uint64_t> c_required_spread_helper_hashes;
     bool emit_compact_constant_data_units = false;
     size_t compact_constant_data_count = 0;
     std::string compact_constant_data_body;
@@ -5382,6 +5383,11 @@ R"(#include <stdio.h>
         bool has_typevar = false;
         ASR::FunctionType_t *f_type = ASRUtils::get_FunctionType(x);
         if (is_c && std::string(x.m_name).find("_lcompilers_stringconcat") != std::string::npos) {
+            src = "";
+            current_scope = current_scope_copy;
+            return;
+        }
+        if (should_skip_c_spread_helper_definition(x)) {
             src = "";
             current_scope = current_scope_copy;
             return;
@@ -13812,8 +13818,25 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             || sym_name.find("_lcompilers_spread") != std::string::npos;
     }
 
-    bool try_emit_c_inline_spread_subroutine_call(const ASR::SubroutineCall_t &x,
-            ASR::Function_t *f, const std::string &sym_name, std::string &out) {
+    bool is_c_spread_helper_function(const ASR::Function_t *f) const {
+        return is_c && f != nullptr
+            && std::string(f->m_name).find("_lcompilers_spread") != std::string::npos;
+    }
+
+    bool is_required_c_spread_helper_function(const ASR::Function_t &x) const {
+        uint64_t key = get_hash(reinterpret_cast<ASR::asr_t*>(
+            const_cast<ASR::Function_t*>(&x)));
+        return c_required_spread_helper_hashes.find(key)
+            != c_required_spread_helper_hashes.end();
+    }
+
+    bool should_skip_c_spread_helper_definition(const ASR::Function_t &x) const {
+        return is_c_spread_helper_function(&x)
+            && !is_required_c_spread_helper_function(x);
+    }
+
+    bool can_emit_c_inline_spread_subroutine_call(const ASR::SubroutineCall_t &x,
+            ASR::Function_t *f, const std::string &sym_name) {
         if (!is_c_spread_callee(f, sym_name)
                 || (x.n_args != 4 && x.n_args != 7)) {
             return false;
@@ -13844,14 +13867,28 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 || !is_c_scalarizable_element_type(source_type)
                 || !is_c_scalarizable_element_type(result_type)
                 || CUtils::get_c_type_from_ttype_t(source_element_type)
-                    != CUtils::get_c_type_from_ttype_t(result_element_type)) {
+                    != CUtils::get_c_type_from_ttype_t(result_element_type)
+                || !is_c_rank1_scalarizable_array_expr(source_expr)
+                || !is_c_rank2_unit_slice_array_expr(result_expr)) {
             return false;
         }
         ASR::symbol_t *result_root = get_c_array_assignment_root_symbol(result_expr);
-        if (result_root != nullptr
-                && c_expr_references_root_symbol(source_expr, result_root)) {
+        return result_root == nullptr
+            || !c_expr_references_root_symbol(source_expr, result_root);
+    }
+
+    bool try_emit_c_inline_spread_subroutine_call(const ASR::SubroutineCall_t &x,
+            ASR::Function_t *f, const std::string &sym_name, std::string &out) {
+        if (!can_emit_c_inline_spread_subroutine_call(x, f, sym_name)) {
             return false;
         }
+        size_t dim_arg_index = x.n_args == 4 ? 1 : 2;
+        size_t result_arg_index = x.n_args == 4 ? 3 : 4;
+        ASR::expr_t *source_expr = x.m_args[0].m_value;
+        ASR::expr_t *dim_expr = x.m_args[dim_arg_index].m_value;
+        ASR::expr_t *result_expr = x.m_args[result_arg_index].m_value;
+        int64_t dim = -1;
+        LCOMPILERS_ASSERT(get_c_constant_int_expr_value(dim_expr, dim));
 
         std::string setup = drain_tmp_buffer();
         std::string result_data, result_offset, result_stride1, result_stride2;
