@@ -5756,6 +5756,11 @@ c_forbid_pattern = true
 c_forbid_pattern_value = "data = (double*) _lfortran_malloc_alloc(__lfortran_default_allocator, 1*__libasr_created_real_binop_right"
 
 [[test]]
+filename = "../integration_tests/c_backend_member_section_view_no_nested_01.f90"
+c_split_forbid_pattern = true
+c_split_forbid_pattern_value = ")->data), .dims ="
+
+[[test]]
 filename = "c_backend_lazy_matmul_temp_01.f90"
 run = true
 options = "--backend=c --separate-compilation -O3"

@@ -11684,6 +11684,30 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 source_src_copy = CUtils::get_c_variable_name(
                     *ASR::down_cast<ASR::Variable_t>(source_sym));
             }
+        } else if (ASR::is_a<ASR::StructInstanceMember_t>(*source_lvalue)) {
+            ASR::StructInstanceMember_t *member =
+                ASR::down_cast<ASR::StructInstanceMember_t>(source_lvalue);
+            ASR::symbol_t *member_sym = ASRUtils::symbol_get_past_external(member->m_m);
+            ASR::expr_t *member_base = unwrap_c_lvalue_expr(member->m_v);
+            ASR::Variable_t *member_var = ASR::is_a<ASR::Variable_t>(*member_sym)
+                ? ASR::down_cast<ASR::Variable_t>(member_sym) : nullptr;
+            bool direct_descriptor_member =
+                member_var != nullptr
+                && (ASRUtils::is_allocatable(member_var->m_type)
+                    || ASRUtils::is_pointer(member_var->m_type))
+                && (member_base == nullptr || !ASR::is_a<ASR::ArrayItem_t>(*member_base));
+            if (direct_descriptor_member) {
+                std::string saved_src = src;
+                auto saved_tmp_buffer_src = std::move(tmp_buffer_src);
+                tmp_buffer_src.clear();
+                source_src_copy = get_struct_instance_member_expr(*member, false);
+                std::string member_setup = drain_tmp_buffer();
+                tmp_buffer_src = std::move(saved_tmp_buffer_src);
+                if (!member_setup.empty()) {
+                    tmp_buffer_src.push_back(member_setup);
+                }
+                src = saved_src;
+            }
         }
         if (!have_compatible_c_array_wrapper_element_type(target_type, source_type)
                 || is_data_only_array_expr(source_expr)
