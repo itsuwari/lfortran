@@ -1,0 +1,13 @@
+{
+    "basename": "c_require_pattern-c_backend_raw_helper_assumed_size_section_01-5364f5f",
+    "cmd": "lfortran --no-color --show-c {infile} | grep -F -q \"__rawptr\" #",
+    "infile": "tests/c_backend_raw_helper_assumed_size_section_01.f90",
+    "infile_hash": "d26b0c1d68f140ad5e46fc5eeaeb57eab318fd2e105d7088483a885c",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

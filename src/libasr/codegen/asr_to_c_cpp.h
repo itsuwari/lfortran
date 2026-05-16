@@ -3593,6 +3593,45 @@ R"(#include <stdio.h>
                 }
             }
 
+            void visit_ArraySection(const ASR::ArraySection_t &x) {
+                if (!ok) {
+                    return;
+                }
+                if (!is_raw_var(x.m_v)) {
+                    ASR::BaseWalkVisitor<RawArrayUseVerifier>::
+                        visit_ArraySection(x);
+                    return;
+                }
+                if (!ASRUtils::is_array(x.m_type)) {
+                    ok = false;
+                    return;
+                }
+                for (size_t i = 0; i < x.n_args; i++) {
+                    ASR::array_index_t idx = x.m_args[i];
+                    if (idx.m_left != nullptr) {
+                        if (parent.is_vector_subscript_expr(idx.m_left)) {
+                            ok = false;
+                            return;
+                        }
+                        this->visit_expr(*idx.m_left);
+                    }
+                    if (idx.m_right != nullptr) {
+                        if (parent.is_vector_subscript_expr(idx.m_right)) {
+                            ok = false;
+                            return;
+                        }
+                        this->visit_expr(*idx.m_right);
+                    }
+                    if (idx.m_step != nullptr) {
+                        if (parent.is_vector_subscript_expr(idx.m_step)) {
+                            ok = false;
+                            return;
+                        }
+                        this->visit_expr(*idx.m_step);
+                    }
+                }
+            }
+
             void visit_ArraySize(const ASR::ArraySize_t &x) {
                 if (!ok) {
                     return;
