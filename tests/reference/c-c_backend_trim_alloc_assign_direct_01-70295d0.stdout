@@ -1,0 +1,149 @@
+#include <inttypes.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include <stdlib.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <string.h>
+#include <lfortran_intrinsics.h>
+
+
+#ifndef LFORTRAN_C_BACKEND_CONSTRUCTOR
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_CONSTRUCTOR __attribute__((constructor))
+#else
+#define LFORTRAN_C_BACKEND_CONSTRUCTOR
+#endif
+#endif
+#ifndef LFORTRAN_C_BACKEND_WEAK
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_WEAK __attribute__((weak))
+#else
+#define LFORTRAN_C_BACKEND_WEAK static
+#endif
+#endif
+#ifndef LFORTRAN_C_BACKEND_COMMON
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_COMMON __attribute__((common))
+#else
+#define LFORTRAN_C_BACKEND_COMMON
+#endif
+#endif
+
+
+struct dimension_descriptor
+{
+    int32_t lower_bound, length, stride;
+};
+#ifndef LFORTRAN_C_BACKEND_CONSTRUCTOR
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_CONSTRUCTOR __attribute__((constructor))
+#else
+#define LFORTRAN_C_BACKEND_CONSTRUCTOR
+#endif
+#endif
+#ifndef LFORTRAN_C_BACKEND_WEAK
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_WEAK __attribute__((weak))
+#else
+#define LFORTRAN_C_BACKEND_WEAK static
+#endif
+#endif
+#ifndef LFORTRAN_C_BACKEND_COMMON
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_COMMON __attribute__((common))
+#else
+#define LFORTRAN_C_BACKEND_COMMON
+#endif
+#endif
+
+int32_t __lfortran__lcompilers_len_trim_str(char * str);
+void __lfortran__lcompilers_trim_str(char * str, char * *result);
+void __lfortran_c_backend_trim_alloc_assign_direct_01_m__make_label(int32_t x, char * *str);
+
+
+
+
+// Implementations
+int32_t __lfortran__lcompilers_len_trim_str(char * str)
+{
+    int32_t result;
+    result = ((str) != NULL ? _lfortran_str_len(str) : 0);
+    if (result != 0) {
+        while (str_compare((str + ((result) - 1)), 1, (char*)" ", 1)  ==  0) {
+            result = result - 1;
+            if (result == 0) {
+                break;
+            }
+        }
+    }
+    return result;
+}
+
+void __lfortran__lcompilers_trim_str(char * str, char * *result)
+{
+    lfortran_allocator_t* __lfortran_default_allocator = _lfortran_get_default_allocator();
+    _lfortran_strcpy_alloc(__lfortran_default_allocator, &(*result), NULL, true, true, (str + (((1) - 1))), ((_lfortran_str_len_trim(str, ((str) != NULL ? _lfortran_str_len(str) : 0))) - (((1) - 1))));
+}
+
+void __lfortran_c_backend_trim_alloc_assign_direct_01_m__make_label(int32_t x, char * *str)
+{
+    lfortran_allocator_t* __lfortran_default_allocator = _lfortran_get_default_allocator();
+    char * __libasr__created__var__1_return_slot = NULL;
+    char __lfortran_fixed_char_buffer[16] = {0}; char *buffer = __lfortran_fixed_char_buffer;
+    char __lfortran_fixed_char_lfortran_iomsg[1] = {0}; char *lfortran_iomsg = __lfortran_fixed_char_lfortran_iomsg;
+    if (str != NULL && (*str) != NULL) {
+        _lfortran_free_alloc(__lfortran_default_allocator, *str);
+        *str = NULL;
+    }
+    if ((((*str)) != NULL)) {
+        if ((*str) != NULL) {
+            _lfortran_free_alloc(__lfortran_default_allocator, (*str));
+            (*str) = NULL;
+        }
+    }
+    int64_t __lfortran_write_size_0 = 0;
+    char __lfortran_write_stack_buffer_0[4096];
+    char *__lfortran_write_buffer_0 = _lcompilers_string_format_fortran_stack(__lfortran_default_allocator, __lfortran_write_stack_buffer_0, sizeof(__lfortran_write_stack_buffer_0), (char*)"(i0)", (int64_t)(4), "I4", &__lfortran_write_size_0, 0, 0, 0, 0, 0, &((int32_t){x}));
+    int64_t __lfortran_unit_len = (int64_t)(16);
+    if (buffer == NULL) buffer = (char*) _lfortran_string_malloc_alloc(__lfortran_default_allocator, __lfortran_unit_len);
+    _lfortran_string_write(__lfortran_default_allocator, &(buffer), false, false, false, 1, &__lfortran_unit_len, NULL, "%s", 2, __lfortran_write_buffer_0, __lfortran_write_size_0);
+    if (__lfortran_write_buffer_0 != __lfortran_write_stack_buffer_0) {
+        _lfortran_free_alloc(__lfortran_default_allocator, __lfortran_write_buffer_0);
+    }
+    if (__libasr__created__var__1_return_slot != NULL) {
+        _lfortran_free_alloc(__lfortran_default_allocator, __libasr__created__var__1_return_slot);
+        __libasr__created__var__1_return_slot = NULL;
+    }
+    int64_t __lfortran_trim_len = _lfortran_str_len_trim(buffer, 16);
+    _lfortran_strcpy_alloc(__lfortran_default_allocator, &(*str), NULL, true, true, buffer, __lfortran_trim_len);
+    if (__libasr__created__var__1_return_slot != NULL) {
+        _lfortran_free_alloc(__lfortran_default_allocator, __libasr__created__var__1_return_slot);
+        __libasr__created__var__1_return_slot = NULL;
+    }
+    _lfortran_string_len_unregister(lfortran_iomsg);
+    _lfortran_string_len_unregister(buffer);
+}
+
+int main(int argc, char* argv[])
+{
+    _lpython_set_argv(argc, argv);
+    lfortran_allocator_t* __lfortran_default_allocator = _lfortran_get_default_allocator();
+    char * __libasr__created__var__0_return_slot = NULL;
+    if (__libasr__created__var__0_return_slot != NULL) {
+        _lfortran_free_alloc(__lfortran_default_allocator, __libasr__created__var__0_return_slot);
+        __libasr__created__var__0_return_slot = NULL;
+    }
+    __lfortran_c_backend_trim_alloc_assign_direct_01_m__make_label(42, &__libasr__created__var__0_return_slot);
+    if (str_compare(__libasr__created__var__0_return_slot, ((__libasr__created__var__0_return_slot) != NULL ? _lfortran_str_len(__libasr__created__var__0_return_slot) : 0), (char*)"42", 2)  !=  0) {
+        fprintf(stderr, "ERROR STOP");
+        exit(1);
+    }
+    if (__libasr__created__var__0_return_slot != NULL) {
+        _lfortran_free_alloc(__lfortran_default_allocator, __libasr__created__var__0_return_slot);
+        __libasr__created__var__0_return_slot = NULL;
+    }
+    return 0;
+}

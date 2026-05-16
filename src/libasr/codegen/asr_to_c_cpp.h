@@ -2873,6 +2873,114 @@ R"(#include <stdio.h>
             expr, arg_src, arg_len, arg_setup);
     }
 
+    bool try_emit_c_trim_assignment_sequence(ASR::stmt_t **body, size_t n_body,
+            size_t &i, std::string &out) {
+        if (!is_c || i >= n_body) {
+            return false;
+        }
+
+        auto get_var_sym = [&](ASR::expr_t *expr) -> ASR::symbol_t* {
+            expr = unwrap_c_lvalue_expr(expr);
+            if (expr == nullptr || !ASR::is_a<ASR::Var_t>(*expr)) {
+                return nullptr;
+            }
+            return ASRUtils::symbol_get_past_external(
+                ASR::down_cast<ASR::Var_t>(expr)->m_v);
+        };
+        auto same_var = [&](ASR::expr_t *left, ASR::expr_t *right) -> bool {
+            ASR::symbol_t *left_sym = get_var_sym(left);
+            return left_sym != nullptr && left_sym == get_var_sym(right);
+        };
+
+        size_t pos = i;
+        ASR::ExplicitDeallocate_t *dealloc = nullptr;
+        if (ASR::is_a<ASR::ExplicitDeallocate_t>(*body[pos])) {
+            dealloc = ASR::down_cast<ASR::ExplicitDeallocate_t>(body[pos]);
+            pos++;
+        }
+        if (pos + 2 >= n_body
+                || !ASR::is_a<ASR::Allocate_t>(*body[pos])
+                || !ASR::is_a<ASR::SubroutineCall_t>(*body[pos + 1])
+                || !ASR::is_a<ASR::Assignment_t>(*body[pos + 2])) {
+            return false;
+        }
+
+        ASR::Allocate_t *allocate = ASR::down_cast<ASR::Allocate_t>(body[pos]);
+        ASR::SubroutineCall_t *trim_call =
+            ASR::down_cast<ASR::SubroutineCall_t>(body[pos + 1]);
+        ASR::Assignment_t *assign =
+            ASR::down_cast<ASR::Assignment_t>(body[pos + 2]);
+        if (allocate->n_args != 1 || trim_call->n_args != 2
+                || trim_call->m_args[0].m_value == nullptr
+                || trim_call->m_args[1].m_value == nullptr) {
+            return false;
+        }
+
+        ASR::expr_t *slot_expr = allocate->m_args[0].m_a;
+        if (!is_c_compiler_created_return_slot_expr(slot_expr)
+                || !same_var(slot_expr, trim_call->m_args[1].m_value)
+                || !same_var(slot_expr, assign->m_value)) {
+            return false;
+        }
+        if (dealloc != nullptr
+                && (dealloc->n_vars != 1 || !same_var(slot_expr, dealloc->m_vars[0]))) {
+            return false;
+        }
+
+        ASR::Function_t *fn = get_procedure_interface_function(trim_call->m_name);
+        if (fn == nullptr) {
+            return false;
+        }
+        std::string fn_name = get_c_function_target_name(*fn);
+        if (!is_c_string_trim_callee(fn, fn_name)) {
+            return false;
+        }
+
+        ASR::ttype_t *target_type = ASRUtils::expr_type(assign->m_target);
+        ASR::ttype_t *target_type_unwrapped =
+            ASRUtils::type_get_past_allocatable_pointer(target_type);
+        if (target_type_unwrapped == nullptr
+                || ASRUtils::is_array(target_type_unwrapped)
+                || !ASRUtils::is_character(*target_type_unwrapped)) {
+            return false;
+        }
+
+        std::string indent(indentation_level * indentation_spaces, ' ');
+        out = check_tmp_buffer();
+        if (dealloc != nullptr) {
+            self().visit_stmt(*body[i]);
+            out += src;
+        }
+
+        ASR::expr_t *input_expr = trim_call->m_args[0].m_value;
+        std::string input, input_len, setup;
+        if (!try_get_unit_step_string_section_view(
+                    input_expr, input, input_len, setup)) {
+            self().visit_expr(*input_expr);
+            input = src;
+            setup += drain_tmp_buffer();
+            setup += extract_stmt_setup_from_expr(input);
+            input_len = get_string_length_expr(input_expr, input, setup);
+        }
+
+        std::string target = get_c_mutable_scalar_expr(assign->m_target);
+        setup += drain_tmp_buffer();
+        setup += extract_stmt_setup_from_expr(target);
+        std::string target_len =
+            CUtils::get_fixed_character_length_arg(target_type);
+        bool target_has_fixed_len = target_len != "NULL";
+        std::string trim_len = get_unique_local_name("__lfortran_trim_len");
+        out += setup;
+        out += indent + "int64_t " + trim_len + " = _lfortran_str_len_trim("
+            + input + ", " + input_len + ");\n";
+        out += indent + "_lfortran_strcpy_alloc(_lfortran_get_default_allocator(), &"
+            + target + ", " + target_len + ", true, "
+            + (target_has_fixed_len ? "false" : "true") + ", "
+            + input + ", " + trim_len + ");\n";
+        i = pos + 2;
+        return true;
+    }
+
     bool looks_like_non_expression_stmt(const std::string &expr) {
         auto trim_ws = [](const std::string &text) -> std::string {
             size_t begin = text.find_first_not_of(" \t\r\n");
@@ -5643,8 +5751,14 @@ R"(#include <stdio.h>
             decl += emit_current_function_array_descriptor_cache_decls(x, indent);
 
             for (size_t i=0; i<x.n_body; i++) {
-                self().visit_stmt(*x.m_body[i]);
-                current_body += src;
+                std::string trim_assignment;
+                if (try_emit_c_trim_assignment_sequence(
+                        x.m_body, x.n_body, i, trim_assignment)) {
+                    current_body += trim_assignment;
+                } else {
+                    self().visit_stmt(*x.m_body[i]);
+                    current_body += src;
+                }
             }
             decl += check_tmp_buffer();
             current_function = nullptr;
@@ -20303,8 +20417,14 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 std::string out = indent + "{\n";
                 indentation_level += 1;
                 for (size_t i=0; i<n_selected_body; i++) {
-                    self().visit_stmt(*selected_body[i]);
-                    current_body += check_tmp_buffer() + src;
+                    std::string trim_assignment;
+                    if (try_emit_c_trim_assignment_sequence(
+                            selected_body, n_selected_body, i, trim_assignment)) {
+                        current_body += trim_assignment;
+                    } else {
+                        self().visit_stmt(*selected_body[i]);
+                        current_body += check_tmp_buffer() + src;
+                    }
                 }
                 indentation_level -= 1;
                 out += current_body;
@@ -20353,8 +20473,14 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         out = test_setup + out;
         indentation_level += 1;
         for (size_t i=0; i<x.n_body; i++) {
-            self().visit_stmt(*x.m_body[i]);
-            current_body += check_tmp_buffer() + src;
+            std::string trim_assignment;
+            if (try_emit_c_trim_assignment_sequence(
+                    x.m_body, x.n_body, i, trim_assignment)) {
+                current_body += trim_assignment;
+            } else {
+                self().visit_stmt(*x.m_body[i]);
+                current_body += check_tmp_buffer() + src;
+            }
         }
         out += current_body;
         out += indent + "}";
@@ -20364,8 +20490,14 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             current_body = "";
             out += " else {\n";
             for (size_t i=0; i<x.n_orelse; i++) {
-                self().visit_stmt(*x.m_orelse[i]);
-                current_body += check_tmp_buffer() + src;
+                std::string trim_assignment;
+                if (try_emit_c_trim_assignment_sequence(
+                        x.m_orelse, x.n_orelse, i, trim_assignment)) {
+                    current_body += trim_assignment;
+                } else {
+                    self().visit_stmt(*x.m_orelse[i]);
+                    current_body += check_tmp_buffer() + src;
+                }
             }
             out += current_body;
             out += indent + "}\n";

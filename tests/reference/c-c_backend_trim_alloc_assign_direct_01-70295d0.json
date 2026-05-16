@@ -1,0 +1,13 @@
+{
+    "basename": "c-c_backend_trim_alloc_assign_direct_01-70295d0",
+    "cmd": "lfortran --no-color --show-c {infile}",
+    "infile": "tests/c_backend_trim_alloc_assign_direct_01.f90",
+    "infile_hash": "f92c0519352339f37805b9411d4c6fe6f72b838b02bb95835544210c",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": "c-c_backend_trim_alloc_assign_direct_01-70295d0.stdout",
+    "stdout_hash": "d2d6f024044b9cf39be241169fa6e167bf824ec34af5c09d50db0e03",
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

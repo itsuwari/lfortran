@@ -1,0 +1,13 @@
+{
+    "basename": "c_forbid_pattern-c_backend_trim_alloc_assign_direct_01-f1ac414",
+    "cmd": "lfortran --no-color --show-c {infile} | (! grep -F -q \"return_slot, NULL, true, true, buffer\") #",
+    "infile": "tests/c_backend_trim_alloc_assign_direct_01.f90",
+    "infile_hash": "f92c0519352339f37805b9411d4c6fe6f72b838b02bb95835544210c",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}
