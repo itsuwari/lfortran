@@ -31,6 +31,30 @@
 #endif
 #endif
 
+#ifndef LFORTRAN_C_BACKEND_THREAD_LOCAL
+#if defined(_MSC_VER)
+#define LFORTRAN_C_BACKEND_THREAD_LOCAL __declspec(thread)
+#elif defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_THREAD_LOCAL __thread
+#elif defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
+#define LFORTRAN_C_BACKEND_THREAD_LOCAL _Thread_local
+#else
+#define LFORTRAN_C_BACKEND_THREAD_LOCAL
+#endif
+#endif
+
+#ifndef LFORTRAN_C_BACKEND_TBP_CACHE_STORAGE
+#if defined(_MSC_VER)
+#define LFORTRAN_C_BACKEND_TBP_CACHE_STORAGE static __declspec(thread)
+#elif defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_TBP_CACHE_STORAGE static __thread
+#elif defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
+#define LFORTRAN_C_BACKEND_TBP_CACHE_STORAGE static _Thread_local
+#else
+#define LFORTRAN_C_BACKEND_TBP_CACHE_STORAGE
+#endif
+#endif
+
 
 struct dimension_descriptor
 {
@@ -55,6 +79,28 @@ struct dimension_descriptor
 #define LFORTRAN_C_BACKEND_COMMON __attribute__((common))
 #else
 #define LFORTRAN_C_BACKEND_COMMON
+#endif
+#endif
+#ifndef LFORTRAN_C_BACKEND_THREAD_LOCAL
+#if defined(_MSC_VER)
+#define LFORTRAN_C_BACKEND_THREAD_LOCAL __declspec(thread)
+#elif defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_THREAD_LOCAL __thread
+#elif defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
+#define LFORTRAN_C_BACKEND_THREAD_LOCAL _Thread_local
+#else
+#define LFORTRAN_C_BACKEND_THREAD_LOCAL
+#endif
+#endif
+#ifndef LFORTRAN_C_BACKEND_TBP_CACHE_STORAGE
+#if defined(_MSC_VER)
+#define LFORTRAN_C_BACKEND_TBP_CACHE_STORAGE static __declspec(thread)
+#elif defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_TBP_CACHE_STORAGE static __thread
+#elif defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
+#define LFORTRAN_C_BACKEND_TBP_CACHE_STORAGE static _Thread_local
+#else
+#define LFORTRAN_C_BACKEND_TBP_CACHE_STORAGE
 #endif
 #endif
 
@@ -134,27 +180,18 @@ int main(int argc, char* argv[])
     static struct r64___ __libasr_created__array_constant__value = { .data = (double*) __libasr_created__array_constant__data, .n_dims = 1, .offset = 0, .is_allocated = true, .dims = {{1, 3, 1}} };
     struct r64___* __libasr_created__array_constant_ = &__libasr_created__array_constant__value;
     struct r64_____ __libasr_created__function_call__lcompilers_Sum_8_2_0_idx4_real_______0_value;
-    __libasr_created__function_call__lcompilers_Sum_8_2_0_idx4_real_______0_value.data = NULL;
-    __libasr_created__function_call__lcompilers_Sum_8_2_0_idx4_real_______0_value.is_allocated = false;
+    __libasr_created__function_call__lcompilers_Sum_8_2_0_idx4_real_______0_value.data = NULL; __libasr_created__function_call__lcompilers_Sum_8_2_0_idx4_real_______0_value.is_allocated = false;
     struct r64_____* __libasr_created__function_call__lcompilers_Sum_8_2_0_idx4_real_______0 = &__libasr_created__function_call__lcompilers_Sum_8_2_0_idx4_real_______0_value;
     double __libasr_created__intrinsic_array_function_Sum;
-    struct r64_____ __lfsc__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3_value;
-    __lfsc__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3_value.data = NULL;
-    __lfsc__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3_value.is_allocated = false;
-    struct r64_____* __lfsc__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3 = &__lfsc__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3_value;
+    struct r64_____ __lfsc_50abe9a127367862_value;
+    __lfsc_50abe9a127367862_value.data = NULL; __lfsc_50abe9a127367862_value.is_allocated = false;
+    struct r64_____* __lfsc_50abe9a127367862 = &__lfsc_50abe9a127367862_value;
     struct r64_____ a_value;
     struct r64_____* a = &a_value;
     double *a_data = NULL;
-    a->data = a_data;
-    a->n_dims = 2;
-    a->offset = 0;
-    a->is_allocated = false;
-    a->dims[0].lower_bound = 1;
-    a->dims[0].length = 0;
-    a->dims[0].stride = 1;
-    a->dims[1].lower_bound = 1;
-    a->dims[1].length = 0;
-    a->dims[1].stride = (1*0);
+    a->data = a_data; a->n_dims = 2; a->offset = 0; a->is_allocated = false;
+    a->dims[0].lower_bound = 1; a->dims[0].length = 0; a->dims[0].stride = 1;
+    a->dims[1].lower_bound = 1; a->dims[1].length = 0; a->dims[1].stride = (1*0);
     struct r64___ v_value;
     struct r64___* v = &v_value;
     double v_data[3];
@@ -217,14 +254,14 @@ int main(int argc, char* argv[])
     }
     a->is_allocated = true;
     {
-        __lfsc__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3 = ((struct r64_____*)(a));
+        __lfsc_50abe9a127367862 = ((struct r64_____*)(a));
     }
-    double *__lfortran_spread_result_data = __lfsc__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3->data;
-    int64_t __lfortran_spread_result_offset = __lfsc__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3->offset;
-    int64_t __lfortran_spread_result_stride1 = __lfsc__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3->dims[0].stride;
-    int64_t __lfortran_spread_result_stride2 = __lfsc__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3->dims[1].stride;
-    int64_t __lfortran_spread_result_length1 = __lfsc__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3->dims[0].length;
-    int64_t __lfortran_spread_result_length2 = __lfsc__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3->dims[1].length;
+    double *__lfortran_spread_result_data = __lfsc_50abe9a127367862->data;
+    int64_t __lfortran_spread_result_offset = __lfsc_50abe9a127367862->offset;
+    int64_t __lfortran_spread_result_stride1 = __lfsc_50abe9a127367862->dims[0].stride;
+    int64_t __lfortran_spread_result_stride2 = __lfsc_50abe9a127367862->dims[1].stride;
+    int64_t __lfortran_spread_result_length1 = __lfsc_50abe9a127367862->dims[0].length;
+    int64_t __lfortran_spread_result_length2 = __lfsc_50abe9a127367862->dims[1].length;
     {
         for (int64_t __lfortran_j = 0, __lfortran_spread_result_row_index = __lfortran_spread_result_offset; __lfortran_j < __lfortran_spread_result_length2; __lfortran_j++, __lfortran_spread_result_row_index += __lfortran_spread_result_stride2) {
             int64_t __lfortran_spread_result_index = __lfortran_spread_result_row_index;
@@ -235,11 +272,11 @@ int main(int argc, char* argv[])
         }
     }
     {
-        __lfsc__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3 = &__lfsc__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3_value;
-        if ((__lfsc__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3) != NULL) {
-            (__lfsc__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3)->data = NULL;
-            (__lfsc__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3)->offset = 0;
-            (__lfsc__lcompilers_spread_r64____ret_r64______idx4_real____0_real_______3)->is_allocated = false;
+        __lfsc_50abe9a127367862 = &__lfsc_50abe9a127367862_value;
+        if ((__lfsc_50abe9a127367862) != NULL) {
+            (__lfsc_50abe9a127367862)->data = NULL;
+            (__lfsc_50abe9a127367862)->offset = 0;
+            (__lfsc_50abe9a127367862)->is_allocated = false;
         }
     }
     if (((int32_t)a->dims[1-1].length) != 1) {

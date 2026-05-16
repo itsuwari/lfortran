@@ -9,6 +9,7 @@
 #include <sstream>
 #include <iomanip>
 #include <set>
+#include <cstdint>
 
 namespace LCompilers {
 
@@ -47,6 +48,23 @@ namespace LCompilers {
     class Abort {};
 
     namespace CUtils {
+
+    static inline uint64_t get_stable_c_identifier_hash(const std::string &value) {
+        uint64_t hash = 1469598103934665603ULL;
+        for (unsigned char c: value) {
+            hash ^= c;
+            hash *= 1099511628211ULL;
+        }
+        return hash;
+    }
+
+    static inline std::string get_short_generated_c_name(const std::string &prefix,
+            const std::string &name) {
+        std::ostringstream out;
+        out << prefix << std::hex << std::setfill('0') << std::setw(16)
+            << get_stable_c_identifier_hash(name);
+        return out.str();
+    }
 
     static inline ASR::symbol_t* get_symbol_owner(ASR::asr_t *owner) {
         return (owner && ASR::is_a<ASR::symbol_t>(*owner))
@@ -319,7 +337,7 @@ namespace LCompilers {
             std::string name = sanitize_c_identifier(v.m_name);
             const std::string subroutine_temp = "__libasr_created__subroutine_call_";
             if (startswith(name, subroutine_temp)) {
-                return "__lfsc_" + name.substr(subroutine_temp.size());
+                return get_short_generated_c_name("__lfsc_", name);
             }
             return name;
         }
