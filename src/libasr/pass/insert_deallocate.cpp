@@ -507,6 +507,7 @@ public:
                                 ASR::stmt_t* wrapped_stmt = wrap_optional_check(loc, root_var_expr, arg_var->m_presence, if_stmt);
                                 dealloc_stmts.push_back(al, wrapped_stmt);
                             } else if (ASR::is_a<ASR::StructType_t>(*ASRUtils::type_get_past_array(mem_type))) {
+                                if (ASRUtils::is_array(mem_type)) continue;
                                 // Non-allocatable struct member: recurse into it
                                 ASR::Variable_t* mem_var = ASR::down_cast<ASR::Variable_t>(struct_member.second);
                                 if (!mem_var->m_type_declaration) continue;
