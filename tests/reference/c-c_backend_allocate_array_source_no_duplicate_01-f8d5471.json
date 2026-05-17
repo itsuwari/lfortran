@@ -1,0 +1,13 @@
+{
+    "basename": "c-c_backend_allocate_array_source_no_duplicate_01-f8d5471",
+    "cmd": "lfortran --no-color --show-c {infile}",
+    "infile": "tests/c_backend_allocate_array_source_no_duplicate_01.f90",
+    "infile_hash": "f0487fb4fa19f2cbc93579e9b1c5724bb7c5c2ad04ed3a1cfdfe2524",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": "c-c_backend_allocate_array_source_no_duplicate_01-f8d5471.stdout",
+    "stdout_hash": "05faed048f90312c584190663651fb198daddefb9cc0d5ff138d0d95",
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

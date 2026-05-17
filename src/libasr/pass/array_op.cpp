@@ -684,6 +684,7 @@ class ArrayOpVisitor: public ASR::CallReplacerOnExpressionsVisitor<ArrayOpVisito
     bool skip_allocate_source_expansion;
     const LCompilers::PassOptions& pass_options;
     inline static std::set<const ASR::Assignment_t*> debug_inserted;
+    size_t allocate_source_copy_assignments_to_skip_realloc;
 
     public:
 
@@ -698,10 +699,6 @@ class ArrayOpVisitor: public ASR::CallReplacerOnExpressionsVisitor<ArrayOpVisito
     bool allocate_source_assignment_follows(const ASR::Allocate_t& x,
             ASR::stmt_t **body, size_t n_body, size_t stmt_index) {
         if (x.m_source == nullptr) {
-            return false;
-        }
-        if (ASRUtils::extract_n_dims_from_ttype(
-                ASRUtils::expr_type(x.m_source)) != 0) {
             return false;
         }
         bool needs_existing_assignment = false;
@@ -723,6 +720,12 @@ class ArrayOpVisitor: public ASR::CallReplacerOnExpressionsVisitor<ArrayOpVisito
             if (!ASRUtils::expr_equal(assign->m_target, x.m_args[i].m_a)) {
                 return false;
             }
+            // The allocation already established the target shape from
+            // source=/explicit bounds. Reallocating the immediately following
+            // semantic copy only repeats shape work and, for source= arrays,
+            // used to duplicate the full copy loop.
+            assign->m_realloc_lhs = false;
+            allocate_source_copy_assignments_to_skip_realloc++;
             next_stmt_index++;
         }
         return needs_existing_assignment;
@@ -2636,7 +2639,8 @@ class ArrayOpVisitor: public ASR::CallReplacerOnExpressionsVisitor<ArrayOpVisito
         parent_body(nullptr), realloc_lhs(pass_options_.realloc_lhs_arrays),
         bounds_checking(pass_options_.bounds_checking),
         remove_original_stmt(false), skip_allocate_source_expansion(false),
-        pass_options(pass_options_) {
+        pass_options(pass_options_),
+        allocate_source_copy_assignments_to_skip_realloc(0) {
         pass_result.n = 0;
         pass_result.reserve(al, 0);
     }
@@ -3606,6 +3610,12 @@ class ArrayOpVisitor: public ASR::CallReplacerOnExpressionsVisitor<ArrayOpVisito
             }
         }
         ASR::Assignment_t& xx = const_cast<ASR::Assignment_t&>(x);
+        bool skip_allocate_source_copy_realloc = false;
+        if (allocate_source_copy_assignments_to_skip_realloc > 0) {
+            skip_allocate_source_copy_realloc = true;
+            allocate_source_copy_assignments_to_skip_realloc--;
+            xx.m_realloc_lhs = false;
+        }
         const std::vector<ASR::exprType>& skip_exprs = {
             ASR::exprType::IntrinsicArrayFunction,
             ASR::exprType::ArrayReshape,
@@ -3686,11 +3696,12 @@ class ArrayOpVisitor: public ASR::CallReplacerOnExpressionsVisitor<ArrayOpVisito
             bool target_is_compiler_alloc_temp =
                 is_compiler_created_array_temp_expr(xx.m_target)
                 && ASRUtils::is_allocatable(ASRUtils::expr_type(xx.m_target));
-            bool per_assign_realloc = xx.m_realloc_lhs ||
-                (!is_compiler_created_array_temp_expr(xx.m_target)
-                    && should_auto_realloc_component_assignment(xx.m_target))
-                || (target_is_compiler_alloc_temp
-                    && !previous_stmt_allocates_target(xx.m_target));
+            bool per_assign_realloc = !skip_allocate_source_copy_realloc
+                && (xx.m_realloc_lhs ||
+                    (!is_compiler_created_array_temp_expr(xx.m_target)
+                        && should_auto_realloc_component_assignment(xx.m_target))
+                    || (target_is_compiler_alloc_temp
+                        && !previous_stmt_allocates_target(xx.m_target)));
             if (per_assign_realloc) {
                 Vec<ASR::expr_t**> realloc_vars;
                 realloc_vars.reserve(al, 1);
@@ -3754,7 +3765,8 @@ class ArrayOpVisitor: public ASR::CallReplacerOnExpressionsVisitor<ArrayOpVisito
         };
         if( needs_array_indexed_loop(xx.m_value) ||
             needs_array_indexed_loop(xx.m_target) ) {
-            if (ASRUtils::is_array(ASRUtils::expr_type(xx.m_value))) {
+            if (ASRUtils::is_array(ASRUtils::expr_type(xx.m_value))
+                    && !skip_allocate_source_copy_realloc) {
                 bool per_assign_realloc = xx.m_realloc_lhs ||
                     ASRUtils::is_allocatable(ASRUtils::expr_type(xx.m_target)) ||
                     should_auto_realloc_component_assignment(xx.m_target);
@@ -3779,9 +3791,10 @@ class ArrayOpVisitor: public ASR::CallReplacerOnExpressionsVisitor<ArrayOpVisito
                     al, idl->base.base.loc, args.p, args.size(),
                     idl->m_type, nullptr, ASR::arraystorageType::ColMajor, nullptr));
             }
-            bool per_assign_realloc = xx.m_realloc_lhs ||
-                ASRUtils::is_allocatable(ASRUtils::expr_type(xx.m_target)) ||
-                should_auto_realloc_component_assignment(xx.m_target);
+            bool per_assign_realloc = !skip_allocate_source_copy_realloc
+                && (xx.m_realloc_lhs ||
+                    ASRUtils::is_allocatable(ASRUtils::expr_type(xx.m_target)) ||
+                    should_auto_realloc_component_assignment(xx.m_target));
             if (per_assign_realloc && ASR::is_a<ASR::ArrayConstructor_t>(*xx.m_value)) {
                 ASR::ArrayConstructor_t *ac =
                     ASR::down_cast<ASR::ArrayConstructor_t>(xx.m_value);
@@ -3920,7 +3933,8 @@ class ArrayOpVisitor: public ASR::CallReplacerOnExpressionsVisitor<ArrayOpVisito
             return ;
         }
 
-        if (ASRUtils::is_array(ASRUtils::expr_type(xx.m_value))) {
+        if (ASRUtils::is_array(ASRUtils::expr_type(xx.m_value))
+                && !skip_allocate_source_copy_realloc) {
             bool per_assign_realloc = xx.m_realloc_lhs ||
                 ASRUtils::is_allocatable(ASRUtils::expr_type(xx.m_target)) ||
                 should_auto_realloc_component_assignment(xx.m_target);

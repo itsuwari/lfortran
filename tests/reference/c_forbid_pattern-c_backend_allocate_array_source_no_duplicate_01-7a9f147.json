@@ -1,0 +1,13 @@
+{
+    "basename": "c_forbid_pattern-c_backend_allocate_array_source_no_duplicate_01-7a9f147",
+    "cmd": "lfortran --no-color --show-c {infile} | (! grep -F -q \"__lfortran_realloc_old_size\") #",
+    "infile": "tests/c_backend_allocate_array_source_no_duplicate_01.f90",
+    "infile_hash": "f0487fb4fa19f2cbc93579e9b1c5724bb7c5c2ad04ed3a1cfdfe2524",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}
