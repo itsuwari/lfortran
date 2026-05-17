@@ -1,0 +1,13 @@
+{
+    "basename": "c_forbid_pattern-c_backend_string_literal_copy_len_01-238b2b0",
+    "cmd": "lfortran --no-color --show-c {infile} | (! grep -F -q \"_lfortran_str_len((char*)\") #",
+    "infile": "tests/c_backend_string_literal_copy_len_01.f90",
+    "infile_hash": "8f3adfc6dabd0f826cec5d35140521dbff753184162092ac3f08b495",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

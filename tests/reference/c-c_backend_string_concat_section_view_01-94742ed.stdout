@@ -29,6 +29,30 @@
 #endif
 #endif
 
+#ifndef LFORTRAN_C_BACKEND_THREAD_LOCAL
+#if defined(_MSC_VER)
+#define LFORTRAN_C_BACKEND_THREAD_LOCAL __declspec(thread)
+#elif defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_THREAD_LOCAL __thread
+#elif defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
+#define LFORTRAN_C_BACKEND_THREAD_LOCAL _Thread_local
+#else
+#define LFORTRAN_C_BACKEND_THREAD_LOCAL
+#endif
+#endif
+
+#ifndef LFORTRAN_C_BACKEND_TBP_CACHE_STORAGE
+#if defined(_MSC_VER)
+#define LFORTRAN_C_BACKEND_TBP_CACHE_STORAGE static __declspec(thread)
+#elif defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_TBP_CACHE_STORAGE static __thread
+#elif defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
+#define LFORTRAN_C_BACKEND_TBP_CACHE_STORAGE static _Thread_local
+#else
+#define LFORTRAN_C_BACKEND_TBP_CACHE_STORAGE
+#endif
+#endif
+
 
 
 
@@ -43,14 +67,7 @@ int main(int argc, char* argv[])
     char * line = NULL;
     int32_t size;
     line = (char*) _lfortran_string_malloc_alloc(__lfortran_default_allocator, 0);
-    if ((char*)"abcdef" != NULL) {
-    _lfortran_strcpy_alloc(__lfortran_default_allocator, &buffer, &((int64_t){16}), true, false, (char*)"abcdef", _lfortran_str_len((char*)"abcdef"));
-} else {
-    if (buffer != NULL) {
-        _lfortran_free_alloc(__lfortran_default_allocator, buffer);
-        buffer = NULL;
-    }
-}
+    _lfortran_strcpy_alloc(__lfortran_default_allocator, &buffer, &((int64_t){16}), true, false, (char*)"abcdef", 6);
     size = 3;
     if (__libasr__created__var__0_return_slot != NULL) {
         _lfortran_free_alloc(__lfortran_default_allocator, __libasr__created__var__0_return_slot);

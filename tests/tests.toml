@@ -6110,6 +6110,11 @@ c_forbid_pattern = true
 c_forbid_pattern_value = "__lfortran__lcompilers_optimization_repeat"
 
 [[test]]
+filename = "c_backend_string_literal_copy_len_01.f90"
+c_forbid_pattern = true
+c_forbid_pattern_value = "_lfortran_str_len((char*)"
+
+[[test]]
 filename = "c_backend_local_allocatable_cleanup_01.f90"
 c = true
 

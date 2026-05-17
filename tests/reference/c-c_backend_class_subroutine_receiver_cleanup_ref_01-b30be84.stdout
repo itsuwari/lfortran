@@ -29,6 +29,30 @@
 #endif
 #endif
 
+#ifndef LFORTRAN_C_BACKEND_THREAD_LOCAL
+#if defined(_MSC_VER)
+#define LFORTRAN_C_BACKEND_THREAD_LOCAL __declspec(thread)
+#elif defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_THREAD_LOCAL __thread
+#elif defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
+#define LFORTRAN_C_BACKEND_THREAD_LOCAL _Thread_local
+#else
+#define LFORTRAN_C_BACKEND_THREAD_LOCAL
+#endif
+#endif
+
+#ifndef LFORTRAN_C_BACKEND_TBP_CACHE_STORAGE
+#if defined(_MSC_VER)
+#define LFORTRAN_C_BACKEND_TBP_CACHE_STORAGE static __declspec(thread)
+#elif defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_TBP_CACHE_STORAGE static __thread
+#elif defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
+#define LFORTRAN_C_BACKEND_TBP_CACHE_STORAGE static _Thread_local
+#else
+#define LFORTRAN_C_BACKEND_TBP_CACHE_STORAGE
+#endif
+#endif
+
 
 struct dimension_descriptor
 {
@@ -53,6 +77,28 @@ struct dimension_descriptor
 #define LFORTRAN_C_BACKEND_COMMON __attribute__((common))
 #else
 #define LFORTRAN_C_BACKEND_COMMON
+#endif
+#endif
+#ifndef LFORTRAN_C_BACKEND_THREAD_LOCAL
+#if defined(_MSC_VER)
+#define LFORTRAN_C_BACKEND_THREAD_LOCAL __declspec(thread)
+#elif defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_THREAD_LOCAL __thread
+#elif defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
+#define LFORTRAN_C_BACKEND_THREAD_LOCAL _Thread_local
+#else
+#define LFORTRAN_C_BACKEND_THREAD_LOCAL
+#endif
+#endif
+#ifndef LFORTRAN_C_BACKEND_TBP_CACHE_STORAGE
+#if defined(_MSC_VER)
+#define LFORTRAN_C_BACKEND_TBP_CACHE_STORAGE static __declspec(thread)
+#elif defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_TBP_CACHE_STORAGE static __thread
+#elif defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
+#define LFORTRAN_C_BACKEND_TBP_CACHE_STORAGE static _Thread_local
+#else
+#define LFORTRAN_C_BACKEND_TBP_CACHE_STORAGE
 #endif
 #endif
 
@@ -99,6 +145,10 @@ LFORTRAN_C_BACKEND_CONSTRUCTOR LFORTRAN_C_BACKEND_WEAK void __lfortran_register_
 {
     _lfortran_register_c_type_parent(7320352961741873871, 6053226168424644970);
     __lfortran_force_link_tbp_c_backend_class_subroutine_receiver_cleanup_ref_01_m__base_type__touch();
+}
+
+LFORTRAN_C_BACKEND_WEAK void __lfortran_force_link_type_parent_c_backend_class_subroutine_receiver_cleanup_ref_01_m__child_type_x7320352961741873871(void)
+{
 }
 
 LFORTRAN_C_BACKEND_CONSTRUCTOR static void __lfortran_register_struct_runtime_c_backend_class_subroutine_receiver_cleanup_ref_01_m__child_type_x7320352961741873871(void)
@@ -196,7 +246,6 @@ void __lfortran_c_backend_class_subroutine_receiver_cleanup_ref_01_m__touch__Str
 void __lfortran_c_backend_class_subroutine_receiver_cleanup_ref_01_m__exercise()
 {
     lfortran_allocator_t* __lfortran_default_allocator = _lfortran_get_default_allocator();
-    struct c_backend_class_subroutine_receiver_cleanup_ref_01_m__child_type* __libasr_created__subroutine_call_1_base_type_touch = NULL;
     struct c_backend_class_subroutine_receiver_cleanup_ref_01_m__holder_type holder_value;
     memset(&holder_value, 0, sizeof(holder_value));
     holder_value.__lfortran_type_tag = 1113521250986243983;
@@ -209,33 +258,8 @@ void __lfortran_c_backend_class_subroutine_receiver_cleanup_ref_01_m__exercise()
     memset(holder->item->payload, 0, sizeof(struct c_backend_class_subroutine_receiver_cleanup_ref_01_m__payload_type));
     ((struct c_backend_class_subroutine_receiver_cleanup_ref_01_m__payload_type*)(holder->item->payload))->value = NULL;
     holder->item->payload->__lfortran_type_tag = 882974700269570799;
-    if ((char*)"payload" != NULL) {
-    _lfortran_strcpy_alloc(__lfortran_default_allocator, &holder->item->payload->value, NULL, true, true, (char*)"payload", _lfortran_str_len((char*)"payload"));
-} else {
-    if (holder->item->payload->value != NULL) {
-        _lfortran_free_alloc(__lfortran_default_allocator, holder->item->payload->value);
-        holder->item->payload->value = NULL;
-    }
-}
-    if (((holder->item) != NULL)) {
-        __libasr_created__subroutine_call_1_base_type_touch = (struct c_backend_class_subroutine_receiver_cleanup_ref_01_m__child_type*) _lfortran_malloc_alloc(__lfortran_default_allocator, sizeof(struct c_backend_class_subroutine_receiver_cleanup_ref_01_m__child_type));
-        memset(__libasr_created__subroutine_call_1_base_type_touch, 0, sizeof(struct c_backend_class_subroutine_receiver_cleanup_ref_01_m__child_type));
-        __libasr_created__subroutine_call_1_base_type_touch->__lfortran_type_tag = 7320352961741873871;
-        if (__libasr_created__subroutine_call_1_base_type_touch == NULL) {
-            __libasr_created__subroutine_call_1_base_type_touch = (struct c_backend_class_subroutine_receiver_cleanup_ref_01_m__child_type*) _lfortran_malloc_alloc(__lfortran_default_allocator, sizeof(struct c_backend_class_subroutine_receiver_cleanup_ref_01_m__child_type));
-            memset(__libasr_created__subroutine_call_1_base_type_touch, 0, sizeof(struct c_backend_class_subroutine_receiver_cleanup_ref_01_m__child_type));
-        }
-        struct_deepcopy_c_backend_class_subroutine_receiver_cleanup_ref_01_m__child_type(holder->item, __libasr_created__subroutine_call_1_base_type_touch);
-    }
-    __lfortran_c_backend_class_subroutine_receiver_cleanup_ref_01_m__touch__StructType_Class(((struct c_backend_class_subroutine_receiver_cleanup_ref_01_m__base_type*)(__libasr_created__subroutine_call_1_base_type_touch)), &text);
-    if ((__libasr_created__subroutine_call_1_base_type_touch) != NULL) {
-        if ((__libasr_created__subroutine_call_1_base_type_touch->payload) != NULL) {
-            _lfortran_free_alloc_plain(__lfortran_default_allocator, (char*) __libasr_created__subroutine_call_1_base_type_touch->payload);
-            __libasr_created__subroutine_call_1_base_type_touch->payload = NULL;
-        }
-        _lfortran_free_alloc_plain(__lfortran_default_allocator, (char*) __libasr_created__subroutine_call_1_base_type_touch);
-        __libasr_created__subroutine_call_1_base_type_touch = NULL;
-    }
+    _lfortran_strcpy_alloc(__lfortran_default_allocator, &holder->item->payload->value, NULL, true, true, (char*)"payload", 7);
+    __lfortran_c_backend_class_subroutine_receiver_cleanup_ref_01_m__touch__StructType_Class(((struct c_backend_class_subroutine_receiver_cleanup_ref_01_m__base_type*)(holder->item)), &text);
     if (str_compare(text, ((text) != NULL ? _lfortran_str_len(text) : 0), (char*)"payload", 7)  !=  0) {
         fprintf(stderr, "ERROR STOP");
         exit(1);
@@ -302,14 +326,18 @@ static void __lfortran_tbp_wrapper_touch(void* __lfortran_self, char * *text)
     __lfortran_c_backend_class_subroutine_receiver_cleanup_ref_01_m__touch__StructType_Class(((struct c_backend_class_subroutine_receiver_cleanup_ref_01_m__base_type*)(__lfortran_self)), text);
 }
 
-LFORTRAN_C_BACKEND_CONSTRUCTOR static void __lfortran_register_tbp_touch(void)
-{
-    _lfortran_register_c_tbp_impl("touch", 6053226168424644970, (lfortran_c_tbp_func_ptr)__lfortran_tbp_wrapper_touch);
-}
+static int __lfortran_register_tbp_touch_state = 0;
 
 void __lfortran_force_link_tbp_c_backend_class_subroutine_receiver_cleanup_ref_01_m__base_type__touch(void)
 {
-    __lfortran_register_tbp_touch();
+    if (!__lfortran_register_tbp_touch_state) {
+        _lfortran_register_c_tbp_impl_once("touch", 6053226168424644970, (lfortran_c_tbp_func_ptr)__lfortran_tbp_wrapper_touch, &__lfortran_register_tbp_touch_state);
+    }
+}
+
+LFORTRAN_C_BACKEND_CONSTRUCTOR static void __lfortran_register_tbp_touch(void)
+{
+    __lfortran_force_link_tbp_c_backend_class_subroutine_receiver_cleanup_ref_01_m__base_type__touch();
 }
 
 int main(int argc, char* argv[])

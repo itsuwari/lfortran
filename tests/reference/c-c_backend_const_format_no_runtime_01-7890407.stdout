@@ -169,14 +169,7 @@ int main(int argc, char* argv[])
     char __lfortran_fixed_char_lfortran_iomsg3[1] = {0}; char *lfortran_iomsg3 = __lfortran_fixed_char_lfortran_iomsg3;
     char __lfortran_fixed_char_line[64] = {0}; char *line = __lfortran_fixed_char_line;
     int32_t unit;
-    if ((char*)"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" != NULL) {
-    _lfortran_strcpy_alloc(__lfortran_default_allocator, &line, &((int64_t){64}), true, false, (char*)"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", _lfortran_str_len((char*)"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"));
-} else {
-    if (line != NULL) {
-        _lfortran_free_alloc(__lfortran_default_allocator, line);
-        line = NULL;
-    }
-}
+    _lfortran_strcpy_alloc(__lfortran_default_allocator, &line, &((int64_t){64}), true, false, (char*)"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", 64);
     int64_t __lfortran_unit_len = (int64_t)(64);
     if (line == NULL) line = (char*) _lfortran_string_malloc_alloc(__lfortran_default_allocator, __lfortran_unit_len);
     _lfortran_string_write(__lfortran_default_allocator, &(line), false, false, false, 1, &__lfortran_unit_len, NULL, "%s", 2, "-----", 5);
@@ -188,14 +181,7 @@ int main(int argc, char* argv[])
         fprintf(stderr, "ERROR STOP");
         exit(1);
     }
-    if ((char*)"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" != NULL) {
-    _lfortran_strcpy_alloc(__lfortran_default_allocator, &line, &((int64_t){64}), true, false, (char*)"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", _lfortran_str_len((char*)"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"));
-} else {
-    if (line != NULL) {
-        _lfortran_free_alloc(__lfortran_default_allocator, line);
-        line = NULL;
-    }
-}
+    _lfortran_strcpy_alloc(__lfortran_default_allocator, &line, &((int64_t){64}), true, false, (char*)"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", 64);
     int64_t __lfortran_unit_len1 = (int64_t)(64);
     if (line == NULL) line = (char*) _lfortran_string_malloc_alloc(__lfortran_default_allocator, __lfortran_unit_len1);
     _lfortran_string_write(__lfortran_default_allocator, &(line), false, false, false, 1, &__lfortran_unit_len1, NULL, "%s", 2, " A  B", 5);
@@ -203,14 +189,7 @@ int main(int argc, char* argv[])
         fprintf(stderr, "ERROR STOP");
         exit(1);
     }
-    if ((char*)"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" != NULL) {
-    _lfortran_strcpy_alloc(__lfortran_default_allocator, &line, &((int64_t){64}), true, false, (char*)"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", _lfortran_str_len((char*)"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"));
-} else {
-    if (line != NULL) {
-        _lfortran_free_alloc(__lfortran_default_allocator, line);
-        line = NULL;
-    }
-}
+    _lfortran_strcpy_alloc(__lfortran_default_allocator, &line, &((int64_t){64}), true, false, (char*)"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", 64);
     int64_t __lfortran_unit_len2 = (int64_t)(64);
     if (line == NULL) line = (char*) _lfortran_string_malloc_alloc(__lfortran_default_allocator, __lfortran_unit_len2);
     _lfortran_string_write(__lfortran_default_allocator, &(line), false, false, false, 1, &__lfortran_unit_len2, NULL, "%s", 2, "[,]", 3);

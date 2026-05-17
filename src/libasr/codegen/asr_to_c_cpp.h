@@ -2718,8 +2718,33 @@ R"(#include <stdio.h>
         }
     }
 
+    bool get_c_string_constant_length(ASR::expr_t *expr, int64_t &length) {
+        if (!is_c) {
+            return false;
+        }
+        expr = unwrap_c_lvalue_expr(expr);
+        if (expr == nullptr || !ASR::is_a<ASR::StringConstant_t>(*expr)) {
+            return false;
+        }
+        ASR::StringConstant_t *str_const = ASR::down_cast<ASR::StringConstant_t>(expr);
+        int64_t fixed_len = -1;
+        ASR::String_t *str_type = ASRUtils::get_string_type(str_const->m_type);
+        if (str_type && str_type->m_len
+                && ASRUtils::extract_value(str_type->m_len, fixed_len)
+                && fixed_len >= 0) {
+            length = fixed_len;
+        } else {
+            length = std::string(str_const->m_s).size();
+        }
+        return true;
+    }
+
     std::string get_string_length_expr(ASR::expr_t *expr, const std::string &expr_src,
             std::string &setup) {
+        int64_t constant_len = -1;
+        if (get_c_string_constant_length(expr, constant_len)) {
+            return std::to_string(constant_len);
+        }
         ASR::String_t *str_type = ASRUtils::get_string_type(expr);
         if (str_type && str_type->m_len) {
             self().visit_expr(*str_type->m_len);
@@ -18441,6 +18466,23 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                         + target + ", " + target_len + ", true, "
                         + (target_has_fixed_len ? "false" : "true") + ", " + value + ", "
                         + value_view_len + ");\n";
+                    from_std_vector_helper.clear();
+                    return;
+                }
+                if (!ASRUtils::is_array(m_target_type_unwrapped)
+                        && ASRUtils::is_character(*m_target_type_unwrapped)
+                        && ASR::is_a<ASR::StringConstant_t>(*x.m_value)) {
+                    int64_t value_len = -1;
+                    bool has_value_len = get_c_string_constant_length(x.m_value, value_len);
+                    LCOMPILERS_ASSERT(has_value_len);
+                    std::string target_len =
+                        CUtils::get_fixed_character_length_arg(m_target_type);
+                    bool target_has_fixed_len = target_len != "NULL";
+                    src += alloc + indent
+                        + "_lfortran_strcpy_alloc(_lfortran_get_default_allocator(), &"
+                        + target + ", " + target_len + ", true, "
+                        + (target_has_fixed_len ? "false" : "true") + ", "
+                        + value + ", " + std::to_string(value_len) + ");\n";
                     from_std_vector_helper.clear();
                     return;
                 }

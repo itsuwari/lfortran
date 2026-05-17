@@ -28,6 +28,30 @@
 #endif
 #endif
 
+#ifndef LFORTRAN_C_BACKEND_THREAD_LOCAL
+#if defined(_MSC_VER)
+#define LFORTRAN_C_BACKEND_THREAD_LOCAL __declspec(thread)
+#elif defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_THREAD_LOCAL __thread
+#elif defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
+#define LFORTRAN_C_BACKEND_THREAD_LOCAL _Thread_local
+#else
+#define LFORTRAN_C_BACKEND_THREAD_LOCAL
+#endif
+#endif
+
+#ifndef LFORTRAN_C_BACKEND_TBP_CACHE_STORAGE
+#if defined(_MSC_VER)
+#define LFORTRAN_C_BACKEND_TBP_CACHE_STORAGE static __declspec(thread)
+#elif defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_TBP_CACHE_STORAGE static __thread
+#elif defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
+#define LFORTRAN_C_BACKEND_TBP_CACHE_STORAGE static _Thread_local
+#else
+#define LFORTRAN_C_BACKEND_TBP_CACHE_STORAGE
+#endif
+#endif
+
 
 struct dimension_descriptor
 {
@@ -56,6 +80,28 @@ struct __lfortran_runtime_type_header
 #define LFORTRAN_C_BACKEND_COMMON __attribute__((common))
 #else
 #define LFORTRAN_C_BACKEND_COMMON
+#endif
+#endif
+#ifndef LFORTRAN_C_BACKEND_THREAD_LOCAL
+#if defined(_MSC_VER)
+#define LFORTRAN_C_BACKEND_THREAD_LOCAL __declspec(thread)
+#elif defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_THREAD_LOCAL __thread
+#elif defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
+#define LFORTRAN_C_BACKEND_THREAD_LOCAL _Thread_local
+#else
+#define LFORTRAN_C_BACKEND_THREAD_LOCAL
+#endif
+#endif
+#ifndef LFORTRAN_C_BACKEND_TBP_CACHE_STORAGE
+#if defined(_MSC_VER)
+#define LFORTRAN_C_BACKEND_TBP_CACHE_STORAGE static __declspec(thread)
+#elif defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_TBP_CACHE_STORAGE static __thread
+#elif defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
+#define LFORTRAN_C_BACKEND_TBP_CACHE_STORAGE static _Thread_local
+#else
+#define LFORTRAN_C_BACKEND_TBP_CACHE_STORAGE
 #endif
 #endif
 
@@ -100,6 +146,10 @@ struct c_backend_program_allocatable_class_cleanup_ref_01_m__child_type {
 LFORTRAN_C_BACKEND_CONSTRUCTOR LFORTRAN_C_BACKEND_WEAK void __lfortran_register_type_parent_child_type_x7333827428228928796(void)
 {
     _lfortran_register_c_type_parent(7333827428228928796, 3605794911213543507);
+}
+
+LFORTRAN_C_BACKEND_WEAK void __lfortran_force_link_type_parent_c_backend_program_allocatable_class_cleanup_ref_01_m__child_type_x7333827428228928796(void)
+{
 }
 
 LFORTRAN_C_BACKEND_CONSTRUCTOR static void __lfortran_register_struct_runtime_c_backend_program_allocatable_class_cleanup_ref_01_m__child_type_x7333827428228928796(void)
@@ -173,14 +223,7 @@ int main(int argc, char* argv[])
     memset(item->payload, 0, sizeof(struct c_backend_program_allocatable_class_cleanup_ref_01_m__payload_type));
     ((struct c_backend_program_allocatable_class_cleanup_ref_01_m__payload_type*)(item->payload))->value = NULL;
     item->payload->__lfortran_type_tag = 1214554864692795940;
-    if ((char*)"payload" != NULL) {
-    _lfortran_strcpy_alloc(__lfortran_default_allocator, &item->payload->value, NULL, true, true, (char*)"payload", _lfortran_str_len((char*)"payload"));
-} else {
-    if (item->payload->value != NULL) {
-        _lfortran_free_alloc(__lfortran_default_allocator, item->payload->value);
-        item->payload->value = NULL;
-    }
-}
+    _lfortran_strcpy_alloc(__lfortran_default_allocator, &item->payload->value, NULL, true, true, (char*)"payload", 7);
     if (str_compare(item->payload->value, ((item->payload->value) != NULL ? _lfortran_str_len(item->payload->value) : 0), (char*)"payload", 7)  !=  0) {
         fprintf(stderr, "ERROR STOP");
         exit(1);

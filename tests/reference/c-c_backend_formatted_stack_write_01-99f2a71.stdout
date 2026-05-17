@@ -32,6 +32,30 @@
 #endif
 #endif
 
+#ifndef LFORTRAN_C_BACKEND_THREAD_LOCAL
+#if defined(_MSC_VER)
+#define LFORTRAN_C_BACKEND_THREAD_LOCAL __declspec(thread)
+#elif defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_THREAD_LOCAL __thread
+#elif defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
+#define LFORTRAN_C_BACKEND_THREAD_LOCAL _Thread_local
+#else
+#define LFORTRAN_C_BACKEND_THREAD_LOCAL
+#endif
+#endif
+
+#ifndef LFORTRAN_C_BACKEND_TBP_CACHE_STORAGE
+#if defined(_MSC_VER)
+#define LFORTRAN_C_BACKEND_TBP_CACHE_STORAGE static __declspec(thread)
+#elif defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_TBP_CACHE_STORAGE static __thread
+#elif defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
+#define LFORTRAN_C_BACKEND_TBP_CACHE_STORAGE static _Thread_local
+#else
+#define LFORTRAN_C_BACKEND_TBP_CACHE_STORAGE
+#endif
+#endif
+
 
 struct dimension_descriptor
 {
@@ -56,6 +80,28 @@ struct dimension_descriptor
 #define LFORTRAN_C_BACKEND_COMMON __attribute__((common))
 #else
 #define LFORTRAN_C_BACKEND_COMMON
+#endif
+#endif
+#ifndef LFORTRAN_C_BACKEND_THREAD_LOCAL
+#if defined(_MSC_VER)
+#define LFORTRAN_C_BACKEND_THREAD_LOCAL __declspec(thread)
+#elif defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_THREAD_LOCAL __thread
+#elif defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
+#define LFORTRAN_C_BACKEND_THREAD_LOCAL _Thread_local
+#else
+#define LFORTRAN_C_BACKEND_THREAD_LOCAL
+#endif
+#endif
+#ifndef LFORTRAN_C_BACKEND_TBP_CACHE_STORAGE
+#if defined(_MSC_VER)
+#define LFORTRAN_C_BACKEND_TBP_CACHE_STORAGE static __declspec(thread)
+#elif defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_TBP_CACHE_STORAGE static __thread
+#elif defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
+#define LFORTRAN_C_BACKEND_TBP_CACHE_STORAGE static _Thread_local
+#else
+#define LFORTRAN_C_BACKEND_TBP_CACHE_STORAGE
 #endif
 #endif
 
@@ -183,22 +229,8 @@ int main(int argc, char* argv[])
     char __lfortran_fixed_char_lfortran_iomsg[1] = {0}; char *lfortran_iomsg = __lfortran_fixed_char_lfortran_iomsg;
     char __lfortran_fixed_char_line[64] = {0}; char *line = __lfortran_fixed_char_line;
     char __lfortran_fixed_char_right[8] = {0}; char *right = __lfortran_fixed_char_right;
-    if ((char*)"alpha" != NULL) {
-    _lfortran_strcpy_alloc(__lfortran_default_allocator, &left, &((int64_t){8}), true, false, (char*)"alpha", _lfortran_str_len((char*)"alpha"));
-} else {
-    if (left != NULL) {
-        _lfortran_free_alloc(__lfortran_default_allocator, left);
-        left = NULL;
-    }
-}
-    if ((char*)"beta" != NULL) {
-    _lfortran_strcpy_alloc(__lfortran_default_allocator, &right, &((int64_t){8}), true, false, (char*)"beta", _lfortran_str_len((char*)"beta"));
-} else {
-    if (right != NULL) {
-        _lfortran_free_alloc(__lfortran_default_allocator, right);
-        right = NULL;
-    }
-}
+    _lfortran_strcpy_alloc(__lfortran_default_allocator, &left, &((int64_t){8}), true, false, (char*)"alpha", 5);
+    _lfortran_strcpy_alloc(__lfortran_default_allocator, &right, &((int64_t){8}), true, false, (char*)"beta", 4);
     int64_t __lfortran_unit_len = (int64_t)(64);
     if (line == NULL) line = (char*) _lfortran_string_malloc_alloc(__lfortran_default_allocator, __lfortran_unit_len);
     char __lfortran_write_buffer_0[22];

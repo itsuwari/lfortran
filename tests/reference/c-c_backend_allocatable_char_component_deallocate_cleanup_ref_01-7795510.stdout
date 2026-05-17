@@ -29,6 +29,30 @@
 #endif
 #endif
 
+#ifndef LFORTRAN_C_BACKEND_THREAD_LOCAL
+#if defined(_MSC_VER)
+#define LFORTRAN_C_BACKEND_THREAD_LOCAL __declspec(thread)
+#elif defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_THREAD_LOCAL __thread
+#elif defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
+#define LFORTRAN_C_BACKEND_THREAD_LOCAL _Thread_local
+#else
+#define LFORTRAN_C_BACKEND_THREAD_LOCAL
+#endif
+#endif
+
+#ifndef LFORTRAN_C_BACKEND_TBP_CACHE_STORAGE
+#if defined(_MSC_VER)
+#define LFORTRAN_C_BACKEND_TBP_CACHE_STORAGE static __declspec(thread)
+#elif defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_TBP_CACHE_STORAGE static __thread
+#elif defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
+#define LFORTRAN_C_BACKEND_TBP_CACHE_STORAGE static _Thread_local
+#else
+#define LFORTRAN_C_BACKEND_TBP_CACHE_STORAGE
+#endif
+#endif
+
 
 struct dimension_descriptor
 {
@@ -53,6 +77,28 @@ struct dimension_descriptor
 #define LFORTRAN_C_BACKEND_COMMON __attribute__((common))
 #else
 #define LFORTRAN_C_BACKEND_COMMON
+#endif
+#endif
+#ifndef LFORTRAN_C_BACKEND_THREAD_LOCAL
+#if defined(_MSC_VER)
+#define LFORTRAN_C_BACKEND_THREAD_LOCAL __declspec(thread)
+#elif defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_THREAD_LOCAL __thread
+#elif defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
+#define LFORTRAN_C_BACKEND_THREAD_LOCAL _Thread_local
+#else
+#define LFORTRAN_C_BACKEND_THREAD_LOCAL
+#endif
+#endif
+#ifndef LFORTRAN_C_BACKEND_TBP_CACHE_STORAGE
+#if defined(_MSC_VER)
+#define LFORTRAN_C_BACKEND_TBP_CACHE_STORAGE static __declspec(thread)
+#elif defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_TBP_CACHE_STORAGE static __thread
+#elif defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
+#define LFORTRAN_C_BACKEND_TBP_CACHE_STORAGE static _Thread_local
+#else
+#define LFORTRAN_C_BACKEND_TBP_CACHE_STORAGE
 #endif
 #endif
 
@@ -111,14 +157,18 @@ static void __lfortran_tbp_wrapper_clear(void* __lfortran_self)
     __lfortran_c_backend_allocatable_char_component_deallocate_cleanup_ref_01_m__clear__StructType_Class(((struct c_backend_allocatable_char_component_deallocate_cleanup_ref_01_m__holder_type*)(__lfortran_self)));
 }
 
-LFORTRAN_C_BACKEND_CONSTRUCTOR static void __lfortran_register_tbp_clear(void)
-{
-    _lfortran_register_c_tbp_impl("clear", 2450912478643159540, (lfortran_c_tbp_func_ptr)__lfortran_tbp_wrapper_clear);
-}
+static int __lfortran_register_tbp_clear_state = 0;
 
 void __lfortran_force_link_tbp_c_backend_allocatable_char_component_deallocate_cleanup_ref_01_m__holder_type__clear(void)
 {
-    __lfortran_register_tbp_clear();
+    if (!__lfortran_register_tbp_clear_state) {
+        _lfortran_register_c_tbp_impl_once("clear", 2450912478643159540, (lfortran_c_tbp_func_ptr)__lfortran_tbp_wrapper_clear, &__lfortran_register_tbp_clear_state);
+    }
+}
+
+LFORTRAN_C_BACKEND_CONSTRUCTOR static void __lfortran_register_tbp_clear(void)
+{
+    __lfortran_force_link_tbp_c_backend_allocatable_char_component_deallocate_cleanup_ref_01_m__holder_type__clear();
 }
 
 void __lfortran_c_backend_allocatable_char_component_deallocate_cleanup_ref_01_m__exercise()
@@ -129,14 +179,7 @@ void __lfortran_c_backend_allocatable_char_component_deallocate_cleanup_ref_01_m
     holder_value.__lfortran_type_tag = 2450912478643159540;
     (&(holder_value))->value = NULL;
     struct c_backend_allocatable_char_component_deallocate_cleanup_ref_01_m__holder_type* holder = &holder_value;
-    if ((char*)"owned" != NULL) {
-    _lfortran_strcpy_alloc(__lfortran_default_allocator, &holder->value, NULL, true, true, (char*)"owned", _lfortran_str_len((char*)"owned"));
-} else {
-    if (holder->value != NULL) {
-        _lfortran_free_alloc(__lfortran_default_allocator, holder->value);
-        holder->value = NULL;
-    }
-}
+    _lfortran_strcpy_alloc(__lfortran_default_allocator, &holder->value, NULL, true, true, (char*)"owned", 5);
     __lfortran_c_backend_allocatable_char_component_deallocate_cleanup_ref_01_m__clear__StructType_Class(((struct c_backend_allocatable_char_component_deallocate_cleanup_ref_01_m__holder_type*)(holder)));
     if ((&(holder_value))->value != NULL) {
         _lfortran_free_alloc(__lfortran_default_allocator, (&(holder_value))->value);
