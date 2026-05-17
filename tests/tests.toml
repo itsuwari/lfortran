@@ -5543,6 +5543,12 @@ c_split_consumer_forbid_pattern = true
 c_split_consumer_forbid_pattern_value = "24681357"
 
 [[test]]
+filename = "c_backend_imported_type_prune_01.f90"
+extrafiles = "c_backend_imported_type_prune_mod_01.f90"
+c_split_consumer_forbid_pattern = true
+c_split_consumer_forbid_pattern_value = "unused_imported_type_1357911"
+
+[[test]]
 filename = "c_backend_header_only_module_01.f90"
 c_split_no_empty_source = true
 

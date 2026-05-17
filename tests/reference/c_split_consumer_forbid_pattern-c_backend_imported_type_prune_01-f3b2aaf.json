@@ -1,0 +1,13 @@
+{
+    "basename": "c_split_consumer_forbid_pattern-c_backend_imported_type_prune_01-f3b2aaf",
+    "cmd": "tmpdir=$(mktemp -d /tmp/lfortran-c-split-consumer-forbid.XXXXXX); trap 'rm -rf \"$tmpdir\"' EXIT; lfortran --backend=c --separate-compilation -c tests/c_backend_imported_type_prune_mod_01.f90 -o \"$tmpdir/mod.o\"; lfortran --backend=c --separate-compilation -I\"$tmpdir\" -c {infile} -o \"$tmpdir/main.o\"; (! grep -R -F -q \"unused_imported_type_1357911\" \"$tmpdir/main.o.tmp.split\"/*.c) #",
+    "infile": "tests/c_backend_imported_type_prune_01.f90",
+    "infile_hash": "488336987042f5bc45983e734c34cb3df46ccc1922f6c252123e2cc1",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

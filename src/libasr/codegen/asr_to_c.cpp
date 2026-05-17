@@ -477,8 +477,16 @@ R"(
 
     struct SplitUnitDecl {
         std::string name;
+        std::vector<std::string> aliases;
+        std::unordered_set<std::string> tokens;
         std::string text;
         bool always_include = false;
+    };
+
+    struct SplitUnitDeclSet {
+        std::vector<SplitUnitDecl> decls;
+        std::unordered_map<std::string, std::vector<size_t>> by_name;
+        std::vector<size_t> always_include;
     };
 
     std::string get_unit_file_prelude(const std::string &header_name) const {
@@ -487,7 +495,7 @@ R"(
 
     std::string get_unit_file_prelude(const std::string &header_name,
             const std::string &unit_src,
-            const std::vector<SplitUnitDecl> &decls) const {
+            const SplitUnitDeclSet &decls) const {
         std::string prelude = get_unit_file_prelude(header_name);
         std::string local_decls = select_split_unit_decls(unit_src, decls);
         if (!local_decls.empty()) {
@@ -1955,9 +1963,121 @@ R"(
         return trimmed.substr(begin, end - begin);
     }
 
-    std::vector<SplitUnitDecl> collect_split_unit_decls(
+    std::string extract_c_type_decl_name(const std::string &stmt) const {
+        std::string trimmed = trim_copy(stmt);
+        auto extract_after_kind = [&](const std::string &kind) -> std::string {
+            if (!startswith(trimmed, kind + " ")) {
+                return "";
+            }
+            size_t i = kind.size();
+            while (i < trimmed.size() && std::isspace(
+                    static_cast<unsigned char>(trimmed[i]))) {
+                i++;
+            }
+            while (i + 13 <= trimmed.size()
+                    && trimmed.compare(i, 13, "__attribute__") == 0) {
+                i += 13;
+                while (i < trimmed.size() && std::isspace(
+                        static_cast<unsigned char>(trimmed[i]))) {
+                    i++;
+                }
+                if (i >= trimmed.size() || trimmed[i] != '(') {
+                    break;
+                }
+                int depth = 0;
+                while (i < trimmed.size()) {
+                    if (trimmed[i] == '(') {
+                        depth++;
+                    } else if (trimmed[i] == ')') {
+                        depth--;
+                        if (depth == 0) {
+                            i++;
+                            break;
+                        }
+                    }
+                    i++;
+                }
+                while (i < trimmed.size() && std::isspace(
+                        static_cast<unsigned char>(trimmed[i]))) {
+                    i++;
+                }
+            }
+            if (i >= trimmed.size()) {
+                return "";
+            }
+            if (!(std::isalpha(static_cast<unsigned char>(trimmed[i]))
+                    || trimmed[i] == '_')) {
+                return "";
+            }
+            size_t begin = i++;
+            while (i < trimmed.size()) {
+                unsigned char ch = static_cast<unsigned char>(trimmed[i]);
+                if (!(std::isalnum(ch) || ch == '_')) {
+                    break;
+                }
+                i++;
+            }
+            return trimmed.substr(begin, i - begin);
+        };
+
+        std::string name = extract_after_kind("struct");
+        if (!name.empty()) {
+            return name;
+        }
+        name = extract_after_kind("union");
+        if (!name.empty()) {
+            return name;
+        }
+        return extract_after_kind("enum");
+    }
+
+    std::vector<std::string> extract_c_enum_member_decl_names(
+            const std::string &stmt) const {
+        std::vector<std::string> names;
+        std::string trimmed = trim_copy(stmt);
+        if (!startswith(trimmed, "enum ") || trimmed.find('{') == std::string::npos) {
+            return names;
+        }
+        bool in_enum_body = false;
+        for (const auto &line : split_lines_keep_newlines(stmt)) {
+            std::string work = trim_copy(line);
+            size_t brace = work.find('{');
+            if (brace != std::string::npos) {
+                in_enum_body = true;
+                work = trim_copy(work.substr(brace + 1));
+            }
+            if (!in_enum_body) {
+                continue;
+            }
+            size_t close_brace = work.find('}');
+            if (close_brace != std::string::npos) {
+                work = trim_copy(work.substr(0, close_brace));
+            }
+            if (!work.empty()) {
+                size_t i = 0;
+                if (std::isalpha(static_cast<unsigned char>(work[i]))
+                        || work[i] == '_') {
+                    size_t begin = i++;
+                    while (i < work.size()) {
+                        unsigned char ch = static_cast<unsigned char>(work[i]);
+                        if (!(std::isalnum(ch) || ch == '_')) {
+                            break;
+                        }
+                        i++;
+                    }
+                    names.push_back(work.substr(begin, i - begin));
+                }
+            }
+            if (close_brace != std::string::npos) {
+                break;
+            }
+        }
+        return names;
+    }
+
+    SplitUnitDeclSet collect_split_unit_decls(
             const std::string &decl_src) const {
-        std::vector<SplitUnitDecl> decls;
+        SplitUnitDeclSet result;
         std::set<std::string> seen;
         for (const auto &stmt : split_top_level_statements(decl_src)) {
             std::string trimmed = trim_copy(stmt);
@@ -1970,25 +2090,74 @@ R"(
             if (decl.name.empty()) {
                 decl.name = extract_c_extern_decl_name(trimmed);
             }
+            if (decl.name.empty()) {
+                decl.name = extract_c_type_decl_name(trimmed);
+            }
+            decl.aliases = extract_c_enum_member_decl_names(trimmed);
             decl.always_include = decl.name.empty();
-            decls.push_back(std::move(decl));
+            if (!decl.aliases.empty()) {
+                decl.always_include = false;
+            }
+            decl.tokens = collect_c_identifier_tokens(trimmed);
+            size_t index = result.decls.size();
+            if (decl.always_include) {
+                result.always_include.push_back(index);
+            }
+            if (!decl.name.empty()) {
+                result.by_name[decl.name].push_back(index);
+            }
+            for (const std::string &alias : decl.aliases) {
+                result.by_name[alias].push_back(index);
+            }
+            result.decls.push_back(std::move(decl));
         }
-        return decls;
+        return result;
     }
 
     std::string select_split_unit_decls(const std::string &unit_src,
-            const std::vector<SplitUnitDecl> &decls) const {
-        if (decls.empty()) {
+            const SplitUnitDeclSet &decls) const {
+        if (decls.decls.empty()) {
             return "";
         }
-        std::unordered_set<std::string> tokens = collect_c_identifier_tokens(unit_src);
-        std::string out;
-        for (const SplitUnitDecl &decl : decls) {
-            if (decl.always_include || tokens.find(decl.name) != tokens.end()) {
-                out += decl.text;
-                if (!endswith(out, "\n")) {
-                    out += "\n";
+        std::unordered_set<std::string> tokens =
+            collect_c_identifier_tokens(unit_src);
+        std::vector<bool> included(decls.decls.size(), false);
+        std::vector<std::string> worklist(tokens.begin(), tokens.end());
+
+        auto include_decl = [&](size_t index) {
+            if (index >= decls.decls.size() || included[index]) {
+                return;
+            }
+            included[index] = true;
+            for (const std::string &token : decls.decls[index].tokens) {
+                if (tokens.insert(token).second) {
+                    worklist.push_back(token);
                 }
+            }
+        };
+
+        for (size_t index : decls.always_include) {
+            include_decl(index);
+        }
+
+        for (size_t i = 0; i < worklist.size(); i++) {
+            auto it = decls.by_name.find(worklist[i]);
+            if (it == decls.by_name.end()) {
+                continue;
+            }
+            for (size_t index : it->second) {
+                include_decl(index);
+            }
+        }
+
+        std::string out;
+        for (size_t i = 0; i < decls.decls.size(); i++) {
+            if (!included[i]) {
+                continue;
+            }
+            out += decls.decls[i].text;
+            if (!endswith(out, "\n")) {
+                out += "\n";
             }
         }
         return out;
@@ -5417,9 +5586,6 @@ R"(
             function_decls += "}\n\n";
         }
 
-        std::vector<SplitUnitDecl> split_unit_decls = collect_split_unit_decls(
-            function_decls + global_var_decls + module_var_decls);
-
         const std::string runtime_type_header_decl = "struct "
             + get_runtime_type_tag_header_struct_name()
             + "\n{\n    int64_t " + get_runtime_type_tag_member_name() + ";\n};\n";
@@ -5459,6 +5625,10 @@ R"(
             common_structs += runtime_type_header_decl;
         }
 
+        std::string unit_type_decls = module_aggregate_decls;
+        SplitUnitDeclSet split_unit_decls = collect_split_unit_decls(
+            unit_type_decls + function_decls + global_var_decls + module_var_decls);
+
         std::string common_header_src = "#ifndef " + common_header_guard
             + "\n#define " + common_header_guard + "\n\n"
             + get_include_block() + get_default_head()
@@ -5471,7 +5641,7 @@ R"(
         std::string header_src = "#ifndef " + header_guard + "\n#define "
             + header_guard + "\n\n"
             + "#include \"" + common_header_name + "\"\n"
-            + header_array_type_decls + module_aggregate_decls
+            + header_array_type_decls
             + "\n#endif\n";
         write_text_file(fs::path(output_dir) / header_name, header_src);
 
