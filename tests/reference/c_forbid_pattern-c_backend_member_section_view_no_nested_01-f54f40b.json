@@ -1,0 +1,13 @@
+{
+    "basename": "c_forbid_pattern-c_backend_member_section_view_no_nested_01-f54f40b",
+    "cmd": "lfortran --no-color --show-c {infile} | (! grep -F -q \"+ __lfortran_matmul_k * (pot->v->dims[0].stride * (1))\") #",
+    "infile": "tests/../integration_tests/c_backend_member_section_view_no_nested_01.f90",
+    "infile_hash": "be0da06a09c374e540bdbc0c955fba04cc78a03ae0773f7dee000a10",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

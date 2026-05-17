@@ -284,6 +284,7 @@ public:
     bool reuse_array_compare_temps_in_call_args = false;
     std::map<std::string, std::string> array_compare_temp_cache;
     std::set<uint64_t> c_array_section_association_temps;
+    std::map<uint64_t, ASR::expr_t*> c_array_section_association_aliases;
 
     std::unique_ptr<CCPPDSUtils> c_ds_api;
     std::unique_ptr<CUtils::CUtilFunctions> c_utils_functions;
@@ -7220,6 +7221,21 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             c_array_section_association_temps.end();
     }
 
+    ASR::expr_t *get_c_array_section_association_alias_expr(ASR::expr_t *expr) {
+        expr = unwrap_c_array_expr(expr);
+        if (!is_c || expr == nullptr || !ASR::is_a<ASR::Var_t>(*expr)) {
+            return nullptr;
+        }
+        ASR::symbol_t *sym = ASRUtils::symbol_get_past_external(
+            ASR::down_cast<ASR::Var_t>(expr)->m_v);
+        auto it = c_array_section_association_aliases.find(
+            get_hash(reinterpret_cast<ASR::asr_t*>(sym)));
+        if (it == c_array_section_association_aliases.end()) {
+            return nullptr;
+        }
+        return it->second;
+    }
+
     bool is_c_whole_allocatable_or_pointer_array_expr(ASR::expr_t *expr) {
         expr = unwrap_c_array_expr(expr);
         if (expr == nullptr || ASR::is_a<ASR::ArraySection_t>(*expr)) {
@@ -8812,6 +8828,25 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         return true;
     }
 
+    bool get_c_rank1_matmul_vector_element_expr(ASR::expr_t *expr,
+            const std::string &prefix, const std::string &index_name,
+            std::string &setup, std::string &out) {
+        ASR::expr_t *unwrapped_expr = unwrap_c_array_expr(expr);
+        if (unwrapped_expr != nullptr && is_c_rank1_unit_array_expr(unwrapped_expr)) {
+            if (get_c_static_rank1_array_element_expr(expr, index_name, setup, out)) {
+                return true;
+            }
+            std::string data_name, offset_name, stride_name, length_name;
+            if (get_c_rank1_array_access(expr, prefix, setup, data_name,
+                    offset_name, stride_name, length_name, false)) {
+                out = data_name + "[" + offset_name + " + " + index_name
+                    + " * " + stride_name + "]";
+                return true;
+            }
+        }
+        return get_c_scalarized_array_expr(expr, index_name, setup, out, false);
+    }
+
     bool try_emit_c_inline_dot_product_call(const ASR::FunctionCall_t &x,
             ASR::Function_t *fn, const std::string &fn_name, std::string &out) {
         if (!is_c || fn == nullptr || (x.n_args != 2 && x.n_args != 4)
@@ -9707,8 +9742,9 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                     matrix_length2)
                     || !get_c_rank2_scalarized_expr(left, index_name,
                         inner_index, setup, matrix_item)
-                    || !get_c_scalarized_array_expr(right, inner_index, setup,
-                        vector_item, false)) {
+                    || !get_c_rank1_matmul_vector_element_expr(right,
+                        "__lfortran_matmul_vector", inner_index, setup,
+                        vector_item)) {
                 return false;
             }
             loop_setup += indent + "for (int64_t " + inner_index + " = 0; "
@@ -9727,8 +9763,9 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             if (!get_c_rank2_scalarized_expr_shape(right,
                     "__lfortran_matmul_matrix", setup, matrix_length1,
                     matrix_length2)
-                    || !get_c_scalarized_array_expr(left, inner_index, setup,
-                        vector_item, false)
+                    || !get_c_rank1_matmul_vector_element_expr(left,
+                        "__lfortran_matmul_vector", inner_index, setup,
+                        vector_item)
                     || !get_c_rank2_scalarized_expr(right, inner_index,
                         index_name, setup, matrix_item)) {
                 return false;
@@ -10872,6 +10909,10 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             std::string &length1_name, std::string &length2_name,
             bool need_lengths=true) {
         expr = unwrap_c_array_expr(expr);
+        ASR::expr_t *alias_expr = get_c_array_section_association_alias_expr(expr);
+        if (alias_expr != nullptr && is_c_rank2_unit_slice_array_expr(alias_expr)) {
+            expr = alias_expr;
+        }
         if (expr == nullptr || !is_c_rank2_unit_slice_array_expr(expr)) {
             return false;
         }
@@ -11899,8 +11940,9 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 if (!get_c_rank2_scalarized_expr_shape(right,
                         "__lfortran_realloc_matmul_rhs", setup,
                         right_length1, value_length)
-                        || !get_c_scalarized_array_expr(left, inner_index,
-                            setup, left_item, false)
+                        || !get_c_rank1_matmul_vector_element_expr(left,
+                            "__lfortran_realloc_matmul_vector", inner_index,
+                            setup, left_item)
                         || !get_c_rank2_scalarized_expr(right,
                             inner_index, index_name, setup, right_item)) {
                     return false;
@@ -11913,8 +11955,9 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                         value_length, left_length2)
                         || !get_c_rank2_scalarized_expr(left,
                             index_name, inner_index, setup, left_item)
-                        || !get_c_scalarized_array_expr(right, inner_index,
-                            setup, right_item, false)) {
+                        || !get_c_rank1_matmul_vector_element_expr(right,
+                            "__lfortran_realloc_matmul_vector", inner_index,
+                            setup, right_item)) {
                     return false;
                 }
                 inner_length = left_length2;
@@ -19795,6 +19838,24 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         src = update_target_desc;
     }
 
+    bool should_inline_c_rank1_matmul_array_section_association(
+            const ASR::Associate_t &x) {
+        if (!is_c || !ASR::is_a<ASR::Var_t>(*x.m_target)
+                || !ASR::is_a<ASR::ArraySection_t>(*x.m_value)
+                || !ASRUtils::is_pointer(ASRUtils::expr_type(x.m_target))
+                || !ASRUtils::is_array(ASRUtils::expr_type(x.m_target))
+                || !is_c_rank2_unit_slice_array_expr(x.m_value)) {
+            return false;
+        }
+        ASR::symbol_t *target_sym = ASRUtils::symbol_get_past_external(
+            ASR::down_cast<ASR::Var_t>(x.m_target)->m_v);
+        if (!ASR::is_a<ASR::Variable_t>(*target_sym)) {
+            return false;
+        }
+        std::string name = ASR::down_cast<ASR::Variable_t>(target_sym)->m_name;
+        return name.find("__libasr_created__intrinsic_array_function_MatMul") == 0;
+    }
+
     void visit_Associate(const ASR::Associate_t &x) {
         if (ASR::is_a<ASR::ArraySection_t>(*x.m_value)) {
             if (is_c && ASR::is_a<ASR::Var_t>(*x.m_target)
@@ -19804,6 +19865,13 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                     ASR::down_cast<ASR::Var_t>(x.m_target)->m_v);
                 c_array_section_association_temps.insert(
                     get_hash(reinterpret_cast<ASR::asr_t*>(target_sym)));
+                if (should_inline_c_rank1_matmul_array_section_association(x)) {
+                    c_array_section_association_aliases[
+                        get_hash(reinterpret_cast<ASR::asr_t*>(target_sym))] =
+                        x.m_value;
+                    src.clear();
+                    return;
+                }
             }
             ASR::ArraySection_t *array_section = ASR::down_cast<ASR::ArraySection_t>(x.m_value);
             ASR::expr_t *raw_value = unwrap_c_lvalue_expr(array_section->m_v);

@@ -5803,6 +5803,8 @@ c_forbid_pattern_value = "data = (double*) _lfortran_malloc_alloc(__lfortran_def
 filename = "../integration_tests/c_backend_matmul_rank1_scalarized_no_helper_01.f90"
 c_forbid_pattern = true
 c_forbid_pattern_value = "lcompilers_matmul"
+c_split_forbid_pattern = true
+c_split_forbid_pattern_value = "__libasr_created__intrinsic_array_function_MatMul->data = a->data"
 
 [[test]]
 filename = "../integration_tests/c_backend_rank1_matmul_self_update_terms_01.f90"
@@ -5818,6 +5820,8 @@ c_split_forbid_pattern_value = "memset(forwarded, 0, sizeof(*forwarded));"
 filename = "../integration_tests/c_backend_member_section_view_no_nested_01.f90"
 c_split_forbid_pattern = true
 c_split_forbid_pattern_value = ")->data), .dims ="
+c_forbid_pattern = true
+c_forbid_pattern_value = "+ __lfortran_matmul_k * (pot->v->dims[0].stride * (1))"
 
 [[test]]
 filename = "../integration_tests/c_backend_struct_member_vector_subscript_01.f90"

@@ -1,0 +1,13 @@
+{
+    "basename": "c_split_forbid_pattern-c_backend_matmul_rank1_scalarized_no_helper_01-81618f1",
+    "cmd": "tmpdir=$(mktemp -d /tmp/lfortran-c-split-forbid.XXXXXX); trap 'rm -rf \"$tmpdir\"' EXIT; lfortran --backend=c --separate-compilation -c {infile} -o \"$tmpdir/main.o\" > \"$tmpdir/compile.out\" 2> \"$tmpdir/compile.err\" && (! grep -R -F -q \"__libasr_created__intrinsic_array_function_MatMul->data = a->data\" \"$tmpdir\"/*.o.tmp.split/*.c \"$tmpdir\"/*.o.tmp.split/*.h) #",
+    "infile": "tests/../integration_tests/c_backend_matmul_rank1_scalarized_no_helper_01.f90",
+    "infile_hash": "41cfadaed8aa6001c2a38e5fdbf40350eb33962cbcdab2c83a4ab629",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}
