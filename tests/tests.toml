@@ -5740,6 +5740,13 @@ c_forbid_pattern = true
 c_forbid_pattern_value = "__libasr_created__function_call__lcompilers_Sum"
 
 [[test]]
+filename = "../integration_tests/c_backend_inline_logical_reduction_01.f90"
+c_require_pattern = true
+c_require_pattern_value = "__libasr_created__logical_reduction"
+c_forbid_pattern = true
+c_forbid_pattern_value = "__libasr_created__intrinsic_array_function_"
+
+[[test]]
 filename = "c_backend_small_integer_pow_01.f90"
 c = true
 

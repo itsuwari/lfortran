@@ -931,14 +931,258 @@ public:
                 || ASRUtils::is_unsigned_integer(*return_type));
     }
 
-    std::vector<bool> get_c_inlineable_sum_call_temp_bypass(
+    bool is_c_rank1_scalarizable_reduction_expr(ASR::expr_t *expr) {
+        expr = ASRUtils::get_past_array_physical_cast(expr);
+        if (expr == nullptr) {
+            return false;
+        }
+        ASR::ttype_t *type = ASRUtils::type_get_past_allocatable_pointer(
+            ASRUtils::expr_type(expr));
+        if (type == nullptr || !ASRUtils::is_array(type)) {
+            return true;
+        }
+        if (ASRUtils::extract_n_dims_from_ttype(type) != 1) {
+            return false;
+        }
+        switch (expr->type) {
+            case ASR::exprType::Var:
+            case ASR::exprType::StructInstanceMember:
+            case ASR::exprType::ArraySection:
+            case ASR::exprType::ArrayItem:
+            case ASR::exprType::ArrayConstant:
+            case ASR::exprType::ArrayConstructor: {
+                return true;
+            }
+            case ASR::exprType::ArrayBroadcast: {
+                return is_c_rank1_scalarizable_reduction_expr(
+                    ASR::down_cast<ASR::ArrayBroadcast_t>(expr)->m_array);
+            }
+            case ASR::exprType::RealBinOp: {
+                ASR::RealBinOp_t *binop = ASR::down_cast<ASR::RealBinOp_t>(expr);
+                return binop->m_op != ASR::binopType::Pow
+                    && is_c_rank1_scalarizable_reduction_expr(binop->m_left)
+                    && is_c_rank1_scalarizable_reduction_expr(binop->m_right);
+            }
+            case ASR::exprType::IntegerBinOp: {
+                ASR::IntegerBinOp_t *binop =
+                    ASR::down_cast<ASR::IntegerBinOp_t>(expr);
+                return binop->m_op != ASR::binopType::Pow
+                    && is_c_rank1_scalarizable_reduction_expr(binop->m_left)
+                    && is_c_rank1_scalarizable_reduction_expr(binop->m_right);
+            }
+            case ASR::exprType::UnsignedIntegerBinOp: {
+                ASR::UnsignedIntegerBinOp_t *binop =
+                    ASR::down_cast<ASR::UnsignedIntegerBinOp_t>(expr);
+                return binop->m_op != ASR::binopType::Pow
+                    && is_c_rank1_scalarizable_reduction_expr(binop->m_left)
+                    && is_c_rank1_scalarizable_reduction_expr(binop->m_right);
+            }
+            case ASR::exprType::RealUnaryMinus: {
+                return is_c_rank1_scalarizable_reduction_expr(
+                    ASR::down_cast<ASR::RealUnaryMinus_t>(expr)->m_arg);
+            }
+            case ASR::exprType::IntegerUnaryMinus: {
+                return is_c_rank1_scalarizable_reduction_expr(
+                    ASR::down_cast<ASR::IntegerUnaryMinus_t>(expr)->m_arg);
+            }
+            case ASR::exprType::IntegerCompare: {
+                ASR::IntegerCompare_t *cmp = ASR::down_cast<ASR::IntegerCompare_t>(expr);
+                return is_c_rank1_scalarizable_reduction_expr(cmp->m_left)
+                    && is_c_rank1_scalarizable_reduction_expr(cmp->m_right);
+            }
+            case ASR::exprType::UnsignedIntegerCompare: {
+                ASR::UnsignedIntegerCompare_t *cmp =
+                    ASR::down_cast<ASR::UnsignedIntegerCompare_t>(expr);
+                return is_c_rank1_scalarizable_reduction_expr(cmp->m_left)
+                    && is_c_rank1_scalarizable_reduction_expr(cmp->m_right);
+            }
+            case ASR::exprType::RealCompare: {
+                ASR::RealCompare_t *cmp = ASR::down_cast<ASR::RealCompare_t>(expr);
+                return is_c_rank1_scalarizable_reduction_expr(cmp->m_left)
+                    && is_c_rank1_scalarizable_reduction_expr(cmp->m_right);
+            }
+            case ASR::exprType::LogicalCompare: {
+                ASR::LogicalCompare_t *cmp = ASR::down_cast<ASR::LogicalCompare_t>(expr);
+                return is_c_rank1_scalarizable_reduction_expr(cmp->m_left)
+                    && is_c_rank1_scalarizable_reduction_expr(cmp->m_right);
+            }
+            case ASR::exprType::LogicalBinOp: {
+                ASR::LogicalBinOp_t *binop = ASR::down_cast<ASR::LogicalBinOp_t>(expr);
+                return is_c_rank1_scalarizable_reduction_expr(binop->m_left)
+                    && is_c_rank1_scalarizable_reduction_expr(binop->m_right);
+            }
+            case ASR::exprType::LogicalNot: {
+                return is_c_rank1_scalarizable_reduction_expr(
+                    ASR::down_cast<ASR::LogicalNot_t>(expr)->m_arg);
+            }
+            default: {
+                return false;
+            }
+        }
+    }
+
+    bool is_c_scalarizable_logical_reduction_operand_expr(ASR::expr_t *expr) {
+        expr = ASRUtils::get_past_array_physical_cast(expr);
+        if (expr == nullptr) {
+            return false;
+        }
+        ASR::ttype_t *type = ASRUtils::type_get_past_allocatable_pointer(
+            ASRUtils::expr_type(expr));
+        if (type == nullptr || !ASRUtils::is_array(type)) {
+            return true;
+        }
+        int rank = ASRUtils::extract_n_dims_from_ttype(type);
+        if (rank == 1) {
+            return is_c_rank1_scalarizable_reduction_expr(expr);
+        }
+        if (rank != 2) {
+            return false;
+        }
+        ASR::ttype_t *element_type = ASRUtils::type_get_past_array(type);
+        if (element_type != nullptr) {
+            ASR::ttype_t *element_type_past_alloc =
+                ASRUtils::type_get_past_allocatable_pointer(element_type);
+            if (ASRUtils::is_real(*element_type_past_alloc)
+                    || ASRUtils::is_integer(*element_type_past_alloc)
+                    || ASRUtils::is_unsigned_integer(*element_type_past_alloc)) {
+                return is_c_rank2_scalarizable_sum_actual_expr(expr);
+            }
+        }
+        switch (expr->type) {
+            case ASR::exprType::Var:
+            case ASR::exprType::StructInstanceMember: {
+                return true;
+            }
+            case ASR::exprType::ArraySection: {
+                return is_c_simple_array_section_view(
+                    ASR::down_cast<ASR::ArraySection_t>(expr));
+            }
+            case ASR::exprType::ArrayBroadcast: {
+                return is_c_scalarizable_logical_reduction_operand_expr(
+                    ASR::down_cast<ASR::ArrayBroadcast_t>(expr)->m_array);
+            }
+            case ASR::exprType::LogicalCompare: {
+                ASR::LogicalCompare_t *cmp = ASR::down_cast<ASR::LogicalCompare_t>(expr);
+                return is_c_scalarizable_logical_reduction_operand_expr(cmp->m_left)
+                    && is_c_scalarizable_logical_reduction_operand_expr(cmp->m_right);
+            }
+            case ASR::exprType::LogicalBinOp: {
+                ASR::LogicalBinOp_t *binop = ASR::down_cast<ASR::LogicalBinOp_t>(expr);
+                return is_c_scalarizable_logical_reduction_operand_expr(binop->m_left)
+                    && is_c_scalarizable_logical_reduction_operand_expr(binop->m_right);
+            }
+            case ASR::exprType::LogicalNot: {
+                return is_c_scalarizable_logical_reduction_operand_expr(
+                    ASR::down_cast<ASR::LogicalNot_t>(expr)->m_arg);
+            }
+            default: {
+                return false;
+            }
+        }
+    }
+
+    bool is_c_scalarizable_logical_reduction_mask_expr(ASR::expr_t *expr) {
+        expr = ASRUtils::get_past_array_physical_cast(expr);
+        if (expr == nullptr) {
+            return false;
+        }
+        ASR::ttype_t *type = ASRUtils::type_get_past_allocatable_pointer(
+            ASRUtils::expr_type(expr));
+        if (type == nullptr || !ASRUtils::is_array(type)) {
+            return true;
+        }
+        int rank = ASRUtils::extract_n_dims_from_ttype(type);
+        if (rank != 1 && rank != 2) {
+            return false;
+        }
+        ASR::ttype_t *element_type = ASRUtils::type_get_past_array(type);
+        if (element_type == nullptr) {
+            return false;
+        }
+        switch (expr->type) {
+            case ASR::exprType::Var:
+            case ASR::exprType::StructInstanceMember:
+            case ASR::exprType::ArraySection:
+            case ASR::exprType::ArrayItem:
+            case ASR::exprType::ArrayConstant:
+            case ASR::exprType::ArrayConstructor: {
+                return ASRUtils::is_logical(
+                    *ASRUtils::type_get_past_allocatable_pointer(element_type));
+            }
+            case ASR::exprType::IntegerCompare: {
+                ASR::IntegerCompare_t *cmp = ASR::down_cast<ASR::IntegerCompare_t>(expr);
+                return is_c_scalarizable_logical_reduction_operand_expr(cmp->m_left)
+                    && is_c_scalarizable_logical_reduction_operand_expr(cmp->m_right);
+            }
+            case ASR::exprType::UnsignedIntegerCompare: {
+                ASR::UnsignedIntegerCompare_t *cmp =
+                    ASR::down_cast<ASR::UnsignedIntegerCompare_t>(expr);
+                return is_c_scalarizable_logical_reduction_operand_expr(cmp->m_left)
+                    && is_c_scalarizable_logical_reduction_operand_expr(cmp->m_right);
+            }
+            case ASR::exprType::RealCompare: {
+                ASR::RealCompare_t *cmp = ASR::down_cast<ASR::RealCompare_t>(expr);
+                return is_c_scalarizable_logical_reduction_operand_expr(cmp->m_left)
+                    && is_c_scalarizable_logical_reduction_operand_expr(cmp->m_right);
+            }
+            case ASR::exprType::LogicalCompare: {
+                ASR::LogicalCompare_t *cmp = ASR::down_cast<ASR::LogicalCompare_t>(expr);
+                return is_c_scalarizable_logical_reduction_operand_expr(cmp->m_left)
+                    && is_c_scalarizable_logical_reduction_operand_expr(cmp->m_right);
+            }
+            case ASR::exprType::LogicalBinOp: {
+                ASR::LogicalBinOp_t *binop = ASR::down_cast<ASR::LogicalBinOp_t>(expr);
+                return is_c_scalarizable_logical_reduction_mask_expr(binop->m_left)
+                    && is_c_scalarizable_logical_reduction_mask_expr(binop->m_right);
+            }
+            case ASR::exprType::LogicalNot: {
+                return is_c_scalarizable_logical_reduction_mask_expr(
+                    ASR::down_cast<ASR::LogicalNot_t>(expr)->m_arg);
+            }
+            default: {
+                return false;
+            }
+        }
+    }
+
+    bool is_c_inlineable_logical_reduction_helper(ASR::Function_t *func) {
+        if (!pass_options.c_backend || func == nullptr
+                || func->n_args == 0 || func->m_return_var == nullptr) {
+            return false;
+        }
+        std::string func_name = std::string(func->m_name);
+        bool is_any_or_all = func_name.find("lcompilers_Any") != std::string::npos
+            || func_name.find("lcompilers_any") != std::string::npos
+            || func_name.find("lcompilers_All") != std::string::npos
+            || func_name.find("lcompilers_all") != std::string::npos;
+        bool is_count = func_name.find("lcompilers_Count") != std::string::npos
+            || func_name.find("lcompilers_count") != std::string::npos;
+        if (!is_any_or_all && !is_count) {
+            return false;
+        }
+        ASR::ttype_t *return_type = ASRUtils::type_get_past_allocatable_pointer(
+            ASRUtils::expr_type(func->m_return_var));
+        return return_type != nullptr
+            && !ASRUtils::is_array(return_type)
+            && ((is_any_or_all && ASRUtils::is_logical(*return_type))
+                || (is_count && ASRUtils::is_integer(*return_type)));
+    }
+
+    std::vector<bool> get_c_inlineable_reduction_call_temp_bypass(
             ASR::Function_t *func, ASR::call_arg_t *args, size_t n_args) {
         std::vector<bool> bypass(n_args, false);
-        if (!is_c_inlineable_sum_helper(func) || n_args == 0
+        if (n_args == 0
                 || args == nullptr || args[0].m_value == nullptr) {
             return bypass;
         }
-        if (is_c_rank2_scalarizable_sum_actual_expr(args[0].m_value)) {
+        if (!ASRUtils::is_array(ASRUtils::expr_type(args[0].m_value))) {
+            return bypass;
+        }
+        if (is_c_inlineable_sum_helper(func)
+                && is_c_rank2_scalarizable_sum_actual_expr(args[0].m_value)) {
+            bypass[0] = true;
+        } else if (is_c_inlineable_logical_reduction_helper(func)
+                && is_c_scalarizable_logical_reduction_mask_expr(args[0].m_value)) {
             bypass[0] = true;
         }
         return bypass;
@@ -2020,16 +2264,16 @@ public:
             std::vector<bool> bypass_inline_dot_product_array_temps =
                 get_c_inlineable_dot_product_call_temp_bypass(
                     func, x.m_args, x.n_args);
-            std::vector<bool> bypass_inline_sum_array_temps =
-                get_c_inlineable_sum_call_temp_bypass(
+            std::vector<bool> bypass_inline_reduction_array_temps =
+                get_c_inlineable_reduction_call_temp_bypass(
                     func, x.m_args, x.n_args);
             for (size_t i = 0; i < bypass_raw_helper_array_temps.size()
                     && i < bypass_inline_dot_product_array_temps.size()
-                    && i < bypass_inline_sum_array_temps.size(); i++) {
+                    && i < bypass_inline_reduction_array_temps.size(); i++) {
                 bypass_raw_helper_array_temps[i] =
                     bypass_raw_helper_array_temps[i]
                     || bypass_inline_dot_product_array_temps[i]
-                    || bypass_inline_sum_array_temps[i];
+                    || bypass_inline_reduction_array_temps[i];
             }
             for (size_t i = 0; i < func->n_args; i++ ) {
                 if ( ASR::is_a<ASR::Var_t>(*func->m_args[i]) ) {

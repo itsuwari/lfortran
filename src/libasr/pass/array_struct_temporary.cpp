@@ -2478,10 +2478,28 @@ static bool is_c_scalar_array_constructor(ASR::expr_t *expr) {
     return true;
 }
 
+static bool is_c_scalar_array_constant(ASR::expr_t *expr) {
+    expr = ASRUtils::get_past_array_physical_cast(expr);
+    if (expr == nullptr || !ASR::is_a<ASR::ArrayConstant_t>(*expr)) {
+        return false;
+    }
+    ASR::ArrayConstant_t *constant = ASR::down_cast<ASR::ArrayConstant_t>(expr);
+    ASR::ttype_t *constant_type = ASRUtils::type_get_past_allocatable_pointer(
+        constant->m_type);
+    ASR::ttype_t *element_type = constant_type != nullptr
+        ? ASRUtils::type_get_past_array(constant_type) : nullptr;
+    return constant_type != nullptr
+        && ASRUtils::extract_n_dims_from_ttype(constant_type) == 1
+        && is_c_plain_scalar_array_element_type(element_type);
+}
+
 static bool is_c_rank1_scalarizable_array_expr(ASR::expr_t *expr) {
     expr = ASRUtils::get_past_array_physical_cast(expr);
     if (expr == nullptr) {
         return false;
+    }
+    if (ASR::is_a<ASR::ArrayConstant_t>(*expr)) {
+        return is_c_scalar_array_constant(expr);
     }
     if (ASR::is_a<ASR::ArrayConstructor_t>(*expr)) {
         return is_c_scalar_array_constructor(expr);
@@ -3529,6 +3547,249 @@ static bool should_preserve_c_inline_sum_arg(
         && is_c_rank2_scalarizable_array_expr(arg);
 }
 
+static bool is_c_rank1_scalarizable_reduction_expr(ASR::expr_t *expr) {
+    expr = ASRUtils::get_past_array_physical_cast(expr);
+    if (expr == nullptr) {
+        return false;
+    }
+    ASR::ttype_t *type = ASRUtils::type_get_past_allocatable_pointer(
+        ASRUtils::expr_type(expr));
+    if (type == nullptr || !ASRUtils::is_array(type)) {
+        return true;
+    }
+    if (ASRUtils::extract_n_dims_from_ttype(type) != 1) {
+        return false;
+    }
+    switch (expr->type) {
+        case ASR::exprType::Var:
+        case ASR::exprType::StructInstanceMember:
+        case ASR::exprType::ArraySection:
+        case ASR::exprType::ArrayItem:
+        case ASR::exprType::ArrayConstant:
+        case ASR::exprType::ArrayConstructor: {
+            return is_c_rank1_scalarizable_array_expr(expr);
+        }
+        case ASR::exprType::ArrayBroadcast: {
+            return is_c_rank1_scalarizable_reduction_expr(
+                ASR::down_cast<ASR::ArrayBroadcast_t>(expr)->m_array);
+        }
+        case ASR::exprType::RealBinOp: {
+            ASR::RealBinOp_t *binop = ASR::down_cast<ASR::RealBinOp_t>(expr);
+            return binop->m_op != ASR::binopType::Pow
+                && is_c_rank1_scalarizable_reduction_expr(binop->m_left)
+                && is_c_rank1_scalarizable_reduction_expr(binop->m_right);
+        }
+        case ASR::exprType::IntegerBinOp: {
+            ASR::IntegerBinOp_t *binop =
+                ASR::down_cast<ASR::IntegerBinOp_t>(expr);
+            return binop->m_op != ASR::binopType::Pow
+                && is_c_rank1_scalarizable_reduction_expr(binop->m_left)
+                && is_c_rank1_scalarizable_reduction_expr(binop->m_right);
+        }
+        case ASR::exprType::UnsignedIntegerBinOp: {
+            ASR::UnsignedIntegerBinOp_t *binop =
+                ASR::down_cast<ASR::UnsignedIntegerBinOp_t>(expr);
+            return binop->m_op != ASR::binopType::Pow
+                && is_c_rank1_scalarizable_reduction_expr(binop->m_left)
+                && is_c_rank1_scalarizable_reduction_expr(binop->m_right);
+        }
+        case ASR::exprType::RealUnaryMinus: {
+            return is_c_rank1_scalarizable_reduction_expr(
+                ASR::down_cast<ASR::RealUnaryMinus_t>(expr)->m_arg);
+        }
+        case ASR::exprType::IntegerUnaryMinus: {
+            return is_c_rank1_scalarizable_reduction_expr(
+                ASR::down_cast<ASR::IntegerUnaryMinus_t>(expr)->m_arg);
+        }
+        case ASR::exprType::IntegerCompare: {
+            ASR::IntegerCompare_t *cmp = ASR::down_cast<ASR::IntegerCompare_t>(expr);
+            return is_c_rank1_scalarizable_reduction_expr(cmp->m_left)
+                && is_c_rank1_scalarizable_reduction_expr(cmp->m_right);
+        }
+        case ASR::exprType::UnsignedIntegerCompare: {
+            ASR::UnsignedIntegerCompare_t *cmp =
+                ASR::down_cast<ASR::UnsignedIntegerCompare_t>(expr);
+            return is_c_rank1_scalarizable_reduction_expr(cmp->m_left)
+                && is_c_rank1_scalarizable_reduction_expr(cmp->m_right);
+        }
+        case ASR::exprType::RealCompare: {
+            ASR::RealCompare_t *cmp = ASR::down_cast<ASR::RealCompare_t>(expr);
+            return is_c_rank1_scalarizable_reduction_expr(cmp->m_left)
+                && is_c_rank1_scalarizable_reduction_expr(cmp->m_right);
+        }
+        case ASR::exprType::LogicalCompare: {
+            ASR::LogicalCompare_t *cmp = ASR::down_cast<ASR::LogicalCompare_t>(expr);
+            return is_c_rank1_scalarizable_reduction_expr(cmp->m_left)
+                && is_c_rank1_scalarizable_reduction_expr(cmp->m_right);
+        }
+        case ASR::exprType::LogicalBinOp: {
+            ASR::LogicalBinOp_t *binop = ASR::down_cast<ASR::LogicalBinOp_t>(expr);
+            return is_c_rank1_scalarizable_reduction_expr(binop->m_left)
+                && is_c_rank1_scalarizable_reduction_expr(binop->m_right);
+        }
+        case ASR::exprType::LogicalNot: {
+            return is_c_rank1_scalarizable_reduction_expr(
+                ASR::down_cast<ASR::LogicalNot_t>(expr)->m_arg);
+        }
+        default: {
+            return false;
+        }
+    }
+}
+
+static bool is_c_scalarizable_logical_reduction_operand_expr(ASR::expr_t *expr) {
+    expr = ASRUtils::get_past_array_physical_cast(expr);
+    if (expr == nullptr) {
+        return false;
+    }
+    ASR::ttype_t *type = ASRUtils::type_get_past_allocatable_pointer(
+        ASRUtils::expr_type(expr));
+    if (type == nullptr || !ASRUtils::is_array(type)) {
+        return true;
+    }
+    int rank = ASRUtils::extract_n_dims_from_ttype(type);
+    if (rank == 1) {
+        return is_c_rank1_scalarizable_reduction_expr(expr);
+    }
+    if (rank == 2) {
+        return is_c_rank2_scalarizable_array_expr(expr);
+    }
+    return false;
+}
+
+static bool is_c_scalarizable_logical_reduction_mask_expr(ASR::expr_t *expr) {
+    expr = ASRUtils::get_past_array_physical_cast(expr);
+    if (expr == nullptr) {
+        return false;
+    }
+    ASR::ttype_t *type = ASRUtils::type_get_past_allocatable_pointer(
+        ASRUtils::expr_type(expr));
+    if (type == nullptr || !ASRUtils::is_array(type)) {
+        return true;
+    }
+    int rank = ASRUtils::extract_n_dims_from_ttype(type);
+    if (rank != 1 && rank != 2) {
+        return false;
+    }
+    ASR::ttype_t *element_type = ASRUtils::type_get_past_array(type);
+    if (element_type == nullptr) {
+        return false;
+    }
+    switch (expr->type) {
+        case ASR::exprType::Var:
+        case ASR::exprType::StructInstanceMember:
+        case ASR::exprType::ArraySection:
+        case ASR::exprType::ArrayItem:
+        case ASR::exprType::ArrayConstant:
+        case ASR::exprType::ArrayConstructor: {
+            return ASRUtils::is_logical(
+                    *ASRUtils::type_get_past_allocatable_pointer(element_type))
+                && is_c_scalarizable_logical_reduction_operand_expr(expr);
+        }
+        case ASR::exprType::IntegerCompare: {
+            ASR::IntegerCompare_t *cmp = ASR::down_cast<ASR::IntegerCompare_t>(expr);
+            return is_c_scalarizable_logical_reduction_operand_expr(cmp->m_left)
+                && is_c_scalarizable_logical_reduction_operand_expr(cmp->m_right);
+        }
+        case ASR::exprType::UnsignedIntegerCompare: {
+            ASR::UnsignedIntegerCompare_t *cmp =
+                ASR::down_cast<ASR::UnsignedIntegerCompare_t>(expr);
+            return is_c_scalarizable_logical_reduction_operand_expr(cmp->m_left)
+                && is_c_scalarizable_logical_reduction_operand_expr(cmp->m_right);
+        }
+        case ASR::exprType::RealCompare: {
+            ASR::RealCompare_t *cmp = ASR::down_cast<ASR::RealCompare_t>(expr);
+            return is_c_scalarizable_logical_reduction_operand_expr(cmp->m_left)
+                && is_c_scalarizable_logical_reduction_operand_expr(cmp->m_right);
+        }
+        case ASR::exprType::LogicalCompare: {
+            ASR::LogicalCompare_t *cmp = ASR::down_cast<ASR::LogicalCompare_t>(expr);
+            return is_c_scalarizable_logical_reduction_operand_expr(cmp->m_left)
+                && is_c_scalarizable_logical_reduction_operand_expr(cmp->m_right);
+        }
+        case ASR::exprType::LogicalBinOp: {
+            ASR::LogicalBinOp_t *binop = ASR::down_cast<ASR::LogicalBinOp_t>(expr);
+            return is_c_scalarizable_logical_reduction_mask_expr(binop->m_left)
+                && is_c_scalarizable_logical_reduction_mask_expr(binop->m_right);
+        }
+        case ASR::exprType::LogicalNot: {
+            return is_c_scalarizable_logical_reduction_mask_expr(
+                ASR::down_cast<ASR::LogicalNot_t>(expr)->m_arg);
+        }
+        default: {
+            return false;
+        }
+    }
+}
+
+static bool should_preserve_c_inline_logical_reduction_arg(
+        const ASR::IntrinsicArrayFunction_t &x) {
+    ASRUtils::IntrinsicArrayFunctions intrinsic_id =
+        static_cast<ASRUtils::IntrinsicArrayFunctions>(x.m_arr_intrinsic_id);
+    if ((intrinsic_id != ASRUtils::IntrinsicArrayFunctions::Any
+            && intrinsic_id != ASRUtils::IntrinsicArrayFunctions::All
+            && intrinsic_id != ASRUtils::IntrinsicArrayFunctions::Count)
+            || x.n_args != 1
+            || x.m_args[0] == nullptr
+            || ASRUtils::is_array(x.m_type)) {
+        return false;
+    }
+    ASR::expr_t *arg = ASRUtils::get_past_array_physical_cast(x.m_args[0]);
+    if (arg == nullptr) {
+        return false;
+    }
+    ASR::ttype_t *arg_type = ASRUtils::type_get_past_allocatable_pointer(
+        ASRUtils::expr_type(arg));
+    ASR::ttype_t *arg_element_type = arg_type != nullptr
+        ? ASRUtils::type_get_past_array(arg_type) : nullptr;
+    return arg_type != nullptr
+        && arg_element_type != nullptr
+        && ASRUtils::is_array(arg_type)
+        && (ASRUtils::extract_n_dims_from_ttype(arg_type) == 1
+            || ASRUtils::extract_n_dims_from_ttype(arg_type) == 2)
+        && ASRUtils::is_logical(
+            *ASRUtils::type_get_past_allocatable_pointer(arg_element_type))
+        && is_c_scalarizable_logical_reduction_mask_expr(arg);
+}
+
+static bool should_preserve_c_inline_reduction_arg(
+        const ASR::IntrinsicArrayFunction_t &x) {
+    return should_preserve_c_inline_sum_arg(x)
+        || should_preserve_c_inline_logical_reduction_arg(x);
+}
+
+static bool is_preserved_c_inline_reduction_expr(ASR::expr_t *expr) {
+    expr = ASRUtils::get_past_array_physical_cast(expr);
+    return expr != nullptr
+        && ASR::is_a<ASR::IntrinsicArrayFunction_t>(*expr)
+        && should_preserve_c_inline_reduction_arg(
+            *ASR::down_cast<ASR::IntrinsicArrayFunction_t>(expr));
+}
+
+static bool contains_preserved_c_inline_reduction_expr(ASR::expr_t *expr) {
+    expr = ASRUtils::get_past_array_physical_cast(expr);
+    if (expr == nullptr) {
+        return false;
+    }
+    if (is_preserved_c_inline_reduction_expr(expr)) {
+        return true;
+    }
+    switch (expr->type) {
+        case ASR::exprType::LogicalBinOp: {
+            ASR::LogicalBinOp_t *binop = ASR::down_cast<ASR::LogicalBinOp_t>(expr);
+            return contains_preserved_c_inline_reduction_expr(binop->m_left)
+                || contains_preserved_c_inline_reduction_expr(binop->m_right);
+        }
+        case ASR::exprType::LogicalNot: {
+            return contains_preserved_c_inline_reduction_expr(
+                ASR::down_cast<ASR::LogicalNot_t>(expr)->m_arg);
+        }
+        default: {
+            return false;
+        }
+    }
+}
+
 static bool is_c_inline_sum_function(ASR::Function_t *func,
         ASR::ttype_t *call_result_type, const std::string &call_name) {
     std::string func_name = func != nullptr ? std::string(func->m_name) : "";
@@ -3555,13 +3816,62 @@ static bool is_c_inline_sum_function(ASR::Function_t *func,
     return return_type != nullptr && !ASRUtils::is_array(return_type);
 }
 
+static bool is_c_inline_logical_reduction_function(ASR::Function_t *func,
+        ASR::ttype_t *call_result_type, const std::string &call_name) {
+    std::string func_name = func != nullptr ? std::string(func->m_name) : "";
+    bool is_any_or_all = func_name.find("_lcompilers_Any") != std::string::npos
+        || func_name.find("lcompilers_Any") != std::string::npos
+        || func_name.find("_lcompilers_any") != std::string::npos
+        || func_name.find("lcompilers_any") != std::string::npos
+        || func_name.find("_lcompilers_All") != std::string::npos
+        || func_name.find("lcompilers_All") != std::string::npos
+        || func_name.find("_lcompilers_all") != std::string::npos
+        || func_name.find("lcompilers_all") != std::string::npos
+        || call_name.find("_lcompilers_Any") != std::string::npos
+        || call_name.find("lcompilers_Any") != std::string::npos
+        || call_name.find("_lcompilers_any") != std::string::npos
+        || call_name.find("lcompilers_any") != std::string::npos
+        || call_name.find("_lcompilers_All") != std::string::npos
+        || call_name.find("lcompilers_All") != std::string::npos
+        || call_name.find("_lcompilers_all") != std::string::npos
+        || call_name.find("lcompilers_all") != std::string::npos;
+    bool is_count = func_name.find("_lcompilers_Count") != std::string::npos
+        || func_name.find("lcompilers_Count") != std::string::npos
+        || func_name.find("_lcompilers_count") != std::string::npos
+        || func_name.find("lcompilers_count") != std::string::npos
+        || call_name.find("_lcompilers_Count") != std::string::npos
+        || call_name.find("lcompilers_Count") != std::string::npos
+        || call_name.find("_lcompilers_count") != std::string::npos
+        || call_name.find("lcompilers_count") != std::string::npos;
+    if (!is_any_or_all && !is_count) {
+        return false;
+    }
+    ASR::ttype_t *return_type = call_result_type;
+    if (return_type == nullptr && func != nullptr
+            && func->m_return_var != nullptr) {
+        return_type = ASRUtils::expr_type(func->m_return_var);
+    } else if (return_type == nullptr && func != nullptr) {
+        ASR::FunctionType_t *func_type = ASRUtils::get_FunctionType(func);
+        if (func_type != nullptr) {
+            return_type = func_type->m_return_var_type;
+        }
+    }
+    return return_type != nullptr
+        && !ASRUtils::is_array(return_type)
+        && ((is_any_or_all && ASRUtils::is_logical(*return_type))
+            || (is_count && ASRUtils::is_integer(*return_type)));
+}
+
 static bool should_preserve_c_inline_sum_function_arg(bool c_backend,
         ASR::Function_t *func, ASR::call_arg_t *args, size_t n_args,
         size_t arg_index, ASR::ttype_t *call_result_type,
         const std::string &call_name) {
+    bool is_sum = is_c_inline_sum_function(func, call_result_type, call_name);
+    bool is_logical_reduction = is_c_inline_logical_reduction_function(
+        func, call_result_type, call_name);
     if (!c_backend || arg_index != 0 || args == nullptr || n_args == 0
             || args[0].m_value == nullptr
-            || !is_c_inline_sum_function(func, call_result_type, call_name)) {
+            || (!is_sum && !is_logical_reduction)) {
         return false;
     }
     ASR::expr_t *arg = ASRUtils::get_past_array_physical_cast(
@@ -3573,6 +3883,14 @@ static bool should_preserve_c_inline_sum_function_arg(bool c_backend,
         ASRUtils::expr_type(arg));
     ASR::ttype_t *arg_element_type = arg_type != nullptr
         ? ASRUtils::type_get_past_array(arg_type) : nullptr;
+    if (is_logical_reduction) {
+        return arg_type != nullptr
+            && arg_element_type != nullptr
+            && ASRUtils::is_array(arg_type)
+            && ASRUtils::is_logical(
+                *ASRUtils::type_get_past_allocatable_pointer(arg_element_type))
+            && is_c_scalarizable_logical_reduction_mask_expr(arg);
+    }
     return arg_type != nullptr
         && arg_element_type != nullptr
         && ASRUtils::is_array(arg_type)
@@ -4549,12 +4867,29 @@ class ArgSimplifier: public ASR::CallReplacerOnExpressionsVisitor<ArgSimplifier>
         }
         xx.m_left = binop.first;
         xx.m_right = binop.second;
+        if (c_backend
+                && (contains_preserved_c_inline_reduction_expr(xx.m_left)
+                    || contains_preserved_c_inline_reduction_expr(xx.m_right))) {
+            if (!is_preserved_c_inline_reduction_expr(xx.m_left)) {
+                visit_expr(*xx.m_left);
+            }
+            if (!is_preserved_c_inline_reduction_expr(xx.m_right)) {
+                visit_expr(*xx.m_right);
+            }
+            return;
+        }
         CallReplacerOnExpressionsVisitor::visit_LogicalBinOp(x);
     }
 
     void visit_LogicalNot(const ASR::LogicalNot_t& x) {
         ASR::LogicalNot_t& xx = const_cast<ASR::LogicalNot_t&>(x);
         xx.m_arg = visit_BinOp_expr(x.m_arg, "logical_not_", ASR::exprType::LogicalNot);
+        if (c_backend && contains_preserved_c_inline_reduction_expr(xx.m_arg)) {
+            if (!is_preserved_c_inline_reduction_expr(xx.m_arg)) {
+                visit_expr(*xx.m_arg);
+            }
+            return;
+        }
         CallReplacerOnExpressionsVisitor::visit_LogicalNot(x);
     }
 
@@ -4673,7 +5008,7 @@ class ArgSimplifier: public ASR::CallReplacerOnExpressionsVisitor<ArgSimplifier>
 
     void visit_IntrinsicArrayFunction(const ASR::IntrinsicArrayFunction_t& x) {
         if (!ASRUtils::is_value_constant(x.m_value)) {   // Only simplify runtime function's args
-            if (!(c_backend && should_preserve_c_inline_sum_arg(x))) {
+            if (!(c_backend && should_preserve_c_inline_reduction_arg(x))) {
                 visit_IntrinsicCall(x, "_intrinsic_array_function_" +
                     ASRUtils::get_array_intrinsic_name(x.m_arr_intrinsic_id));
             }
@@ -5111,7 +5446,7 @@ class ReplaceExprWithTemporary: public ASR::BaseExprReplacer<ReplaceExprWithTemp
 
     void replace_IntrinsicArrayFunction(ASR::IntrinsicArrayFunction_t* x) {
         std::string name_hint = std::string("_intrinsic_array_function_") + ASRUtils::get_array_intrinsic_name(x->m_arr_intrinsic_id);
-        if (c_backend && should_preserve_c_inline_sum_arg(*x)) {
+        if (c_backend && should_preserve_c_inline_reduction_arg(*x)) {
             return;
         }
         ASR::expr_t *lhs_expr_unwrapped = lhs_expr != nullptr
@@ -5591,6 +5926,54 @@ class ReplaceExprWithTemporaryVisitor:
         }
     }
 
+    void visit_LogicalBinOp(const ASR::LogicalBinOp_t &x) {
+        ASR::LogicalBinOp_t &xx = const_cast<ASR::LogicalBinOp_t&>(x);
+        if (c_backend
+                && (contains_preserved_c_inline_reduction_expr(xx.m_left)
+                    || contains_preserved_c_inline_reduction_expr(xx.m_right))) {
+            ASR::expr_t **current_expr_copy = current_expr;
+            if (!is_preserved_c_inline_reduction_expr(xx.m_left)) {
+                current_expr = const_cast<ASR::expr_t**>(&xx.m_left);
+                visit_expr(*xx.m_left);
+            }
+            if (!is_preserved_c_inline_reduction_expr(xx.m_right)) {
+                current_expr = const_cast<ASR::expr_t**>(&xx.m_right);
+                visit_expr(*xx.m_right);
+            }
+            current_expr = current_expr_copy;
+            return;
+        }
+        ASR::CallReplacerOnExpressionsVisitor<
+            ReplaceExprWithTemporaryVisitor>::visit_LogicalBinOp(x);
+    }
+
+    void visit_LogicalNot(const ASR::LogicalNot_t &x) {
+        ASR::LogicalNot_t &xx = const_cast<ASR::LogicalNot_t&>(x);
+        if (c_backend && contains_preserved_c_inline_reduction_expr(xx.m_arg)) {
+            if (!is_preserved_c_inline_reduction_expr(xx.m_arg)) {
+                ASR::expr_t **current_expr_copy = current_expr;
+                current_expr = const_cast<ASR::expr_t**>(&xx.m_arg);
+                visit_expr(*xx.m_arg);
+                current_expr = current_expr_copy;
+            }
+            return;
+        }
+        ASR::CallReplacerOnExpressionsVisitor<
+            ReplaceExprWithTemporaryVisitor>::visit_LogicalNot(x);
+    }
+
+    void visit_IntrinsicArrayFunction(const ASR::IntrinsicArrayFunction_t &x) {
+        if (c_backend && should_preserve_c_inline_reduction_arg(x)) {
+            visit_ttype(*x.m_type);
+            if (x.m_value && visit_expr_after_replacement) {
+                visit_expr(*x.m_value);
+            }
+            return;
+        }
+        ASR::CallReplacerOnExpressionsVisitor<
+            ReplaceExprWithTemporaryVisitor>::visit_IntrinsicArrayFunction(x);
+    }
+
     void visit_SubroutineCall(const ASR::SubroutineCall_t &x) {
         ASR::Function_t *func = get_call_function(x.m_name);
         for (size_t i = 0; i < x.n_args; i++) {
@@ -5936,9 +6319,9 @@ class ReplaceExprWithTemporaryVisitor:
         c_rank1_section_array_constant_direct_assignment = c_backend &&
             is_c_rank1_section_array_constant_direct_assignment(
                 x.m_target, x.m_value);
-        bool c_inline_sum_scalar_assignment = c_backend
+        bool c_inline_reduction_scalar_assignment = c_backend
             && ASR::is_a<ASR::IntrinsicArrayFunction_t>(*x.m_value)
-            && should_preserve_c_inline_sum_arg(
+            && should_preserve_c_inline_reduction_arg(
                 *ASR::down_cast<ASR::IntrinsicArrayFunction_t>(x.m_value));
 
         current_expr = const_cast<ASR::expr_t**>(&(x.m_value));
@@ -5993,7 +6376,7 @@ class ReplaceExprWithTemporaryVisitor:
         replacer.simd_type = simd_type_copy;
         if (!c_rank2_scalarized_reshape_assignment
                 && !ASRUtils::is_simd_array(x.m_value)
-                && !c_inline_sum_scalar_assignment) {
+                && !c_inline_reduction_scalar_assignment) {
             visit_expr(*x.m_value);
         }
         replacer.is_assignment_target_array_section_item =
@@ -6443,7 +6826,7 @@ class VerifySimplifierASROutput:
 
     void visit_IntrinsicArrayFunction(const ASR::IntrinsicArrayFunction_t& x) {
         if (!ASRUtils::is_value_constant(x.m_value)) {   // Only verify args for runtime functions
-            if (!(c_backend && should_preserve_c_inline_sum_arg(x))) {
+            if (!(c_backend && should_preserve_c_inline_reduction_arg(x))) {
                 visit_IntrinsicCall(x);
             }
         }

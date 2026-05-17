@@ -7621,6 +7621,36 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                     && is_c_scalarizable_array_expr(binop->m_left)
                     && is_c_scalarizable_array_expr(binop->m_right);
             }
+            case ASR::exprType::IntegerCompare: {
+                ASR::IntegerCompare_t *cmp = ASR::down_cast<ASR::IntegerCompare_t>(expr);
+                return is_c_scalarizable_array_expr(cmp->m_left)
+                    && is_c_scalarizable_array_expr(cmp->m_right);
+            }
+            case ASR::exprType::UnsignedIntegerCompare: {
+                ASR::UnsignedIntegerCompare_t *cmp =
+                    ASR::down_cast<ASR::UnsignedIntegerCompare_t>(expr);
+                return is_c_scalarizable_array_expr(cmp->m_left)
+                    && is_c_scalarizable_array_expr(cmp->m_right);
+            }
+            case ASR::exprType::RealCompare: {
+                ASR::RealCompare_t *cmp = ASR::down_cast<ASR::RealCompare_t>(expr);
+                return is_c_scalarizable_array_expr(cmp->m_left)
+                    && is_c_scalarizable_array_expr(cmp->m_right);
+            }
+            case ASR::exprType::LogicalCompare: {
+                ASR::LogicalCompare_t *cmp = ASR::down_cast<ASR::LogicalCompare_t>(expr);
+                return is_c_scalarizable_array_expr(cmp->m_left)
+                    && is_c_scalarizable_array_expr(cmp->m_right);
+            }
+            case ASR::exprType::LogicalBinOp: {
+                ASR::LogicalBinOp_t *binop = ASR::down_cast<ASR::LogicalBinOp_t>(expr);
+                return is_c_scalarizable_array_expr(binop->m_left)
+                    && is_c_scalarizable_array_expr(binop->m_right);
+            }
+            case ASR::exprType::LogicalNot: {
+                return is_c_scalarizable_array_expr(
+                    ASR::down_cast<ASR::LogicalNot_t>(expr)->m_arg);
+            }
             case ASR::exprType::RealUnaryMinus: {
                 return is_c_scalarizable_array_expr(
                     ASR::down_cast<ASR::RealUnaryMinus_t>(expr)->m_arg);
@@ -8386,16 +8416,45 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         return out;
     }
 
-    bool get_c_rank1_array_constant_element_expr(ASR::ArrayConstant_t *arr,
-            const std::string &index_name, std::string &out) {
-        ASR::ttype_t *array_type = ASRUtils::type_get_past_allocatable_pointer(arr->m_type);
-        if (array_type == nullptr || !ASRUtils::is_fixed_size_array(array_type)
+    bool get_c_rank1_array_constant_length(ASR::ArrayConstant_t *arr,
+            ASR::ttype_t *array_type, int64_t &length) {
+        if (array_type == nullptr || !ASRUtils::is_array(array_type)
                 || ASRUtils::extract_n_dims_from_ttype(array_type) != 1) {
             return false;
         }
         ASR::ttype_t *element_type = ASRUtils::type_get_past_array(array_type);
-        int64_t length = ASRUtils::get_fixed_size_of_array(array_type);
-        if (element_type == nullptr || length <= 0) {
+        if (element_type == nullptr) {
+            return false;
+        }
+        length = -1;
+        ASR::dimension_t *dims = nullptr;
+        int n_dims = ASRUtils::extract_dimensions_from_ttype(array_type, dims);
+        if (n_dims == 1 && dims != nullptr && dims[0].m_length != nullptr) {
+            ASRUtils::extract_value(dims[0].m_length, length);
+        }
+        if (length <= 0 && ASRUtils::is_fixed_size_array(array_type)) {
+            length = ASRUtils::get_fixed_size_of_array(array_type);
+        }
+        if (length <= 0 && arr != nullptr && arr->m_n_data > 0) {
+            size_t element_size = get_c_array_constant_element_size(element_type);
+            if (element_size > 0
+                    && static_cast<size_t>(arr->m_n_data) % element_size == 0) {
+                length = static_cast<int64_t>(
+                    static_cast<size_t>(arr->m_n_data) / element_size);
+            }
+        }
+        return length > 0;
+    }
+
+    bool get_c_rank1_array_constant_element_expr(ASR::ArrayConstant_t *arr,
+            const std::string &index_name, std::string &out) {
+        ASR::ttype_t *array_type = ASRUtils::type_get_past_allocatable_pointer(arr->m_type);
+        int64_t length = -1;
+        if (!get_c_rank1_array_constant_length(arr, array_type, length)) {
+            return false;
+        }
+        ASR::ttype_t *element_type = ASRUtils::type_get_past_array(array_type);
+        if (element_type == nullptr) {
             return false;
         }
         out = "(" + get_c_array_constant_init_element_for_c_index(
@@ -8506,6 +8565,13 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         }
         ASR::ttype_t *type = ASRUtils::type_get_past_allocatable_pointer(
             ASRUtils::expr_type(expr));
+        if (ASR::is_a<ASR::ArrayConstant_t>(*expr)) {
+            ASR::ArrayConstant_t *arr = ASR::down_cast<ASR::ArrayConstant_t>(expr);
+            if (!get_c_rank1_array_constant_length(arr, type, length)) {
+                return false;
+            }
+            return true;
+        }
         if (type == nullptr || !ASRUtils::is_fixed_size_array(type)) {
             return false;
         }
@@ -8885,11 +8951,19 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             case ASR::exprType::StructInstanceMember:
             case ASR::exprType::ArraySection:
             case ASR::exprType::ArrayItem:
-            case ASR::exprType::ArrayConstant:
-            case ASR::exprType::ArrayConstructor: {
+            case ASR::exprType::ArrayConstant: {
                 std::string item;
                 return get_c_rank1_array_element_expr(expr, prefix, "0",
                     setup, item, length_name, true);
+            }
+            case ASR::exprType::ArrayConstructor: {
+                ASR::ArrayConstructor_t *arr =
+                    ASR::down_cast<ASR::ArrayConstructor_t>(expr);
+                if (!is_c_scalarizable_array_constructor(*arr)) {
+                    return false;
+                }
+                length_name = std::to_string(arr->n_args);
+                return true;
             }
             case ASR::exprType::ArrayBroadcast: {
                 return get_c_rank1_scalarized_expr_length(
@@ -8917,6 +8991,47 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                     ? binop->m_left : binop->m_right;
                 return get_c_rank1_scalarized_expr_length(shape_expr, prefix,
                     setup, length_name);
+            }
+            case ASR::exprType::IntegerCompare: {
+                ASR::IntegerCompare_t *cmp = ASR::down_cast<ASR::IntegerCompare_t>(expr);
+                ASR::expr_t *shape_expr = is_c_array_typed_expr(cmp->m_left)
+                    ? cmp->m_left : cmp->m_right;
+                return get_c_rank1_scalarized_expr_length(shape_expr, prefix,
+                    setup, length_name);
+            }
+            case ASR::exprType::UnsignedIntegerCompare: {
+                ASR::UnsignedIntegerCompare_t *cmp =
+                    ASR::down_cast<ASR::UnsignedIntegerCompare_t>(expr);
+                ASR::expr_t *shape_expr = is_c_array_typed_expr(cmp->m_left)
+                    ? cmp->m_left : cmp->m_right;
+                return get_c_rank1_scalarized_expr_length(shape_expr, prefix,
+                    setup, length_name);
+            }
+            case ASR::exprType::RealCompare: {
+                ASR::RealCompare_t *cmp = ASR::down_cast<ASR::RealCompare_t>(expr);
+                ASR::expr_t *shape_expr = is_c_array_typed_expr(cmp->m_left)
+                    ? cmp->m_left : cmp->m_right;
+                return get_c_rank1_scalarized_expr_length(shape_expr, prefix,
+                    setup, length_name);
+            }
+            case ASR::exprType::LogicalCompare: {
+                ASR::LogicalCompare_t *cmp = ASR::down_cast<ASR::LogicalCompare_t>(expr);
+                ASR::expr_t *shape_expr = is_c_array_typed_expr(cmp->m_left)
+                    ? cmp->m_left : cmp->m_right;
+                return get_c_rank1_scalarized_expr_length(shape_expr, prefix,
+                    setup, length_name);
+            }
+            case ASR::exprType::LogicalBinOp: {
+                ASR::LogicalBinOp_t *binop = ASR::down_cast<ASR::LogicalBinOp_t>(expr);
+                ASR::expr_t *shape_expr = is_c_array_typed_expr(binop->m_left)
+                    ? binop->m_left : binop->m_right;
+                return get_c_rank1_scalarized_expr_length(shape_expr, prefix,
+                    setup, length_name);
+            }
+            case ASR::exprType::LogicalNot: {
+                return get_c_rank1_scalarized_expr_length(
+                    ASR::down_cast<ASR::LogicalNot_t>(expr)->m_arg,
+                    prefix + "_not", setup, length_name);
             }
             case ASR::exprType::RealUnaryMinus: {
                 return get_c_rank1_scalarized_expr_length(
@@ -9059,6 +9174,223 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         return true;
     }
 
+    bool is_c_scalarizable_logical_mask_operand_expr(ASR::expr_t *expr) {
+        expr = unwrap_c_array_expr(expr);
+        if (expr == nullptr) {
+            return false;
+        }
+        ASR::ttype_t *type = ASRUtils::type_get_past_allocatable_pointer(
+            ASRUtils::expr_type(expr));
+        if (type == nullptr || !ASRUtils::is_array(type)) {
+            return true;
+        }
+        int rank = ASRUtils::extract_n_dims_from_ttype(type);
+        if (rank == 1) {
+            return is_c_scalarizable_array_expr(expr);
+        }
+        if (rank == 2) {
+            return is_c_rank2_scalarizable_array_expr(expr);
+        }
+        return false;
+    }
+
+    bool is_c_scalarizable_logical_mask_expr(ASR::expr_t *expr) {
+        expr = unwrap_c_array_expr(expr);
+        if (expr == nullptr) {
+            return false;
+        }
+        ASR::ttype_t *type = ASRUtils::type_get_past_allocatable_pointer(
+            ASRUtils::expr_type(expr));
+        if (type == nullptr || !ASRUtils::is_array(type)) {
+            return true;
+        }
+        int rank = ASRUtils::extract_n_dims_from_ttype(type);
+        if (rank != 1 && rank != 2) {
+            return false;
+        }
+        ASR::ttype_t *element_type = ASRUtils::type_get_past_array(type);
+        switch (expr->type) {
+            case ASR::exprType::Var:
+            case ASR::exprType::StructInstanceMember:
+            case ASR::exprType::ArraySection:
+            case ASR::exprType::ArrayItem:
+            case ASR::exprType::ArrayConstant:
+            case ASR::exprType::ArrayConstructor: {
+                return element_type != nullptr
+                    && ASRUtils::is_logical(
+                        *ASRUtils::type_get_past_allocatable_pointer(element_type))
+                    && ((rank == 1 && is_c_scalarizable_array_expr(expr))
+                        || (rank == 2 && is_c_rank2_scalarizable_array_expr(expr)));
+            }
+            case ASR::exprType::IntegerCompare: {
+                ASR::IntegerCompare_t *cmp = ASR::down_cast<ASR::IntegerCompare_t>(expr);
+                return is_c_scalarizable_logical_mask_operand_expr(cmp->m_left)
+                    && is_c_scalarizable_logical_mask_operand_expr(cmp->m_right);
+            }
+            case ASR::exprType::UnsignedIntegerCompare: {
+                ASR::UnsignedIntegerCompare_t *cmp =
+                    ASR::down_cast<ASR::UnsignedIntegerCompare_t>(expr);
+                return is_c_scalarizable_logical_mask_operand_expr(cmp->m_left)
+                    && is_c_scalarizable_logical_mask_operand_expr(cmp->m_right);
+            }
+            case ASR::exprType::RealCompare: {
+                ASR::RealCompare_t *cmp = ASR::down_cast<ASR::RealCompare_t>(expr);
+                return is_c_scalarizable_logical_mask_operand_expr(cmp->m_left)
+                    && is_c_scalarizable_logical_mask_operand_expr(cmp->m_right);
+            }
+            case ASR::exprType::LogicalCompare: {
+                ASR::LogicalCompare_t *cmp = ASR::down_cast<ASR::LogicalCompare_t>(expr);
+                return is_c_scalarizable_logical_mask_operand_expr(cmp->m_left)
+                    && is_c_scalarizable_logical_mask_operand_expr(cmp->m_right);
+            }
+            case ASR::exprType::LogicalBinOp: {
+                ASR::LogicalBinOp_t *binop = ASR::down_cast<ASR::LogicalBinOp_t>(expr);
+                return is_c_scalarizable_logical_mask_expr(binop->m_left)
+                    && is_c_scalarizable_logical_mask_expr(binop->m_right);
+            }
+            case ASR::exprType::LogicalNot: {
+                return is_c_scalarizable_logical_mask_expr(
+                    ASR::down_cast<ASR::LogicalNot_t>(expr)->m_arg);
+            }
+            default: {
+                return false;
+            }
+        }
+    }
+
+    bool try_emit_c_inline_logical_reduction_function_call(
+            const ASR::FunctionCall_t &x, ASR::Function_t *fn,
+            const std::string &fn_name, std::string &out) {
+        if (!is_c || fn == nullptr || x.n_args == 0
+                || x.m_args[0].m_value == nullptr
+                || ASRUtils::is_array(x.m_type)) {
+            return false;
+        }
+        std::string fn_internal_name = fn->m_name;
+        bool is_any = fn_internal_name.find("_lcompilers_Any") != std::string::npos
+            || fn_name.find("_lcompilers_Any") != std::string::npos
+            || fn_internal_name.find("_lcompilers_any") != std::string::npos
+            || fn_name.find("_lcompilers_any") != std::string::npos;
+        bool is_all = fn_internal_name.find("_lcompilers_All") != std::string::npos
+            || fn_name.find("_lcompilers_All") != std::string::npos
+            || fn_internal_name.find("_lcompilers_all") != std::string::npos
+            || fn_name.find("_lcompilers_all") != std::string::npos;
+        bool is_count = fn_internal_name.find("_lcompilers_Count") != std::string::npos
+            || fn_name.find("_lcompilers_Count") != std::string::npos
+            || fn_internal_name.find("_lcompilers_count") != std::string::npos
+            || fn_name.find("_lcompilers_count") != std::string::npos;
+        if (!is_any && !is_all && !is_count) {
+            return false;
+        }
+
+        ASR::expr_t *mask_expr = x.m_args[0].m_value;
+        ASR::ttype_t *mask_type = ASRUtils::type_get_past_allocatable_pointer(
+            ASRUtils::expr_type(mask_expr));
+        if (mask_type == nullptr || !ASRUtils::is_array(mask_type)
+                || !is_c_scalarizable_logical_mask_expr(mask_expr)) {
+            return false;
+        }
+        int rank = ASRUtils::extract_n_dims_from_ttype(mask_type);
+        if (rank != 1 && rank != 2) {
+            return false;
+        }
+        std::string result_type = CUtils::get_c_type_from_ttype_t(x.m_type);
+        if (result_type.empty()) {
+            return false;
+        }
+
+        std::string setup;
+        std::string result_name =
+            get_unique_local_name("__libasr_created__logical_reduction");
+        std::string indent(indentation_level * indentation_spaces, ' ');
+        std::string body_indent((indentation_level + 1) * indentation_spaces, ' ');
+        setup += indent + result_type + " " + result_name + " = ";
+        if (is_all) {
+            setup += "true;\n";
+        } else {
+            setup += "(" + result_type + ")0;\n";
+        }
+
+        auto emit_body = [&](const std::string &item) {
+            std::string nested_indent = body_indent
+                + std::string(indentation_spaces, ' ');
+            if (is_count) {
+                setup += body_indent + "if (" + item + ") {\n";
+                setup += nested_indent + result_name + " += 1;\n";
+                setup += body_indent + "}\n";
+            } else if (is_any) {
+                setup += body_indent + "if (" + item + ") {\n";
+                setup += nested_indent + result_name + " = true;\n";
+                setup += nested_indent + "break;\n";
+                setup += body_indent + "}\n";
+            } else {
+                setup += body_indent + "if (!(" + item + ")) {\n";
+                setup += nested_indent + result_name + " = false;\n";
+                setup += nested_indent + "break;\n";
+                setup += body_indent + "}\n";
+            }
+        };
+
+        if (rank == 1) {
+            std::string index_name =
+                get_unique_local_name("__libasr_created__logical_reduction_i");
+            std::string length_name;
+            if (!get_c_rank1_scalarized_expr_length(mask_expr,
+                    "__libasr_created__logical_reduction_arg", setup,
+                    length_name) || length_name.empty()) {
+                return false;
+            }
+            std::string item;
+            if (!get_c_scalarized_array_expr(mask_expr, index_name,
+                    setup, item, false)) {
+                return false;
+            }
+            setup += indent + "for (int64_t " + index_name + " = 0; "
+                + index_name + " < " + length_name + "; " + index_name
+                + "++) {\n";
+            emit_body(item);
+            setup += indent + "}\n";
+        } else {
+            std::string index1_name =
+                get_unique_local_name("__libasr_created__logical_reduction_i");
+            std::string index2_name =
+                get_unique_local_name("__libasr_created__logical_reduction_j");
+            std::string length1_name, length2_name;
+            if (!get_c_rank2_scalarized_expr_shape(mask_expr,
+                    "__libasr_created__logical_reduction_arg", setup,
+                    length1_name, length2_name)
+                    || length1_name.empty() || length2_name.empty()) {
+                return false;
+            }
+            std::string item;
+            if (!get_c_rank2_scalarized_expr(mask_expr, index1_name,
+                    index2_name, setup, item)) {
+                return false;
+            }
+            std::string inner_indent((indentation_level + 1) * indentation_spaces, ' ');
+            std::string inner_body_indent((indentation_level + 2) * indentation_spaces, ' ');
+            setup += indent + "for (int64_t " + index2_name + " = 0; "
+                + index2_name + " < " + length2_name + "; " + index2_name
+                + "++) {\n";
+            setup += inner_indent + "for (int64_t " + index1_name + " = 0; "
+                + index1_name + " < " + length1_name + "; " + index1_name
+                + "++) {\n";
+            body_indent = inner_body_indent;
+            emit_body(item);
+            setup += inner_indent + "}\n";
+            if (is_any) {
+                setup += inner_indent + "if (" + result_name + ") break;\n";
+            } else if (is_all) {
+                setup += inner_indent + "if (!" + result_name + ") break;\n";
+            }
+            setup += indent + "}\n";
+        }
+
+        tmp_buffer_src.push_back(setup);
+        out = result_name;
+        return true;
+    }
+
     std::string c_binop_to_str(ASR::binopType op) {
         switch (op) {
             case ASR::binopType::Add: return " + ";
@@ -9075,6 +9407,16 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         }
     }
 
+    std::string c_logicalbinop_to_str(ASR::logicalbinopType op) {
+        switch (op) {
+            case ASR::logicalbinopType::And: return " && ";
+            case ASR::logicalbinopType::Or: return " || ";
+            case ASR::logicalbinopType::NEqv: return " != ";
+            case ASR::logicalbinopType::Eqv: return " == ";
+            default: throw CodeGenError("C scalarized logical binop not implemented");
+        }
+    }
+
     template <typename T>
     bool get_c_scalarized_binop_expr(const T &x, const std::string &index_name,
             std::string &setup, std::string &out, bool need_length=true) {
@@ -9086,6 +9428,34 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             return false;
         }
         out = "(" + left + c_binop_to_str(x.m_op) + right + ")";
+        return true;
+    }
+
+    template <typename T>
+    bool get_c_scalarized_compare_expr(const T &x, const std::string &index_name,
+            std::string &setup, std::string &out, bool need_length=true) {
+        std::string left, right;
+        if (!get_c_scalarized_array_expr(x.m_left, index_name, setup, left,
+                    need_length)
+                || !get_c_scalarized_array_expr(x.m_right, index_name, setup, right,
+                    need_length)) {
+            return false;
+        }
+        out = "(" + left + " " + ASRUtils::cmpop_to_str(x.m_op) + " " + right + ")";
+        return true;
+    }
+
+    bool get_c_scalarized_logical_binop_expr(const ASR::LogicalBinOp_t &x,
+            const std::string &index_name, std::string &setup, std::string &out,
+            bool need_length=true) {
+        std::string left, right;
+        if (!get_c_scalarized_array_expr(x.m_left, index_name, setup, left,
+                    need_length)
+                || !get_c_scalarized_array_expr(x.m_right, index_name, setup,
+                    right, need_length)) {
+            return false;
+        }
+        out = "(" + left + c_logicalbinop_to_str(x.m_op) + right + ")";
         return true;
     }
 
@@ -9231,6 +9601,34 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 return get_c_scalarized_binop_expr(
                     *ASR::down_cast<ASR::UnsignedIntegerBinOp_t>(expr), index_name, setup, out,
                     need_length);
+            case ASR::exprType::IntegerCompare:
+                return get_c_scalarized_compare_expr(
+                    *ASR::down_cast<ASR::IntegerCompare_t>(expr), index_name, setup, out,
+                    need_length);
+            case ASR::exprType::UnsignedIntegerCompare:
+                return get_c_scalarized_compare_expr(
+                    *ASR::down_cast<ASR::UnsignedIntegerCompare_t>(expr), index_name,
+                    setup, out, need_length);
+            case ASR::exprType::RealCompare:
+                return get_c_scalarized_compare_expr(
+                    *ASR::down_cast<ASR::RealCompare_t>(expr), index_name, setup, out,
+                    need_length);
+            case ASR::exprType::LogicalCompare:
+                return get_c_scalarized_compare_expr(
+                    *ASR::down_cast<ASR::LogicalCompare_t>(expr), index_name, setup, out,
+                    need_length);
+            case ASR::exprType::LogicalBinOp:
+                return get_c_scalarized_logical_binop_expr(
+                    *ASR::down_cast<ASR::LogicalBinOp_t>(expr), index_name, setup, out,
+                    need_length);
+            case ASR::exprType::LogicalNot: {
+                std::string arg;
+                if (!get_c_scalarized_array_expr(
+                        ASR::down_cast<ASR::LogicalNot_t>(expr)->m_arg,
+                        index_name, setup, arg, need_length)) return false;
+                out = "!(" + arg + ")";
+                return true;
+            }
             case ASR::exprType::RealUnaryMinus: {
                 std::string arg;
                 if (!get_c_scalarized_array_expr(
@@ -10762,6 +11160,78 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                 out = "(" + left + c_binop_to_str(binop->m_op) + right + ")";
                 return true;
             }
+            case ASR::exprType::IntegerCompare: {
+                ASR::IntegerCompare_t *cmp = ASR::down_cast<ASR::IntegerCompare_t>(expr);
+                std::string left, right;
+                if (!get_c_rank2_scalarized_expr(cmp->m_left,
+                        index1_name, index2_name, setup, left)
+                        || !get_c_rank2_scalarized_expr(cmp->m_right,
+                            index1_name, index2_name, setup, right)) {
+                    return false;
+                }
+                out = "(" + left + " " + ASRUtils::cmpop_to_str(cmp->m_op) + " " + right + ")";
+                return true;
+            }
+            case ASR::exprType::UnsignedIntegerCompare: {
+                ASR::UnsignedIntegerCompare_t *cmp =
+                    ASR::down_cast<ASR::UnsignedIntegerCompare_t>(expr);
+                std::string left, right;
+                if (!get_c_rank2_scalarized_expr(cmp->m_left,
+                        index1_name, index2_name, setup, left)
+                        || !get_c_rank2_scalarized_expr(cmp->m_right,
+                            index1_name, index2_name, setup, right)) {
+                    return false;
+                }
+                out = "(" + left + " " + ASRUtils::cmpop_to_str(cmp->m_op) + " " + right + ")";
+                return true;
+            }
+            case ASR::exprType::RealCompare: {
+                ASR::RealCompare_t *cmp = ASR::down_cast<ASR::RealCompare_t>(expr);
+                std::string left, right;
+                if (!get_c_rank2_scalarized_expr(cmp->m_left,
+                        index1_name, index2_name, setup, left)
+                        || !get_c_rank2_scalarized_expr(cmp->m_right,
+                            index1_name, index2_name, setup, right)) {
+                    return false;
+                }
+                out = "(" + left + " " + ASRUtils::cmpop_to_str(cmp->m_op) + " " + right + ")";
+                return true;
+            }
+            case ASR::exprType::LogicalCompare: {
+                ASR::LogicalCompare_t *cmp = ASR::down_cast<ASR::LogicalCompare_t>(expr);
+                std::string left, right;
+                if (!get_c_rank2_scalarized_expr(cmp->m_left,
+                        index1_name, index2_name, setup, left)
+                        || !get_c_rank2_scalarized_expr(cmp->m_right,
+                            index1_name, index2_name, setup, right)) {
+                    return false;
+                }
+                out = "(" + left + " " + ASRUtils::cmpop_to_str(cmp->m_op) + " " + right + ")";
+                return true;
+            }
+            case ASR::exprType::LogicalBinOp: {
+                ASR::LogicalBinOp_t *binop =
+                    ASR::down_cast<ASR::LogicalBinOp_t>(expr);
+                std::string left, right;
+                if (!get_c_rank2_scalarized_expr(binop->m_left,
+                        index1_name, index2_name, setup, left)
+                        || !get_c_rank2_scalarized_expr(binop->m_right,
+                            index1_name, index2_name, setup, right)) {
+                    return false;
+                }
+                out = "(" + left + c_logicalbinop_to_str(binop->m_op) + right + ")";
+                return true;
+            }
+            case ASR::exprType::LogicalNot: {
+                std::string arg;
+                if (!get_c_rank2_scalarized_expr(
+                        ASR::down_cast<ASR::LogicalNot_t>(expr)->m_arg,
+                        index1_name, index2_name, setup, arg)) {
+                    return false;
+                }
+                out = "!(" + arg + ")";
+                return true;
+            }
             case ASR::exprType::RealUnaryMinus: {
                 std::string arg;
                 if (!get_c_rank2_scalarized_expr(
@@ -11637,6 +12107,47 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                     ? binop->m_left : binop->m_right;
                 return get_c_rank2_scalarized_expr_shape(shape_expr, prefix,
                     setup, length1_name, length2_name);
+            }
+            case ASR::exprType::IntegerCompare: {
+                ASR::IntegerCompare_t *cmp = ASR::down_cast<ASR::IntegerCompare_t>(expr);
+                ASR::expr_t *shape_expr = is_c_array_typed_expr(cmp->m_left)
+                    ? cmp->m_left : cmp->m_right;
+                return get_c_rank2_scalarized_expr_shape(shape_expr, prefix,
+                    setup, length1_name, length2_name);
+            }
+            case ASR::exprType::UnsignedIntegerCompare: {
+                ASR::UnsignedIntegerCompare_t *cmp =
+                    ASR::down_cast<ASR::UnsignedIntegerCompare_t>(expr);
+                ASR::expr_t *shape_expr = is_c_array_typed_expr(cmp->m_left)
+                    ? cmp->m_left : cmp->m_right;
+                return get_c_rank2_scalarized_expr_shape(shape_expr, prefix,
+                    setup, length1_name, length2_name);
+            }
+            case ASR::exprType::RealCompare: {
+                ASR::RealCompare_t *cmp = ASR::down_cast<ASR::RealCompare_t>(expr);
+                ASR::expr_t *shape_expr = is_c_array_typed_expr(cmp->m_left)
+                    ? cmp->m_left : cmp->m_right;
+                return get_c_rank2_scalarized_expr_shape(shape_expr, prefix,
+                    setup, length1_name, length2_name);
+            }
+            case ASR::exprType::LogicalCompare: {
+                ASR::LogicalCompare_t *cmp = ASR::down_cast<ASR::LogicalCompare_t>(expr);
+                ASR::expr_t *shape_expr = is_c_array_typed_expr(cmp->m_left)
+                    ? cmp->m_left : cmp->m_right;
+                return get_c_rank2_scalarized_expr_shape(shape_expr, prefix,
+                    setup, length1_name, length2_name);
+            }
+            case ASR::exprType::LogicalBinOp: {
+                ASR::LogicalBinOp_t *binop = ASR::down_cast<ASR::LogicalBinOp_t>(expr);
+                ASR::expr_t *shape_expr = is_c_array_typed_expr(binop->m_left)
+                    ? binop->m_left : binop->m_right;
+                return get_c_rank2_scalarized_expr_shape(shape_expr, prefix,
+                    setup, length1_name, length2_name);
+            }
+            case ASR::exprType::LogicalNot: {
+                return get_c_rank2_scalarized_expr_shape(
+                    ASR::down_cast<ASR::LogicalNot_t>(expr)->m_arg,
+                    prefix + "_not", setup, length1_name, length2_name);
             }
             default: {
                 return false;
@@ -17540,6 +18051,12 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
                     last_expr_precedence = 2;
                     return;
                 }
+                if (try_emit_c_inline_logical_reduction_function_call(
+                        x, fn, fn_name, inline_call)) {
+                    src = inline_call;
+                    last_expr_precedence = 2;
+                    return;
+                }
                 if (try_emit_c_inline_sum_function_call(x, fn, fn_name, inline_call)) {
                     src = check_tmp_buffer() + inline_call;
                     last_expr_precedence = 2;
@@ -21188,9 +21705,11 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         self().visit_expr(*x.m_left);
         std::string left = std::move(src);
         int left_precedence = last_expr_precedence;
+        std::string left_setup = drain_tmp_buffer();
         self().visit_expr(*x.m_right);
         std::string right = std::move(src);
         int right_precedence = last_expr_precedence;
+        std::string right_setup = drain_tmp_buffer();
         switch (x.m_op) {
             case (ASR::logicalbinopType::And): {
                 last_expr_precedence = 14;
@@ -21211,6 +21730,10 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             default : throw CodeGenError("Unhandled switch case");
         }
 
+        if (!left_setup.empty() || !right_setup.empty()) {
+            tmp_buffer_src.push_back(left_setup + right_setup);
+        }
+        src = "";
         if (left_precedence <= last_expr_precedence) {
             src += left;
         } else {

@@ -1,0 +1,13 @@
+{
+    "basename": "c_forbid_pattern-c_backend_inline_logical_reduction_01-d2c0872",
+    "cmd": "lfortran --no-color --show-c {infile} | (! grep -F -q \"__libasr_created__intrinsic_array_function_\") #",
+    "infile": "tests/../integration_tests/c_backend_inline_logical_reduction_01.f90",
+    "infile_hash": "91efab9a0bb5984eb6855ec2fdb0ea5fdec5a77450dbc94967c164b0",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}
