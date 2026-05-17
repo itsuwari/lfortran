@@ -16864,20 +16864,24 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
 
     std::string build_c_tbp_cached_lookup_call(const std::string &method_name,
             const std::string &method_hash, const std::string &runtime_tag_expr,
-            std::string &setup) {
+            std::string &setup, const std::string &runtime_type_override="") {
         ensure_c_backend_constructor_macro_decl();
         std::string indent = get_current_indent();
         std::string inner_indent = indent + std::string(indentation_spaces, ' ');
         std::string cached_type = get_unique_local_name("__lfortran_tbp_cached_type");
         std::string cached_func = get_unique_local_name("__lfortran_tbp_cached_func");
-        std::string runtime_type = get_unique_local_name("__lfortran_tbp_runtime_type");
+        std::string runtime_type = runtime_type_override.empty()
+            ? get_unique_local_name("__lfortran_tbp_runtime_type")
+            : runtime_type_override;
         std::string lookup_func = get_unique_local_name("__lfortran_tbp_lookup_func");
         setup = indent + "LFORTRAN_C_BACKEND_TBP_CACHE_STORAGE int64_t "
             + cached_type + " = 0;\n"
             + indent + "LFORTRAN_C_BACKEND_TBP_CACHE_STORAGE lfortran_c_tbp_func_ptr "
-            + cached_func + " = NULL;\n"
-            + indent + "int64_t " + runtime_type + " = " + runtime_tag_expr + ";\n"
-            + indent + "lfortran_c_tbp_func_ptr " + lookup_func + " = NULL;\n"
+            + cached_func + " = NULL;\n";
+        if (runtime_type_override.empty()) {
+            setup += indent + "int64_t " + runtime_type + " = " + runtime_tag_expr + ";\n";
+        }
+        setup += indent + "lfortran_c_tbp_func_ptr " + lookup_func + " = NULL;\n"
             + indent + "if (" + cached_type + " == " + runtime_type
             + " && " + cached_func + " != NULL) {\n"
             + inner_indent + lookup_func + " = " + cached_func + ";\n"
@@ -16889,6 +16893,55 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             + inner_indent + cached_type + " = " + runtime_type + ";\n"
             + indent + "}\n";
         return lookup_func;
+    }
+
+    bool build_c_tbp_exact_type_direct_call(ASR::Struct_t *owner_struct,
+            ASR::StructMethodDeclaration_t *base_method,
+            const std::string &self_pointer_expr, size_t n_args,
+            ASR::call_arg_t *m_args, bool is_subroutine,
+            std::string &setup, std::string &call_expr) {
+        if (owner_struct == nullptr || base_method == nullptr
+                || owner_struct->m_is_abstract) {
+            return false;
+        }
+        ASR::StructMethodDeclaration_t *exact_method =
+            find_concrete_struct_method(owner_struct, base_method->m_name);
+        if (exact_method == nullptr || exact_method->m_is_deferred
+                || exact_method->m_proc == nullptr) {
+            return false;
+        }
+        ASR::symbol_t *proc_sym = ASRUtils::symbol_get_past_external(
+            exact_method->m_proc);
+        if (proc_sym == nullptr || !ASR::is_a<ASR::Function_t>(*proc_sym)) {
+            return false;
+        }
+        ASR::Function_t *exact_fn = ASR::down_cast<ASR::Function_t>(proc_sym);
+        if (!is_subroutine && exact_fn->m_return_var == nullptr) {
+            return false;
+        }
+        if (exact_fn->n_args == 0 || exact_fn->m_args[0] == nullptr
+                || !ASR::is_a<ASR::Var_t>(*exact_fn->m_args[0])) {
+            return false;
+        }
+        ASR::Variable_t *self_param = ASRUtils::EXPR2VAR(exact_fn->m_args[0]);
+        if (is_pointer_dummy_slot_type(self_param)) {
+            return false;
+        }
+        std::string direct_self =
+            cast_aggregate_pointer_actual_to_param_type(self_param, self_pointer_expr);
+        if (direct_self.empty()) {
+            return false;
+        }
+        record_forward_decl_for_function(*exact_fn);
+        std::string tail_args = construct_call_args_from_index(exact_fn, 1,
+            n_args, m_args, false, true, is_subroutine, is_subroutine);
+        setup = drain_tmp_buffer();
+        call_expr = get_c_function_target_name(*exact_fn) + "(" + direct_self;
+        if (!tail_args.empty()) {
+            call_expr += ", " + tail_args;
+        }
+        call_expr += ")";
+        return true;
     }
 
     bool build_deferred_struct_method_dispatch(ASR::symbol_t *callee_sym, size_t n_args,
@@ -16968,6 +17021,7 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         if (!ASR::is_a<ASR::Struct_t>(*owner_sym)) {
             return false;
         }
+        ASR::Struct_t *owner_struct = ASR::down_cast<ASR::Struct_t>(owner_sym);
         self().visit_expr(*dispatch_call_arg);
         std::string self_expr = src;
         if (self_expr.empty()) {
@@ -16990,31 +17044,65 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         if (has_typevar || wrapper_type.empty()) {
             return false;
         }
-        std::string tail_args = construct_call_args_from_index(iface_fn, 1,
-            n_args, m_args, false, true, is_subroutine, is_subroutine);
-        std::string tail_setup = drain_tmp_buffer();
-        std::string call_expr = "((" + wrapper_type + ")" + lookup_var + ")(" + dispatch_self;
-        if (!tail_args.empty()) {
-            call_expr += ", " + tail_args;
-        }
-        call_expr += ")";
         std::string method_name = escape_c_string_literal(std::string(base_method->m_name));
         std::string method_hash = "UINT64_C("
             + std::to_string(get_stable_string_hash(std::string(base_method->m_name))) + ")";
-        std::string force_link_src = emit_c_tbp_force_link_calls(
-            ASR::down_cast<ASR::Struct_t>(owner_sym), base_method);
+        std::string force_link_src = emit_c_tbp_force_link_calls(owner_struct, base_method);
 
         if (is_subroutine) {
             std::string indent = get_current_indent();
+            std::string exact_direct_setup;
+            std::string exact_direct_call;
+            bool exact_type_direct_call = receiver_is_class
+                && build_c_tbp_exact_type_direct_call(owner_struct, base_method,
+                    self_pointer_expr, n_args, m_args, true,
+                    exact_direct_setup, exact_direct_call);
+            std::string tail_args = construct_call_args_from_index(iface_fn, 1,
+                n_args, m_args, false, true, true, true);
+            std::string tail_setup = drain_tmp_buffer();
+            std::string call_expr = "((" + wrapper_type + ")" + lookup_var
+                + ")(" + dispatch_self;
+            if (!tail_args.empty()) {
+                call_expr += ", " + tail_args;
+            }
+            call_expr += ")";
             std::string lookup_setup;
-            std::string lookup_call = build_c_tbp_cached_lookup_call(
-                method_name, method_hash, runtime_tag_expr, lookup_setup);
-            out = force_link_src
-                + lookup_setup
-                + indent + "lfortran_c_tbp_func_ptr " + lookup_var
-                + " = " + lookup_call + ";\n"
-                + tail_setup
-                + indent + call_expr + ";\n";
+            std::string runtime_type_var;
+            if (exact_type_direct_call) {
+                runtime_type_var = get_unique_local_name("__lfortran_tbp_runtime_type");
+            }
+            std::string lookup_call = exact_type_direct_call
+                ? build_c_tbp_cached_lookup_call(
+                    method_name, method_hash, runtime_tag_expr, lookup_setup,
+                    runtime_type_var)
+                : build_c_tbp_cached_lookup_call(
+                    method_name, method_hash, runtime_tag_expr, lookup_setup);
+            if (exact_type_direct_call) {
+                int64_t exact_type_id = get_struct_runtime_type_id(
+                    reinterpret_cast<ASR::symbol_t*>(owner_struct));
+                std::string inner_indent = indent + std::string(indentation_spaces, ' ');
+                out = indent + "int64_t " + runtime_type_var + " = "
+                    + runtime_tag_expr + ";\n"
+                    + indent + "if (" + runtime_type_var + " == "
+                    + std::to_string(exact_type_id) + ") {\n"
+                    + exact_direct_setup
+                    + inner_indent + exact_direct_call + ";\n"
+                    + indent + "} else {\n"
+                    + force_link_src
+                    + lookup_setup
+                    + indent + "lfortran_c_tbp_func_ptr " + lookup_var
+                    + " = " + lookup_call + ";\n"
+                    + tail_setup
+                    + indent + call_expr + ";\n"
+                    + indent + "}\n";
+            } else {
+                out = force_link_src
+                    + lookup_setup
+                    + indent + "lfortran_c_tbp_func_ptr " + lookup_var
+                    + " = " + lookup_call + ";\n"
+                    + tail_setup
+                    + indent + call_expr + ";\n";
+            }
             return true;
         }
 
@@ -17026,23 +17114,66 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         if (ASRUtils::is_aggregate_type(ret_type)) {
             return false;
         }
-        std::string lookup_setup;
-        std::string lookup_call = build_c_tbp_cached_lookup_call(
-            method_name, method_hash, runtime_tag_expr, lookup_setup);
-        std::string call = "((" + wrapper_type + ")" + lookup_call + ")("
-            + dispatch_self;
-        if (!tail_args.empty()) {
-            call += ", " + tail_args;
-        }
-        call += ")";
         std::string result_type = CUtils::get_c_type_from_ttype_t(ret_type);
         if (result_type.empty()) {
             return false;
         }
         std::string result_var = get_unique_local_name("__lfortran_tbp_result");
-        tmp_buffer_src.push_back(force_link_src + lookup_setup + tail_setup
-            + get_current_indent() + result_type + " " + result_var
-            + " = " + call + ";\n");
+        std::string exact_direct_setup;
+        std::string exact_direct_call;
+        bool exact_type_direct_call = receiver_is_class
+            && build_c_tbp_exact_type_direct_call(owner_struct, base_method,
+                self_pointer_expr, n_args, m_args, false,
+                exact_direct_setup, exact_direct_call);
+        std::string tail_args = construct_call_args_from_index(iface_fn, 1,
+            n_args, m_args, false, true, false, false);
+        std::string tail_setup = drain_tmp_buffer();
+        std::string lookup_setup;
+        std::string lookup_call;
+        std::string call;
+        if (exact_type_direct_call) {
+            std::string indent = get_current_indent();
+            std::string inner_indent = indent + std::string(indentation_spaces, ' ');
+            std::string runtime_type_var =
+                get_unique_local_name("__lfortran_tbp_runtime_type");
+            lookup_call = build_c_tbp_cached_lookup_call(
+                method_name, method_hash, runtime_tag_expr, lookup_setup,
+                runtime_type_var);
+            call = "((" + wrapper_type + ")" + lookup_call + ")("
+                + dispatch_self;
+            if (!tail_args.empty()) {
+                call += ", " + tail_args;
+            }
+            call += ")";
+            int64_t exact_type_id = get_struct_runtime_type_id(
+                reinterpret_cast<ASR::symbol_t*>(owner_struct));
+            tmp_buffer_src.push_back(
+                indent + result_type + " " + result_var + ";\n"
+                + indent + "int64_t " + runtime_type_var + " = "
+                + runtime_tag_expr + ";\n"
+                + indent + "if (" + runtime_type_var + " == "
+                + std::to_string(exact_type_id) + ") {\n"
+                + exact_direct_setup
+                + inner_indent + result_var + " = " + exact_direct_call + ";\n"
+                + indent + "} else {\n"
+                + force_link_src
+                + lookup_setup
+                + tail_setup
+                + indent + result_var + " = " + call + ";\n"
+                + indent + "}\n");
+        } else {
+            lookup_call = build_c_tbp_cached_lookup_call(
+                method_name, method_hash, runtime_tag_expr, lookup_setup);
+            call = "((" + wrapper_type + ")" + lookup_call + ")("
+                + dispatch_self;
+            if (!tail_args.empty()) {
+                call += ", " + tail_args;
+            }
+            call += ")";
+            tmp_buffer_src.push_back(force_link_src + lookup_setup + tail_setup
+                + get_current_indent() + result_type + " " + result_var
+                + " = " + call + ";\n");
+        }
         out = result_var;
         return true;
     }

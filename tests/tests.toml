@@ -5446,6 +5446,13 @@ c_split_forbid_pattern = true
 c_split_forbid_pattern_value = "_lfortran_get_c_tbp_impl_by_hash_cached_or_die"
 
 [[test]]
+filename = "c_backend_tbp_exact_class_fast_path_01.f90"
+run = true
+options = "--backend=c --separate-compilation"
+c_split_require_pattern = true
+c_split_require_pattern_value = "if (__lfortran_tbp_runtime_type == "
+
+[[test]]
 filename = "c_backend_tbp_once_registration_01.f90"
 run = true
 options = "--backend=c --separate-compilation"

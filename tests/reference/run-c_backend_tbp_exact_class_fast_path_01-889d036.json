@@ -1,0 +1,13 @@
+{
+    "basename": "run-c_backend_tbp_exact_class_fast_path_01-889d036",
+    "cmd": "lfortran --no-color {infile}",
+    "infile": "tests/c_backend_tbp_exact_class_fast_path_01.f90",
+    "infile_hash": "26b55f3f82592e1df9340dbe63b694d845805c76689d44be265afbad",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}
