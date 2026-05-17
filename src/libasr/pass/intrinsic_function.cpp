@@ -154,6 +154,24 @@ static bool is_c_rank1_matmul_preservable_assignment(
 
 static bool is_c_rank2_scalarizable_array_expr(ASR::expr_t *expr);
 
+static bool is_c_rank1_scalarizable_array_expr(ASR::expr_t *expr) {
+    expr = ASRUtils::get_past_array_physical_cast(expr);
+    if (expr == nullptr) {
+        return false;
+    }
+    ASR::ttype_t *type = ASRUtils::type_get_past_allocatable_pointer(
+        ASRUtils::expr_type(expr));
+    if (type == nullptr
+            || !ASRUtils::is_array(type)
+            || ASRUtils::extract_n_dims_from_ttype(type) != 1
+            || !is_c_scalarizable_element_type(type)) {
+        return false;
+    }
+    return ASR::is_a<ASR::Var_t>(*expr)
+        || ASR::is_a<ASR::StructInstanceMember_t>(*expr)
+        || ASR::is_a<ASR::ArraySection_t>(*expr);
+}
+
 static bool is_c_rank2_transpose_intrinsic_expr(ASR::expr_t *expr) {
     expr = ASRUtils::get_past_array_physical_cast(expr);
     if (expr == nullptr || !ASR::is_a<ASR::IntrinsicArrayFunction_t>(*expr)) {
@@ -188,6 +206,54 @@ static bool is_c_rank2_transpose_intrinsic_expr(ASR::expr_t *expr) {
         && ASRUtils::types_equal(source_element_type, result_element_type,
             nullptr, nullptr)
         && is_c_rank2_scalarizable_array_expr(transpose->m_args[0]);
+}
+
+static bool get_c_rank2_spread_dim(const ASR::IntrinsicArrayFunction_t &x,
+        int64_t &dim) {
+    if (x.m_arr_intrinsic_id != static_cast<int64_t>(
+                ASRUtils::IntrinsicArrayFunctions::Spread)
+            || x.n_args != 3
+            || x.m_args[0] == nullptr
+            || x.m_args[1] == nullptr
+            || x.m_args[2] == nullptr
+            || !ASRUtils::extract_value(x.m_args[1], dim)) {
+        return false;
+    }
+    return dim == 1 || dim == 2;
+}
+
+static bool is_c_rank2_spread_intrinsic_expr(ASR::expr_t *expr) {
+    expr = ASRUtils::get_past_array_physical_cast(expr);
+    if (expr == nullptr || !ASR::is_a<ASR::IntrinsicArrayFunction_t>(*expr)) {
+        return false;
+    }
+    ASR::IntrinsicArrayFunction_t *spread =
+        ASR::down_cast<ASR::IntrinsicArrayFunction_t>(expr);
+    int64_t dim = -1;
+    if (!get_c_rank2_spread_dim(*spread, dim)) {
+        return false;
+    }
+    ASR::ttype_t *source_type = ASRUtils::type_get_past_allocatable_pointer(
+        ASRUtils::expr_type(spread->m_args[0]));
+    ASR::ttype_t *result_type = ASRUtils::type_get_past_allocatable_pointer(
+        spread->m_type);
+    ASR::ttype_t *source_element_type = source_type != nullptr
+        ? ASRUtils::type_get_past_array(source_type) : nullptr;
+    ASR::ttype_t *result_element_type = result_type != nullptr
+        ? ASRUtils::type_get_past_array(result_type) : nullptr;
+    return source_type != nullptr
+        && result_type != nullptr
+        && source_element_type != nullptr
+        && result_element_type != nullptr
+        && ASRUtils::is_array(source_type)
+        && ASRUtils::is_array(result_type)
+        && ASRUtils::extract_n_dims_from_ttype(source_type) == 1
+        && ASRUtils::extract_n_dims_from_ttype(result_type) == 2
+        && is_c_scalarizable_element_type(source_type)
+        && is_c_scalarizable_element_type(result_type)
+        && ASRUtils::types_equal(source_element_type, result_element_type,
+            nullptr, nullptr)
+        && is_c_rank1_scalarizable_array_expr(spread->m_args[0]);
 }
 
 static bool is_c_rank2_matmul_intrinsic_expr(ASR::expr_t *expr) {
@@ -226,6 +292,7 @@ static bool is_c_rank2_matmul_intrinsic_expr(ASR::expr_t *expr) {
 
 static bool is_c_rank2_local_array_intrinsic_expr(ASR::expr_t *expr) {
     return is_c_rank2_transpose_intrinsic_expr(expr)
+        || is_c_rank2_spread_intrinsic_expr(expr)
         || is_c_rank2_matmul_intrinsic_expr(expr);
 }
 
@@ -261,6 +328,44 @@ static bool is_c_default_unit_array_slice(const ASR::array_index_t &idx) {
     bool right_is_default = idx.m_right == nullptr
         || ASR::is_a<ASR::ArrayBound_t>(*idx.m_right);
     return step_is_unit && left_is_default && right_is_default;
+}
+
+static bool is_c_simple_integer_bound_expr(ASR::expr_t *expr) {
+    if (expr == nullptr) {
+        return true;
+    }
+    expr = ASRUtils::get_past_array_physical_cast(expr);
+    if (expr == nullptr || ASRUtils::is_array(ASRUtils::expr_type(expr))) {
+        return false;
+    }
+    switch (expr->type) {
+        case ASR::exprType::IntegerConstant:
+        case ASR::exprType::Var:
+        case ASR::exprType::ArrayBound: {
+            return true;
+        }
+        case ASR::exprType::IntegerBinOp: {
+            ASR::IntegerBinOp_t *binop =
+                ASR::down_cast<ASR::IntegerBinOp_t>(expr);
+            return is_c_simple_integer_bound_expr(binop->m_left)
+                && is_c_simple_integer_bound_expr(binop->m_right);
+        }
+        case ASR::exprType::IntegerUnaryMinus: {
+            return is_c_simple_integer_bound_expr(
+                ASR::down_cast<ASR::IntegerUnaryMinus_t>(expr)->m_arg);
+        }
+        default: {
+            return false;
+        }
+    }
+}
+
+static bool is_c_simple_scalar_array_index(const ASR::array_index_t &idx) {
+    return idx.m_left == nullptr
+        && idx.m_step == nullptr
+        && idx.m_right != nullptr
+        && !ASRUtils::is_array(ASRUtils::expr_type(idx.m_right))
+        && is_c_simple_integer_bound_expr(idx.m_right);
 }
 
 static bool is_c_compiler_created_array_temp_expr(ASR::expr_t *expr) {
@@ -325,7 +430,9 @@ static bool is_c_rank2_local_intrinsic_assignment_target(ASR::expr_t *expr) {
             }
             continue;
         }
-        return false;
+        if (!is_c_simple_scalar_array_index(idx)) {
+            return false;
+        }
     }
     return slice_dims == 2;
 }
@@ -347,6 +454,9 @@ static bool is_c_rank2_scalarizable_array_expr(ASR::expr_t *expr) {
         case ASR::exprType::Var:
         case ASR::exprType::StructInstanceMember: {
             return is_c_rank2_direct_array_ref_expr(expr);
+        }
+        case ASR::exprType::ArraySection: {
+            return is_c_rank2_local_intrinsic_assignment_target(expr);
         }
         case ASR::exprType::ArrayBroadcast: {
             return is_c_rank2_scalarizable_array_expr(
@@ -782,8 +892,8 @@ class ReplaceFunctionCallReturningArray: public ASR::BaseExprReplacer<ReplaceFun
             new_arg.m_value = x->m_args[i].m_value;
             new_args.push_back(al, new_arg);
         }
-        ASR::call_arg_t new_arg;
         LCOMPILERS_ASSERT(this->result_var_)
+        ASR::call_arg_t new_arg;
         new_arg.loc = this->result_var_->base.loc;
         new_arg.m_value = this->result_var_;
         new_args.push_back(al, new_arg);

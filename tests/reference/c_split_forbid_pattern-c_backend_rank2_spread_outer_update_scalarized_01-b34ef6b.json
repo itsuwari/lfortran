@@ -1,0 +1,13 @@
+{
+    "basename": "c_split_forbid_pattern-c_backend_rank2_spread_outer_update_scalarized_01-b34ef6b",
+    "cmd": "tmpdir=$(mktemp -d /tmp/lfortran-c-split-forbid.XXXXXX); trap 'rm -rf \"$tmpdir\"' EXIT; lfortran --backend=c --separate-compilation -c {infile} -o \"$tmpdir/main.o\" > \"$tmpdir/compile.out\" 2> \"$tmpdir/compile.err\" && (! grep -R -F -q \"__lfortran_spread_result\" \"$tmpdir\"/*.o.tmp.split/*.c \"$tmpdir\"/*.o.tmp.split/*.h) #",
+    "infile": "tests/../integration_tests/c_backend_rank2_spread_outer_update_scalarized_01.f90",
+    "infile_hash": "3f82e0916c2826d95c9b26f404feac8775f7b0a8456f6e621324ced1",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}
