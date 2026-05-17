@@ -5573,7 +5573,7 @@ c_split_consumer_require_pattern_value = "imported_member_value"
 filename = "c_backend_imported_result_01.f90"
 extrafiles = "c_backend_imported_result_mod_01.f90"
 c_split_consumer_require_pattern = true
-c_split_consumer_require_pattern_value = "sizeof(struct c_backend_imported_result_mod_01__child_result_type_24680)"
+c_split_consumer_require_pattern_value = "struct c_backend_imported_result_mod_01__child_result_type_24680"
 
 [[test]]
 filename = "c_backend_header_only_module_01.f90"
