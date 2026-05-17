@@ -995,8 +995,14 @@ R"(
         }
     }
 
+    enum class CFunctionRootMode {
+        All,
+        PublicAbi
+    };
+
     std::vector<ASR::Function_t*> get_complete_function_definitions(
-            SymbolTable *symtab) {
+            SymbolTable *symtab,
+            CFunctionRootMode root_mode=CFunctionRootMode::All) {
         std::vector<std::string> func_order =
             ASRUtils::determine_function_definition_order(symtab);
         std::vector<ASR::Function_t*> complete_functions;
@@ -1004,6 +1010,7 @@ R"(
 
         std::function<void(ASR::symbol_t*)> add_symbol;
         std::function<void(ASR::Function_t*)> add_function;
+        std::function<void(ASR::Struct_t*)> add_public_struct_methods;
 
         auto owned_by_scope = [&](const ASR::symbol_t *sym) -> bool {
             if (sym == nullptr) {
@@ -1027,11 +1034,27 @@ R"(
             return fn->m_symtab->resolve_symbol(std::string(dep_name));
         };
 
+        auto is_nested_in_scope = [&](ASR::Function_t *fn) -> bool {
+            if (fn == nullptr || fn->m_symtab == nullptr) {
+                return false;
+            }
+            SymbolTable *parent_scope = fn->m_symtab->parent;
+            return parent_scope != nullptr && parent_scope != symtab
+                && owned_by_scope(reinterpret_cast<ASR::symbol_t*>(fn));
+        };
+
         add_function = [&](ASR::Function_t *fn) {
             if (fn == nullptr) {
                 return;
             }
             if (is_procedure_dummy_function_argument(*fn)) {
+                return;
+            }
+            if (!owned_by_scope(reinterpret_cast<ASR::symbol_t*>(fn))) {
+                return;
+            }
+            if (root_mode == CFunctionRootMode::PublicAbi
+                    && is_nested_in_scope(fn)) {
                 return;
             }
             uint64_t key = get_hash(reinterpret_cast<ASR::asr_t*>(fn));
@@ -1076,26 +1099,123 @@ R"(
                 ASR::StructMethodDeclaration_t *md =
                     ASR::down_cast<ASR::StructMethodDeclaration_t>(sym);
                 add_symbol(md->m_proc);
+            } else if (ASR::is_a<ASR::Struct_t>(*sym)) {
+                add_public_struct_methods(ASR::down_cast<ASR::Struct_t>(sym));
             }
         };
 
-        // Preserve the dependency order where we have it first.
-        for (const auto &name : func_order) {
-            add_symbol(symtab->get_symbol(name));
-        }
+        add_public_struct_methods = [&](ASR::Struct_t *struct_t) {
+            if (struct_t == nullptr
+                    || struct_t->m_access != ASR::accessType::Public
+                    || struct_t->m_symtab == nullptr
+                    || !owned_by_scope(reinterpret_cast<ASR::symbol_t*>(struct_t))) {
+                return;
+            }
+            for (size_t i = 0; i < struct_t->n_member_functions; i++) {
+                ASR::symbol_t *method_sym = struct_t->m_symtab->get_symbol(
+                    struct_t->m_member_functions[i]);
+                add_symbol(method_sym);
+            }
+            for (const auto &struct_item : struct_t->m_symtab->get_scope()) {
+                if (struct_item.second != nullptr
+                        && ASR::is_a<ASR::StructMethodDeclaration_t>(
+                            *struct_item.second)) {
+                    add_symbol(struct_item.second);
+                }
+            }
+        };
 
-        // Then scan the local scope directly so private/local procedures that
-        // never enter the dependency order still get emitted in split mode.
-        for (const auto &item : symtab->get_scope()) {
-            if (ASR::is_a<ASR::Function_t>(*item.second)) {
-                add_function(ASR::down_cast<ASR::Function_t>(item.second));
-                continue;
+        auto is_public_abi_function = [&](ASR::Function_t *fn) -> bool {
+            if (fn == nullptr) {
+                return false;
             }
-            ASR::symbol_t *sym = ASRUtils::symbol_get_past_external(item.second);
-            if (sym == nullptr) {
-                continue;
+            if (fn->m_access == ASR::accessType::Public
+                    || c_function_is_public_generic_specific(*fn, symtab)) {
+                return true;
             }
-            add_symbol(sym);
+            std::vector<size_t> public_arg_positions;
+            std::vector<size_t> public_indices_with_hidden_dims;
+            std::string pass_suffix;
+            if (!get_specialized_pass_array_by_data_args(*fn,
+                    public_arg_positions, public_indices_with_hidden_dims,
+                    pass_suffix)) {
+                return false;
+            }
+            std::string public_local_name;
+            std::string specialized_local_name;
+            bool body_is_specialized = false;
+            get_pass_array_by_data_local_names(*fn, pass_suffix,
+                public_local_name, specialized_local_name, body_is_specialized);
+            if (!body_is_specialized
+                    || public_local_name == std::string(fn->m_name)) {
+                return false;
+            }
+            ASR::Function_t *base_fn =
+                find_other_scope_implementation_with_local_name(
+                    symtab, public_local_name, *fn);
+            return base_fn != nullptr
+                && (base_fn->m_access == ASR::accessType::Public
+                    || c_function_is_public_generic_specific(*base_fn, symtab));
+        };
+
+        if (root_mode == CFunctionRootMode::All) {
+            // Preserve the dependency order where we have it first.
+            for (const auto &name : func_order) {
+                add_symbol(symtab->get_symbol(name));
+            }
+
+            // Then scan the local scope directly so private/local procedures that
+            // never enter the dependency order still get emitted in split mode.
+            for (const auto &item : symtab->get_scope()) {
+                if (ASR::is_a<ASR::Function_t>(*item.second)) {
+                    add_function(ASR::down_cast<ASR::Function_t>(item.second));
+                    continue;
+                }
+                ASR::symbol_t *sym = ASRUtils::symbol_get_past_external(item.second);
+                if (sym == nullptr) {
+                    continue;
+                }
+                add_symbol(sym);
+            }
+        } else {
+            // Split C modules need definitions for their public ABI roots. Private
+            // callees are emitted on demand through pending_function_definitions
+            // while those roots are visited.
+            for (const auto &name : func_order) {
+                ASR::symbol_t *sym = symtab->get_symbol(name);
+                if (sym != nullptr && ASR::is_a<ASR::Function_t>(*sym)) {
+                    ASR::Function_t *fn = ASR::down_cast<ASR::Function_t>(sym);
+                    if (is_public_abi_function(fn)) {
+                        add_function(fn);
+                    }
+                }
+            }
+            for (const auto &item : symtab->get_scope()) {
+                ASR::symbol_t *sym = ASRUtils::symbol_get_past_external(item.second);
+                if (sym == nullptr) {
+                    continue;
+                }
+                if (ASR::is_a<ASR::Function_t>(*sym)) {
+                    ASR::Function_t *fn = ASR::down_cast<ASR::Function_t>(sym);
+                    if (is_public_abi_function(fn)) {
+                        add_function(fn);
+                    }
+                } else if (ASR::is_a<ASR::GenericProcedure_t>(*sym)) {
+                    ASR::GenericProcedure_t *gp =
+                        ASR::down_cast<ASR::GenericProcedure_t>(sym);
+                    if (gp->m_access == ASR::accessType::Public) {
+                        add_symbol(sym);
+                    }
+                } else if (ASR::is_a<ASR::CustomOperator_t>(*sym)) {
+                    ASR::CustomOperator_t *op =
+                        ASR::down_cast<ASR::CustomOperator_t>(sym);
+                    if (op->m_access == ASR::accessType::Public) {
+                        add_symbol(sym);
+                    }
+                } else if (ASR::is_a<ASR::Struct_t>(*sym)) {
+                    add_public_struct_methods(ASR::down_cast<ASR::Struct_t>(sym));
+                }
+            }
         }
         return complete_functions;
     }
@@ -1268,13 +1388,10 @@ R"(
         append_module_variable_split_unit(x, units);
 
         std::vector<ASR::Function_t*> functions =
-            get_complete_function_definitions(x.m_symtab);
-        auto emit_function_unit = [&](ASR::Function_t *fn) {
+            get_complete_function_definitions(
+                x.m_symtab, CFunctionRootMode::PublicAbi);
+        auto emit_function_unit_body = [&](ASR::Function_t *fn) {
             if (fn == nullptr) {
-                return;
-            }
-            uint64_t key = get_hash(reinterpret_cast<ASR::asr_t*>(fn));
-            if (!emitted_functions.insert(key).second) {
                 return;
             }
             bool has_typevar = false;
@@ -1302,8 +1419,40 @@ R"(
                 }
             }
         };
+        auto emit_function_unit = [&](ASR::Function_t *fn) {
+            if (fn == nullptr) {
+                return;
+            }
+            uint64_t key = get_hash(reinterpret_cast<ASR::asr_t*>(fn));
+            if (!emitted_functions.insert(key).second) {
+                return;
+            }
+            emit_function_unit_body(fn);
+        };
+        auto is_nested_module_function = [&](ASR::Function_t *fn) -> bool {
+            if (fn == nullptr || fn->m_symtab == nullptr) {
+                return false;
+            }
+            SymbolTable *parent_scope = fn->m_symtab->parent;
+            return parent_scope != nullptr && parent_scope != x.m_symtab
+                && scope_contains(x.m_symtab, parent_scope);
+        };
         for (ASR::Function_t *fn : functions) {
             emit_function_unit(fn);
+        }
+        while (true) {
+            std::vector<ASR::Function_t*> pending_functions =
+                consume_pending_function_definitions(
+                    x.m_symtab, emitted_functions, false);
+            if (pending_functions.empty()) {
+                break;
+            }
+            for (ASR::Function_t *fn : pending_functions) {
+                if (is_nested_module_function(fn)) {
+                    continue;
+                }
+                emit_function_unit_body(fn);
+            }
         }
 
         intrinsic_module = intrinsic_module_copy;

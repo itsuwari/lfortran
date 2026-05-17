@@ -2542,6 +2542,8 @@ public:
                     ASR::down_cast<ASR::Function_t>(proc_sym))) {
                 continue;
             }
+            record_forward_decl_for_function(
+                *ASR::down_cast<ASR::Function_t>(proc_sym));
             ASR::Struct_t *method_owner = candidate_struct;
             ASR::StructMethodDeclaration_t *method_for_anchor = concrete_method;
             if (!get_concrete_struct_method_binding(proc_sym, method_owner,
@@ -17521,6 +17523,12 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             return false;
         }
         for (ASR::StructMethodDeclaration_t *method: parent_methods) {
+            ASR::symbol_t *proc_sym = ASRUtils::symbol_get_past_external(
+                method->m_proc);
+            if (proc_sym != nullptr && ASR::is_a<ASR::Function_t>(*proc_sym)) {
+                record_forward_decl_for_function(
+                    *ASR::down_cast<ASR::Function_t>(proc_sym));
+            }
             std::string anchor_name = get_c_tbp_force_link_anchor_name(parent_struct, method);
             force_link_decls += "extern void " + anchor_name + "(void);\n";
             force_link_body += "    " + anchor_name + "();\n";

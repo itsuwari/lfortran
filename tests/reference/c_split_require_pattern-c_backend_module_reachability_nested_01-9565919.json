@@ -1,0 +1,13 @@
+{
+    "basename": "c_split_require_pattern-c_backend_module_reachability_nested_01-9565919",
+    "cmd": "tmpdir=$(mktemp -d /tmp/lfortran-c-split-require.XXXXXX); trap 'rm -rf \"$tmpdir\"' EXIT; lfortran --backend=c --separate-compilation -c {infile} -o \"$tmpdir/main.o\"; grep -R -F -q \"__lfortran_c_backend_module_reachability_nested_01_mod__public_value\" \"$tmpdir\"/*.o.tmp.split/*.c #",
+    "infile": "tests/../integration_tests/c_backend_module_reachability_nested_01.f90",
+    "infile_hash": "ac11683630f6bc2aa121c5b73c808549a5cb8cd44c6a5e855eed9189",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

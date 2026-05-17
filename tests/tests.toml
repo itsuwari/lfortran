@@ -5523,6 +5523,26 @@ c_split_forbid_pattern = true
 c_split_forbid_pattern_value = "LFORTRAN_C_BACKEND_HIDDEN void __lfortran_c_backend_public_generic_specific_01_mod__apply_r8"
 
 [[test]]
+filename = "../integration_tests/c_backend_module_reachability_private_unused_01.f90"
+run = true
+options = "--backend=c --separate-compilation"
+c_split_forbid_pattern = true
+c_split_forbid_pattern_value = "8675309"
+
+[[test]]
+filename = "../integration_tests/c_backend_module_reachability_nested_01.f90"
+run = true
+options = "--backend=c --separate-compilation"
+c_split_require_pattern = true
+c_split_require_pattern_value = "__lfortran_c_backend_module_reachability_nested_01_mod__public_value"
+
+[[test]]
+filename = "c_backend_module_reachability_import_owner_01.f90"
+extrafiles = "c_backend_module_reachability_import_owner_mod_01.f90"
+c_split_consumer_forbid_pattern = true
+c_split_consumer_forbid_pattern_value = "24681357"
+
+[[test]]
 filename = "c_backend_header_only_module_01.f90"
 c_split_no_empty_source = true
 
