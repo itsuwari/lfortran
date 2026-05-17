@@ -44,6 +44,9 @@ typedef enum {
 
 #if defined(__APPLE__)
 #  include <sys/time.h>
+#  include <malloc/malloc.h>
+#elif defined(__linux__) && !defined(COMPILE_TO_WASM)
+#  include <malloc.h>
 #endif
 
 #include <libasr/runtime/lfortran_intrinsics.h>
@@ -791,12 +794,21 @@ static lfortran_allocator_t compiler_mem_dbg_allocator = {
     NULL
 };
 
+static size_t lfortran_internal_malloc_usable_size(void *ptr);
+
 LFORTRAN_API lfortran_allocator_t* _lfortran_get_default_allocator(void) {
     return &_default_allocator;
 }
 
 LFORTRAN_API lfortran_allocator_t* _lfortran_get_compiler_mem_dbg_allocator(void) {
     return &compiler_mem_dbg_allocator;
+}
+
+static bool lfortran_default_allocator_has_capacity(
+        lfortran_allocator_t* al, void *ptr, int64_t required_size)
+{
+    return al == &_default_allocator && ptr != NULL && required_size >= 0
+        && lfortran_internal_malloc_usable_size(ptr) >= (size_t)required_size;
 }
 
 /* --- CFI allocation helpers --- */
@@ -946,6 +958,20 @@ static void _lfortran_internal_free_tracked(void *ptr,
 #define internal_free(ptr)              free(ptr)
 
 #endif /* LFORTRAN_INTERNAL_ALLOC_CHECK */
+
+static size_t lfortran_internal_malloc_usable_size(void *ptr)
+{
+    if (ptr == NULL) {
+        return 0;
+    }
+#if defined(__APPLE__)
+    return malloc_size(ptr);
+#elif defined(__linux__) && !defined(COMPILE_TO_WASM)
+    return malloc_usable_size(ptr);
+#else
+    return 0;
+#endif
+}
 
 const char *scratch_prefix = "_lfortran_generated_file";
 
@@ -1223,8 +1249,15 @@ char* substring(const char* str, int start, int end) {
 char* append_to_string(char* str, const char* append) {
     int len1 = strlen(str);
     int len2 = strlen(append);
-    str = (char*)internal_realloc(str, (len1 + len2 + 1) * sizeof(char));
-    strcat(str, append);
+    size_t required_size = (size_t)len1 + (size_t)len2 + 1;
+#ifndef LFORTRAN_INTERNAL_ALLOC_CHECK
+    if (lfortran_internal_malloc_usable_size(str) < required_size) {
+        str = (char*)internal_realloc(str, required_size * sizeof(char));
+    }
+#else
+    str = (char*)internal_realloc(str, required_size * sizeof(char));
+#endif
+    memcpy(str + len1, append, (size_t)len2 + 1);
     return str;
 }
 
@@ -2227,22 +2260,47 @@ static bool is_descriptor_requiring_comma(char c) {
  * e.g. "(I5, F5.2, T10)" is split separately into "I5", "F5.2", "T10" as
  * format specifiers
 */
+static char** ensure_format_values_capacity(char **format_values,
+        int64_t *capacity, int64_t required_count)
+{
+    if (required_count <= *capacity) {
+        return format_values;
+    }
+    int64_t new_capacity = *capacity > 0 ? *capacity : 1;
+    while (new_capacity < required_count) {
+        if (new_capacity > INT64_MAX / 2) {
+            new_capacity = required_count;
+            break;
+        }
+        new_capacity *= 2;
+    }
+    char **ptr = (char**)internal_realloc(format_values,
+        new_capacity * (int64_t)sizeof(char*));
+    if (ptr == NULL) {
+        perror("Memory allocation failed.\n");
+        internal_free(format_values);
+        exit(1);
+    }
+    *capacity = new_capacity;
+    return ptr;
+}
+
 char** parse_fortran_format(const fchar* format, const int64_t format_len, int64_t *count, int64_t *item_start) {
     const char* cformat = (const char*)format;
-    char** format_values_2 = (char**)internal_malloc((*count + 1) * sizeof(char*));
+    int64_t format_values_capacity = *count + format_len + 1;
+    if (format_values_capacity < *count + 1) {
+        format_values_capacity = *count + 1;
+    }
+    char** format_values_2 = (char**)internal_malloc(
+        format_values_capacity * (int64_t)sizeof(char*));
     int format_values_count = *count;
     int index = 0 , start = 0;
     bool last_was_descriptor = false;
     bool comma_seen = false;
 
     while (index < format_len) {
-        char** ptr = (char**)internal_realloc(format_values_2, (format_values_count + 1) * sizeof(char*));
-        if (ptr == NULL) {
-            perror("Memory allocation failed.\n");
-            internal_free(format_values_2);
-        } else {
-            format_values_2 = ptr;
-        }
+        format_values_2 = ensure_format_values_capacity(format_values_2,
+            &format_values_capacity, format_values_count + 1);
         switch (tolower(cformat[index])) {
             case ' ' :
                 break;
@@ -2512,7 +2570,9 @@ char** parse_fortran_format(const fchar* format, const int64_t format_len, int64
                     char* repeat_str = substring(cformat, start, index);
                     int repeat = atoi(repeat_str);
                     internal_free(repeat_str);
-                    format_values_2 = (char**)internal_realloc(format_values_2, (format_values_count + repeat + 1) * sizeof(char*));
+                    format_values_2 = ensure_format_values_capacity(
+                        format_values_2, &format_values_capacity,
+                        format_values_count + repeat + 1);
                     if (cformat[index] == '(') {
                         start = index;
                         index = find_matching_parentheses(format, format_len, index);
@@ -5620,21 +5680,24 @@ LFORTRAN_API void _lfortran_strcpy_alloc(
         _lfortran_copy_str_and_pad(*lhs, *lhs_len, rhs, rhs_len);
         _lfortran_register_string_len(*lhs, *lhs_len);
     } else if (is_lhs_deferred && is_lhs_allocatable) {
+        int64_t required_size = MAX(rhs_len, 1) + 1;
         if (lhs_len != NULL && *lhs != NULL && rhs != NULL) {
             char* lhs_start = *lhs;
             char* lhs_end = lhs_start + (*lhs_len);
             if (rhs >= lhs_start && rhs < lhs_end) {
-                if (rhs_len <= *lhs_len) {
+                if (rhs_len <= *lhs_len ||
+                        lfortran_default_allocator_has_capacity(
+                            al, *lhs, required_size)) {
                     memmove(*lhs, rhs, rhs_len * sizeof(char));
                     (*lhs)[rhs_len] = '\0';
                     *lhs_len = rhs_len;
                     _lfortran_register_string_len(*lhs, rhs_len);
                     return;
                 } else {
-                    char* tmp = (char*)internal_malloc((MAX(rhs_len, 1) + 1) * sizeof(char));
+                    char* tmp = (char*)internal_malloc(required_size * sizeof(char));
                     memcpy(tmp, rhs, rhs_len * sizeof(char));
                     tmp[rhs_len] = '\0';
-                    *lhs = (char*)ALLOCATOR_REALLOC(al, *lhs, MAX(rhs_len, 1) + 1);
+                    *lhs = (char*)ALLOCATOR_REALLOC(al, *lhs, required_size);
                     if (old_lhs != *lhs) _lfortran_unregister_string_len(old_lhs);
                     *lhs_len = rhs_len;
                     memcpy(*lhs, tmp, (rhs_len + 1) * sizeof(char));
@@ -5644,8 +5707,10 @@ LFORTRAN_API void _lfortran_strcpy_alloc(
                 }
             }
         }
-        *lhs = (char*)ALLOCATOR_REALLOC(al, *lhs, MAX(rhs_len, 1) + 1);
-        if (old_lhs != *lhs) _lfortran_unregister_string_len(old_lhs);
+        if (!lfortran_default_allocator_has_capacity(al, *lhs, required_size)) {
+            *lhs = (char*)ALLOCATOR_REALLOC(al, *lhs, required_size);
+            if (old_lhs != *lhs) _lfortran_unregister_string_len(old_lhs);
+        }
         if (lhs_len != NULL) {
             *lhs_len = rhs_len;
         }
