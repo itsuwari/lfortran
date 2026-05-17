@@ -1,0 +1,13 @@
+{
+    "basename": "c_forbid_pattern-c_backend_branch_matmul_temp_01-92db0df",
+    "cmd": "lfortran --no-color --show-c {infile} | (! grep -F -q \"__libasr_created__intrinsic_array_function_MatMul->data = NULL; __libasr_created__intrinsic_array_function_MatMul->n_dims = 2;\") #",
+    "infile": "tests/c_backend_branch_matmul_temp_01.f90",
+    "infile_hash": "c60bdd77580db352a0221f7a9e7fe08bd747556b7f30e20a00c16862",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

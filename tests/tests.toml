@@ -5872,6 +5872,15 @@ options = "--backend=c --separate-compilation -O3"
 [[test]]
 filename = "c_backend_branch_matmul_temp_01.f90"
 c = true
+c_forbid_pattern = true
+c_forbid_pattern_value = "__libasr_created__intrinsic_array_function_MatMul->data = NULL; __libasr_created__intrinsic_array_function_MatMul->n_dims = 2;"
+
+[[test]]
+filename = "../integration_tests/c_backend_lazy_intrinsic_temp_init_01.f90"
+c_require_pattern = true
+c_require_pattern_value = "__libasr_created__intrinsic_array_function_Sum->data = NULL; __libasr_created__intrinsic_array_function_Sum->offset = 0; __libasr_created__intrinsic_array_function_Sum->is_allocated = false;"
+c_forbid_pattern = true
+c_forbid_pattern_value = "__libasr_created__intrinsic_array_function_Sum->data = NULL; __libasr_created__intrinsic_array_function_Sum->n_dims = 2;"
 
 [[test]]
 filename = "c_backend_c_char_assumed_size_01.f90"

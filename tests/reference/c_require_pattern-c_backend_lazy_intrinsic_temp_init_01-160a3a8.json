@@ -1,0 +1,13 @@
+{
+    "basename": "c_require_pattern-c_backend_lazy_intrinsic_temp_init_01-160a3a8",
+    "cmd": "lfortran --no-color --show-c {infile} | grep -F -q \"__libasr_created__intrinsic_array_function_Sum->data = NULL; __libasr_created__intrinsic_array_function_Sum->offset = 0; __libasr_created__intrinsic_array_function_Sum->is_allocated = false;\" #",
+    "infile": "tests/../integration_tests/c_backend_lazy_intrinsic_temp_init_01.f90",
+    "infile_hash": "4a1c1806023b9ae6566827b996314cd0eb4b2433186c2cbfe3c1c3d7",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

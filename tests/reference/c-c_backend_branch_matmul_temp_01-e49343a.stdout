@@ -1,5 +1,6 @@
 #include <inttypes.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include <stdlib.h>
 #include <stdbool.h>
@@ -22,6 +23,37 @@
 #define LFORTRAN_C_BACKEND_WEAK static
 #endif
 #endif
+#ifndef LFORTRAN_C_BACKEND_COMMON
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_COMMON __attribute__((common))
+#else
+#define LFORTRAN_C_BACKEND_COMMON
+#endif
+#endif
+
+#ifndef LFORTRAN_C_BACKEND_THREAD_LOCAL
+#if defined(_MSC_VER)
+#define LFORTRAN_C_BACKEND_THREAD_LOCAL __declspec(thread)
+#elif defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_THREAD_LOCAL __thread
+#elif defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
+#define LFORTRAN_C_BACKEND_THREAD_LOCAL _Thread_local
+#else
+#define LFORTRAN_C_BACKEND_THREAD_LOCAL
+#endif
+#endif
+
+#ifndef LFORTRAN_C_BACKEND_TBP_CACHE_STORAGE
+#if defined(_MSC_VER)
+#define LFORTRAN_C_BACKEND_TBP_CACHE_STORAGE static __declspec(thread)
+#elif defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_TBP_CACHE_STORAGE static __thread
+#elif defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
+#define LFORTRAN_C_BACKEND_TBP_CACHE_STORAGE static _Thread_local
+#else
+#define LFORTRAN_C_BACKEND_TBP_CACHE_STORAGE
+#endif
+#endif
 
 
 struct dimension_descriptor
@@ -42,6 +74,35 @@ struct dimension_descriptor
 #define LFORTRAN_C_BACKEND_WEAK static
 #endif
 #endif
+#ifndef LFORTRAN_C_BACKEND_COMMON
+#if defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_COMMON __attribute__((common))
+#else
+#define LFORTRAN_C_BACKEND_COMMON
+#endif
+#endif
+#ifndef LFORTRAN_C_BACKEND_THREAD_LOCAL
+#if defined(_MSC_VER)
+#define LFORTRAN_C_BACKEND_THREAD_LOCAL __declspec(thread)
+#elif defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_THREAD_LOCAL __thread
+#elif defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
+#define LFORTRAN_C_BACKEND_THREAD_LOCAL _Thread_local
+#else
+#define LFORTRAN_C_BACKEND_THREAD_LOCAL
+#endif
+#endif
+#ifndef LFORTRAN_C_BACKEND_TBP_CACHE_STORAGE
+#if defined(_MSC_VER)
+#define LFORTRAN_C_BACKEND_TBP_CACHE_STORAGE static __declspec(thread)
+#elif defined(__GNUC__) || defined(__clang__)
+#define LFORTRAN_C_BACKEND_TBP_CACHE_STORAGE static __thread
+#elif defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
+#define LFORTRAN_C_BACKEND_TBP_CACHE_STORAGE static _Thread_local
+#else
+#define LFORTRAN_C_BACKEND_TBP_CACHE_STORAGE
+#endif
+#endif
 
 
 struct r64_____
@@ -51,6 +112,7 @@ struct r64_____
     int32_t n_dims;
     int32_t offset;
     bool is_allocated;
+    bool owns_contiguous_char_storage;
 };
 
 void __lfortran__lcompilers_matmul_r64______r64______ret_r64______ov3_real_______0_real_______1_real_______2(struct r64_____* restrict matrix_a_m, int32_t __1matrix_a_m, int32_t __2matrix_a_m, struct r64_____* restrict matrix_b_m, int32_t __1matrix_b_m, int32_t __2matrix_b_m, struct r64_____* restrict result, int32_t __1result, int32_t __2result);
@@ -89,14 +151,14 @@ void __lfortran__lcompilers_matmul_r64______r64______ret_r64______ov3_real______
     ASSERT_MSG(__2matrix_a_m + 1 - 1 == __1matrix_b_m + 1 - 1, "%s", (char*)"'MatMul' intrinsic dimension mismatch: please make sure the dimensions are `matrix_a(i, k)` and `matrix_b(k, j)`");
     for (i=1; i<=__1matrix_a_m + 1 - 1; i++) {
         for (j=1; j<=__2matrix_b_m + 1 - 1; j++) {
-            acc =   0.00000000000000000e+00;
+            acc = 0x0.0000000000000p+0;
             for (k=1; k<=__1matrix_b_m + 1 - 1; k++) {
                 acc = acc + __lfortran_matrix_a_m_data[(((0 + (__lfortran_matrix_a_m_dim1_stride * (i - __lfortran_matrix_a_m_dim1_lower_bound))) + (__lfortran_matrix_a_m_dim2_stride * (k - __lfortran_matrix_a_m_dim2_lower_bound))) + __lfortran_matrix_a_m_offset)]*__lfortran_matrix_b_m_data[(((0 + (__lfortran_matrix_b_m_dim1_stride * (k - __lfortran_matrix_b_m_dim1_lower_bound))) + (__lfortran_matrix_b_m_dim2_stride * (j - __lfortran_matrix_b_m_dim2_lower_bound))) + __lfortran_matrix_b_m_offset)];
             }
             __lfortran_result_data[(((0 + (__lfortran_result_dim1_stride * (i - __lfortran_result_dim1_lower_bound))) + (__lfortran_result_dim2_stride * (j - __lfortran_result_dim2_lower_bound))) + __lfortran_result_offset)] = acc;
         }
     }
-    return;
+        return;
 }
 
 void __lfortran__lcompilers_matmul_r64______r64______ret_r64______ov3(struct r64_____* restrict matrix_a_m, struct r64_____* restrict matrix_b_m, struct r64_____* restrict result)
@@ -107,29 +169,10 @@ void __lfortran__lcompilers_matmul_r64______r64______ret_r64______ov3(struct r64
 struct r64_____* c_backend_branch_matmul_temp_01_m__p;
 void __lfortran_c_backend_branch_matmul_temp_01_m__transform_real_______1_real_______2(int32_t which, struct r64_____* restrict a, int32_t __1a, int32_t __2a, struct r64_____* restrict c, int32_t __1c, int32_t __2c)
 {
-    static const double __libasr_created__intrinsic_array_function_MatMul_data[9] = {1.0000000000000000e+00, 0.0000000000000000e+00, 0.0000000000000000e+00, 0.0000000000000000e+00, 1.0000000000000000e+00, 0.0000000000000000e+00, 0.0000000000000000e+00, 0.0000000000000000e+00, 1.0000000000000000e+00};
-    static struct r64_____ __libasr_created__intrinsic_array_function_MatMul_value = { .data = (double*) __libasr_created__intrinsic_array_function_MatMul_data, .n_dims = 2, .offset = 0, .is_allocated = true, .dims = {{1, 3, 1}, {1, 3, (1*3)}} };
+    struct r64_____ __libasr_created__intrinsic_array_function_MatMul_value;
     struct r64_____* __libasr_created__intrinsic_array_function_MatMul = &__libasr_created__intrinsic_array_function_MatMul_value;
-    static const double __libasr_created__intrinsic_array_function_MatMul1_data[9] = {1.0000000000000000e+00, 0.0000000000000000e+00, 0.0000000000000000e+00, 0.0000000000000000e+00, 1.0000000000000000e+00, 0.0000000000000000e+00, 0.0000000000000000e+00, 0.0000000000000000e+00, 1.0000000000000000e+00};
-    static struct r64_____ __libasr_created__intrinsic_array_function_MatMul1_value = { .data = (double*) __libasr_created__intrinsic_array_function_MatMul1_data, .n_dims = 2, .offset = 0, .is_allocated = true, .dims = {{1, 3, 1}, {1, 3, (1*3)}} };
-    struct r64_____* __libasr_created__intrinsic_array_function_MatMul1 = &__libasr_created__intrinsic_array_function_MatMul1_value;
-    struct r64_____ __libasr_created__intrinsic_array_function_MatMul2_value;
-    struct r64_____* __libasr_created__intrinsic_array_function_MatMul2 = &__libasr_created__intrinsic_array_function_MatMul2_value;
-    bool __libasr_created__intrinsic_array_function_MatMul2_data_heap_allocated = false;
-    __libasr_created__intrinsic_array_function_MatMul2->data = NULL;
-    __libasr_created__intrinsic_array_function_MatMul2->n_dims = 2;
-    __libasr_created__intrinsic_array_function_MatMul2->offset = 0;
-    __libasr_created__intrinsic_array_function_MatMul2->is_allocated = false;
-    __libasr_created__intrinsic_array_function_MatMul2->dims[0].lower_bound = 1;
-    __libasr_created__intrinsic_array_function_MatMul2->dims[0].length = __1a;
-    __libasr_created__intrinsic_array_function_MatMul2->dims[0].stride = 1;
-    __libasr_created__intrinsic_array_function_MatMul2->dims[1].lower_bound = 1;
-    __libasr_created__intrinsic_array_function_MatMul2->dims[1].length = 3;
-    __libasr_created__intrinsic_array_function_MatMul2->dims[1].stride = (1*__1a);
-    int32_t __libasr_index_0_;
-    int32_t __libasr_index_0_1;
-    int32_t __libasr_index_1_;
-    int32_t __libasr_index_1_1;
+    bool __libasr_created__intrinsic_array_function_MatMul_data_heap_allocated = false;
+    __libasr_created__intrinsic_array_function_MatMul->data = NULL; __libasr_created__intrinsic_array_function_MatMul->offset = 0; __libasr_created__intrinsic_array_function_MatMul->is_allocated = false; __libasr_created__intrinsic_array_function_MatMul->owns_contiguous_char_storage = false;
     double * restrict __lfortran_a_data = a->data;
     const int32_t __lfortran_a_offset = a->offset;
     const int32_t __lfortran_a_dim1_lower_bound = a->dims[0].lower_bound;
@@ -143,50 +186,96 @@ void __lfortran_c_backend_branch_matmul_temp_01_m__transform_real_______1_real__
     const int32_t __lfortran_c_dim2_lower_bound = c->dims[1].lower_bound;
     const int32_t __lfortran_c_dim2_stride = c->dims[1].stride;
     if ((which)  ==  (1)) {
-        struct r64_____ __lfortran_array_view = { .data = a->data, .dims = {{1, a->dims[0].length, a->dims[0].stride}, {1, a->dims[1].length, a->dims[1].stride}}, .n_dims = 2, .offset = a->offset, .is_allocated = a->is_allocated };
-        struct r64_____ __lfortran_array_view1 = { .data = __libasr_created__intrinsic_array_function_MatMul1->data, .dims = {{1, __libasr_created__intrinsic_array_function_MatMul1->dims[0].length, __libasr_created__intrinsic_array_function_MatMul1->dims[0].stride}, {1, __libasr_created__intrinsic_array_function_MatMul1->dims[1].length, __libasr_created__intrinsic_array_function_MatMul1->dims[1].stride}}, .n_dims = 2, .offset = __libasr_created__intrinsic_array_function_MatMul1->offset, .is_allocated = false };
-        if (__libasr_created__intrinsic_array_function_MatMul2_data_heap_allocated && __libasr_created__intrinsic_array_function_MatMul2->data != NULL) {
-            free(__libasr_created__intrinsic_array_function_MatMul2->data);
-            __libasr_created__intrinsic_array_function_MatMul2->data = NULL;
-            __libasr_created__intrinsic_array_function_MatMul2_data_heap_allocated = false;
+        struct r64_____ __lfortran_array_view = { .data = ((double*)a->data), .dims = {{1, a->dims[0].length, a->dims[0].stride}, {1, a->dims[1].length, a->dims[1].stride}}, .n_dims = 2, .offset = a->offset, .is_allocated = a->is_allocated, .owns_contiguous_char_storage = false };
+        struct r64_____ __lfortran_array_view1 = { .data = ((double*)c_backend_branch_matmul_temp_01_m__p->data), .dims = {{1, c_backend_branch_matmul_temp_01_m__p->dims[0].length, c_backend_branch_matmul_temp_01_m__p->dims[0].stride}, {1, c_backend_branch_matmul_temp_01_m__p->dims[1].length, c_backend_branch_matmul_temp_01_m__p->dims[1].stride}}, .n_dims = 2, .offset = c_backend_branch_matmul_temp_01_m__p->offset, .is_allocated = false, .owns_contiguous_char_storage = false };
+        if (__libasr_created__intrinsic_array_function_MatMul_data_heap_allocated && __libasr_created__intrinsic_array_function_MatMul->data != NULL) {
+            free(__libasr_created__intrinsic_array_function_MatMul->data);
+            __libasr_created__intrinsic_array_function_MatMul->data = NULL;
+            __libasr_created__intrinsic_array_function_MatMul_data_heap_allocated = false;
         }
-        int64_t __libasr_created__intrinsic_array_function_MatMul2_data_size = __1a*3;
-        double __libasr_created__intrinsic_array_function_MatMul2_data_stack[(__libasr_created__intrinsic_array_function_MatMul2_data_size > 0 && __libasr_created__intrinsic_array_function_MatMul2_data_size <= 4096 ? __libasr_created__intrinsic_array_function_MatMul2_data_size : 1)];
-        double *__libasr_created__intrinsic_array_function_MatMul2_data = __libasr_created__intrinsic_array_function_MatMul2_data_stack;
-        if (__libasr_created__intrinsic_array_function_MatMul2_data_size > 4096) {
-            __libasr_created__intrinsic_array_function_MatMul2_data = (double*) malloc(sizeof(double)*__libasr_created__intrinsic_array_function_MatMul2_data_size);
-            __libasr_created__intrinsic_array_function_MatMul2_data_heap_allocated = true;
+        int64_t __libasr_created__intrinsic_array_function_MatMul_data_size = __1a*3;
+        double __libasr_created__intrinsic_array_function_MatMul_data_stack[(__libasr_created__intrinsic_array_function_MatMul_data_size > 0 && __libasr_created__intrinsic_array_function_MatMul_data_size <= 4096 ? __libasr_created__intrinsic_array_function_MatMul_data_size : 1)];
+        double *__libasr_created__intrinsic_array_function_MatMul_data = __libasr_created__intrinsic_array_function_MatMul_data_stack;
+        if (__libasr_created__intrinsic_array_function_MatMul_data_size > 4096) {
+            __libasr_created__intrinsic_array_function_MatMul_data = (double*) malloc(sizeof(double)*__libasr_created__intrinsic_array_function_MatMul_data_size);
+            __libasr_created__intrinsic_array_function_MatMul_data_heap_allocated = true;
         }
-        __libasr_created__intrinsic_array_function_MatMul2->data = __libasr_created__intrinsic_array_function_MatMul2_data;
-        __libasr_created__intrinsic_array_function_MatMul2->n_dims = 2;
-        __libasr_created__intrinsic_array_function_MatMul2->offset = 0;
-        __libasr_created__intrinsic_array_function_MatMul2->is_allocated = true;
-        __libasr_created__intrinsic_array_function_MatMul2->dims[0].lower_bound = 1;
-        __libasr_created__intrinsic_array_function_MatMul2->dims[0].length = __1a;
-        __libasr_created__intrinsic_array_function_MatMul2->dims[0].stride = 1;
-        __libasr_created__intrinsic_array_function_MatMul2->dims[1].lower_bound = 1;
-        __libasr_created__intrinsic_array_function_MatMul2->dims[1].length = 3;
-        __libasr_created__intrinsic_array_function_MatMul2->dims[1].stride = (1*__1a);
-        struct r64_____ __lfortran_array_view2 = { .data = __libasr_created__intrinsic_array_function_MatMul2->data, .dims = {{1, __libasr_created__intrinsic_array_function_MatMul2->dims[0].length, __libasr_created__intrinsic_array_function_MatMul2->dims[0].stride}, {1, __libasr_created__intrinsic_array_function_MatMul2->dims[1].length, __libasr_created__intrinsic_array_function_MatMul2->dims[1].stride}}, .n_dims = 2, .offset = __libasr_created__intrinsic_array_function_MatMul2->offset, .is_allocated = __libasr_created__intrinsic_array_function_MatMul2->is_allocated };
+        __libasr_created__intrinsic_array_function_MatMul->data = __libasr_created__intrinsic_array_function_MatMul_data; __libasr_created__intrinsic_array_function_MatMul->n_dims = 2; __libasr_created__intrinsic_array_function_MatMul->offset = 0; __libasr_created__intrinsic_array_function_MatMul->is_allocated = true; __libasr_created__intrinsic_array_function_MatMul->owns_contiguous_char_storage = false;
+        __libasr_created__intrinsic_array_function_MatMul->dims[0].lower_bound = 1; __libasr_created__intrinsic_array_function_MatMul->dims[0].length = __1a; __libasr_created__intrinsic_array_function_MatMul->dims[0].stride = 1;
+        __libasr_created__intrinsic_array_function_MatMul->dims[1].lower_bound = 1; __libasr_created__intrinsic_array_function_MatMul->dims[1].length = 3; __libasr_created__intrinsic_array_function_MatMul->dims[1].stride = (1*__1a);
+        struct r64_____ __lfortran_array_view2 = { .data = ((double*)__libasr_created__intrinsic_array_function_MatMul->data), .dims = {{1, __libasr_created__intrinsic_array_function_MatMul->dims[0].length, __libasr_created__intrinsic_array_function_MatMul->dims[0].stride}, {1, __libasr_created__intrinsic_array_function_MatMul->dims[1].length, __libasr_created__intrinsic_array_function_MatMul->dims[1].stride}}, .n_dims = 2, .offset = __libasr_created__intrinsic_array_function_MatMul->offset, .is_allocated = __libasr_created__intrinsic_array_function_MatMul->is_allocated, .owns_contiguous_char_storage = false };
         __lfortran__lcompilers_matmul_r64______r64______ret_r64______ov3_real_______0_real_______1_real_______2(&__lfortran_array_view, __1a, __2a, &__lfortran_array_view1, 3, 3, &__lfortran_array_view2, __1a, 3);
-        struct r64_____ __lfortran_array_view3 = { .data = __libasr_created__intrinsic_array_function_MatMul->data, .dims = {{1, __libasr_created__intrinsic_array_function_MatMul->dims[0].length, __libasr_created__intrinsic_array_function_MatMul->dims[0].stride}, {1, __libasr_created__intrinsic_array_function_MatMul->dims[1].length, __libasr_created__intrinsic_array_function_MatMul->dims[1].stride}}, .n_dims = 2, .offset = __libasr_created__intrinsic_array_function_MatMul->offset, .is_allocated = false };
-        struct r64_____ __lfortran_array_view4 = { .data = __libasr_created__intrinsic_array_function_MatMul2->data, .dims = {{1, __libasr_created__intrinsic_array_function_MatMul2->dims[0].length, __libasr_created__intrinsic_array_function_MatMul2->dims[0].stride}, {1, __libasr_created__intrinsic_array_function_MatMul2->dims[1].length, __libasr_created__intrinsic_array_function_MatMul2->dims[1].stride}}, .n_dims = 2, .offset = __libasr_created__intrinsic_array_function_MatMul2->offset, .is_allocated = __libasr_created__intrinsic_array_function_MatMul2->is_allocated };
-        struct r64_____ __lfortran_array_view5 = { .data = c->data, .dims = {{1, c->dims[0].length, c->dims[0].stride}, {1, c->dims[1].length, c->dims[1].stride}}, .n_dims = 2, .offset = c->offset, .is_allocated = c->is_allocated };
-        __lfortran__lcompilers_matmul_r64______r64______ret_r64______ov3_real_______0_real_______1_real_______2(&__lfortran_array_view3, 3, 3, &__lfortran_array_view4, __1a, 3, &__lfortran_array_view5, __1c, __2c);
+        {
+        double *__lfortran_lhs2_data = __lfortran_c_data;
+        int64_t __lfortran_lhs2_offset = __lfortran_c_offset;
+        int64_t __lfortran_lhs2_stride1 = __lfortran_c_dim1_stride;
+        int64_t __lfortran_lhs2_stride2 = __lfortran_c_dim2_stride;
+        int64_t __lfortran_lhs2_length1 = c->dims[0].length;
+        int64_t __lfortran_lhs2_length2 = c->dims[1].length;
+        double *__lfortran_matmul_lhs2_data = c_backend_branch_matmul_temp_01_m__p->data;
+        int64_t __lfortran_matmul_lhs2_offset = c_backend_branch_matmul_temp_01_m__p->offset;
+        int64_t __lfortran_matmul_lhs2_stride1 = c_backend_branch_matmul_temp_01_m__p->dims[0].stride;
+        int64_t __lfortran_matmul_lhs2_stride2 = c_backend_branch_matmul_temp_01_m__p->dims[1].stride;
+        int64_t __lfortran_matmul_lhs2_length1 = c_backend_branch_matmul_temp_01_m__p->dims[0].length;
+        int64_t __lfortran_matmul_lhs2_length2 = c_backend_branch_matmul_temp_01_m__p->dims[1].length;
+        double *__lfortran_matmul_rhs2_data = __libasr_created__intrinsic_array_function_MatMul->data;
+        int64_t __lfortran_matmul_rhs2_offset = __libasr_created__intrinsic_array_function_MatMul->offset;
+        int64_t __lfortran_matmul_rhs2_stride1 = __libasr_created__intrinsic_array_function_MatMul->dims[0].stride;
+        int64_t __lfortran_matmul_rhs2_stride2 = __libasr_created__intrinsic_array_function_MatMul->dims[1].stride;
+        int64_t __lfortran_matmul_rhs2_length1 = __libasr_created__intrinsic_array_function_MatMul->dims[0].length;
+        int64_t __lfortran_matmul_rhs2_length2 = __libasr_created__intrinsic_array_function_MatMul->dims[1].length;
+        double *__lfortran_rhs2_data = c_backend_branch_matmul_temp_01_m__p->data;
+        int64_t __lfortran_rhs2_offset = c_backend_branch_matmul_temp_01_m__p->offset;
+        int64_t __lfortran_rhs2_stride1 = c_backend_branch_matmul_temp_01_m__p->dims[0].stride;
+        int64_t __lfortran_rhs2_stride2 = c_backend_branch_matmul_temp_01_m__p->dims[1].stride;
+        double *__lfortran_rhs2_data1 = __libasr_created__intrinsic_array_function_MatMul->data;
+        int64_t __lfortran_rhs2_offset1 = __libasr_created__intrinsic_array_function_MatMul->offset;
+        int64_t __lfortran_rhs2_stride11 = __libasr_created__intrinsic_array_function_MatMul->dims[0].stride;
+        int64_t __lfortran_rhs2_stride21 = __libasr_created__intrinsic_array_function_MatMul->dims[1].stride;
+            for (int64_t __lfortran_j = 0, __lfortran_lhs2_row_index = __lfortran_lhs2_offset; __lfortran_j < __lfortran_lhs2_length2; __lfortran_j++, __lfortran_lhs2_row_index += __lfortran_lhs2_stride2) {
+                int64_t __lfortran_lhs2_index = __lfortran_lhs2_row_index;
+                for (int64_t __lfortran_i = 0; __lfortran_i < __lfortran_lhs2_length1; __lfortran_i++) {
+                    double __lfortran_matmul_acc = (double)0;
+                    for (int64_t __lfortran_matmul_k = 0; __lfortran_matmul_k < __lfortran_matmul_lhs2_length2; __lfortran_matmul_k++) {
+                        __lfortran_matmul_acc += __lfortran_rhs2_data[__lfortran_rhs2_offset + __lfortran_i * __lfortran_rhs2_stride1 + __lfortran_matmul_k * __lfortran_rhs2_stride2] * __lfortran_rhs2_data1[__lfortran_rhs2_offset1 + __lfortran_matmul_k * __lfortran_rhs2_stride11 + __lfortran_j * __lfortran_rhs2_stride21];
+                    }
+                    __lfortran_lhs2_data[__lfortran_lhs2_index] = __lfortran_matmul_acc;
+                    __lfortran_lhs2_index += __lfortran_lhs2_stride1;
+                }
+            }
+        }
     }
     else if ((which)  ==  (2)) {
-        __libasr_index_1_1 = 1;
-        for (__libasr_index_1_=1; __libasr_index_1_<=__2c + 1 - 1; __libasr_index_1_++) {
-            __libasr_index_0_1 = 1;
-            for (__libasr_index_0_=1; __libasr_index_0_<=__1c + 1 - 1; __libasr_index_0_++) {
-                __lfortran_c_data[(((0 + (__lfortran_c_dim1_stride * (__libasr_index_0_ - __lfortran_c_dim1_lower_bound))) + (__lfortran_c_dim2_stride * (__libasr_index_1_ - __lfortran_c_dim2_lower_bound))) + __lfortran_c_offset)] = __lfortran_a_data[(((0 + (__lfortran_a_dim1_stride * (__libasr_index_0_1 - __lfortran_a_dim1_lower_bound))) + (__lfortran_a_dim2_stride * (__libasr_index_1_1 - __lfortran_a_dim2_lower_bound))) + __lfortran_a_offset)];
-                __libasr_index_0_1 = __libasr_index_0_1 + 1;
+        {
+        double *__lfortran_lhs2_data1 = __lfortran_c_data;
+        int64_t __lfortran_lhs2_offset1 = __lfortran_c_offset;
+        int64_t __lfortran_lhs2_stride11 = __lfortran_c_dim1_stride;
+        int64_t __lfortran_lhs2_stride21 = __lfortran_c_dim2_stride;
+        int64_t __lfortran_lhs2_length11 = c->dims[0].length;
+        int64_t __lfortran_lhs2_length21 = c->dims[1].length;
+        double *__lfortran_rhs2copy_data = __lfortran_a_data;
+        int64_t __lfortran_rhs2copy_offset = __lfortran_a_offset;
+        int64_t __lfortran_rhs2copy_stride1 = __lfortran_a_dim1_stride;
+        int64_t __lfortran_rhs2copy_stride2 = __lfortran_a_dim2_stride;
+            if (__lfortran_lhs2_stride11 == 1 && __lfortran_rhs2copy_stride1 == 1) {
+                for (int64_t __lfortran_j1 = 0, __lfortran_lhs2_memcpy_index = __lfortran_lhs2_offset1, __lfortran_rhs2_memcpy_index = __lfortran_rhs2copy_offset; __lfortran_j1 < __lfortran_lhs2_length21; __lfortran_j1++, __lfortran_lhs2_memcpy_index += __lfortran_lhs2_stride21, __lfortran_rhs2_memcpy_index += __lfortran_rhs2copy_stride2) {
+                    memcpy(__lfortran_lhs2_data1 + __lfortran_lhs2_memcpy_index, __lfortran_rhs2copy_data + __lfortran_rhs2_memcpy_index, (size_t)(__lfortran_lhs2_length11) * sizeof(*__lfortran_lhs2_data1));
+                }
+            } else {
+                for (int64_t __lfortran_j1 = 0, __lfortran_lhs2_row_index1 = __lfortran_lhs2_offset1, __lfortran_rhs2_row_index = __lfortran_rhs2copy_offset; __lfortran_j1 < __lfortran_lhs2_length21; __lfortran_j1++, __lfortran_lhs2_row_index1 += __lfortran_lhs2_stride21, __lfortran_rhs2_row_index += __lfortran_rhs2copy_stride2) {
+                    int64_t __lfortran_lhs2_index1 = __lfortran_lhs2_row_index1;
+                    int64_t __lfortran_rhs2_index = __lfortran_rhs2_row_index;
+                    for (int64_t __lfortran_i1 = 0; __lfortran_i1 < __lfortran_lhs2_length11; __lfortran_i1++) {
+                        __lfortran_lhs2_data1[__lfortran_lhs2_index1] = __lfortran_rhs2copy_data[__lfortran_rhs2_index];
+                        __lfortran_lhs2_index1 += __lfortran_lhs2_stride11;
+                        __lfortran_rhs2_index += __lfortran_rhs2copy_stride1;
+                    }
+                }
             }
-            __libasr_index_1_1 = __libasr_index_1_1 + 1;
         }
     }
-    if (__libasr_created__intrinsic_array_function_MatMul2_data_heap_allocated && __libasr_created__intrinsic_array_function_MatMul2->data != NULL) {
-        free(__libasr_created__intrinsic_array_function_MatMul2->data);
+    if (__libasr_created__intrinsic_array_function_MatMul_data_heap_allocated && __libasr_created__intrinsic_array_function_MatMul->data != NULL) {
+        free(__libasr_created__intrinsic_array_function_MatMul->data);
     }
 }
 
