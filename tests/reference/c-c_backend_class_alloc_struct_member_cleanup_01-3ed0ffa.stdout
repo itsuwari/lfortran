@@ -141,6 +141,7 @@ struct i32___
     int32_t n_dims;
     int32_t offset;
     bool is_allocated;
+    bool owns_contiguous_char_storage;
 };
 
 struct c_backend_class_alloc_struct_member_cleanup_01_m__child_type {
@@ -183,6 +184,7 @@ static void __lfortran_cleanup_struct_c_backend_class_alloc_struct_member_cleanu
     if ((__lfortran_self->values) != NULL) {
         (__lfortran_self->values)->offset = 0;
         (__lfortran_self->values)->is_allocated = false;
+        (__lfortran_self->values)->owns_contiguous_char_storage = false;
         if (__lfortran_cleanup_desc_owned___lfortran_self_x2D__x3E_values) {
             _lfortran_free_alloc_plain(_lfortran_get_default_allocator(), (char*) __lfortran_self->values);
             __lfortran_self->values = NULL;
@@ -272,6 +274,7 @@ static void __lfortran_cleanup_struct_c_backend_class_alloc_struct_member_cleanu
     if ((__lfortran_self->values) != NULL) {
         (__lfortran_self->values)->offset = 0;
         (__lfortran_self->values)->is_allocated = false;
+        (__lfortran_self->values)->owns_contiguous_char_storage = false;
         if (__lfortran_cleanup_desc_owned___lfortran_self_x2D__x3E_values) {
             _lfortran_free_alloc_plain(_lfortran_get_default_allocator(), (char*) __lfortran_self->values);
             __lfortran_self->values = NULL;
@@ -439,7 +442,7 @@ void __lfortran_c_backend_class_alloc_struct_member_cleanup_01_m__fill__StructTy
 {
     lfortran_allocator_t* __lfortran_default_allocator = _lfortran_get_default_allocator();
     static const int32_t __libasr_created__array_constant__data[2] = {5, 8};
-    static struct i32___ __libasr_created__array_constant__value = { .data = (int32_t*) __libasr_created__array_constant__data, .n_dims = 1, .offset = 0, .is_allocated = true, .dims = {{1, 2, 1}} };
+    static struct i32___ __libasr_created__array_constant__value = { .data = (int32_t*) __libasr_created__array_constant__data, .n_dims = 1, .offset = 0, .is_allocated = true, .owns_contiguous_char_storage = false, .dims = {{1, 2, 1}} };
     struct i32___* __libasr_created__array_constant_ = &__libasr_created__array_constant__value;
     struct c_backend_class_alloc_struct_member_cleanup_01_m__child_type* tmp = NULL;
     tmp = (struct c_backend_class_alloc_struct_member_cleanup_01_m__child_type*) _lfortran_malloc_alloc(__lfortran_default_allocator, sizeof(struct c_backend_class_alloc_struct_member_cleanup_01_m__child_type));
@@ -461,6 +464,7 @@ void __lfortran_c_backend_class_alloc_struct_member_cleanup_01_m__fill__StructTy
     tmp->values->dims[0].stride = 1;
     tmp->values->offset = 0;
     tmp->values->data = (int32_t*) _lfortran_malloc_alloc(__lfortran_default_allocator, 1*tmp->values->dims[0].length*sizeof(int32_t));
+    tmp->values->owns_contiguous_char_storage = false;
     tmp->values->is_allocated = true;
     int64_t __lfortran_realloc_old_size = 0;
     if (tmp->values != NULL && tmp->values->is_allocated && tmp->values->data != NULL) {
@@ -483,6 +487,7 @@ void __lfortran_c_backend_class_alloc_struct_member_cleanup_01_m__fill__StructTy
         _lfortran_free_alloc_plain(__lfortran_default_allocator, (char*) tmp->values->data);
         tmp->values->data = NULL;
         tmp->values->is_allocated = false;
+        tmp->values->owns_contiguous_char_storage = false;
     }
     if (!tmp->values->is_allocated || tmp->values->data == NULL) {
         tmp->values->data = (int32_t*) _lfortran_malloc_alloc(__lfortran_default_allocator, 1*tmp->values->dims[0].length*sizeof(int32_t));
@@ -512,6 +517,7 @@ void __lfortran_c_backend_class_alloc_struct_member_cleanup_01_m__fill__StructTy
         tmp->values->n_dims = 1;
         tmp->values->offset = 0;
         tmp->values->is_allocated = true;
+        tmp->values->owns_contiguous_char_storage = false;
         tmp->values->dims[0].lower_bound = 1;
         tmp->values->dims[0].length = __lfortran_realloc_rhs_length;
         tmp->values->dims[0].stride = 1;
@@ -531,6 +537,7 @@ void __lfortran_c_backend_class_alloc_struct_member_cleanup_01_m__fill__StructTy
         if ((tmp->values) != NULL) {
             (tmp->values)->offset = 0;
             (tmp->values)->is_allocated = false;
+            (tmp->values)->owns_contiguous_char_storage = false;
             if (__lfortran_cleanup_desc_owned_tmp_x2D__x3E_values) {
                 _lfortran_free_alloc_plain(__lfortran_default_allocator, (char*) tmp->values);
                 tmp->values = NULL;
@@ -545,7 +552,7 @@ void __lfortran_c_backend_class_alloc_struct_member_cleanup_01_m__fill_plain_chi
 {
     lfortran_allocator_t* __lfortran_default_allocator = _lfortran_get_default_allocator();
     static const int32_t __libasr_created__array_constant__data[2] = {13, 21};
-    static struct i32___ __libasr_created__array_constant__value = { .data = (int32_t*) __libasr_created__array_constant__data, .n_dims = 1, .offset = 0, .is_allocated = true, .dims = {{1, 2, 1}} };
+    static struct i32___ __libasr_created__array_constant__value = { .data = (int32_t*) __libasr_created__array_constant__data, .n_dims = 1, .offset = 0, .is_allocated = true, .owns_contiguous_char_storage = false, .dims = {{1, 2, 1}} };
     struct i32___* __libasr_created__array_constant_ = &__libasr_created__array_constant__value;
     struct c_backend_class_alloc_struct_member_cleanup_01_m__plain_child_type* tmp = NULL;
     tmp = (struct c_backend_class_alloc_struct_member_cleanup_01_m__plain_child_type*) _lfortran_malloc_alloc(__lfortran_default_allocator, sizeof(struct c_backend_class_alloc_struct_member_cleanup_01_m__plain_child_type));
@@ -567,6 +574,7 @@ void __lfortran_c_backend_class_alloc_struct_member_cleanup_01_m__fill_plain_chi
     tmp->values->dims[0].stride = 1;
     tmp->values->offset = 0;
     tmp->values->data = (int32_t*) _lfortran_malloc_alloc(__lfortran_default_allocator, 1*tmp->values->dims[0].length*sizeof(int32_t));
+    tmp->values->owns_contiguous_char_storage = false;
     tmp->values->is_allocated = true;
     int64_t __lfortran_realloc_old_size = 0;
     if (tmp->values != NULL && tmp->values->is_allocated && tmp->values->data != NULL) {
@@ -589,6 +597,7 @@ void __lfortran_c_backend_class_alloc_struct_member_cleanup_01_m__fill_plain_chi
         _lfortran_free_alloc_plain(__lfortran_default_allocator, (char*) tmp->values->data);
         tmp->values->data = NULL;
         tmp->values->is_allocated = false;
+        tmp->values->owns_contiguous_char_storage = false;
     }
     if (!tmp->values->is_allocated || tmp->values->data == NULL) {
         tmp->values->data = (int32_t*) _lfortran_malloc_alloc(__lfortran_default_allocator, 1*tmp->values->dims[0].length*sizeof(int32_t));
@@ -618,6 +627,7 @@ void __lfortran_c_backend_class_alloc_struct_member_cleanup_01_m__fill_plain_chi
         tmp->values->n_dims = 1;
         tmp->values->offset = 0;
         tmp->values->is_allocated = true;
+        tmp->values->owns_contiguous_char_storage = false;
         tmp->values->dims[0].lower_bound = 1;
         tmp->values->dims[0].length = __lfortran_realloc_rhs_length;
         tmp->values->dims[0].stride = 1;
@@ -633,6 +643,7 @@ void __lfortran_c_backend_class_alloc_struct_member_cleanup_01_m__fill_plain_chi
         if ((tmp->values) != NULL) {
             (tmp->values)->offset = 0;
             (tmp->values)->is_allocated = false;
+            (tmp->values)->owns_contiguous_char_storage = false;
             if (__lfortran_cleanup_desc_owned_tmp_x2D__x3E_values) {
                 _lfortran_free_alloc_plain(__lfortran_default_allocator, (char*) tmp->values);
                 tmp->values = NULL;
@@ -649,7 +660,7 @@ void __lfortran_c_backend_class_alloc_struct_member_cleanup_01_m__mutate_plain_c
     if ((((*holder).item) != NULL) && (((struct __lfortran_runtime_type_header*)((*holder).item))->__lfortran_type_tag == 2648591678709679008)) {
         do {
             static const int32_t __libasr_created__array_constant__data[2] = {34, 55};
-            static struct i32___ __libasr_created__array_constant__value = { .data = (int32_t*) __libasr_created__array_constant__data, .n_dims = 1, .offset = 0, .is_allocated = true, .dims = {{1, 2, 1}} };
+            static struct i32___ __libasr_created__array_constant__value = { .data = (int32_t*) __libasr_created__array_constant__data, .n_dims = 1, .offset = 0, .is_allocated = true, .owns_contiguous_char_storage = false, .dims = {{1, 2, 1}} };
             struct i32___* __libasr_created__array_constant_ = &__libasr_created__array_constant__value;
             struct c_backend_class_alloc_struct_member_cleanup_01_m__plain_child_type* item;
             item = ((struct c_backend_class_alloc_struct_member_cleanup_01_m__plain_child_type*)((*holder).item));
@@ -675,6 +686,7 @@ void __lfortran_c_backend_class_alloc_struct_member_cleanup_01_m__mutate_plain_c
                 _lfortran_free_alloc_plain(__lfortran_default_allocator, (char*) item->values->data);
                 item->values->data = NULL;
                 item->values->is_allocated = false;
+                item->values->owns_contiguous_char_storage = false;
             }
             if (!item->values->is_allocated || item->values->data == NULL) {
                 item->values->data = (int32_t*) _lfortran_malloc_alloc(__lfortran_default_allocator, 1*item->values->dims[0].length*sizeof(int32_t));
@@ -704,6 +716,7 @@ void __lfortran_c_backend_class_alloc_struct_member_cleanup_01_m__mutate_plain_c
                 item->values->n_dims = 1;
                 item->values->offset = 0;
                 item->values->is_allocated = true;
+                item->values->owns_contiguous_char_storage = false;
                 item->values->dims[0].lower_bound = 1;
                 item->values->dims[0].length = __lfortran_realloc_rhs_length;
                 item->values->dims[0].stride = 1;
@@ -874,6 +887,7 @@ void struct_deepcopy_c_backend_class_alloc_struct_member_cleanup_01_m__child_typ
         }
         dest->values->offset = 0;
         dest->values->is_allocated = false;
+        dest->values->owns_contiguous_char_storage = false;
     }
     if (dest->values == NULL) {
         dest->values = _lfortran_malloc_alloc(_lfortran_get_default_allocator(), sizeof(*dest->values));
@@ -882,6 +896,7 @@ void struct_deepcopy_c_backend_class_alloc_struct_member_cleanup_01_m__child_typ
     int32_t __lfortran_array_size_dest_x2D__x3E_values = (((src->values->dims[0].length)));
     dest->values->data = _lfortran_malloc_alloc(_lfortran_get_default_allocator(), __lfortran_array_size_dest_x2D__x3E_values * sizeof(*dest->values->data));
     memcpy(dest->values->data, src->values->data, __lfortran_array_size_dest_x2D__x3E_values * sizeof(*dest->values->data));
+    dest->values->owns_contiguous_char_storage = false;
     memcpy(dest->values->dims, src->values->dims, 32 * sizeof(struct dimension_descriptor));
     dest->values->n_dims = src->values->n_dims;
     dest->values->offset = src->values->offset;
@@ -894,6 +909,7 @@ void struct_deepcopy_c_backend_class_alloc_struct_member_cleanup_01_m__child_typ
         }
         dest->values->offset = 0;
         dest->values->is_allocated = false;
+        dest->values->owns_contiguous_char_storage = false;
     }
 };
 }
@@ -945,6 +961,7 @@ void struct_deepcopy_c_backend_class_alloc_struct_member_cleanup_01_m__plain_chi
         }
         dest->values->offset = 0;
         dest->values->is_allocated = false;
+        dest->values->owns_contiguous_char_storage = false;
     }
     if (dest->values == NULL) {
         dest->values = _lfortran_malloc_alloc(_lfortran_get_default_allocator(), sizeof(*dest->values));
@@ -953,6 +970,7 @@ void struct_deepcopy_c_backend_class_alloc_struct_member_cleanup_01_m__plain_chi
     int32_t __lfortran_array_size_dest_x2D__x3E_values = (((src->values->dims[0].length)));
     dest->values->data = _lfortran_malloc_alloc(_lfortran_get_default_allocator(), __lfortran_array_size_dest_x2D__x3E_values * sizeof(*dest->values->data));
     memcpy(dest->values->data, src->values->data, __lfortran_array_size_dest_x2D__x3E_values * sizeof(*dest->values->data));
+    dest->values->owns_contiguous_char_storage = false;
     memcpy(dest->values->dims, src->values->dims, 32 * sizeof(struct dimension_descriptor));
     dest->values->n_dims = src->values->n_dims;
     dest->values->offset = src->values->offset;
@@ -965,6 +983,7 @@ void struct_deepcopy_c_backend_class_alloc_struct_member_cleanup_01_m__plain_chi
         }
         dest->values->offset = 0;
         dest->values->is_allocated = false;
+        dest->values->owns_contiguous_char_storage = false;
     }
 };
 }

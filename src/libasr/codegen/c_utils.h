@@ -123,6 +123,19 @@ namespace LCompilers {
             && ASRUtils::extract_value(string_type->m_len, len);
     }
 
+    static inline bool is_fixed_length_character_array_type(ASR::ttype_t *t) {
+        if (t == nullptr) {
+            return false;
+        }
+        t = ASRUtils::type_get_past_allocatable_pointer(t);
+        if (!ASRUtils::is_array(t)) {
+            return false;
+        }
+        int64_t len = 0;
+        return get_fixed_character_length_value(ASRUtils::extract_type(t), len)
+            && len >= 1;
+    }
+
     static inline std::string get_fixed_character_length_arg(ASR::ttype_t *t) {
         int64_t len = 0;
         if (get_fixed_character_length_value(t, len)) {
@@ -531,6 +544,7 @@ namespace LCompilers {
                 body += indent + tab + "reshaped->data = (" + element_type + "*) malloc(sizeof(" + element_type + ")*array_size_);\n";
                 body += indent + tab + "reshaped->data = (" + element_type + "*) memcpy(reshaped->data, array->data, sizeof(" + element_type + ")*array_size_);\n";
                 body += indent + tab + "reshaped->n_dims = shape_size_;\n";
+                body += indent + tab + "reshaped->owns_contiguous_char_storage = false;\n";
                 body += indent + tab + "for (int32_t i = 0; i < shape_size_; i++) {\n";
                 body += indent + tab + tab + "reshaped->dims[i].lower_bound = 0;\n";
                 body += indent + tab + tab + "reshaped->dims[i].length = shape->data[i];\n";
@@ -561,6 +575,7 @@ namespace LCompilers {
                 body += indent + tab + "const_array->data = (" + element_type + "*) malloc(sizeof(" + element_type + ")*n);\n";
                 body += indent + tab + "const_array->n_dims = 1;\n";
                 body += indent + tab + "const_array->offset = 0;\n";
+                body += indent + tab + "const_array->owns_contiguous_char_storage = false;\n";
                 body += indent + tab + "const_array->dims[0].lower_bound = 1;\n";
                 body += indent + tab + "const_array->dims[0].length = n;\n";
                 body += indent + tab + "const_array->dims[0].stride = 1;\n";
@@ -655,6 +670,7 @@ namespace LCompilers {
                 body += indent + tab + "result->n_dims = 1;\n";
                 body += indent + tab + "result->offset = 0;\n";
                 body += indent + tab + "result->is_allocated = true;\n";
+                body += indent + tab + "result->owns_contiguous_char_storage = true;\n";
                 body += indent + tab + "result->dims[0].lower_bound = 1;\n";
                 body += indent + tab + "result->dims[0].length = " + std::to_string(nbytes) + ";\n";
                 body += indent + tab + "result->dims[0].stride = 1;\n";
@@ -991,16 +1007,69 @@ class CCPPDSUtils {
                             ASR::dimension_t *m_dims = nullptr;
                             int n_dims = ASRUtils::extract_dimensions_from_ttype(
                                 alloc_value_type, m_dims);
+                            int64_t fixed_character_len = 0;
+                            bool fixed_character_array =
+                                CUtils::is_fixed_length_character_array_type(t)
+                                && CUtils::get_fixed_character_length_value(
+                                    ASRUtils::extract_type(alloc_value_type),
+                                    fixed_character_len)
+                                && fixed_character_len >= 1;
                             std::string array_size_expr =
                                 c_utils_functions->get_array_size_expr(value, n_dims);
                             std::string target_tmp = CUtils::sanitize_c_identifier(target);
                             std::string size_var = "__lfortran_array_size_"
                                 + target_tmp;
+                            auto append_fixed_character_array_cleanup =
+                                    [&](const std::string &prefix) -> std::string {
+                                if (!fixed_character_array) {
+                                    return "";
+                                }
+                                std::string old_size = "__lfortran_char_old_size_"
+                                    + target_tmp;
+                                std::string dim = "__lfortran_char_cleanup_dim_"
+                                    + target_tmp;
+                                std::string idx = "__lfortran_char_cleanup_i_"
+                                    + target_tmp;
+                                std::string cleanup;
+                                cleanup += prefix + "int64_t " + old_size
+                                    + " = 1;\n";
+                                cleanup += prefix + "for (int32_t " + dim
+                                    + " = 0; " + dim + " < " + target
+                                    + "->n_dims; " + dim + "++) {\n";
+                                cleanup += prefix + "    " + old_size
+                                    + " *= " + target + "->dims[" + dim
+                                    + "].length;\n";
+                                cleanup += prefix + "}\n";
+                                cleanup += prefix + "if (" + target
+                                    + "->owns_contiguous_char_storage) {\n";
+                                cleanup += prefix + "    if (" + old_size
+                                    + " > 0 && " + target + "->data[0] != NULL) {\n";
+                                cleanup += prefix + "        _lfortran_free_alloc_plain("
+                                    + "_lfortran_get_default_allocator(), "
+                                    + target + "->data[0]);\n";
+                                cleanup += prefix + "    }\n";
+                                cleanup += prefix + "} else {\n";
+                                cleanup += prefix + "    for (int64_t " + idx
+                                    + " = 0; " + idx + " < " + old_size
+                                    + "; " + idx + "++) {\n";
+                                cleanup += prefix + "        if (" + target
+                                    + "->data[" + idx + "] != NULL) {\n";
+                                cleanup += prefix + "            _lfortran_free_alloc("
+                                    + "_lfortran_get_default_allocator(), "
+                                    + target + "->data[" + idx + "]);\n";
+                                cleanup += prefix + "        }\n";
+                                cleanup += prefix + "    }\n";
+                                cleanup += prefix + "}\n";
+                                cleanup += prefix + target
+                                    + "->owns_contiguous_char_storage = false;\n";
+                                return cleanup;
+                            };
                             if (value == "NULL") {
                                 result = "if (" + target + " != NULL) {\n";
                                 result += "    if (" + target
                                     + "->is_allocated && " + target
                                     + "->data != NULL) {\n";
+                                result += append_fixed_character_array_cleanup("        ");
                                 result += std::string("        _lfortran_free_alloc_plain(")
                                     + "_lfortran_get_default_allocator(), (char*) "
                                     + target + "->data);\n";
@@ -1008,6 +1077,8 @@ class CCPPDSUtils {
                                 result += "    }\n";
                                 result += "    " + target + "->offset = 0;\n";
                                 result += "    " + target + "->is_allocated = false;\n";
+                                result += "    " + target
+                                    + "->owns_contiguous_char_storage = false;\n";
                                 result += "}";
                                 break;
                             }
@@ -1019,6 +1090,7 @@ class CCPPDSUtils {
                             result += "        if (" + target
                                 + "->is_allocated && " + target
                                 + "->data != NULL) {\n";
+                            result += append_fixed_character_array_cleanup("            ");
                             result += std::string("            _lfortran_free_alloc_plain(")
                                 + "_lfortran_get_default_allocator(), (char*) "
                                 + target + "->data);\n";
@@ -1026,6 +1098,8 @@ class CCPPDSUtils {
                             result += "        }\n";
                             result += "        " + target + "->offset = 0;\n";
                             result += "        " + target + "->is_allocated = false;\n";
+                            result += "        " + target
+                                + "->owns_contiguous_char_storage = false;\n";
                             result += "    }\n";
                             result += "    if (" + target + " == NULL) {\n";
                             result += "        " + target + " = _lfortran_malloc_alloc("
@@ -1039,15 +1113,129 @@ class CCPPDSUtils {
                             result += "    " + target + "->data = _lfortran_malloc_alloc("
                                 + "_lfortran_get_default_allocator(), " + size_var
                                 + " * sizeof(*" + target + "->data));\n";
-                            result += "    memcpy(" + target + "->data, " + value
-                                + "->data, " + size_var + " * sizeof("
-                                + "*" + target + "->data));\n";
+                            std::string dense_dim = "__lfortran_char_dense_dim_"
+                                + target_tmp;
+                            std::string dense_stride = "__lfortran_char_dense_stride_"
+                                + target_tmp;
+                            if (fixed_character_array) {
+                                std::string char_data = "__lfortran_char_data_"
+                                    + target_tmp;
+                                std::string copy_idx = "__lfortran_char_copy_i_"
+                                    + target_tmp;
+                                std::string src_index = "__lfortran_char_src_index_"
+                                    + target_tmp;
+                                std::string src_rem = "__lfortran_char_src_rem_"
+                                    + target_tmp;
+                                std::string src_dim = "__lfortran_char_src_dim_"
+                                    + target_tmp;
+                                std::string src_dim_len = "__lfortran_char_src_dim_len_"
+                                    + target_tmp;
+                                std::string src_dim_index = "__lfortran_char_src_dim_index_"
+                                    + target_tmp;
+                                result += "    char *" + char_data + " = NULL;\n";
+                                result += "    if (" + size_var + " > 0) {\n";
+                                result += "        " + char_data
+                                    + " = (char*) _lfortran_malloc_alloc("
+                                    + "_lfortran_get_default_allocator(), "
+                                    + size_var + " * "
+                                    + std::to_string(fixed_character_len)
+                                    + ");\n";
+                                result += "    }\n";
+                                result += "    if (" + size_var + " > 0 && ("
+                                    + target + "->data == NULL || " + char_data
+                                    + " == NULL)) {\n";
+                                result += "        if (" + char_data
+                                    + " != NULL) _lfortran_free_alloc_plain("
+                                    + "_lfortran_get_default_allocator(), "
+                                    + char_data + ");\n";
+                                result += "        if (" + target
+                                    + "->data != NULL) _lfortran_free_alloc_plain("
+                                    + "_lfortran_get_default_allocator(), (char*) "
+                                    + target + "->data);\n";
+                                result += "        " + target + "->data = NULL;\n";
+                                result += "    } else if (" + target
+                                    + "->data != NULL) {\n";
+                                result += "        " + target
+                                    + "->owns_contiguous_char_storage = false;\n";
+                                result += "        for (int64_t " + copy_idx
+                                    + " = 0; " + copy_idx + " < " + size_var
+                                    + "; " + copy_idx + "++) {\n";
+                                result += "            int64_t " + src_index
+                                    + " = " + value + "->offset;\n";
+                                result += "            int64_t " + src_rem
+                                    + " = " + copy_idx + ";\n";
+                                result += "            for (int32_t " + src_dim
+                                    + " = 0; " + src_dim + " < " + value
+                                    + "->n_dims; " + src_dim + "++) {\n";
+                                result += "                int64_t " + src_dim_len
+                                    + " = " + value + "->dims[" + src_dim
+                                    + "].length;\n";
+                                result += "                int64_t " + src_dim_index
+                                    + " = (" + src_dim_len + " > 0 ? "
+                                    + src_rem + " % " + src_dim_len + " : 0);\n";
+                                result += "                " + src_rem
+                                    + " = (" + src_dim_len + " > 0 ? "
+                                    + src_rem + " / " + src_dim_len + " : 0);\n";
+                                result += "                " + src_index
+                                    + " += " + src_dim_index + " * " + value
+                                    + "->dims[" + src_dim + "].stride;\n";
+                                result += "            }\n";
+                                result += "            " + target + "->data["
+                                    + copy_idx + "] = " + char_data + " + ("
+                                    + copy_idx + " * "
+                                    + std::to_string(fixed_character_len)
+                                    + ");\n";
+                                result += "            if (" + value + "->data["
+                                    + src_index + "] != NULL) {\n";
+                                result += "                memcpy(" + target
+                                    + "->data[" + copy_idx + "], " + value
+                                    + "->data[" + src_index + "], (size_t)"
+                                    + std::to_string(fixed_character_len)
+                                    + ");\n";
+                                result += "            } else {\n";
+                                result += "                memset(" + target
+                                    + "->data[" + copy_idx
+                                    + "], ' ', (size_t)"
+                                    + std::to_string(fixed_character_len)
+                                    + ");\n";
+                                result += "            }\n";
+                                result += "        }\n";
+                                result += "        " + target
+                                    + "->owns_contiguous_char_storage = ("
+                                    + size_var + " > 0);\n";
+                                result += "    }\n";
+                            } else {
+                                result += "    memcpy(" + target + "->data, " + value
+                                    + "->data, " + size_var + " * sizeof("
+                                    + "*" + target + "->data));\n";
+                                result += "    " + target
+                                    + "->owns_contiguous_char_storage = false;\n";
+                            }
                             result += "    memcpy(" + target + "->dims, " + value
                                 + "->dims, 32 * sizeof(struct dimension_descriptor));\n";
                             result += "    " + target + "->n_dims = " + value
                                 + "->n_dims;\n";
-                            result += "    " + target + "->offset = " + value
-                                + "->offset;\n";
+                            if (fixed_character_array) {
+                                result += "    " + target + "->offset = 0;\n";
+                                result += "    int64_t " + dense_stride + " = 1;\n";
+                                result += "    for (int32_t " + dense_dim + " = 0; "
+                                    + dense_dim + " < " + target + "->n_dims; "
+                                    + dense_dim + "++) {\n";
+                                result += "        " + target + "->dims[" + dense_dim
+                                    + "].lower_bound = " + value + "->dims["
+                                    + dense_dim + "].lower_bound;\n";
+                                result += "        " + target + "->dims[" + dense_dim
+                                    + "].length = " + value + "->dims[" + dense_dim
+                                    + "].length;\n";
+                                result += "        " + target + "->dims[" + dense_dim
+                                    + "].stride = " + dense_stride + ";\n";
+                                result += "        " + dense_stride + " *= " + target
+                                    + "->dims[" + dense_dim + "].length;\n";
+                                result += "    }\n";
+                            } else {
+                                result += "    " + target + "->offset = " + value
+                                    + "->offset;\n";
+                            }
                             result += "    " + target + "->is_allocated = "
                                 + value + "->is_allocated;\n";
                             result += "} else {\n";
@@ -1055,6 +1243,7 @@ class CCPPDSUtils {
                             result += "        if (" + target
                                 + "->is_allocated && " + target
                                 + "->data != NULL) {\n";
+                            result += append_fixed_character_array_cleanup("            ");
                             result += std::string("            _lfortran_free_alloc_plain(")
                                 + "_lfortran_get_default_allocator(), (char*) "
                                 + target + "->data);\n";
@@ -1062,6 +1251,8 @@ class CCPPDSUtils {
                             result += "        }\n";
                             result += "        " + target + "->offset = 0;\n";
                             result += "        " + target + "->is_allocated = false;\n";
+                            result += "        " + target
+                                + "->owns_contiguous_char_storage = false;\n";
                             result += "    }\n";
                             result += "}";
                         } else {
@@ -1255,7 +1446,8 @@ class CCPPDSUtils {
                                 ";\n    struct dimension_descriptor dims[32];\n" +
                                 "    int32_t n_dims;\n"
                                 "    int32_t offset;\n"
-                                "    bool is_allocated;\n};\n";
+                                "    bool is_allocated;\n"
+                                "    bool owns_contiguous_char_storage;\n};\n";
             if( make_ptr ) {
                 type_name = struct_name + "*";
             } else {
@@ -1621,6 +1813,8 @@ class CCPPDSUtils {
                                 + ");\n";
                             tmp_generated += indent + tab + tab + tab + "dest->" + emitted_mem_name
                                 + "->is_allocated = false;\n";
+                            tmp_generated += indent + tab + tab + tab + "dest->" + emitted_mem_name
+                                + "->owns_contiguous_char_storage = false;\n";
                             tmp_generated += indent + tab + tab + "} else {\n";
                             tmp_generated += indent + tab + tab + tab + "dest->"
                                 + emitted_mem_name + " = src->" + emitted_mem_name + ";\n";

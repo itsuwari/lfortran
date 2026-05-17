@@ -1,0 +1,13 @@
+{
+    "basename": "c_forbid_pattern-c_backend_fixed_char_array_source_fill_01-add7795",
+    "cmd": "lfortran --no-color --show-c {infile} | (! grep -F -q \"_lfortran_strcpy_alloc\") #",
+    "infile": "tests/c_backend_fixed_char_array_source_fill_01.f90",
+    "infile_hash": "38e6ca43cd9951c4928c2bee3d51dc4a47c80e14cc9b22b02abb3f49",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

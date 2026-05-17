@@ -6115,6 +6115,12 @@ c_forbid_pattern = true
 c_forbid_pattern_value = "_lfortran_str_len((char*)"
 
 [[test]]
+filename = "c_backend_fixed_char_array_source_fill_01.f90"
+c = true
+c_forbid_pattern = true
+c_forbid_pattern_value = "_lfortran_strcpy_alloc"
+
+[[test]]
 filename = "c_backend_local_allocatable_cleanup_01.f90"
 c = true
 

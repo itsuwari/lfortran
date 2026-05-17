@@ -767,7 +767,7 @@ R"(
             }
         }
         sub += "}, .n_dims = " + std::to_string(n_dims)
-            + ", .offset = 0, .is_allocated = true };\n";
+            + ", .offset = 0, .is_allocated = true, .owns_contiguous_char_storage = false };\n";
         sub += format_type_c("", pointer_type, emitted_name, false, false)
             + " = &" + value_name;
         return sub;
@@ -2933,7 +2933,7 @@ R"(
                 variable_name, use_ref, dummy)
                 + " = { .data = NULL, .dims = {" + dims_init
                 + "}, .n_dims = " + std::to_string(n_dims)
-                + ", .offset = 0, .is_allocated = false };\n";
+                + ", .offset = 0, .is_allocated = false, .owns_contiguous_char_storage = false };\n";
             sub += indent + format_type_c("", type_name, v_m_name, use_ref, dummy)
                 + " = &" + variable_name;
             return;
@@ -2948,7 +2948,8 @@ R"(
                 if (compiler_created_pointer_array) {
                     sub += ";\n";
                     sub += indent + variable_name + ".data = NULL; "
-                        + variable_name + ".is_allocated = false";
+                        + variable_name + ".is_allocated = false; "
+                        + variable_name + ".owns_contiguous_char_storage = false";
                 } else {
                     sub += " = {0}";
                 }
@@ -2975,7 +2976,8 @@ R"(
                     + std::string(v_m_name) + "->n_dims = "
                     + std::to_string(n_dims) + "; "
                     + std::string(v_m_name) + "->offset = 0; "
-                    + std::string(v_m_name) + "->is_allocated = false";
+                    + std::string(v_m_name) + "->is_allocated = false; "
+                    + std::string(v_m_name) + "->owns_contiguous_char_storage = false";
                 return;
             }
             sub += ";\n";
@@ -3050,7 +3052,7 @@ R"(
                         + format_type_c("", type_name_without_ptr, variable_name, use_ref, dummy)
                         + " = { .data = (" + type_name_copy + "*) " + data_name
                         + ", .n_dims = " + std::to_string(n_dims)
-                        + ", .offset = 0, .is_allocated = true, .dims = {";
+                        + ", .offset = 0, .is_allocated = true, .owns_contiguous_char_storage = false, .dims = {";
                     std::string stride = "1";
                     for (int i = 0; i < n_dims; i++) {
                         std::string start = "1", length = "0";
@@ -3198,7 +3200,7 @@ R"(
                         + descriptor_data + ", .dims = {"
                         + build_descriptor_dims_init() + "}, .n_dims = "
                         + std::to_string(n_dims)
-                        + ", .offset = 0, .is_allocated = true };\n";
+                        + ", .offset = 0, .is_allocated = true, .owns_contiguous_char_storage = false };\n";
                 } else {
                     sub += indent + std::string(v_m_name) + "->data = "
                         + descriptor_data + "; "
@@ -3211,7 +3213,8 @@ R"(
                     } else {
                         sub += std::string((is_fixed_size || !dims.empty()) ? "true" : "false");
                     }
-                    sub += ";\n";
+                    sub += "; " + std::string(v_m_name)
+                        + "->owns_contiguous_char_storage = false;\n";
                     std::string stride = "1";
                     for (int i = 0; i < n_dims; i++) {
                         std::string start = "1", length = "0";
@@ -3330,7 +3333,8 @@ R"(
             + target_src + "->n_dims = "
             + std::to_string(ASRUtils::extract_n_dims_from_ttype(storage.var->m_type))
             + "; " + target_src + "->offset = 0; "
-            + target_src + "->is_allocated = true;\n";
+            + target_src + "->is_allocated = true; "
+            + target_src + "->owns_contiguous_char_storage = false;\n";
         ASR::dimension_t *m_dims = nullptr;
         size_t n_dims = ASRUtils::extract_dimensions_from_ttype(
             storage.var->m_type, m_dims);
@@ -3458,7 +3462,7 @@ R"(
                 decls += "static " + wrapper_type + " " + desc_name + " = { ";
                 decls += ".data = NULL, .dims = {" + dims_init + "}, .n_dims = "
                     + std::to_string(n_dims)
-                    + ", .offset = 0, .is_allocated = false };\n";
+                    + ", .offset = 0, .is_allocated = false, .owns_contiguous_char_storage = false };\n";
                 initializers.push_back("." + member_prefix + emitted_member_name
                     + " = &" + desc_name);
             } else if (ASR::is_a<ASR::StructType_t>(*member_type)
@@ -8991,7 +8995,8 @@ R"(    // Initialise Numpy
                 + array_type_name + ") * " + count_name + ");\n";
             array_setup += base_indent + array_var_name + "->n_dims = 1; "
                 + array_var_name + "->offset = 0; "
-                + array_var_name + "->is_allocated = true;\n";
+                + array_var_name + "->is_allocated = true; "
+                + array_var_name + "->owns_contiguous_char_storage = false;\n";
             array_setup += base_indent + get_descriptor_dim_assignment(
                 array_var_name, 0, std::to_string(lower_bound), count_name, "1") + ";\n";
             array_setup += base_indent + "int32_t " + index_name + " = 0;\n";
@@ -9252,7 +9257,7 @@ R"(    // Initialise Numpy
                 + " + ((" + section_lb + ") - (" + base_lb + ")))), .dims = {{1, (((("
                 + section_ub + ") - (" + section_lb + ")) / (" + section_step
                 + ")) + 1), " + section_step
-                + "}}, .n_dims = 1, .offset = 0, .is_allocated = true })";
+                + "}}, .n_dims = 1, .offset = 0, .is_allocated = true, .owns_contiguous_char_storage = false })";
             if (!setup.empty()) {
                 tmp_buffer_src.push_back(setup);
             }
@@ -9308,7 +9313,7 @@ R"(    // Initialise Numpy
                     + "))}}, .n_dims = 1, .offset = (" + base_expr
                     + "->offset + (" + base_expr + "->dims[0].stride * (("
                     + section_lb + ") - (" + base_lb
-                    + ")))), .is_allocated = true })";
+                    + ")))), .is_allocated = true, .owns_contiguous_char_storage = false })";
                 if (!setup.empty()) {
                     tmp_buffer_src.push_back(setup);
                 }
