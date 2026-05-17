@@ -47,6 +47,8 @@ public:
 
     int counter;
     std::set<std::string> emitted_aggregate_names;
+    std::vector<ASR::symbol_t*> c_reachable_aggregate_symbols;
+    std::set<uint64_t> c_reachable_aggregate_symbol_hashes;
     std::unordered_map<const ASR::symbol_t*, std::string> enum_name_map;
     std::string string_concat_helper_name;
     bool defer_c_tbp_parent_registration_defs = false;
@@ -980,6 +982,7 @@ R"(
                 continue;
             }
             ASR::Variable_t *v = ASR::down_cast<ASR::Variable_t>(item.second);
+            mark_c_reachable_variable_type(*v);
             std::string decl = get_split_visible_definition(*v);
             unit_src += decl;
             if (!decl.empty()) {
@@ -1232,6 +1235,450 @@ R"(
         return fn != nullptr && startswith(fn->m_name, "_lcompilers_");
     }
 
+    void reset_c_reachable_aggregate_types() {
+        c_reachable_aggregate_symbols.clear();
+        c_reachable_aggregate_symbol_hashes.clear();
+    }
+
+    bool is_c_aggregate_symbol(const ASR::symbol_t *sym) const {
+        if (sym == nullptr) {
+            return false;
+        }
+        return ASR::is_a<ASR::Struct_t>(*sym)
+            || ASR::is_a<ASR::Enum_t>(*sym)
+            || ASR::is_a<ASR::Union_t>(*sym);
+    }
+
+    void mark_c_reachable_type(ASR::ttype_t *type,
+            ASR::symbol_t *type_declaration=nullptr) {
+        if (type_declaration != nullptr) {
+            mark_c_reachable_aggregate_symbol(type_declaration);
+        }
+        if (type == nullptr) {
+            return;
+        }
+        if (ASR::is_a<ASR::Array_t>(*type)) {
+            ASR::Array_t *array_type = ASR::down_cast<ASR::Array_t>(type);
+            mark_c_reachable_type(array_type->m_type);
+        } else if (ASR::is_a<ASR::Allocatable_t>(*type)) {
+            ASR::Allocatable_t *alloc_type = ASR::down_cast<ASR::Allocatable_t>(type);
+            mark_c_reachable_type(alloc_type->m_type);
+        } else if (ASR::is_a<ASR::Pointer_t>(*type)) {
+            ASR::Pointer_t *ptr_type = ASR::down_cast<ASR::Pointer_t>(type);
+            mark_c_reachable_type(ptr_type->m_type);
+        } else if (ASR::is_a<ASR::EnumType_t>(*type)) {
+            ASR::EnumType_t *enum_type = ASR::down_cast<ASR::EnumType_t>(type);
+            mark_c_reachable_aggregate_symbol(enum_type->m_enum_type);
+        } else if (ASR::is_a<ASR::StructType_t>(*type)) {
+            ASR::StructType_t *struct_type = ASR::down_cast<ASR::StructType_t>(type);
+            for (size_t i = 0; i < struct_type->n_data_member_types; i++) {
+                mark_c_reachable_type(struct_type->m_data_member_types[i]);
+            }
+            for (size_t i = 0; i < struct_type->n_member_function_types; i++) {
+                mark_c_reachable_type(struct_type->m_member_function_types[i]);
+            }
+        } else if (ASR::is_a<ASR::UnionType_t>(*type)) {
+            ASR::UnionType_t *union_type = ASR::down_cast<ASR::UnionType_t>(type);
+            for (size_t i = 0; i < union_type->n_data_member_types; i++) {
+                mark_c_reachable_type(union_type->m_data_member_types[i]);
+            }
+        } else if (ASR::is_a<ASR::List_t>(*type)) {
+            ASR::List_t *list_type = ASR::down_cast<ASR::List_t>(type);
+            mark_c_reachable_type(list_type->m_type);
+        } else if (ASR::is_a<ASR::Set_t>(*type)) {
+            ASR::Set_t *set_type = ASR::down_cast<ASR::Set_t>(type);
+            mark_c_reachable_type(set_type->m_type);
+        } else if (ASR::is_a<ASR::Tuple_t>(*type)) {
+            ASR::Tuple_t *tuple_type = ASR::down_cast<ASR::Tuple_t>(type);
+            for (size_t i = 0; i < tuple_type->n_type; i++) {
+                mark_c_reachable_type(tuple_type->m_type[i]);
+            }
+        } else if (ASR::is_a<ASR::Dict_t>(*type)) {
+            ASR::Dict_t *dict_type = ASR::down_cast<ASR::Dict_t>(type);
+            mark_c_reachable_type(dict_type->m_key_type);
+            mark_c_reachable_type(dict_type->m_value_type);
+        } else if (ASR::is_a<ASR::FunctionType_t>(*type)) {
+            ASR::FunctionType_t *fn_type = ASR::down_cast<ASR::FunctionType_t>(type);
+            for (size_t i = 0; i < fn_type->n_arg_types; i++) {
+                mark_c_reachable_type(fn_type->m_arg_types[i]);
+            }
+            mark_c_reachable_type(fn_type->m_return_var_type);
+        }
+    }
+
+    void mark_c_reachable_variable_type(const ASR::Variable_t &v) {
+        mark_c_reachable_type(v.m_type, v.m_type_declaration);
+    }
+
+    void mark_c_reachable_member_owner(ASR::symbol_t *member) {
+        member = ASRUtils::symbol_get_past_external(member);
+        if (member == nullptr) {
+            return;
+        }
+        ASR::symbol_t *owner = ASRUtils::get_asr_owner(member);
+        mark_c_reachable_aggregate_symbol(owner);
+    }
+
+    void mark_c_reachable_variable_symbol(ASR::symbol_t *sym) {
+        sym = ASRUtils::symbol_get_past_external(sym);
+        if (sym != nullptr && ASR::is_a<ASR::Variable_t>(*sym)) {
+            mark_c_reachable_variable_type(*ASR::down_cast<ASR::Variable_t>(sym));
+            mark_c_reachable_member_owner(sym);
+        }
+    }
+
+    void mark_c_reachable_expr_variable_type(ASR::expr_t *expr) {
+        if (expr != nullptr && ASR::is_a<ASR::Var_t>(*expr)) {
+            mark_c_reachable_variable_symbol(ASR::down_cast<ASR::Var_t>(expr)->m_v);
+        }
+    }
+
+    void mark_c_reachable_function_interface(const ASR::Function_t &fn) {
+        if (fn.m_function_signature != nullptr) {
+            mark_c_reachable_type(fn.m_function_signature);
+        }
+        for (size_t i = 0; i < fn.n_args; i++) {
+            mark_c_reachable_expr_variable_type(fn.m_args[i]);
+        }
+        mark_c_reachable_expr_variable_type(fn.m_return_var);
+    }
+
+    void mark_c_reachable_procedure_interface(ASR::symbol_t *sym) {
+        sym = ASRUtils::symbol_get_past_external(sym);
+        if (sym == nullptr) {
+            return;
+        }
+        if (ASR::is_a<ASR::StructMethodDeclaration_t>(*sym)) {
+            sym = ASRUtils::symbol_get_past_external(
+                ASR::down_cast<ASR::StructMethodDeclaration_t>(sym)->m_proc);
+        }
+        if (sym != nullptr && ASR::is_a<ASR::Function_t>(*sym)) {
+            mark_c_reachable_function_interface(*ASR::down_cast<ASR::Function_t>(sym));
+        }
+    }
+
+    void mark_c_reachable_aggregate_symbol(ASR::symbol_t *sym) {
+        sym = ASRUtils::symbol_get_past_external(sym);
+        if (!is_c_aggregate_symbol(sym)) {
+            return;
+        }
+        uint64_t key = get_hash(reinterpret_cast<ASR::asr_t*>(sym));
+        if (!c_reachable_aggregate_symbol_hashes.insert(key).second) {
+            return;
+        }
+
+        if (ASR::is_a<ASR::Struct_t>(*sym)) {
+            ASR::Struct_t *struct_t = ASR::down_cast<ASR::Struct_t>(sym);
+            if (struct_t->m_parent != nullptr) {
+                mark_c_reachable_aggregate_symbol(struct_t->m_parent);
+            }
+            for (size_t i = 0; i < struct_t->n_members; i++) {
+                ASR::symbol_t *member = struct_t->m_symtab->get_symbol(
+                    struct_t->m_members[i]);
+                if (member != nullptr && ASR::is_a<ASR::Variable_t>(*member)) {
+                    mark_c_reachable_variable_type(
+                        *ASR::down_cast<ASR::Variable_t>(member));
+                }
+            }
+        } else if (ASR::is_a<ASR::Union_t>(*sym)) {
+            ASR::Union_t *union_t = ASR::down_cast<ASR::Union_t>(sym);
+            if (union_t->m_parent != nullptr) {
+                mark_c_reachable_aggregate_symbol(union_t->m_parent);
+            }
+            for (size_t i = 0; i < union_t->n_members; i++) {
+                ASR::symbol_t *member = union_t->m_symtab->get_symbol(
+                    union_t->m_members[i]);
+                if (member != nullptr && ASR::is_a<ASR::Variable_t>(*member)) {
+                    mark_c_reachable_variable_type(
+                        *ASR::down_cast<ASR::Variable_t>(member));
+                }
+            }
+        }
+
+        c_reachable_aggregate_symbols.push_back(sym);
+    }
+
+    class CReachableAggregateTypeCollector :
+        public ASR::BaseWalkVisitor<CReachableAggregateTypeCollector>
+    {
+    public:
+        ASRToCVisitor &codegen;
+        std::set<uint64_t> visited_block_hashes;
+        std::set<uint64_t> visited_function_hashes;
+
+        CReachableAggregateTypeCollector(ASRToCVisitor &codegen)
+            : codegen{codegen} {}
+
+        void visit_Function(const ASR::Function_t &x) {
+            uint64_t key = get_hash(reinterpret_cast<ASR::asr_t*>(
+                const_cast<ASR::Function_t*>(&x)));
+            if (!visited_function_hashes.insert(key).second) {
+                return;
+            }
+            codegen.mark_c_reachable_function_interface(x);
+            for (auto &item : x.m_symtab->get_scope()) {
+                ASR::symbol_t *sym = ASRUtils::symbol_get_past_external(
+                    item.second);
+                if (sym != nullptr && ASR::is_a<ASR::Variable_t>(*sym)) {
+                    visit_Variable(*ASR::down_cast<ASR::Variable_t>(sym));
+                }
+                if (ASR::is_a<ASR::Function_t>(*item.second)) {
+                    ASR::Function_t *nested_fn =
+                        ASR::down_cast<ASR::Function_t>(item.second);
+                    if (!codegen.is_procedure_dummy_function_argument(
+                            *nested_fn)) {
+                        visit_Function(*nested_fn);
+                    }
+                }
+            }
+            visit_ttype(*x.m_function_signature);
+            for (size_t i = 0; i < x.n_args; i++) {
+                visit_expr(*x.m_args[i]);
+            }
+            for (size_t i = 0; i < x.n_body; i++) {
+                visit_stmt(*x.m_body[i]);
+            }
+            if (x.m_return_var != nullptr) {
+                visit_expr(*x.m_return_var);
+            }
+        }
+
+        void visit_Program(const ASR::Program_t &x) {
+            for (auto &item : x.m_symtab->get_scope()) {
+                ASR::symbol_t *sym = ASRUtils::symbol_get_past_external(
+                    item.second);
+                if (sym != nullptr && ASR::is_a<ASR::Variable_t>(*sym)) {
+                    visit_Variable(*ASR::down_cast<ASR::Variable_t>(sym));
+                }
+            }
+            for (size_t i = 0; i < x.n_body; i++) {
+                visit_stmt(*x.m_body[i]);
+            }
+        }
+
+        void visit_Block(const ASR::Block_t &x) {
+            for (auto &item : x.m_symtab->get_scope()) {
+                ASR::symbol_t *sym = ASRUtils::symbol_get_past_external(
+                    item.second);
+                if (sym != nullptr && ASR::is_a<ASR::Variable_t>(*sym)) {
+                    visit_Variable(*ASR::down_cast<ASR::Variable_t>(sym));
+                }
+            }
+            for (size_t i = 0; i < x.n_body; i++) {
+                visit_stmt(*x.m_body[i]);
+            }
+        }
+
+        void visit_AssociateBlock(const ASR::AssociateBlock_t &x) {
+            for (auto &item : x.m_symtab->get_scope()) {
+                ASR::symbol_t *sym = ASRUtils::symbol_get_past_external(
+                    item.second);
+                if (sym != nullptr && ASR::is_a<ASR::Variable_t>(*sym)) {
+                    visit_Variable(*ASR::down_cast<ASR::Variable_t>(sym));
+                }
+            }
+            for (size_t i = 0; i < x.n_body; i++) {
+                visit_stmt(*x.m_body[i]);
+            }
+        }
+
+        void visit_AssociateBlockCall(const ASR::AssociateBlockCall_t &x) {
+            ASR::symbol_t *sym = ASRUtils::symbol_get_past_external(x.m_m);
+            if (sym == nullptr || !ASR::is_a<ASR::AssociateBlock_t>(*sym)) {
+                return;
+            }
+            uint64_t key = get_hash(reinterpret_cast<ASR::asr_t*>(sym));
+            if (!visited_block_hashes.insert(key).second) {
+                return;
+            }
+            visit_AssociateBlock(*ASR::down_cast<ASR::AssociateBlock_t>(sym));
+        }
+
+        void visit_BlockCall(const ASR::BlockCall_t &x) {
+            ASR::symbol_t *sym = ASRUtils::symbol_get_past_external(x.m_m);
+            if (sym == nullptr || !ASR::is_a<ASR::Block_t>(*sym)) {
+                return;
+            }
+            uint64_t key = get_hash(reinterpret_cast<ASR::asr_t*>(sym));
+            if (!visited_block_hashes.insert(key).second) {
+                return;
+            }
+            visit_Block(*ASR::down_cast<ASR::Block_t>(sym));
+        }
+
+        void visit_Variable(const ASR::Variable_t &x) {
+            codegen.mark_c_reachable_type(x.m_type, x.m_type_declaration);
+            ASR::BaseWalkVisitor<CReachableAggregateTypeCollector>::
+                visit_Variable(x);
+        }
+
+        void visit_Var(const ASR::Var_t &x) {
+            codegen.mark_c_reachable_variable_symbol(x.m_v);
+        }
+
+        void visit_FunctionCall(const ASR::FunctionCall_t &x) {
+            codegen.mark_c_reachable_procedure_interface(x.m_name);
+            codegen.mark_c_reachable_procedure_interface(x.m_original_name);
+            ASR::ttype_t *result_type = ASRUtils::extract_type(x.m_type);
+            if (ASR::is_a<ASR::StructType_t>(*result_type)) {
+                codegen.mark_c_reachable_aggregate_symbol(
+                    ASRUtils::get_struct_sym_from_struct_expr(
+                        const_cast<ASR::expr_t*>(&x.base)));
+            } else if (ASR::is_a<ASR::UnionType_t>(*result_type)) {
+                codegen.mark_c_reachable_aggregate_symbol(
+                    ASRUtils::get_union_sym_from_union_expr(
+                        const_cast<ASR::expr_t*>(&x.base)));
+            } else if (ASR::is_a<ASR::EnumType_t>(*result_type)) {
+                codegen.mark_c_reachable_aggregate_symbol(
+                    ASR::down_cast<ASR::EnumType_t>(result_type)->m_enum_type);
+            }
+            ASR::BaseWalkVisitor<CReachableAggregateTypeCollector>::
+                visit_FunctionCall(x);
+        }
+
+        void visit_SubroutineCall(const ASR::SubroutineCall_t &x) {
+            codegen.mark_c_reachable_procedure_interface(x.m_name);
+            codegen.mark_c_reachable_procedure_interface(x.m_original_name);
+            ASR::BaseWalkVisitor<CReachableAggregateTypeCollector>::
+                visit_SubroutineCall(x);
+        }
+
+        void visit_Allocate(const ASR::Allocate_t &x) {
+            for (size_t i = 0; i < x.n_args; i++) {
+                codegen.mark_c_reachable_aggregate_symbol(
+                    x.m_args[i].m_sym_subclass);
+                codegen.mark_c_reachable_type(x.m_args[i].m_type);
+            }
+            ASR::BaseWalkVisitor<CReachableAggregateTypeCollector>::
+                visit_Allocate(x);
+        }
+
+        void visit_StructInstanceMember(const ASR::StructInstanceMember_t &x) {
+            codegen.mark_c_reachable_member_owner(x.m_m);
+            codegen.mark_c_reachable_type(x.m_type);
+            ASR::BaseWalkVisitor<CReachableAggregateTypeCollector>::
+                visit_StructInstanceMember(x);
+        }
+
+        void visit_StructStaticMember(const ASR::StructStaticMember_t &x) {
+            codegen.mark_c_reachable_member_owner(x.m_m);
+            codegen.mark_c_reachable_type(x.m_type);
+            ASR::BaseWalkVisitor<CReachableAggregateTypeCollector>::
+                visit_StructStaticMember(x);
+        }
+
+        void visit_EnumStaticMember(const ASR::EnumStaticMember_t &x) {
+            codegen.mark_c_reachable_member_owner(x.m_m);
+            codegen.mark_c_reachable_type(x.m_type);
+            ASR::BaseWalkVisitor<CReachableAggregateTypeCollector>::
+                visit_EnumStaticMember(x);
+        }
+
+        void visit_UnionInstanceMember(const ASR::UnionInstanceMember_t &x) {
+            codegen.mark_c_reachable_member_owner(x.m_m);
+            codegen.mark_c_reachable_type(x.m_type);
+            ASR::BaseWalkVisitor<CReachableAggregateTypeCollector>::
+                visit_UnionInstanceMember(x);
+        }
+
+        void visit_StructConstructor(const ASR::StructConstructor_t &x) {
+            codegen.mark_c_reachable_aggregate_symbol(x.m_dt_sym);
+            ASR::BaseWalkVisitor<CReachableAggregateTypeCollector>::
+                visit_StructConstructor(x);
+        }
+
+        void visit_StructConstant(const ASR::StructConstant_t &x) {
+            codegen.mark_c_reachable_aggregate_symbol(x.m_dt_sym);
+            ASR::BaseWalkVisitor<CReachableAggregateTypeCollector>::
+                visit_StructConstant(x);
+        }
+
+        void visit_EnumConstructor(const ASR::EnumConstructor_t &x) {
+            codegen.mark_c_reachable_aggregate_symbol(x.m_dt_sym);
+            ASR::BaseWalkVisitor<CReachableAggregateTypeCollector>::
+                visit_EnumConstructor(x);
+        }
+
+        void visit_UnionConstructor(const ASR::UnionConstructor_t &x) {
+            codegen.mark_c_reachable_aggregate_symbol(x.m_dt_sym);
+            ASR::BaseWalkVisitor<CReachableAggregateTypeCollector>::
+                visit_UnionConstructor(x);
+        }
+
+        void visit_EnumType(const ASR::EnumType_t &x) {
+            codegen.mark_c_reachable_aggregate_symbol(x.m_enum_type);
+            ASR::BaseWalkVisitor<CReachableAggregateTypeCollector>::
+                visit_EnumType(x);
+        }
+    };
+
+    void collect_c_reachable_aggregate_types_from_function(
+            const ASR::Function_t &fn) {
+        CReachableAggregateTypeCollector collector(*this);
+        collector.visit_Function(fn);
+    }
+
+    void collect_c_reachable_aggregate_types_from_program(
+            const ASR::Program_t &program) {
+        CReachableAggregateTypeCollector collector(*this);
+        collector.visit_Program(program);
+    }
+
+    void mark_c_reachable_public_aggregate_symbols(const ASR::Module_t &mod) {
+        for (auto &item : mod.m_symtab->get_scope()) {
+            ASR::symbol_t *sym = ASRUtils::symbol_get_past_external(item.second);
+            if (sym == nullptr) {
+                continue;
+            }
+            if (ASR::is_a<ASR::Struct_t>(*sym)) {
+                ASR::Struct_t *struct_t = ASR::down_cast<ASR::Struct_t>(sym);
+                if (struct_t->m_access == ASR::accessType::Public) {
+                    mark_c_reachable_aggregate_symbol(sym);
+                }
+            } else if (ASR::is_a<ASR::Enum_t>(*sym)) {
+                ASR::Enum_t *enum_t = ASR::down_cast<ASR::Enum_t>(sym);
+                if (enum_t->m_access == ASR::accessType::Public) {
+                    mark_c_reachable_aggregate_symbol(sym);
+                }
+            } else if (ASR::is_a<ASR::Union_t>(*sym)) {
+                ASR::Union_t *union_t = ASR::down_cast<ASR::Union_t>(sym);
+                if (union_t->m_access == ASR::accessType::Public) {
+                    mark_c_reachable_aggregate_symbol(sym);
+                }
+            }
+        }
+    }
+
+    bool aggregate_owner_loaded_from_mod(const ASR::symbol_t *sym) const {
+        ASR::Module_t *mod = ASRUtils::get_sym_module0(sym);
+        return mod != nullptr && mod->m_loaded_from_mod;
+    }
+
+    void emit_reachable_aggregate_type_decls() {
+        std::string saved_src = src;
+        SymbolTable *saved_scope = current_scope;
+        current_scope = global_scope;
+        indentation_level = 0;
+        for (ASR::symbol_t *sym : c_reachable_aggregate_symbols) {
+            bool loaded_from_mod = aggregate_owner_loaded_from_mod(sym);
+            bool saved_cleanup_suppress = suppress_c_struct_cleanup_registration;
+            bool saved_runtime_info_suppress =
+                suppress_c_struct_runtime_info_registration;
+            bool saved_tbp_parent_suppress = suppress_c_tbp_parent_registration;
+            suppress_c_struct_cleanup_registration = loaded_from_mod;
+            suppress_c_struct_runtime_info_registration = loaded_from_mod;
+            suppress_c_tbp_parent_registration = loaded_from_mod;
+            src = "";
+            visit_symbol(*sym);
+            suppress_c_struct_cleanup_registration = saved_cleanup_suppress;
+            suppress_c_struct_runtime_info_registration =
+                saved_runtime_info_suppress;
+            suppress_c_tbp_parent_registration = saved_tbp_parent_suppress;
+        }
+        src = saved_src;
+        current_scope = saved_scope;
+    }
+
     class CRequiredSpreadHelperCollector :
         public ASR::BaseWalkVisitor<CRequiredSpreadHelperCollector>
     {
@@ -1394,6 +1841,7 @@ R"(
         }
 
         append_module_variable_split_unit(x, units);
+        mark_c_reachable_public_aggregate_symbols(x);
 
         std::vector<ASR::Function_t*> functions =
             get_complete_function_definitions(
@@ -1402,6 +1850,7 @@ R"(
             if (fn == nullptr) {
                 return;
             }
+            collect_c_reachable_aggregate_types_from_function(*fn);
             bool has_typevar = false;
             std::string expected_decl =
                 get_function_declaration(*fn, has_typevar, false, false);
@@ -1485,34 +1934,8 @@ R"(
             get_complete_function_definitions(x.m_symtab);
         SymbolTable *current_scope_copy = current_scope;
         current_scope = x.m_symtab;
-        std::map<std::string, std::vector<std::string>> struct_dep_graph;
-        for (auto &item : x.m_symtab->get_scope()) {
-            if (ASR::is_a<ASR::Struct_t>(*item.second)
-                    || ASR::is_a<ASR::Enum_t>(*item.second)
-                    || ASR::is_a<ASR::Union_t>(*item.second)) {
-                std::vector<std::string> struct_deps_vec;
-                std::pair<char**, size_t> struct_deps_ptr =
-                    ASRUtils::symbol_dependencies(item.second);
-                for (size_t i = 0; i < struct_deps_ptr.second; i++) {
-                    struct_deps_vec.push_back(std::string(struct_deps_ptr.first[i]));
-                }
-                struct_dep_graph[item.first] = struct_deps_vec;
-            }
-        }
-        std::vector<std::string> struct_deps = ASRUtils::order_deps(struct_dep_graph);
-        for (const auto &item : struct_deps) {
-            ASR::symbol_t *struct_sym = x.m_symtab->get_symbol(item);
-            if (struct_sym == nullptr) {
-                continue;
-            }
-            if (!(ASR::is_a<ASR::Struct_t>(*struct_sym)
-                    || ASR::is_a<ASR::Enum_t>(*struct_sym)
-                    || ASR::is_a<ASR::Union_t>(*struct_sym))) {
-                continue;
-            }
-            visit_symbol(*struct_sym);
-        }
         auto emit_function_unit = [&](ASR::Function_t *fn) {
+            collect_c_reachable_aggregate_types_from_function(*fn);
             visit_Function(*fn);
             if (!src.empty()) {
                 std::string unit_filename =
@@ -1552,6 +1975,7 @@ R"(
             }
         }
 
+        collect_c_reachable_aggregate_types_from_program(x);
         std::vector<std::string> body_stmts;
         for (size_t i = 0; i < x.n_body; i++) {
             this->visit_stmt(*x.m_body[i]);
@@ -5330,6 +5754,7 @@ R"(
         compact_constant_data_body.clear();
         compact_constant_data_decls.clear();
         compact_constant_binary_data_units.clear();
+        reset_c_reachable_aggregate_types();
         defer_c_tbp_parent_registration_defs = true;
         deferred_c_tbp_parent_registration_type_ids.clear();
         deferred_c_tbp_parent_force_link_type_ids.clear();
@@ -5367,30 +5792,10 @@ R"(
         for (auto &item : x.m_symtab->get_scope()) {
             if (ASR::is_a<ASR::Variable_t>(*item.second)) {
                 ASR::Variable_t *v = ASR::down_cast<ASR::Variable_t>(item.second);
+                mark_c_reachable_variable_type(*v);
                 global_var_defs += get_global_definition(*v);
                 global_var_decls += get_global_extern_decl(*v);
             }
-        }
-
-        std::map<std::string, std::vector<std::string>> struct_dep_graph;
-        for (auto &item : x.m_symtab->get_scope()) {
-            if (ASR::is_a<ASR::Struct_t>(*item.second) ||
-                ASR::is_a<ASR::Enum_t>(*item.second) ||
-                ASR::is_a<ASR::Union_t>(*item.second)) {
-                std::vector<std::string> struct_deps_vec;
-                std::pair<char**, size_t> struct_deps_ptr = ASRUtils::symbol_dependencies(item.second);
-                for( size_t i = 0; i < struct_deps_ptr.second; i++ ) {
-                    struct_deps_vec.push_back(std::string(struct_deps_ptr.first[i]));
-                }
-                struct_dep_graph[item.first] = struct_deps_vec;
-            }
-        }
-
-        std::vector<std::string> struct_deps = ASRUtils::order_deps(struct_dep_graph);
-        for (auto &item : struct_deps) {
-            ASR::symbol_t* struct_sym = x.m_symtab->get_symbol(item);
-            visit_symbol(*struct_sym);
-            array_types_decls += src;
         }
 
         std::vector<std::pair<std::string, std::string>> unit_bodies;
@@ -5411,6 +5816,7 @@ R"(
             }
             emitted_global_functions.insert(
                 get_hash(reinterpret_cast<ASR::asr_t*>(function)));
+            collect_c_reachable_aggregate_types_from_function(*function);
             visit_Function(*function);
             if (!src.empty()) {
                 global_functions_body += src;
@@ -5445,6 +5851,7 @@ R"(
                 break;
             }
             for (ASR::Function_t *function : pending) {
+                collect_c_reachable_aggregate_types_from_function(*function);
                 visit_Function(*function);
                 if (!src.empty()) {
                     global_functions_body += src;
@@ -5473,6 +5880,7 @@ R"(
                 break;
             }
             for (ASR::Function_t *function : pending) {
+                collect_c_reachable_aggregate_types_from_function(*function);
                 visit_Function(*function);
                 if (!src.empty()) {
                     global_functions_body += src;
@@ -5485,6 +5893,7 @@ R"(
                 consume_pending_intrinsic_module_functions(
                     emitted_global_functions);
             for (ASR::Function_t *function : pending_intrinsics) {
+                collect_c_reachable_aggregate_types_from_function(*function);
                 visit_Function(*function);
                 if (!src.empty()) {
                     global_functions_body += src;
@@ -5496,6 +5905,7 @@ R"(
                 consume_pending_function_definitions(
                     x.m_symtab, emitted_global_functions, true);
             for (ASR::Function_t *function : pending_helpers) {
+                collect_c_reachable_aggregate_types_from_function(*function);
                 visit_Function(*function);
                 if (!src.empty()) {
                     global_functions_body += src;
@@ -5538,7 +5948,8 @@ R"(
         indentation_level = 0;
         bracket_open = 0;
         current_scope = global_scope;
-        std::string module_aggregate_decls = collect_module_aggregate_decls(x);
+        emit_reachable_aggregate_type_decls();
+        std::string module_aggregate_decls;
         std::string helper_defs;
         finalize_common_sections(helper_defs);
         std::string module_var_decls = collect_module_extern_decls(x);

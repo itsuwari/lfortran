@@ -1,0 +1,13 @@
+{
+    "basename": "c_split_header_require_pattern-c_backend_reachable_nested_function_type_01-d12319d",
+    "cmd": "tmpdir=$(mktemp -d /tmp/lfortran-c-split-header.XXXXXX); trap 'rm -rf \"$tmpdir\"' EXIT; lfortran --backend=c --separate-compilation -c {infile} -o \"$tmpdir/main.o\" && grep -R -F -q nested_result_type_424242 \"$tmpdir\"/*.o.tmp.split/*.h #",
+    "infile": "tests/c_backend_reachable_nested_function_type_01.f90",
+    "infile_hash": "86ee9cc0bd8c762c7a3b727f6c3aa27a671cc75cbea15385ff212076",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

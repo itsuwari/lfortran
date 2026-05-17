@@ -1,0 +1,13 @@
+{
+    "basename": "c_split_header_require_pattern-c_backend_reachable_enum_member_01-6636649",
+    "cmd": "tmpdir=$(mktemp -d /tmp/lfortran-c-split-header.XXXXXX); trap 'rm -rf \"$tmpdir\"' EXIT; lfortran --backend=c --separate-compilation -c {infile} -o \"$tmpdir/main.o\" && grep -R -F -q enum_member_marker_314159 \"$tmpdir\"/*.o.tmp.split/*.h #",
+    "infile": "tests/c_backend_reachable_enum_member_01.f90",
+    "infile_hash": "850323df64bbbec21ea47dbbb5b85a0494362b88ab34c8db8679844a",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

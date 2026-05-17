@@ -1,0 +1,13 @@
+{
+    "basename": "c_split_consumer_require_pattern-c_backend_imported_result_01-b814549",
+    "cmd": "tmpdir=$(mktemp -d /tmp/lfortran-c-split-consumer-require.XXXXXX); trap 'rm -rf \"$tmpdir\"' EXIT; lfortran --backend=c --separate-compilation -c tests/c_backend_imported_result_mod_01.f90 -o \"$tmpdir/mod.o\" > \"$tmpdir/mod.out\" 2> \"$tmpdir/mod.err\" && lfortran --backend=c --separate-compilation -I\"$tmpdir\" -c {infile} -o \"$tmpdir/main.o\" > \"$tmpdir/main.out\" 2> \"$tmpdir/main.err\" && grep -R -F -q \"sizeof(struct c_backend_imported_result_mod_01__child_result_type_24680)\" \"$tmpdir/main.o.tmp.split\"/*.c #",
+    "infile": "tests/c_backend_imported_result_01.f90",
+    "infile_hash": "b836b0645e3aec28ce0824272a0bd7584e334fa9897cfe4bcbc0b9e6",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}
