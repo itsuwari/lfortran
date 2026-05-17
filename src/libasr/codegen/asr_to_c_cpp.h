@@ -1842,11 +1842,11 @@ public:
         require_c_struct_runtime_info(source_struct_sym);
     }
 
-    void ensure_c_backend_constructor_macro_decl() {
+    std::string get_c_backend_constructor_macro_decl() const {
         if (!is_c) {
-            return;
+            return "";
         }
-        std::string macro_decl = "#ifndef LFORTRAN_C_BACKEND_CONSTRUCTOR\n"
+        return "#ifndef LFORTRAN_C_BACKEND_CONSTRUCTOR\n"
             "#if defined(__GNUC__) || defined(__clang__)\n"
             "#define LFORTRAN_C_BACKEND_CONSTRUCTOR __attribute__((constructor))\n"
             "#else\n"
@@ -1889,6 +1889,13 @@ public:
             "#define LFORTRAN_C_BACKEND_TBP_CACHE_STORAGE\n"
             "#endif\n"
             "#endif\n\n";
+    }
+
+    void ensure_c_backend_constructor_macro_decl() {
+        if (!is_c) {
+            return;
+        }
+        std::string macro_decl = get_c_backend_constructor_macro_decl();
         if (array_types_decls.find("#ifndef LFORTRAN_C_BACKEND_CONSTRUCTOR\n")
                 == std::string::npos) {
             array_types_decls = macro_decl + array_types_decls;

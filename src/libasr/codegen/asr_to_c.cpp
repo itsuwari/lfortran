@@ -5223,10 +5223,10 @@ R"(
         std::transform(header_guard.begin(), header_guard.end(), header_guard.begin(), ::toupper);
         header_guard += "_GENERATED_H";
 
-        std::string header_array_type_decls = array_types_decls;
         const std::string dimension_descriptor_decl =
             "\nstruct dimension_descriptor\n"
             "{\n    int32_t lower_bound, length, stride;\n};\n";
+        std::string header_array_type_decls = array_types_decls;
         if (!header_array_type_decls.empty()
                 && header_array_type_decls.find(dimension_descriptor_decl) == std::string::npos) {
             header_array_type_decls = dimension_descriptor_decl + header_array_type_decls;
@@ -5264,10 +5264,57 @@ R"(
         std::vector<SplitUnitDecl> split_unit_decls = collect_split_unit_decls(
             function_decls + global_var_decls + module_var_decls);
 
+        const std::string runtime_type_header_decl = "struct "
+            + get_runtime_type_tag_header_struct_name()
+            + "\n{\n    int64_t " + get_runtime_type_tag_member_name() + ";\n};\n";
+
+        auto extract_text_from_decls = [](std::string &decls,
+                const std::string &text) -> bool {
+            if (text.empty()) {
+                return false;
+            }
+            size_t pos = decls.find(text);
+            if (pos != std::string::npos) {
+                decls.erase(pos, text.length());
+                return true;
+            }
+            return false;
+        };
+
+        std::string common_header_name = safe_project_name + "_common_generated.h";
+        std::string common_header_guard = safe_project_name;
+        std::transform(common_header_guard.begin(), common_header_guard.end(),
+            common_header_guard.begin(), ::toupper);
+        common_header_guard += "_COMMON_GENERATED_H";
+
+        std::string common_macro_decls;
+        const std::string c_backend_constructor_macro_decl =
+            get_c_backend_constructor_macro_decl();
+        if (extract_text_from_decls(header_array_type_decls,
+                c_backend_constructor_macro_decl)) {
+            common_macro_decls += c_backend_constructor_macro_decl;
+        }
+
+        std::string common_structs;
+        if (extract_text_from_decls(header_array_type_decls, dimension_descriptor_decl)) {
+            common_structs += dimension_descriptor_decl;
+        }
+        if (extract_text_from_decls(header_array_type_decls, runtime_type_header_decl)) {
+            common_structs += runtime_type_header_decl;
+        }
+
+        std::string common_header_src = "#ifndef " + common_header_guard
+            + "\n#define " + common_header_guard + "\n\n"
+            + get_include_block() + get_default_head()
+            + common_macro_decls
+            + get_c_backend_hidden_macro_decl() + "\n"
+            + common_structs
+            + "\n#endif\n";
+        write_text_file(fs::path(output_dir) / common_header_name, common_header_src);
+
         std::string header_src = "#ifndef " + header_guard + "\n#define "
             + header_guard + "\n\n"
-            + get_include_block() + get_default_head()
-            + get_c_backend_hidden_macro_decl() + "\n"
+            + "#include \"" + common_header_name + "\"\n"
             + header_array_type_decls + module_aggregate_decls
             + "\n#endif\n";
         write_text_file(fs::path(output_dir) / header_name, header_src);

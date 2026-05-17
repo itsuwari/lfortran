@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 import os
+import shlex
 import subprocess as sp
 import sys
 from typing import Dict
@@ -89,6 +90,8 @@ def single_test(test: Dict, verbose: bool, no_llvm: bool, skip_run_with_dbg: boo
     c_split_forbid_pattern = is_included("c_split_forbid_pattern")
     c_split_compile_werror = is_included("c_split_compile_werror")
     c_split_budget = is_included("c_split_budget")
+    c_split_header_require_pattern = is_included("c_split_header_require_pattern")
+    c_split_common_header_require_pattern = is_included("c_split_common_header_require_pattern")
     c_split_consumer_forbid_pattern = is_included("c_split_consumer_forbid_pattern")
     c_split_consumer_require_pattern = is_included("c_split_consumer_require_pattern")
     c_require_pattern = is_included("c_require_pattern")
@@ -112,10 +115,25 @@ def single_test(test: Dict, verbose: bool, no_llvm: bool, skip_run_with_dbg: boo
     c_split_budget_max_object_bytes = test.get("c_split_budget_max_object_bytes", "")
     c_split_budget_max_executable_bytes = test.get("c_split_budget_max_executable_bytes", "")
     c_split_budget_max_text_bytes = test.get("c_split_budget_max_text_bytes", "")
+    c_split_header_require_pattern_value = test.get("c_split_header_require_pattern_value", "")
+    c_split_common_header_require_pattern_value = test.get("c_split_common_header_require_pattern_value", "")
     c_split_consumer_forbid_pattern_value = test.get("c_split_consumer_forbid_pattern_value", "")
     c_split_consumer_require_pattern_value = test.get("c_split_consumer_require_pattern_value", "")
     c_require_pattern_value = test.get("c_require_pattern_value", "")
     c_forbid_pattern_value = test.get("c_forbid_pattern_value", "")
+
+    def get_required_pattern_values(check_name, value):
+        if not value:
+            raise Exception(check_name + " requires " + check_name + "_value")
+        if isinstance(value, str):
+            return [value]
+        return value
+
+    def make_grep_commands(patterns, target_glob):
+        return " && ".join([
+            "grep -R -F -q " + shlex.quote(pattern) + " " + target_glob
+            for pattern in patterns
+        ])
     pass_ = test.get("pass", None)
     extrafiles = test.get("extrafiles", "").split(",")
     run = test.get("run")
@@ -786,6 +804,44 @@ def single_test(test: Dict, verbose: bool, no_llvm: bool, skip_run_with_dbg: boo
             f"grep -R -F -q \"{c_split_require_pattern_value}\" \"$tmpdir\"/*.o.tmp.split/*.c #"
         )
         run_test(filename, "c_split_require_pattern", cmd,
+                filename,
+                update_reference,
+                verify_hash,
+                extra_args)
+
+    if c_split_header_require_pattern:
+        c_split_header_require_patterns = get_required_pattern_values(
+            "c_split_header_require_pattern",
+            c_split_header_require_pattern_value)
+        grep_commands = make_grep_commands(
+            c_split_header_require_patterns,
+            "\"$tmpdir\"/*.o.tmp.split/*.h")
+        cmd = (
+            "tmpdir=$(mktemp -d /tmp/lfortran-c-split-header.XXXXXX); "
+            "trap 'rm -rf \"$tmpdir\"' EXIT; "
+            "lfortran --backend=c --separate-compilation -c {infile} -o \"$tmpdir/main.o\" && "
+            + grep_commands + " #"
+        )
+        run_test(filename, "c_split_header_require_pattern", cmd,
+                filename,
+                update_reference,
+                verify_hash,
+                extra_args)
+
+    if c_split_common_header_require_pattern:
+        c_split_common_header_require_patterns = get_required_pattern_values(
+            "c_split_common_header_require_pattern",
+            c_split_common_header_require_pattern_value)
+        grep_commands = make_grep_commands(
+            c_split_common_header_require_patterns,
+            "\"$tmpdir\"/*.o.tmp.split/*_common_generated.h")
+        cmd = (
+            "tmpdir=$(mktemp -d /tmp/lfortran-c-split-common-header.XXXXXX); "
+            "trap 'rm -rf \"$tmpdir\"' EXIT; "
+            "lfortran --backend=c --separate-compilation -c {infile} -o \"$tmpdir/main.o\" && "
+            + grep_commands + " #"
+        )
+        run_test(filename, "c_split_common_header_require_pattern", cmd,
                 filename,
                 update_reference,
                 verify_hash,

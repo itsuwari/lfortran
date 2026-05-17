@@ -1,0 +1,13 @@
+{
+    "basename": "c_split_common_header_require_pattern-c_backend_split_common_header_01-b845dcb",
+    "cmd": "tmpdir=$(mktemp -d /tmp/lfortran-c-split-common-header.XXXXXX); trap 'rm -rf \"$tmpdir\"' EXIT; lfortran --backend=c --separate-compilation -c {infile} -o \"$tmpdir/main.o\" && grep -R -F -q '#ifndef LFORTRAN_C_BACKEND_CONSTRUCTOR' \"$tmpdir\"/*.o.tmp.split/*_common_generated.h && grep -R -F -q 'struct dimension_descriptor' \"$tmpdir\"/*.o.tmp.split/*_common_generated.h #",
+    "infile": "tests/c_backend_split_common_header_01.f90",
+    "infile_hash": "379e0ac409e71ea5b1b52b7a9fa714f2ca84540a4cbaf65860ec428c",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}
