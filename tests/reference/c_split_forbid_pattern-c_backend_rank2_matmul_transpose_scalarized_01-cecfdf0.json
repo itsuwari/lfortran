@@ -1,0 +1,13 @@
+{
+    "basename": "c_split_forbid_pattern-c_backend_rank2_matmul_transpose_scalarized_01-cecfdf0",
+    "cmd": "tmpdir=$(mktemp -d /tmp/lfortran-c-split-forbid.XXXXXX); trap 'rm -rf \"$tmpdir\"' EXIT; lfortran --backend=c --separate-compilation -c {infile} -o \"$tmpdir/main.o\" > \"$tmpdir/compile.out\" 2> \"$tmpdir/compile.err\" && (! grep -R -F -q \"lcompilers_matmul\" \"$tmpdir\"/*.o.tmp.split/*.c \"$tmpdir\"/*.o.tmp.split/*.h) #",
+    "infile": "tests/../integration_tests/c_backend_rank2_matmul_transpose_scalarized_01.f90",
+    "infile_hash": "a20b77c301827e12947f5d325263903e4602d5033f0fc79985244739",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

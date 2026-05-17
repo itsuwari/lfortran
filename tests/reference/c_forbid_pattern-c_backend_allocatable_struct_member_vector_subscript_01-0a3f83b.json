@@ -1,0 +1,13 @@
+{
+    "basename": "c_forbid_pattern-c_backend_allocatable_struct_member_vector_subscript_01-0a3f83b",
+    "cmd": "lfortran --no-color --show-c {infile} | (! grep -F -q \"nsh->data\") #",
+    "infile": "tests/../integration_tests/c_backend_allocatable_struct_member_vector_subscript_01.f90",
+    "infile_hash": "0d427139fc0c635790c55a1d2c51aa8bed3ef4f4c809ddcfd4641c47",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

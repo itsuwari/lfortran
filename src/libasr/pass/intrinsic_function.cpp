@@ -13,6 +13,16 @@
 
 namespace LCompilers {
 
+static bool is_c_scalarizable_element_type(ASR::ttype_t *type) {
+    type = ASRUtils::type_get_past_array(
+        ASRUtils::type_get_past_allocatable_pointer(type));
+    return type != nullptr
+        && (ASRUtils::is_integer(*type)
+            || ASRUtils::is_unsigned_integer(*type)
+            || ASRUtils::is_real(*type)
+            || ASRUtils::is_logical(*type));
+}
+
 static bool is_c_numeric_matmul_element_type(ASR::ttype_t *type) {
     type = ASRUtils::type_get_past_allocatable_pointer(type);
     if (type == nullptr) {
@@ -142,6 +152,306 @@ static bool is_c_rank1_matmul_preservable_assignment(
         && ASRUtils::extract_n_dims_from_ttype(target_type) == 1;
 }
 
+static bool is_c_rank2_scalarizable_array_expr(ASR::expr_t *expr);
+
+static bool is_c_rank2_transpose_intrinsic_expr(ASR::expr_t *expr) {
+    expr = ASRUtils::get_past_array_physical_cast(expr);
+    if (expr == nullptr || !ASR::is_a<ASR::IntrinsicArrayFunction_t>(*expr)) {
+        return false;
+    }
+    ASR::IntrinsicArrayFunction_t *transpose =
+        ASR::down_cast<ASR::IntrinsicArrayFunction_t>(expr);
+    if (static_cast<ASRUtils::IntrinsicArrayFunctions>(
+            transpose->m_arr_intrinsic_id) != ASRUtils::IntrinsicArrayFunctions::Transpose
+            || transpose->n_args != 1
+            || transpose->m_args[0] == nullptr) {
+        return false;
+    }
+    ASR::ttype_t *source_type = ASRUtils::type_get_past_allocatable_pointer(
+        ASRUtils::expr_type(transpose->m_args[0]));
+    ASR::ttype_t *result_type = ASRUtils::type_get_past_allocatable_pointer(
+        transpose->m_type);
+    ASR::ttype_t *source_element_type = source_type != nullptr
+        ? ASRUtils::type_get_past_array(source_type) : nullptr;
+    ASR::ttype_t *result_element_type = result_type != nullptr
+        ? ASRUtils::type_get_past_array(result_type) : nullptr;
+    return source_type != nullptr
+        && result_type != nullptr
+        && source_element_type != nullptr
+        && result_element_type != nullptr
+        && ASRUtils::is_array(source_type)
+        && ASRUtils::is_array(result_type)
+        && ASRUtils::extract_n_dims_from_ttype(source_type) == 2
+        && ASRUtils::extract_n_dims_from_ttype(result_type) == 2
+        && is_c_scalarizable_element_type(source_type)
+        && is_c_scalarizable_element_type(result_type)
+        && ASRUtils::types_equal(source_element_type, result_element_type,
+            nullptr, nullptr)
+        && is_c_rank2_scalarizable_array_expr(transpose->m_args[0]);
+}
+
+static bool is_c_rank2_matmul_intrinsic_expr(ASR::expr_t *expr) {
+    expr = ASRUtils::get_past_array_physical_cast(expr);
+    if (expr == nullptr || !ASR::is_a<ASR::IntrinsicArrayFunction_t>(*expr)) {
+        return false;
+    }
+    ASR::IntrinsicArrayFunction_t *matmul =
+        ASR::down_cast<ASR::IntrinsicArrayFunction_t>(expr);
+    if (static_cast<ASRUtils::IntrinsicArrayFunctions>(
+            matmul->m_arr_intrinsic_id) != ASRUtils::IntrinsicArrayFunctions::MatMul
+            || matmul->n_args != 2
+            || matmul->m_args[0] == nullptr
+            || matmul->m_args[1] == nullptr) {
+        return false;
+    }
+    ASR::ttype_t *result_type = ASRUtils::type_get_past_allocatable_pointer(
+        matmul->m_type);
+    ASR::ttype_t *left_type = ASRUtils::type_get_past_allocatable_pointer(
+        ASRUtils::expr_type(matmul->m_args[0]));
+    ASR::ttype_t *right_type = ASRUtils::type_get_past_allocatable_pointer(
+        ASRUtils::expr_type(matmul->m_args[1]));
+    return result_type != nullptr
+        && left_type != nullptr
+        && right_type != nullptr
+        && ASRUtils::is_array(result_type)
+        && ASRUtils::is_array(left_type)
+        && ASRUtils::is_array(right_type)
+        && ASRUtils::extract_n_dims_from_ttype(result_type) == 2
+        && ASRUtils::extract_n_dims_from_ttype(left_type) == 2
+        && ASRUtils::extract_n_dims_from_ttype(right_type) == 2
+        && is_c_scalarizable_element_type(result_type)
+        && is_c_rank2_scalarizable_array_expr(matmul->m_args[0])
+        && is_c_rank2_scalarizable_array_expr(matmul->m_args[1]);
+}
+
+static bool is_c_rank2_local_array_intrinsic_expr(ASR::expr_t *expr) {
+    return is_c_rank2_transpose_intrinsic_expr(expr)
+        || is_c_rank2_matmul_intrinsic_expr(expr);
+}
+
+static bool is_c_rank2_direct_array_ref_expr(ASR::expr_t *expr) {
+    expr = ASRUtils::get_past_array_physical_cast(expr);
+    if (expr == nullptr
+            || (!ASR::is_a<ASR::Var_t>(*expr)
+                && !ASR::is_a<ASR::StructInstanceMember_t>(*expr))) {
+        return false;
+    }
+    ASR::ttype_t *type = ASRUtils::type_get_past_allocatable_pointer(
+        ASRUtils::expr_type(expr));
+    return type != nullptr
+        && ASRUtils::is_array(type)
+        && ASRUtils::extract_n_dims_from_ttype(type) == 2
+        && is_c_scalarizable_element_type(type);
+}
+
+static bool is_c_default_unit_array_slice(const ASR::array_index_t &idx) {
+    bool is_slice = idx.m_left || idx.m_step || idx.m_right == nullptr;
+    if (!is_slice) {
+        return false;
+    }
+    bool step_is_unit = idx.m_step == nullptr;
+    int64_t step = 1;
+    if (idx.m_step != nullptr
+            && ASRUtils::extract_value(ASRUtils::expr_value(idx.m_step), step)
+            && step == 1) {
+        step_is_unit = true;
+    }
+    bool left_is_default = idx.m_left == nullptr
+        || ASR::is_a<ASR::ArrayBound_t>(*idx.m_left);
+    bool right_is_default = idx.m_right == nullptr
+        || ASR::is_a<ASR::ArrayBound_t>(*idx.m_right);
+    return step_is_unit && left_is_default && right_is_default;
+}
+
+static bool is_c_compiler_created_array_temp_expr(ASR::expr_t *expr) {
+    expr = ASRUtils::get_past_array_physical_cast(expr);
+    if (expr != nullptr && ASR::is_a<ASR::ArraySection_t>(*expr)) {
+        expr = ASR::down_cast<ASR::ArraySection_t>(expr)->m_v;
+        expr = ASRUtils::get_past_array_physical_cast(expr);
+    }
+    if (expr == nullptr || !ASR::is_a<ASR::Var_t>(*expr)) {
+        return false;
+    }
+    ASR::symbol_t *sym = ASRUtils::symbol_get_past_external(
+        ASR::down_cast<ASR::Var_t>(expr)->m_v);
+    if (!ASR::is_a<ASR::Variable_t>(*sym)) {
+        return false;
+    }
+    return std::string(ASR::down_cast<ASR::Variable_t>(sym)->m_name)
+        .rfind("__libasr_created_", 0) == 0;
+}
+
+static bool is_c_rank2_local_intrinsic_assignment_target(ASR::expr_t *expr) {
+    expr = ASRUtils::get_past_array_physical_cast(expr);
+    if (expr == nullptr) {
+        return false;
+    }
+    if (is_c_compiler_created_array_temp_expr(expr)) {
+        return false;
+    }
+    ASR::ttype_t *target_type = ASRUtils::type_get_past_allocatable_pointer(
+        ASRUtils::expr_type(expr));
+    if (target_type == nullptr
+            || !ASRUtils::is_array(target_type)
+            || ASRUtils::extract_n_dims_from_ttype(target_type) != 2
+            || !is_c_scalarizable_element_type(target_type)) {
+        return false;
+    }
+    if (ASR::is_a<ASR::Var_t>(*expr)
+            || ASR::is_a<ASR::StructInstanceMember_t>(*expr)) {
+        return true;
+    }
+    if (!ASR::is_a<ASR::ArraySection_t>(*expr)) {
+        return false;
+    }
+    ASR::ArraySection_t *section = ASR::down_cast<ASR::ArraySection_t>(expr);
+    ASR::expr_t *base_expr = ASRUtils::get_past_array_physical_cast(section->m_v);
+    ASR::ttype_t *base_type = base_expr != nullptr
+        ? ASRUtils::type_get_past_allocatable_pointer(
+            ASRUtils::expr_type(base_expr)) : nullptr;
+    int base_rank = base_type != nullptr
+        ? ASRUtils::extract_n_dims_from_ttype(base_type) : 0;
+    if (base_rank < 2 || section->n_args != static_cast<size_t>(base_rank)) {
+        return false;
+    }
+    int slice_dims = 0;
+    for (size_t i = 0; i < section->n_args; i++) {
+        ASR::array_index_t idx = section->m_args[i];
+        bool is_slice = idx.m_left || idx.m_step || idx.m_right == nullptr;
+        if (is_slice) {
+            slice_dims++;
+            if (!is_c_default_unit_array_slice(idx)) {
+                return false;
+            }
+            continue;
+        }
+        return false;
+    }
+    return slice_dims == 2;
+}
+
+static bool is_c_rank2_scalarizable_array_expr(ASR::expr_t *expr) {
+    expr = ASRUtils::get_past_array_physical_cast(expr);
+    if (expr == nullptr) {
+        return false;
+    }
+    ASR::ttype_t *array_type = ASRUtils::type_get_past_allocatable_pointer(
+        ASRUtils::expr_type(expr));
+    if (array_type == nullptr || !ASRUtils::is_array(array_type)) {
+        return true;
+    }
+    if (!is_c_scalarizable_element_type(array_type)) {
+        return false;
+    }
+    switch (expr->type) {
+        case ASR::exprType::Var:
+        case ASR::exprType::StructInstanceMember: {
+            return is_c_rank2_direct_array_ref_expr(expr);
+        }
+        case ASR::exprType::ArrayBroadcast: {
+            return is_c_rank2_scalarizable_array_expr(
+                ASR::down_cast<ASR::ArrayBroadcast_t>(expr)->m_array);
+        }
+        case ASR::exprType::RealBinOp: {
+            ASR::RealBinOp_t *b = ASR::down_cast<ASR::RealBinOp_t>(expr);
+            return b->m_op != ASR::binopType::Pow
+                && is_c_rank2_scalarizable_array_expr(b->m_left)
+                && is_c_rank2_scalarizable_array_expr(b->m_right);
+        }
+        case ASR::exprType::IntegerBinOp: {
+            ASR::IntegerBinOp_t *b = ASR::down_cast<ASR::IntegerBinOp_t>(expr);
+            return b->m_op != ASR::binopType::Pow
+                && is_c_rank2_scalarizable_array_expr(b->m_left)
+                && is_c_rank2_scalarizable_array_expr(b->m_right);
+        }
+        case ASR::exprType::UnsignedIntegerBinOp: {
+            ASR::UnsignedIntegerBinOp_t *b =
+                ASR::down_cast<ASR::UnsignedIntegerBinOp_t>(expr);
+            return b->m_op != ASR::binopType::Pow
+                && is_c_rank2_scalarizable_array_expr(b->m_left)
+                && is_c_rank2_scalarizable_array_expr(b->m_right);
+        }
+        case ASR::exprType::RealUnaryMinus: {
+            return is_c_rank2_scalarizable_array_expr(
+                ASR::down_cast<ASR::RealUnaryMinus_t>(expr)->m_arg);
+        }
+        case ASR::exprType::IntegerUnaryMinus: {
+            return is_c_rank2_scalarizable_array_expr(
+                ASR::down_cast<ASR::IntegerUnaryMinus_t>(expr)->m_arg);
+        }
+        case ASR::exprType::IntrinsicArrayFunction: {
+            return is_c_rank2_local_array_intrinsic_expr(expr);
+        }
+        default: {
+            return false;
+        }
+    }
+}
+
+static bool c_expr_contains_rank2_local_array_intrinsic(ASR::expr_t *expr) {
+    expr = ASRUtils::get_past_array_physical_cast(expr);
+    if (expr == nullptr) {
+        return false;
+    }
+    if (is_c_rank2_local_array_intrinsic_expr(expr)) {
+        return true;
+    }
+    switch (expr->type) {
+        case ASR::exprType::IntrinsicArrayFunction: {
+            ASR::IntrinsicArrayFunction_t *f =
+                ASR::down_cast<ASR::IntrinsicArrayFunction_t>(expr);
+            for (size_t i = 0; i < f->n_args; i++) {
+                if (c_expr_contains_rank2_local_array_intrinsic(f->m_args[i])) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        case ASR::exprType::ArrayBroadcast: {
+            return c_expr_contains_rank2_local_array_intrinsic(
+                ASR::down_cast<ASR::ArrayBroadcast_t>(expr)->m_array);
+        }
+        case ASR::exprType::RealBinOp: {
+            ASR::RealBinOp_t *b = ASR::down_cast<ASR::RealBinOp_t>(expr);
+            return c_expr_contains_rank2_local_array_intrinsic(b->m_left)
+                || c_expr_contains_rank2_local_array_intrinsic(b->m_right);
+        }
+        case ASR::exprType::IntegerBinOp: {
+            ASR::IntegerBinOp_t *b = ASR::down_cast<ASR::IntegerBinOp_t>(expr);
+            return c_expr_contains_rank2_local_array_intrinsic(b->m_left)
+                || c_expr_contains_rank2_local_array_intrinsic(b->m_right);
+        }
+        case ASR::exprType::UnsignedIntegerBinOp: {
+            ASR::UnsignedIntegerBinOp_t *b =
+                ASR::down_cast<ASR::UnsignedIntegerBinOp_t>(expr);
+            return c_expr_contains_rank2_local_array_intrinsic(b->m_left)
+                || c_expr_contains_rank2_local_array_intrinsic(b->m_right);
+        }
+        case ASR::exprType::RealUnaryMinus: {
+            return c_expr_contains_rank2_local_array_intrinsic(
+                ASR::down_cast<ASR::RealUnaryMinus_t>(expr)->m_arg);
+        }
+        case ASR::exprType::IntegerUnaryMinus: {
+            return c_expr_contains_rank2_local_array_intrinsic(
+                ASR::down_cast<ASR::IntegerUnaryMinus_t>(expr)->m_arg);
+        }
+        default: {
+            return false;
+        }
+    }
+}
+
+static bool is_c_rank2_local_array_intrinsic_preservable_assignment(
+        ASR::expr_t *target, ASR::expr_t *value) {
+    if (target == nullptr || value == nullptr
+            || !is_c_rank2_local_intrinsic_assignment_target(target)
+            || !c_expr_contains_rank2_local_array_intrinsic(value)
+            || !is_c_rank2_scalarizable_array_expr(value)) {
+        return false;
+    }
+    return true;
+}
+
 /*
 
 This ASR pass replaces the IntrinsicFunction node with a call to an
@@ -164,15 +474,18 @@ class ReplaceIntrinsicFunctions: public ASR::BaseExprReplacer<ReplaceIntrinsicFu
     bool& in_ttype;
     bool c_backend;
     bool& preserve_c_rank1_matmul;
+    bool& preserve_c_rank2_local_array_intrinsics;
     int index_kind;
 
     public:
 
     ReplaceIntrinsicFunctions(Allocator& al_, SymbolTable* global_scope_,
     std::map<ASR::symbol_t*, ASRUtils::IntrinsicArrayFunctions>& func2intrinsicid_, bool& in_debugcheck_, bool &in_ttype_,
-    bool c_backend_, bool& preserve_c_rank1_matmul_, int index_kind_) :
+    bool c_backend_, bool& preserve_c_rank1_matmul_,
+    bool& preserve_c_rank2_local_array_intrinsics_, int index_kind_) :
         al(al_), global_scope(global_scope_), func2intrinsicid(func2intrinsicid_), in_debugcheck(in_debugcheck_), in_ttype(in_ttype_),
         c_backend(c_backend_), preserve_c_rank1_matmul(preserve_c_rank1_matmul_),
+        preserve_c_rank2_local_array_intrinsics(preserve_c_rank2_local_array_intrinsics_),
         index_kind(index_kind_) {}
 
 
@@ -226,6 +539,10 @@ class ReplaceIntrinsicFunctions: public ASR::BaseExprReplacer<ReplaceIntrinsicFu
         }
         if (c_backend && preserve_c_rank1_matmul
                 && is_c_rank1_matmul_intrinsic_expr(*current_expr)) {
+            return;
+        }
+        if (c_backend && preserve_c_rank2_local_array_intrinsics
+                && is_c_rank2_local_array_intrinsic_expr(*current_expr)) {
             return;
         }
         replace_ttype(x->m_type);
@@ -284,12 +601,14 @@ class ReplaceIntrinsicFunctionsVisitor : public ASR::CallReplacerOnExpressionsVi
         bool in_ttype = false;
         bool c_backend = false;
         bool preserve_c_rank1_matmul = false;
+        bool preserve_c_rank2_local_array_intrinsics = false;
 
         ReplaceIntrinsicFunctionsVisitor(Allocator& al_, SymbolTable* global_scope_,
             std::map<ASR::symbol_t*, ASRUtils::IntrinsicArrayFunctions>& func2intrinsicid_,
             bool c_backend_, int index_kind_) :
             replacer(al_, global_scope_, func2intrinsicid_, in_debugcheck, in_ttype,
-                c_backend_, preserve_c_rank1_matmul, index_kind_),
+                c_backend_, preserve_c_rank1_matmul,
+                preserve_c_rank2_local_array_intrinsics, index_kind_),
             c_backend(c_backend_) {}
 
         // Don't replace inside DebugCheckArrayBounds, the arguments for elemental functions might be arrays
@@ -309,11 +628,18 @@ class ReplaceIntrinsicFunctionsVisitor : public ASR::CallReplacerOnExpressionsVi
 
         void visit_Assignment(const ASR::Assignment_t& x) {
             bool preserve_c_rank1_matmul_copy = preserve_c_rank1_matmul;
+            bool preserve_c_rank2_local_array_intrinsics_copy =
+                preserve_c_rank2_local_array_intrinsics;
             preserve_c_rank1_matmul = c_backend
                 && is_c_rank1_matmul_preservable_assignment(
                     x.m_target, x.m_value);
+            preserve_c_rank2_local_array_intrinsics = c_backend
+                && is_c_rank2_local_array_intrinsic_preservable_assignment(
+                    x.m_target, x.m_value);
             ASR::CallReplacerOnExpressionsVisitor<ReplaceIntrinsicFunctionsVisitor>::visit_Assignment(x);
             preserve_c_rank1_matmul = preserve_c_rank1_matmul_copy;
+            preserve_c_rank2_local_array_intrinsics =
+                preserve_c_rank2_local_array_intrinsics_copy;
         }
 
         void call_replacer() {

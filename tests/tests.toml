@@ -5761,9 +5761,39 @@ c_forbid_pattern = true
 c_forbid_pattern_value = "lcompilers_matmul"
 
 [[test]]
+filename = "../integration_tests/c_backend_rank1_matmul_self_update_terms_01.f90"
+c_split_forbid_pattern = true
+c_split_forbid_pattern_value = "lcompilers_matmul"
+
+[[test]]
 filename = "../integration_tests/c_backend_member_section_view_no_nested_01.f90"
 c_split_forbid_pattern = true
 c_split_forbid_pattern_value = ")->data), .dims ="
+
+[[test]]
+filename = "../integration_tests/c_backend_struct_member_vector_subscript_01.f90"
+c_forbid_pattern = true
+c_forbid_pattern_value = "first->data"
+
+[[test]]
+filename = "../integration_tests/c_backend_allocatable_struct_member_vector_subscript_01.f90"
+c_forbid_pattern = true
+c_forbid_pattern_value = "nsh->data"
+
+[[test]]
+filename = "../integration_tests/c_backend_rank2_transpose_scalarized_01.f90"
+c_split_forbid_pattern = true
+c_split_forbid_pattern_value = "lcompilers_transpose"
+
+[[test]]
+filename = "../integration_tests/c_backend_rank2_matmul_transpose_scalarized_01.f90"
+c_split_forbid_pattern = true
+c_split_forbid_pattern_value = "lcompilers_matmul"
+
+[[test]]
+filename = "../integration_tests/c_backend_rank2_matmul_assumed_shape_scalarized_01.f90"
+c_split_forbid_pattern = true
+c_split_forbid_pattern_value = "lcompilers_matmul"
 
 [[test]]
 filename = "c_backend_lazy_matmul_temp_01.f90"

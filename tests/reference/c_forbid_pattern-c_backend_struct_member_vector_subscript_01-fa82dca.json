@@ -1,0 +1,13 @@
+{
+    "basename": "c_forbid_pattern-c_backend_struct_member_vector_subscript_01-fa82dca",
+    "cmd": "lfortran --no-color --show-c {infile} | (! grep -F -q \"first->data\") #",
+    "infile": "tests/../integration_tests/c_backend_struct_member_vector_subscript_01.f90",
+    "infile_hash": "85c7fb1aae39a7c568aa01ae0738d09db0c62d9da351919fb9e82db4",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}
