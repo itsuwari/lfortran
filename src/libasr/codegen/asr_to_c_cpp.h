@@ -8866,6 +8866,199 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
         return true;
     }
 
+    bool get_c_rank1_scalarized_expr_length(ASR::expr_t *expr,
+            const std::string &prefix, std::string &setup,
+            std::string &length_name) {
+        expr = unwrap_c_array_expr(expr);
+        if (expr == nullptr) {
+            return false;
+        }
+        ASR::ttype_t *type = ASRUtils::type_get_past_allocatable_pointer(
+            ASRUtils::expr_type(expr));
+        if (type == nullptr || !ASRUtils::is_array(type)
+                || ASRUtils::extract_n_dims_from_ttype(type) != 1) {
+            return false;
+        }
+
+        switch (expr->type) {
+            case ASR::exprType::Var:
+            case ASR::exprType::StructInstanceMember:
+            case ASR::exprType::ArraySection:
+            case ASR::exprType::ArrayItem:
+            case ASR::exprType::ArrayConstant:
+            case ASR::exprType::ArrayConstructor: {
+                std::string item;
+                return get_c_rank1_array_element_expr(expr, prefix, "0",
+                    setup, item, length_name, true);
+            }
+            case ASR::exprType::ArrayBroadcast: {
+                return get_c_rank1_scalarized_expr_length(
+                    ASR::down_cast<ASR::ArrayBroadcast_t>(expr)->m_array,
+                    prefix + "_broadcast", setup, length_name);
+            }
+            case ASR::exprType::RealBinOp: {
+                ASR::RealBinOp_t *binop = ASR::down_cast<ASR::RealBinOp_t>(expr);
+                ASR::expr_t *shape_expr = is_c_array_typed_expr(binop->m_left)
+                    ? binop->m_left : binop->m_right;
+                return get_c_rank1_scalarized_expr_length(shape_expr, prefix,
+                    setup, length_name);
+            }
+            case ASR::exprType::IntegerBinOp: {
+                ASR::IntegerBinOp_t *binop = ASR::down_cast<ASR::IntegerBinOp_t>(expr);
+                ASR::expr_t *shape_expr = is_c_array_typed_expr(binop->m_left)
+                    ? binop->m_left : binop->m_right;
+                return get_c_rank1_scalarized_expr_length(shape_expr, prefix,
+                    setup, length_name);
+            }
+            case ASR::exprType::UnsignedIntegerBinOp: {
+                ASR::UnsignedIntegerBinOp_t *binop =
+                    ASR::down_cast<ASR::UnsignedIntegerBinOp_t>(expr);
+                ASR::expr_t *shape_expr = is_c_array_typed_expr(binop->m_left)
+                    ? binop->m_left : binop->m_right;
+                return get_c_rank1_scalarized_expr_length(shape_expr, prefix,
+                    setup, length_name);
+            }
+            case ASR::exprType::RealUnaryMinus: {
+                return get_c_rank1_scalarized_expr_length(
+                    ASR::down_cast<ASR::RealUnaryMinus_t>(expr)->m_arg,
+                    prefix + "_neg", setup, length_name);
+            }
+            case ASR::exprType::IntegerUnaryMinus: {
+                return get_c_rank1_scalarized_expr_length(
+                    ASR::down_cast<ASR::IntegerUnaryMinus_t>(expr)->m_arg,
+                    prefix + "_neg", setup, length_name);
+            }
+            case ASR::exprType::IntrinsicElementalFunction: {
+                ASR::IntrinsicElementalFunction_t *ief =
+                    ASR::down_cast<ASR::IntrinsicElementalFunction_t>(expr);
+                for (size_t i = 0; i < ief->n_args; i++) {
+                    if (is_c_array_typed_expr(ief->m_args[i])) {
+                        return get_c_rank1_scalarized_expr_length(
+                            ief->m_args[i], prefix + "_arg", setup,
+                            length_name);
+                    }
+                }
+                return false;
+            }
+            case ASR::exprType::IntrinsicArrayFunction: {
+                return get_c_rank1_matmul_result_length_expr(
+                    *ASR::down_cast<ASR::IntrinsicArrayFunction_t>(expr),
+                    setup, length_name);
+            }
+            default: {
+                return false;
+            }
+        }
+    }
+
+    bool try_emit_c_inline_sum_function_call(const ASR::FunctionCall_t &x,
+            ASR::Function_t *fn, const std::string &fn_name, std::string &out) {
+        if (!is_c || fn == nullptr || x.n_args == 0
+                || x.m_args[0].m_value == nullptr
+                || ASRUtils::is_array(x.m_type)) {
+            return false;
+        }
+        std::string fn_internal_name = fn->m_name;
+        if (fn_internal_name.find("_lcompilers_Sum") == std::string::npos
+                && fn_name.find("_lcompilers_Sum") == std::string::npos) {
+            return false;
+        }
+
+        ASR::expr_t *array_expr = x.m_args[0].m_value;
+        ASR::ttype_t *array_type = ASRUtils::type_get_past_allocatable_pointer(
+            ASRUtils::expr_type(array_expr));
+        if (array_type == nullptr || !ASRUtils::is_array(array_type)) {
+            return false;
+        }
+        int rank = ASRUtils::extract_n_dims_from_ttype(array_type);
+        if (rank != 1 && rank != 2) {
+            return false;
+        }
+        ASR::ttype_t *element_type = ASRUtils::type_get_past_array(array_type);
+        if (element_type == nullptr) {
+            return false;
+        }
+        element_type = ASRUtils::type_get_past_allocatable_pointer(element_type);
+        if (element_type == nullptr
+                || !(ASRUtils::is_real(*element_type)
+                    || ASRUtils::is_integer(*element_type)
+                    || ASRUtils::is_unsigned_integer(*element_type)
+                    || ASRUtils::is_complex(*element_type))) {
+            return false;
+        }
+        std::string result_type = CUtils::get_c_type_from_ttype_t(x.m_type);
+        if (result_type.empty()) {
+            return false;
+        }
+
+        std::string setup;
+        std::string result_name =
+            get_unique_local_name("__libasr_created__sum");
+        std::string indent(indentation_level * indentation_spaces, ' ');
+        std::string body_indent((indentation_level + 1) * indentation_spaces, ' ');
+        setup += indent + result_type + " " + result_name + " = ("
+            + result_type + ")0;\n";
+
+        if (rank == 1) {
+            if (!is_c_scalarizable_array_expr(array_expr)) {
+                return false;
+            }
+            std::string index_name =
+                get_unique_local_name("__libasr_created__sum_i");
+            std::string length_name;
+            if (!get_c_rank1_scalarized_expr_length(array_expr,
+                    "__libasr_created__sum_arg", setup, length_name)
+                    || length_name.empty()) {
+                return false;
+            }
+            std::string item;
+            if (!get_c_scalarized_array_expr(array_expr, index_name,
+                    setup, item, false)) {
+                return false;
+            }
+            setup += indent + "for (int64_t " + index_name + " = 0; "
+                + index_name + " < " + length_name + "; " + index_name
+                + "++) {\n";
+            setup += body_indent + result_name + " += " + item + ";\n";
+            setup += indent + "}\n";
+        } else {
+            if (!is_c_rank2_scalarizable_array_expr(array_expr)) {
+                return false;
+            }
+            std::string index1_name =
+                get_unique_local_name("__libasr_created__sum_i");
+            std::string index2_name =
+                get_unique_local_name("__libasr_created__sum_j");
+            std::string length1_name, length2_name;
+            if (!get_c_rank2_scalarized_expr_shape(array_expr,
+                    "__libasr_created__sum_arg", setup, length1_name,
+                    length2_name)
+                    || length1_name.empty() || length2_name.empty()) {
+                return false;
+            }
+            std::string item;
+            if (!get_c_rank2_scalarized_expr(array_expr, index1_name,
+                    index2_name, setup, item)) {
+                return false;
+            }
+            std::string inner_indent((indentation_level + 1) * indentation_spaces, ' ');
+            std::string inner_body_indent((indentation_level + 2) * indentation_spaces, ' ');
+            setup += indent + "for (int64_t " + index2_name + " = 0; "
+                + index2_name + " < " + length2_name + "; " + index2_name
+                + "++) {\n";
+            setup += inner_indent + "for (int64_t " + index1_name + " = 0; "
+                + index1_name + " < " + length1_name + "; " + index1_name
+                + "++) {\n";
+            setup += inner_body_indent + result_name + " += " + item + ";\n";
+            setup += inner_indent + "}\n";
+            setup += indent + "}\n";
+        }
+
+        tmp_buffer_src.push_back(setup);
+        out = result_name;
+        return true;
+    }
+
     std::string c_binop_to_str(ASR::binopType op) {
         switch (op) {
             case ASR::binopType::Add: return " + ";
@@ -17343,6 +17536,11 @@ PyMODINIT_FUNC PyInit_lpython_module_)" + fn_name + R"((void) {
             if (is_c) {
                 std::string inline_call;
                 if (try_emit_c_inline_dot_product_call(x, fn, fn_name, inline_call)) {
+                    src = check_tmp_buffer() + inline_call;
+                    last_expr_precedence = 2;
+                    return;
+                }
+                if (try_emit_c_inline_sum_function_call(x, fn, fn_name, inline_call)) {
                     src = check_tmp_buffer() + inline_call;
                     last_expr_precedence = 2;
                     return;

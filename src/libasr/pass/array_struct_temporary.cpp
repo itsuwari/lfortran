@@ -3502,6 +3502,87 @@ static bool is_c_rank2_scalarizable_array_expr(ASR::expr_t *expr) {
     }
 }
 
+static bool should_preserve_c_inline_sum_arg(
+        const ASR::IntrinsicArrayFunction_t &x) {
+    if (x.m_arr_intrinsic_id != static_cast<int64_t>(
+                ASRUtils::IntrinsicArrayFunctions::Sum)
+            || x.n_args != 1
+            || x.m_args[0] == nullptr
+            || ASRUtils::is_array(x.m_type)) {
+        return false;
+    }
+    ASR::expr_t *arg = ASRUtils::get_past_array_physical_cast(x.m_args[0]);
+    if (arg == nullptr) {
+        return false;
+    }
+    ASR::ttype_t *arg_type = ASRUtils::type_get_past_allocatable_pointer(
+        ASRUtils::expr_type(arg));
+    ASR::ttype_t *arg_element_type = arg_type != nullptr
+        ? ASRUtils::type_get_past_array(arg_type) : nullptr;
+    return arg_type != nullptr
+        && arg_element_type != nullptr
+        && ASRUtils::is_array(arg_type)
+        && ASRUtils::extract_n_dims_from_ttype(arg_type) == 2
+        && (ASRUtils::is_real(*arg_element_type)
+            || ASRUtils::is_integer(*arg_element_type)
+            || ASRUtils::is_unsigned_integer(*arg_element_type))
+        && is_c_rank2_scalarizable_array_expr(arg);
+}
+
+static bool is_c_inline_sum_function(ASR::Function_t *func,
+        ASR::ttype_t *call_result_type, const std::string &call_name) {
+    std::string func_name = func != nullptr ? std::string(func->m_name) : "";
+    if (func_name.find("_lcompilers_Sum") == std::string::npos
+            && func_name.find("lcompilers_Sum") == std::string::npos
+            && func_name.find("_lcompilers_sum") == std::string::npos
+            && func_name.find("lcompilers_sum") == std::string::npos
+            && call_name.find("_lcompilers_Sum") == std::string::npos
+            && call_name.find("lcompilers_Sum") == std::string::npos
+            && call_name.find("_lcompilers_sum") == std::string::npos
+            && call_name.find("lcompilers_sum") == std::string::npos) {
+        return false;
+    }
+    ASR::ttype_t *return_type = call_result_type;
+    if (return_type == nullptr && func != nullptr
+            && func->m_return_var != nullptr) {
+        return_type = ASRUtils::expr_type(func->m_return_var);
+    } else if (return_type == nullptr && func != nullptr) {
+        ASR::FunctionType_t *func_type = ASRUtils::get_FunctionType(func);
+        if (func_type != nullptr) {
+            return_type = func_type->m_return_var_type;
+        }
+    }
+    return return_type != nullptr && !ASRUtils::is_array(return_type);
+}
+
+static bool should_preserve_c_inline_sum_function_arg(bool c_backend,
+        ASR::Function_t *func, ASR::call_arg_t *args, size_t n_args,
+        size_t arg_index, ASR::ttype_t *call_result_type,
+        const std::string &call_name) {
+    if (!c_backend || arg_index != 0 || args == nullptr || n_args == 0
+            || args[0].m_value == nullptr
+            || !is_c_inline_sum_function(func, call_result_type, call_name)) {
+        return false;
+    }
+    ASR::expr_t *arg = ASRUtils::get_past_array_physical_cast(
+        args[0].m_value);
+    if (arg == nullptr) {
+        return false;
+    }
+    ASR::ttype_t *arg_type = ASRUtils::type_get_past_allocatable_pointer(
+        ASRUtils::expr_type(arg));
+    ASR::ttype_t *arg_element_type = arg_type != nullptr
+        ? ASRUtils::type_get_past_array(arg_type) : nullptr;
+    return arg_type != nullptr
+        && arg_element_type != nullptr
+        && ASRUtils::is_array(arg_type)
+        && ASRUtils::extract_n_dims_from_ttype(arg_type) == 2
+        && (ASRUtils::is_real(*arg_element_type)
+            || ASRUtils::is_integer(*arg_element_type)
+            || ASRUtils::is_unsigned_integer(*arg_element_type))
+        && is_c_rank2_scalarizable_array_expr(arg);
+}
+
 static bool is_c_rank2_scalarizable_after_rhs_temps_expr(Allocator &al,
         ASR::expr_t *lhs_array_var, ASR::expr_t *expr) {
     expr = ASRUtils::get_past_array_physical_cast(expr);
@@ -3964,7 +4045,7 @@ class ArgSimplifier: public ASR::CallReplacerOnExpressionsVisitor<ArgSimplifier>
 
     void traverse_call_args(Vec<ASR::call_arg_t>& x_m_args_vec, ASR::call_arg_t* x_m_args,
         size_t x_n_args, ASR::expr_t **orig_args, ASR::Function_t *func,
-        const std::string& name_hint) {
+        const std::string& name_hint, ASR::ttype_t *call_result_type=nullptr) {
         /* For other frontends, we might need to traverse the arguments
            in reverse order. */
         std::vector<bool> bypass_raw_helper_array_temps =
@@ -4010,6 +4091,12 @@ class ArgSimplifier: public ASR::CallReplacerOnExpressionsVisitor<ArgSimplifier>
             if (orig_args && func && i < func->n_args &&
                     should_preserve_c_intent_in_pointer_backed_struct_actual(
                         c_backend, orig_args[i], x_m_args[i].m_value)) {
+                x_m_args_vec.push_back(al, x_m_args[i]);
+                continue;
+            }
+            if (should_preserve_c_inline_sum_function_arg(
+                    c_backend, func, x_m_args, x_n_args, i,
+                    call_result_type, name_hint)) {
                 x_m_args_vec.push_back(al, x_m_args[i]);
                 continue;
             }
@@ -4586,8 +4673,10 @@ class ArgSimplifier: public ASR::CallReplacerOnExpressionsVisitor<ArgSimplifier>
 
     void visit_IntrinsicArrayFunction(const ASR::IntrinsicArrayFunction_t& x) {
         if (!ASRUtils::is_value_constant(x.m_value)) {   // Only simplify runtime function's args
-            visit_IntrinsicCall(x, "_intrinsic_array_function_" +
-                ASRUtils::get_array_intrinsic_name(x.m_arr_intrinsic_id));
+            if (!(c_backend && should_preserve_c_inline_sum_arg(x))) {
+                visit_IntrinsicCall(x, "_intrinsic_array_function_" +
+                    ASRUtils::get_array_intrinsic_name(x.m_arr_intrinsic_id));
+            }
         }
         ASR::IntrinsicArrayFunction_t& xx = const_cast<ASR::IntrinsicArrayFunction_t&>(x);
         int dim_arg_idx = ASRUtils::IntrinsicArrayFunctionRegistry::get_dim_arg_index(
@@ -4606,7 +4695,8 @@ class ArgSimplifier: public ASR::CallReplacerOnExpressionsVisitor<ArgSimplifier>
     }
 
     template <typename T>
-    void visit_Call(const T& x, const std::string& name_hint) {
+    void visit_Call(const T& x, const std::string& name_hint,
+            ASR::ttype_t *call_result_type=nullptr) {
         // LCOMPILERS_ASSERT(!x.m_dt || !ASRUtils::is_array(ASRUtils::expr_type(x.m_dt)));
         Vec<ASR::call_arg_t> x_m_args; x_m_args.reserve(al, x.n_args);
         ASR::expr_t **orig_args = nullptr;
@@ -4625,7 +4715,7 @@ class ArgSimplifier: public ASR::CallReplacerOnExpressionsVisitor<ArgSimplifier>
             }
         }
         traverse_call_args(x_m_args, x.m_args, x.n_args, orig_args, func,
-            name_hint + ASRUtils::symbol_name(x.m_name));
+            name_hint + ASRUtils::symbol_name(x.m_name), call_result_type);
         T& xx = const_cast<T&>(x);
         xx.m_args = x_m_args.p;
         xx.n_args = x_m_args.size();
@@ -4676,7 +4766,7 @@ class ArgSimplifier: public ASR::CallReplacerOnExpressionsVisitor<ArgSimplifier>
     }
 
     void visit_FunctionCall(const ASR::FunctionCall_t& x) {
-        visit_Call(x, "_function_call_");
+        visit_Call(x, "_function_call_", x.m_type);
         ASR::CallReplacerOnExpressionsVisitor<ArgSimplifier>::visit_FunctionCall(x);
     }
 
@@ -5021,6 +5111,9 @@ class ReplaceExprWithTemporary: public ASR::BaseExprReplacer<ReplaceExprWithTemp
 
     void replace_IntrinsicArrayFunction(ASR::IntrinsicArrayFunction_t* x) {
         std::string name_hint = std::string("_intrinsic_array_function_") + ASRUtils::get_array_intrinsic_name(x->m_arr_intrinsic_id);
+        if (c_backend && should_preserve_c_inline_sum_arg(*x)) {
+            return;
+        }
         ASR::expr_t *lhs_expr_unwrapped = lhs_expr != nullptr
             ? ASRUtils::get_past_array_physical_cast(lhs_expr) : nullptr;
         bool lhs_is_whole_allocatable =
@@ -5447,7 +5540,13 @@ class ReplaceExprWithTemporaryVisitor:
     }
 
     bool should_skip_call_arg_replacement(ASR::Function_t *func,
-            ASR::call_arg_t *args, size_t n_args, size_t i) {
+            ASR::call_arg_t *args, size_t n_args, size_t i,
+            ASR::ttype_t *call_result_type, const std::string &call_name) {
+        if (should_preserve_c_inline_sum_function_arg(
+                c_backend, func, args, n_args, i,
+                call_result_type, call_name)) {
+            return true;
+        }
         if (func == nullptr || i >= func->n_args) {
             return false;
         }
@@ -5471,7 +5570,8 @@ class ReplaceExprWithTemporaryVisitor:
         ASR::Function_t *func = get_call_function(x.m_name);
         for (size_t i = 0; i < x.n_args; i++) {
             if (should_skip_call_arg_replacement(
-                    func, x.m_args, x.n_args, i)) {
+                    func, x.m_args, x.n_args, i,
+                    x.m_type, ASRUtils::symbol_name(x.m_name))) {
                 continue;
             }
             visit_call_arg(x.m_args[i]);
@@ -5495,7 +5595,8 @@ class ReplaceExprWithTemporaryVisitor:
         ASR::Function_t *func = get_call_function(x.m_name);
         for (size_t i = 0; i < x.n_args; i++) {
             if (should_skip_call_arg_replacement(
-                    func, x.m_args, x.n_args, i)) {
+                    func, x.m_args, x.n_args, i,
+                    nullptr, ASRUtils::symbol_name(x.m_name))) {
                 continue;
             }
             visit_call_arg(x.m_args[i]);
@@ -5835,6 +5936,10 @@ class ReplaceExprWithTemporaryVisitor:
         c_rank1_section_array_constant_direct_assignment = c_backend &&
             is_c_rank1_section_array_constant_direct_assignment(
                 x.m_target, x.m_value);
+        bool c_inline_sum_scalar_assignment = c_backend
+            && ASR::is_a<ASR::IntrinsicArrayFunction_t>(*x.m_value)
+            && should_preserve_c_inline_sum_arg(
+                *ASR::down_cast<ASR::IntrinsicArrayFunction_t>(x.m_value));
 
         current_expr = const_cast<ASR::expr_t**>(&(x.m_value));
         bool rhs_is_assignment_target_array_section_item =
@@ -5887,7 +5992,8 @@ class ReplaceExprWithTemporaryVisitor:
         replacer.is_simd_expression = is_simd_expr_copy;
         replacer.simd_type = simd_type_copy;
         if (!c_rank2_scalarized_reshape_assignment
-                && !ASRUtils::is_simd_array(x.m_value)) {
+                && !ASRUtils::is_simd_array(x.m_value)
+                && !c_inline_sum_scalar_assignment) {
             visit_expr(*x.m_value);
         }
         replacer.is_assignment_target_array_section_item =
@@ -6227,7 +6333,9 @@ class VerifySimplifierASROutput:
     }
 
     void traverse_call_args(ASR::call_arg_t* m_args, size_t n_args,
-            ASR::expr_t **orig_args = nullptr, ASR::Function_t *func = nullptr) {
+            ASR::expr_t **orig_args = nullptr, ASR::Function_t *func = nullptr,
+            ASR::ttype_t *call_result_type = nullptr,
+            const std::string &call_name = "") {
         std::vector<bool> bypass_raw_helper_array_temps =
             get_c_raw_helper_call_temp_bypass(c_backend, func, m_args, n_args);
         for( size_t i = 0; i < n_args; i++ ) {
@@ -6265,6 +6373,11 @@ class VerifySimplifierASROutput:
                         c_backend, orig_args[i], m_args[i].m_value)) {
                 continue;
             }
+            if (should_preserve_c_inline_sum_function_arg(
+                    c_backend, func, m_args, n_args, i,
+                    call_result_type, call_name)) {
+                continue;
+            }
             check_for_var_if_array(m_args[i].m_value);
         }
     }
@@ -6276,7 +6389,7 @@ class VerifySimplifierASROutput:
     }
 
     template <typename T>
-    void visit_Call(const T& x) {
+    void visit_Call(const T& x, ASR::ttype_t *call_result_type=nullptr) {
         ASR::expr_t **orig_args = nullptr;
         ASR::Function_t *func = nullptr;
         ASR::symbol_t *sym = ASRUtils::symbol_get_past_external(x.m_name);
@@ -6292,7 +6405,8 @@ class VerifySimplifierASROutput:
                 orig_args = func->m_args;
             }
         }
-        traverse_call_args(x.m_args, x.n_args, orig_args, func);
+        traverse_call_args(x.m_args, x.n_args, orig_args, func,
+            call_result_type, ASRUtils::symbol_name(x.m_name));
     }
 
     void visit_SubroutineCall(const ASR::SubroutineCall_t& x) {
@@ -6315,7 +6429,7 @@ class VerifySimplifierASROutput:
     }
 
     void visit_FunctionCall(const ASR::FunctionCall_t& x) {
-        visit_Call(x);
+        visit_Call(x, x.m_type);
         if( !ASRUtils::is_elemental(x.m_name) ) {
             check_if_linked_to_target(x.base, x.m_type);
         }
@@ -6329,7 +6443,9 @@ class VerifySimplifierASROutput:
 
     void visit_IntrinsicArrayFunction(const ASR::IntrinsicArrayFunction_t& x) {
         if (!ASRUtils::is_value_constant(x.m_value)) {   // Only verify args for runtime functions
-            visit_IntrinsicCall(x);
+            if (!(c_backend && should_preserve_c_inline_sum_arg(x))) {
+                visit_IntrinsicCall(x);
+            }
         }
         check_if_linked_to_target(x.base, x.m_type);
     }

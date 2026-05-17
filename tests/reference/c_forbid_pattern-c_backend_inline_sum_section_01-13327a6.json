@@ -1,0 +1,13 @@
+{
+    "basename": "c_forbid_pattern-c_backend_inline_sum_section_01-13327a6",
+    "cmd": "lfortran --no-color --show-c {infile} | (! grep -F -q \"__libasr_created__function_call__lcompilers_Sum\") #",
+    "infile": "tests/../integration_tests/c_backend_inline_sum_section_01.f90",
+    "infile_hash": "64f1aee72cff4152a2429e600f3aa4873583104fcf66c4d5d8d55cbf",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

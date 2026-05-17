@@ -1,0 +1,13 @@
+{
+    "basename": "c_require_pattern-c_backend_inline_sum_section_01-fcdfc1b",
+    "cmd": "lfortran --no-color --show-c {infile} | grep -F -q \"__libasr_created__sum\" #",
+    "infile": "tests/../integration_tests/c_backend_inline_sum_section_01.f90",
+    "infile_hash": "64f1aee72cff4152a2429e600f3aa4873583104fcf66c4d5d8d55cbf",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

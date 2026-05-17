@@ -8284,6 +8284,8 @@ R"(    // Initialise Numpy
                     serialization += serialize_fortran_format_type(arg_expr, past_type);
                     this->visit_expr(*arg_expr);
                     std::string arg_value = src;
+                    format_arg_setup += drain_tmp_buffer();
+                    format_arg_setup += extract_stmt_setup_from_expr(arg_value);
                     if (ASRUtils::is_character(*past_type)) {
                         ASR::String_t *str_type = ASRUtils::get_string_type(arg_expr);
                         int64_t fixed_len = 0;

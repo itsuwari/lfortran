@@ -848,6 +848,102 @@ public:
         return bypass;
     }
 
+    bool is_c_rank2_scalarizable_sum_actual_expr(ASR::expr_t *expr) {
+        expr = ASRUtils::get_past_array_physical_cast(expr);
+        if (expr == nullptr) {
+            return false;
+        }
+        ASR::ttype_t *array_type = ASRUtils::type_get_past_allocatable_pointer(
+            ASRUtils::expr_type(expr));
+        ASR::ttype_t *element_type = array_type != nullptr
+            ? ASRUtils::type_get_past_array(array_type) : nullptr;
+        if (array_type == nullptr || element_type == nullptr
+                || !ASRUtils::is_array(array_type)
+                || ASRUtils::extract_n_dims_from_ttype(array_type) != 2
+                || !(ASRUtils::is_real(*element_type)
+                    || ASRUtils::is_integer(*element_type)
+                    || ASRUtils::is_unsigned_integer(*element_type))) {
+            return false;
+        }
+        switch (expr->type) {
+            case ASR::exprType::Var:
+            case ASR::exprType::StructInstanceMember: {
+                return true;
+            }
+            case ASR::exprType::ArraySection: {
+                return is_c_simple_array_section_view(
+                    ASR::down_cast<ASR::ArraySection_t>(expr));
+            }
+            case ASR::exprType::ArrayBroadcast: {
+                return is_c_rank2_scalarizable_sum_actual_expr(
+                    ASR::down_cast<ASR::ArrayBroadcast_t>(expr)->m_array);
+            }
+            case ASR::exprType::RealBinOp: {
+                ASR::RealBinOp_t *binop = ASR::down_cast<ASR::RealBinOp_t>(expr);
+                return binop->m_op != ASR::binopType::Pow
+                    && is_c_rank2_scalarizable_sum_actual_expr(binop->m_left)
+                    && is_c_rank2_scalarizable_sum_actual_expr(binop->m_right);
+            }
+            case ASR::exprType::IntegerBinOp: {
+                ASR::IntegerBinOp_t *binop =
+                    ASR::down_cast<ASR::IntegerBinOp_t>(expr);
+                return binop->m_op != ASR::binopType::Pow
+                    && is_c_rank2_scalarizable_sum_actual_expr(binop->m_left)
+                    && is_c_rank2_scalarizable_sum_actual_expr(binop->m_right);
+            }
+            case ASR::exprType::UnsignedIntegerBinOp: {
+                ASR::UnsignedIntegerBinOp_t *binop =
+                    ASR::down_cast<ASR::UnsignedIntegerBinOp_t>(expr);
+                return binop->m_op != ASR::binopType::Pow
+                    && is_c_rank2_scalarizable_sum_actual_expr(binop->m_left)
+                    && is_c_rank2_scalarizable_sum_actual_expr(binop->m_right);
+            }
+            case ASR::exprType::RealUnaryMinus: {
+                return is_c_rank2_scalarizable_sum_actual_expr(
+                    ASR::down_cast<ASR::RealUnaryMinus_t>(expr)->m_arg);
+            }
+            case ASR::exprType::IntegerUnaryMinus: {
+                return is_c_rank2_scalarizable_sum_actual_expr(
+                    ASR::down_cast<ASR::IntegerUnaryMinus_t>(expr)->m_arg);
+            }
+            default: {
+                return false;
+            }
+        }
+    }
+
+    bool is_c_inlineable_sum_helper(ASR::Function_t *func) {
+        if (!pass_options.c_backend || func == nullptr
+                || func->n_args == 0 || func->m_return_var == nullptr) {
+            return false;
+        }
+        std::string func_name = std::string(func->m_name);
+        if (func_name.find("lcompilers_Sum") == std::string::npos
+                && func_name.find("lcompilers_sum") == std::string::npos) {
+            return false;
+        }
+        ASR::ttype_t *return_type = ASRUtils::type_get_past_allocatable_pointer(
+            ASRUtils::expr_type(func->m_return_var));
+        return return_type != nullptr
+            && !ASRUtils::is_array(return_type)
+            && (ASRUtils::is_real(*return_type)
+                || ASRUtils::is_integer(*return_type)
+                || ASRUtils::is_unsigned_integer(*return_type));
+    }
+
+    std::vector<bool> get_c_inlineable_sum_call_temp_bypass(
+            ASR::Function_t *func, ASR::call_arg_t *args, size_t n_args) {
+        std::vector<bool> bypass(n_args, false);
+        if (!is_c_inlineable_sum_helper(func) || n_args == 0
+                || args == nullptr || args[0].m_value == nullptr) {
+            return bypass;
+        }
+        if (is_c_rank2_scalarizable_sum_actual_expr(args[0].m_value)) {
+            bypass[0] = true;
+        }
+        return bypass;
+    }
+
     bool is_descriptor_array_casted_to_pointer_to_data( ASR::expr_t* expr ) {
         if ( ASRUtils::is_array(ASRUtils::expr_type(expr) ) &&
              ASR::is_a<ASR::ArrayPhysicalCast_t>(*expr) ) {
@@ -1924,11 +2020,16 @@ public:
             std::vector<bool> bypass_inline_dot_product_array_temps =
                 get_c_inlineable_dot_product_call_temp_bypass(
                     func, x.m_args, x.n_args);
+            std::vector<bool> bypass_inline_sum_array_temps =
+                get_c_inlineable_sum_call_temp_bypass(
+                    func, x.m_args, x.n_args);
             for (size_t i = 0; i < bypass_raw_helper_array_temps.size()
-                    && i < bypass_inline_dot_product_array_temps.size(); i++) {
+                    && i < bypass_inline_dot_product_array_temps.size()
+                    && i < bypass_inline_sum_array_temps.size(); i++) {
                 bypass_raw_helper_array_temps[i] =
                     bypass_raw_helper_array_temps[i]
-                    || bypass_inline_dot_product_array_temps[i];
+                    || bypass_inline_dot_product_array_temps[i]
+                    || bypass_inline_sum_array_temps[i];
             }
             for (size_t i = 0; i < func->n_args; i++ ) {
                 if ( ASR::is_a<ASR::Var_t>(*func->m_args[i]) ) {
