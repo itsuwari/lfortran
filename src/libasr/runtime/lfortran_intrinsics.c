@@ -3682,6 +3682,26 @@ static inline char* write_to_result_at_pos(lfortran_allocator_t* al,
     return dest;
 }
 
+static char* allocate_format_temp_buffer(const char *format)
+{
+    int64_t capacity = 32;
+    if (format != NULL) {
+        const char *width = format + 1;
+        while (*width != '\0' && !isdigit((unsigned char)*width)) {
+            width++;
+        }
+        if (*width != '\0') {
+            int64_t parsed_width = strtoll(width, NULL, 10);
+            if (parsed_width > capacity) {
+                capacity = parsed_width;
+            }
+        }
+    }
+    char *buffer = (char*)internal_malloc((size_t)capacity + 1);
+    buffer[0] = '\0';
+    return buffer;
+}
+
 FILE* get_file_pointer_from_unit(int32_t unit_num, bool *unit_file_bin, int *access_id, bool *read_access, bool *write_access, int *delim, bool *blank_zero, int32_t *recl, int *sign_mode, int *decimal_mode, int *encoding_mode, int *round_mode, int *pad_mode);
 
 static bool try_simple_stack_format_values(const char *format, int64_t format_len,
@@ -4126,7 +4146,7 @@ static char* string_format_fortran_impl(lfortran_allocator_t* al,
 
                     // Handle if argument is actually logical (allowed in Fortran).
                     if(is_logical_type(s_info.current_element_type)){
-                        char* temp_buf = (char*)internal_malloc(1); temp_buf[0] = '\0';
+                        char* temp_buf = allocate_format_temp_buffer("l");
                         handle_logical("l",logical_value_from_ptr(
                             s_info.current_arg_info.current_arg,
                             s_info.current_element_type), &temp_buf);
@@ -4165,7 +4185,7 @@ static char* string_format_fortran_impl(lfortran_allocator_t* al,
                     }
                 } else if (tolower(value[0]) == 'i') {
                     // Integer Editing ( I[w[.m]] )
-                    char* temp_buf = (char*)internal_malloc(1); temp_buf[0] = '\0';
+                    char* temp_buf = allocate_format_temp_buffer(value);
                     handle_integer(value, integer_val, &temp_buf, is_SP_specifier);
                     int64_t temp_len = strlen(temp_buf);
                     result = write_to_result_at_pos(al, result, &result_capacity,
@@ -4278,7 +4298,7 @@ static char* string_format_fortran_impl(lfortran_allocator_t* al,
                         result_len += bin_len;
                     }
                 } else if (tolower(value[0]) == 'z') {
-                    char* temp_buf = (char*)internal_malloc(1); temp_buf[0] = '\0';
+                    char* temp_buf = allocate_format_temp_buffer(value);
                     handle_hexadecimal(value, s_info.current_element_type,
                         s_info.current_arg_info.current_arg, &temp_buf);
                     int64_t temp_len = strlen(temp_buf);
@@ -4287,7 +4307,7 @@ static char* string_format_fortran_impl(lfortran_allocator_t* al,
                     result_len += temp_len;
                     internal_free(temp_buf);
                 } else if (tolower(value[0]) == 'o') {
-                    char* temp_buf = (char*)internal_malloc(1); temp_buf[0] = '\0';
+                    char* temp_buf = allocate_format_temp_buffer(value);
                     handle_octal(value, s_info.current_element_type,
                         s_info.current_arg_info.current_arg, &temp_buf);
                     int64_t temp_len = strlen(temp_buf);
@@ -4465,7 +4485,7 @@ static char* string_format_fortran_impl(lfortran_allocator_t* al,
                     }
                 } else if (tolower(value[0]) == 'd') {
                     // D Editing (D[w[.d]])
-                    char* temp_buf = (char*)internal_malloc(1); temp_buf[0] = '\0';
+                    char* temp_buf = allocate_format_temp_buffer(value);
                     handle_decimal(value, double_val, scale, &temp_buf, "D", is_SP_specifier, rounding_mode);
                     int64_t temp_len = strlen(temp_buf);
                     result = write_to_result_at_pos(al, result, &result_capacity,
@@ -4482,7 +4502,7 @@ static char* string_format_fortran_impl(lfortran_allocator_t* al,
                     }
                     // Check if the next character is 'N' for EN format
                     char format_type = tolower(value[1]);
-                    char* temp_buf = (char*)internal_malloc(1); temp_buf[0] = '\0';
+                    char* temp_buf = allocate_format_temp_buffer(value);
                     if (format_type == 'n') {
                         handle_en(value, double_val, scale, &temp_buf, "E", is_SP_specifier);
                     } else {
@@ -4494,7 +4514,7 @@ static char* string_format_fortran_impl(lfortran_allocator_t* al,
                     result_len += temp_len;
                     internal_free(temp_buf);
                 } else if (tolower(value[0]) == 'f') {
-                    char* temp_buf = (char*)internal_malloc(1); temp_buf[0] = '\0';
+                    char* temp_buf = allocate_format_temp_buffer(value);
                     FloatFormatType float_fmt_type;
                     if (strcmp(value, "f-64") == 0) {
                         float_fmt_type = FLOAT_FORMAT_F64;
@@ -4518,7 +4538,7 @@ static char* string_format_fortran_impl(lfortran_allocator_t* al,
                     bool val = logical_value_from_ptr(
                         s_info.current_arg_info.current_arg,
                         s_info.current_element_type);
-                    char* temp_buf = (char*)internal_malloc(1); temp_buf[0] = '\0';
+                    char* temp_buf = allocate_format_temp_buffer(value);
                     handle_logical(value, val, &temp_buf);
                     int64_t temp_len = strlen(temp_buf);
                     result = write_to_result_at_pos(al, result, &result_capacity,
@@ -5707,7 +5727,9 @@ LFORTRAN_API void _lfortran_strcpy_alloc(
                 }
             }
         }
-        if (!lfortran_default_allocator_has_capacity(al, *lhs, required_size)) {
+        if (*lhs == NULL) {
+            *lhs = (char*)ALLOCATOR_ALLOC(al, required_size);
+        } else if (!lfortran_default_allocator_has_capacity(al, *lhs, required_size)) {
             *lhs = (char*)ALLOCATOR_REALLOC(al, *lhs, required_size);
             if (old_lhs != *lhs) _lfortran_unregister_string_len(old_lhs);
         }
