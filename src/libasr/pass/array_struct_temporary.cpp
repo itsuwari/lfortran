@@ -2717,6 +2717,44 @@ static bool should_preserve_c_intent_in_struct_array_item_actual(bool c_backend,
     return true;
 }
 
+static bool should_preserve_c_intent_in_pointer_backed_struct_actual(
+        bool c_backend, ASR::expr_t *dummy, ASR::expr_t *actual) {
+    if (!c_backend || dummy == nullptr || actual == nullptr) {
+        return false;
+    }
+    ASR::Variable_t *dummy_var = ASRUtils::expr_to_variable_or_null(dummy);
+    if (dummy_var == nullptr || dummy_var->m_intent != ASRUtils::intent_in
+            || ASRUtils::is_array(dummy_var->m_type)) {
+        return false;
+    }
+    ASR::ttype_t *dummy_type = ASRUtils::type_get_past_allocatable_pointer(
+        dummy_var->m_type);
+    if (dummy_type == nullptr
+            || !(ASR::is_a<ASR::StructType_t>(*dummy_type)
+                || ASRUtils::is_class_type(dummy_type))) {
+        return false;
+    }
+
+    ASR::expr_t *actual_unwrapped =
+        ASRUtils::get_past_array_physical_cast(actual);
+    if (actual_unwrapped == nullptr
+            || (!ASR::is_a<ASR::Var_t>(*actual_unwrapped)
+                && !ASR::is_a<ASR::StructInstanceMember_t>(*actual_unwrapped))
+            || ASRUtils::is_array(ASRUtils::expr_type(actual_unwrapped))) {
+        return false;
+    }
+    ASR::ttype_t *actual_type = ASRUtils::expr_type(actual_unwrapped);
+    ASR::ttype_t *actual_value_type =
+        ASRUtils::type_get_past_allocatable_pointer(actual_type);
+    if (actual_value_type == nullptr
+            || !(ASR::is_a<ASR::StructType_t>(*actual_value_type)
+                || ASRUtils::is_class_type(actual_value_type))) {
+        return false;
+    }
+    return ASRUtils::is_allocatable(actual_type)
+        || ASRUtils::is_pointer(actual_type);
+}
+
 static bool is_c_simple_integer_bound_expr(ASR::expr_t *expr) {
     if (expr == nullptr) {
         return true;
@@ -3965,6 +4003,12 @@ class ArgSimplifier: public ASR::CallReplacerOnExpressionsVisitor<ArgSimplifier>
             }
             if (orig_args && func && i < func->n_args &&
                     should_preserve_c_intent_in_struct_array_item_actual(
+                        c_backend, orig_args[i], x_m_args[i].m_value)) {
+                x_m_args_vec.push_back(al, x_m_args[i]);
+                continue;
+            }
+            if (orig_args && func && i < func->n_args &&
+                    should_preserve_c_intent_in_pointer_backed_struct_actual(
                         c_backend, orig_args[i], x_m_args[i].m_value)) {
                 x_m_args_vec.push_back(al, x_m_args[i]);
                 continue;
@@ -5418,6 +5462,8 @@ class ReplaceExprWithTemporaryVisitor:
             || should_preserve_c_no_copy_section_actual(
                 c_backend, func->m_args[i], args[i].m_value)
             || should_preserve_c_intent_in_struct_array_item_actual(
+                c_backend, func->m_args[i], args[i].m_value)
+            || should_preserve_c_intent_in_pointer_backed_struct_actual(
                 c_backend, func->m_args[i], args[i].m_value);
     }
 
@@ -6211,6 +6257,11 @@ class VerifySimplifierASROutput:
             }
             if (orig_args && func && i < func->n_args &&
                     should_preserve_c_intent_in_struct_array_item_actual(
+                        c_backend, orig_args[i], m_args[i].m_value)) {
+                continue;
+            }
+            if (orig_args && func && i < func->n_args &&
+                    should_preserve_c_intent_in_pointer_backed_struct_actual(
                         c_backend, orig_args[i], m_args[i].m_value)) {
                 continue;
             }

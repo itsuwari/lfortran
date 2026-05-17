@@ -1,0 +1,13 @@
+{
+    "basename": "c_split_forbid_pattern-c_backend_allocatable_component_tbp_no_temp_01-a50c7c4",
+    "cmd": "tmpdir=$(mktemp -d /tmp/lfortran-c-split-forbid.XXXXXX); trap 'rm -rf \"$tmpdir\"' EXIT; lfortran --backend=c --separate-compilation -c {infile} -o \"$tmpdir/main.o\" > \"$tmpdir/compile.out\" 2> \"$tmpdir/compile.err\" && (! grep -R -F -q \"self->item, __lfsc_\" \"$tmpdir\"/*.o.tmp.split/*.c \"$tmpdir\"/*.o.tmp.split/*.h) #",
+    "infile": "tests/../integration_tests/c_backend_allocatable_component_tbp_no_temp_01.f90",
+    "infile_hash": "674ea6e682d335287fdfcce115474d36fd64ea6c3caa6a986a7c4a12",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

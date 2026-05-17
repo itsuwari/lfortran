@@ -5803,6 +5803,11 @@ c_split_forbid_pattern = true
 c_split_forbid_pattern_value = "__lfortran_spread_result"
 
 [[test]]
+filename = "../integration_tests/c_backend_allocatable_component_tbp_no_temp_01.f90"
+c_split_forbid_pattern = true
+c_split_forbid_pattern_value = "self->item, __lfsc_"
+
+[[test]]
 filename = "../integration_tests/c_backend_rank2_matmul_transpose_scalarized_01.f90"
 c_split_forbid_pattern = true
 c_split_forbid_pattern_value = "lcompilers_matmul"
