@@ -6400,12 +6400,9 @@ namespace Rrspacing {
 
 namespace Repeat {
 
-    static ASR::expr_t *eval_Repeat(Allocator &al, const Location &loc,
-            ASR::ttype_t* /*t1*/, Vec<ASR::expr_t*> &args, diag::Diagnostics& /*diag*/) {
-        ASR::StringConstant_t *str_const =
-            ASR::down_cast<ASR::StringConstant_t>(expr_value(args[0]));
+    static ASR::expr_t *eval_Repeat_constant(Allocator &al, const Location &loc,
+            ASR::StringConstant_t *str_const, int64_t n) {
         char* str = str_const->m_s;
-        int64_t n = ASR::down_cast<ASR::IntegerConstant_t>(expr_value(args[1]))->m_n;
         int64_t len = -1;
         ASR::String_t *str_type = ASRUtils::get_string_type(str_const->m_type);
         if (str_type == nullptr || str_type->m_len == nullptr
@@ -6421,12 +6418,34 @@ namespace Repeat {
         Str result_s;
         result_s.from_str_view(repeated);
         char* result = result_s.c_str(al);
-        return make_ConstantWithType(make_StringConstant_t, result, character(new_len), loc);
+        return make_ConstantWithType(make_StringConstant_t, result,
+            character(new_len), loc);
+    }
+
+    static ASR::expr_t *eval_Repeat(Allocator &al, const Location &loc,
+            ASR::ttype_t* /*t1*/, Vec<ASR::expr_t*> &args, diag::Diagnostics& /*diag*/) {
+        ASR::StringConstant_t *str_const =
+            ASR::down_cast<ASR::StringConstant_t>(expr_value(args[0]));
+        int64_t n = ASR::down_cast<ASR::IntegerConstant_t>(expr_value(args[1]))->m_n;
+        return eval_Repeat_constant(al, loc, str_const, n);
     }
 
     static inline ASR::expr_t* instantiate_Repeat(Allocator &al, const Location &loc,
             SymbolTable *scope, Vec<ASR::ttype_t*>& arg_types, ASR::ttype_t *return_type,
             Vec<ASR::call_arg_t>& new_args, int64_t /*overload_id*/, int /*index_kind*/) {
+        ASR::expr_t *string_value = new_args[0].m_value != nullptr
+            ? ASRUtils::expr_value(new_args[0].m_value) : nullptr;
+        ASR::expr_t *count_value = new_args[1].m_value != nullptr
+            ? ASRUtils::expr_value(new_args[1].m_value) : nullptr;
+        if (string_value != nullptr && count_value != nullptr
+                && ASR::is_a<ASR::StringConstant_t>(*string_value)
+                && ASR::is_a<ASR::IntegerConstant_t>(*count_value)) {
+            ASR::StringConstant_t *str_const =
+                ASR::down_cast<ASR::StringConstant_t>(string_value);
+            int64_t repeat_count =
+                ASR::down_cast<ASR::IntegerConstant_t>(count_value)->m_n;
+            return eval_Repeat_constant(al, loc, str_const, repeat_count);
+        }
         auto func_name = "_lcompilers_optimization_repeat_" + type_to_str_python_expr(arg_types[0], new_args[0].m_value)
              + type_to_str_python_expr(arg_types[1], new_args[1].m_value);
         declare_basic_variables(func_name);

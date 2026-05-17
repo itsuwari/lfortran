@@ -6104,6 +6104,12 @@ c_forbid_pattern = true
 c_forbid_pattern_value = "return_slot, NULL, true, true, buffer"
 
 [[test]]
+filename = "c_backend_allocate_source_repeat_01.f90"
+c = true
+c_forbid_pattern = true
+c_forbid_pattern_value = "__lfortran__lcompilers_optimization_repeat"
+
+[[test]]
 filename = "c_backend_local_allocatable_cleanup_01.f90"
 c = true
 

@@ -1,0 +1,13 @@
+{
+    "basename": "c-c_backend_allocate_source_repeat_01-e216a4a",
+    "cmd": "lfortran --no-color --show-c {infile}",
+    "infile": "tests/c_backend_allocate_source_repeat_01.f90",
+    "infile_hash": "035e10a2d15cc9b9e2f58a2b7be54d6182cb9fc56074f927b61f715a",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": "c-c_backend_allocate_source_repeat_01-e216a4a.stdout",
+    "stdout_hash": "8b58e48193a34a720bea266a8ce75807f83ba30487546c20e896815d",
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}
