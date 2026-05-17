@@ -5766,6 +5766,11 @@ c_split_forbid_pattern = true
 c_split_forbid_pattern_value = "lcompilers_matmul"
 
 [[test]]
+filename = "../integration_tests/c_backend_deferred_intent_out_cleanup_01.f90"
+c_split_forbid_pattern = true
+c_split_forbid_pattern_value = "memset(forwarded, 0, sizeof(*forwarded));"
+
+[[test]]
 filename = "../integration_tests/c_backend_member_section_view_no_nested_01.f90"
 c_split_forbid_pattern = true
 c_split_forbid_pattern_value = ")->data), .dims ="

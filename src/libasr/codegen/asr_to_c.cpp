@@ -3663,6 +3663,9 @@ R"(
             if (derived_type == nullptr || !ASR::is_a<ASR::Struct_t>(*derived_type)) {
                 continue;
             }
+            if (can_defer_c_intent_out_struct_dummy_initialization(x, arg_var)) {
+                continue;
+            }
             bool is_return_var_arg = false;
             if (x.m_return_var && ASR::is_a<ASR::Var_t>(*x.m_return_var)) {
                 ASR::symbol_t *return_sym = ASRUtils::symbol_get_past_external(
@@ -3695,6 +3698,48 @@ R"(
                 ASR::down_cast<ASR::Struct_t>(derived_type), sub, indent,
                 arg_name);
         }
+    }
+
+    bool is_same_c_var_actual(ASR::expr_t *actual, ASR::Variable_t *arg_var) {
+        actual = unwrap_c_lvalue_expr(actual);
+        if (actual == nullptr || !ASR::is_a<ASR::Var_t>(*actual)) {
+            return false;
+        }
+        ASR::symbol_t *actual_sym = ASRUtils::symbol_get_past_external(
+            ASR::down_cast<ASR::Var_t>(actual)->m_v);
+        ASR::symbol_t *arg_sym = ASRUtils::symbol_get_past_external((ASR::symbol_t*) arg_var);
+        return actual_sym == arg_sym;
+    }
+
+    bool can_defer_c_intent_out_struct_dummy_initialization(
+            const ASR::Function_t &x, ASR::Variable_t *arg_var) {
+        if (!is_c || x.n_body == 0 || x.m_body[0] == nullptr
+                || !ASR::is_a<ASR::SubroutineCall_t>(*x.m_body[0])) {
+            return false;
+        }
+        ASR::SubroutineCall_t *call =
+            ASR::down_cast<ASR::SubroutineCall_t>(x.m_body[0]);
+        ASR::Function_t *callee = get_procedure_interface_function(call->m_name);
+        if (callee == nullptr) {
+            return false;
+        }
+        size_t n_args = std::min(call->n_args, callee->n_args);
+        for (size_t i = 0; i < n_args; i++) {
+            if (call->m_args[i].m_value == nullptr
+                    || !is_same_c_var_actual(call->m_args[i].m_value, arg_var)
+                    || callee->m_args[i] == nullptr
+                    || !ASR::is_a<ASR::Var_t>(*callee->m_args[i])) {
+                continue;
+            }
+            ASR::symbol_t *formal_sym = ASRUtils::symbol_get_past_external(
+                ASR::down_cast<ASR::Var_t>(callee->m_args[i])->m_v);
+            if (formal_sym != nullptr && ASR::is_a<ASR::Variable_t>(*formal_sym)
+                    && ASR::down_cast<ASR::Variable_t>(formal_sym)->m_intent
+                        == ASRUtils::intent_out) {
+                return true;
+            }
+        }
+        return false;
     }
 
     void convert_variable_decl_util(const ASR::Variable_t &v,

@@ -1,0 +1,13 @@
+{
+    "basename": "c_split_forbid_pattern-c_backend_deferred_intent_out_cleanup_01-6b3a09a",
+    "cmd": "tmpdir=$(mktemp -d /tmp/lfortran-c-split-forbid.XXXXXX); trap 'rm -rf \"$tmpdir\"' EXIT; lfortran --backend=c --separate-compilation -c {infile} -o \"$tmpdir/main.o\" > \"$tmpdir/compile.out\" 2> \"$tmpdir/compile.err\" && (! grep -R -F -q \"memset(forwarded, 0, sizeof(*forwarded));\" \"$tmpdir\"/*.o.tmp.split/*.c \"$tmpdir\"/*.o.tmp.split/*.h) #",
+    "infile": "tests/../integration_tests/c_backend_deferred_intent_out_cleanup_01.f90",
+    "infile_hash": "a8e4dc174c8e0a480d53a04ece9070783ec9a4b8359658215529b63c",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}
